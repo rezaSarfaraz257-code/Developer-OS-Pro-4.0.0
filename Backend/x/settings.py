@@ -240,8 +240,8 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_EMBEDDER_POLICY = "require-corp" if not DEBUG else None
 
 # Never permit oversized multipart payloads to reach application code.
-DATA_UPLOAD_MAX_MEMORY_SIZE = min(DATA_UPLOAD_MAX_MEMORY_SIZE, 10_485_760)
-
+# Security upload limits
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10_485_760  # 10 MB
 
 if CACHE_URL:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": CACHE_URL}}
