@@ -1,0 +1,24 @@
+{
+  "release_gate": "CODE_HARDENING_PASS",
+  "python_compile": "PASS",
+  "runner_tests": "PASS: 6/6",
+  "frontend_syntax": "PASS: 30 files",
+  "compose_yaml": "PASS",
+  "unsafe_static_scan": "PASS",
+  "runtime_validation": {
+    "django_postgresql": "NOT_EXECUTED: Django unavailable in review container",
+    "frontend_lint_build_test": "NOT_EXECUTED: npm dependency installation timed out",
+    "docker_build_runtime_e2e": "NOT_EXECUTED: Docker daemon unavailable"
+  },
+  "major_ide_hardening": [
+    "production ProIDE wired to /ide",
+    "autosave",
+    "optimistic workspace revision",
+    "collaborator tenant access",
+    "network-isolated execution",
+    "fail-closed Bubblewrap requirement",
+    "per-workspace runner lock",
+    "package shell quoting",
+    "timeout status"
+  ]
+}

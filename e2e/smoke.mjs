@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+const base = (process.argv[2] || "http://127.0.0.1").replace(/\/$/, "");
+const api = `${base}/api`;
+
+async function request(path, options = {}) {
+  const response = await fetch(`${api}${path}`, {
+    ...options,
+    headers: {"Content-Type": "application/json", ...(options.headers || {})},
+  });
+  let body = {};
+  try { body = await response.json(); } catch {}
+  if (!response.ok) {
+    throw new Error(`${options.method || "GET"} ${path} -> ${response.status}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
+const suffix = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+const username = `e2e_${suffix}`;
+const email = `${username}@example.test`;
+const password = "E2E-long-password-12345!";
+
+await request("/health/");
+await request("/health/ready/");
+
+await request("/register/", {
+  method: "POST",
+  body: JSON.stringify({username, email, password, first_name: "E2E", last_name: "User"}),
+});
+
+const token = await request("/token/", {
+  method: "POST",
+  body: JSON.stringify({username, password}),
+});
+if (!token.access) throw new Error("Login did not return an access token.");
+
+const auth = {"Authorization": `Bearer ${token.access}`};
+const project = await request("/projects/", {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({title: "E2E Project", description: "validation", category: "General", status: "Planning", priority: "medium", tags: [], stack: []}),
+});
+if (!project.id) throw new Error("Project creation failed.");
+
+const task = await request("/tasks/", {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({project: project.id, title: "E2E task", status: "todo", priority: "high", tags: []}),
+});
+if (!task.id) throw new Error("Task creation failed.");
+
+const workspace = await request("/ide/workspaces/", {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({name: "E2E Workspace", files: {"main.py": "print(42)"}, active_file: "main.py"}),
+});
+if (!workspace.id) throw new Error("Workspace creation failed.");
+
+const ai = await request("/ai/actions/", {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({action: "plan", input: "Ship the E2E validation project safely.", project: project.id}),
+});
+if (!ai.answer) throw new Error("AI action returned no answer.");
+
+const usage = await request("/usage/", {headers: auth});
+if (!usage.metrics || usage.plan !== "free") throw new Error("Usage endpoint failed.");
+
+const sessions = await request("/auth/sessions/", {headers: auth});
+if (!Array.isArray(sessions)) throw new Error("Session management failed.");
+const mfa = await request("/auth/mfa/setup/", {method:"POST", headers: auth});
+if (!mfa.secret || !mfa.otpauth_uri) throw new Error("MFA setup failed.");
+await request("/analytics/events/", {method:"POST", headers: auth, body: JSON.stringify({name:"smoke_event", properties:{source:"ci"}})});
+const ticket = await request("/support/tickets/", {method:"POST", headers: auth, body: JSON.stringify({subject:"Smoke support ticket", body:"Automated production validation", priority:"low"})});
+if (!ticket.id) throw new Error("Support workflow failed.");
+const exportJob = await request("/account/export/", {method:"POST", headers: auth});
+if (!exportJob.id) throw new Error("Data export workflow failed.");
+
+console.log("E2E smoke PASS", JSON.stringify({
+  user: username,
+  project: project.id,
+  task: task.id,
+  workspace: workspace.id,
+  ai_mode: ai.mode,
+}));
