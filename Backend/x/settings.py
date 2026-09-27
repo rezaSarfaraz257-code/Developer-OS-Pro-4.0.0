@@ -34,15 +34,31 @@ def env_list(name, default=""):
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY")
-DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
+import os
+from django.core.exceptions import ImproperlyConfigured
 
-if not SECRET_KEY:
-    if DEBUG:
-        SECRET_KEY = "django-insecure-development-only"
-    else:
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DEBUG=False.")
 
+def get_secret_key():
+    key = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY")
+
+    if not key:
+        if os.getenv("DEBUG", "False").lower() in {"1", "true", "yes", "on"}:
+            return "django-insecure-development-only"
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be set when DEBUG=False."
+        )
+
+    return key
+
+
+SECRET_KEY = get_secret_key()
+
+DEBUG = os.getenv("DEBUG", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true" if not DEBUG else "false").lower() in {"1", "true", "yes", "on"}
