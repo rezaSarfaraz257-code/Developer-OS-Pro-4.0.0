@@ -19,4 +19,4 @@ RUN useradd --create-home --uid 10001 appuser \
 
 USER appuser
 
-CMD ["gunicorn", "x.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py migrate && exec gunicorn x.wsgi:application --bind 0.0.0.0:8000"]
