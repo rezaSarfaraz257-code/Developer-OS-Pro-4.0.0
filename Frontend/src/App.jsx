@@ -137,37 +137,135 @@ function Auth({ onReady }) {
   }, [path]);
 
   const submit = async (e) => {
-    e.preventDefault(); setBusy(true); setError(""); setNotice("");
-    try {
-      if (mode === "register") {
-        await register({username:form.username,password:form.password,email:form.email,first_name:form.first_name,last_name:form.last_name});
-        setMode("verify");
-        setNotice("Account created. Check your email and verify it before signing in.");
-      } else if (mode === "forgot") {
-        const r = await fetch(`${API_URL}/auth/password-reset/`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:form.email})});
-        const d = await r.json().catch(()=>({}));
-        if (!r.ok) throw new Error(formatApiError(d, "Unable to request password reset."));
-        setNotice(d.detail || "If the account exists, a reset email is on the way.");
-      } else if (mode === "reset") {
-        const params = new URLSearchParams(window.location.search);
-        const r = await fetch(`${API_URL}/auth/password-reset/confirm/`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:params.get("uid"),token:params.get("token"),password:resetPassword})});
-        const d = await r.json().catch(()=>({}));
-        if (!r.ok) throw new Error(formatApiError(d, "Password reset failed."));
-        setMode("login"); setNotice("Password changed. Sign in with your new password.");
-        const r = await fetch(`${API_URL}/auth/resend-verification/`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:form.email})});
-        const d = await r.json().catch(()=>({}));
-        if (!r.ok) throw new Error(formatApiError(d, "Unable to resend verification."));
-        setNotice(d.detail || "Verification email queued.");
-      } else {
-        const r = await fetch(`${API_URL}/token/`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:form.username,password:form.password,otp:form.otp,backup_code:form.backup_code})});
-        const d = await r.json().catch(()=>({}));
-        if (!r.ok) throw new Error(formatApiError(d, "Invalid credentials."));
-        sessionStorage.setItem("access",d.access); sessionStorage.setItem("refresh",d.refresh); onReady();
-      }
-    } catch (err) { setError(typeof err.message === "string" ? err.message : "Authentication failed."); }
-    finally { setBusy(false); }
-  };
+  e.preventDefault();
+  setBusy(true);
+  setError("");
+  setNotice("");
 
+  try {
+    if (mode === "register") {
+      await register({
+        username: form.username,
+        password: form.password,
+        email: form.email,
+        first_name: form.first_name,
+        last_name: form.last_name,
+      });
+
+      setMode("verify");
+      setNotice(
+        "Account created. Check your email and verify it before signing in."
+      );
+    } else if (mode === "forgot") {
+      const response = await fetch(`${API_URL}/auth/password-reset/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: form.email,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          formatApiError(data, "Unable to request password reset.")
+        );
+      }
+
+      setNotice(
+        data.detail || "If the account exists, a reset email is on the way."
+      );
+    } else if (mode === "verify") {
+      const response = await fetch(
+        `${API_URL}/auth/resend-verification/`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: form.email,
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          formatApiError(data, "Unable to resend verification.")
+        );
+      }
+
+      setNotice(data.detail || "Verification email queued.");
+    } else if (mode === "reset") {
+      const params = new URLSearchParams(window.location.search);
+
+      const response = await fetch(
+        `${API_URL}/auth/password-reset/confirm/`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            uid: params.get("uid"),
+            token: params.get("token"),
+            password: resetPassword,
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          formatApiError(data, "Password reset failed.")
+        );
+      }
+
+      setMode("login");
+      setNotice("Password changed. Sign in with your new password.");
+    } else {
+      const response = await fetch(`${API_URL}/token/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: form.username,
+          password: form.password,
+          otp: form.otp,
+          backup_code: form.backup_code,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          formatApiError(data, "Invalid credentials.")
+        );
+      }
+
+      sessionStorage.setItem("access", data.access);
+      sessionStorage.setItem("refresh", data.refresh);
+
+      onReady();
+    }
+  } catch (err) {
+    setError(
+      typeof err.message === "string"
+        ? err.message
+        : "Authentication failed."
+    );
+  } finally {
+    setBusy(false);
+  }
+};
   if (path === "/reset-password") return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card"><div className="auth-logo"><span>D</span><div>DEVELOPER OS<small>ACCOUNT RECOVERY</small></div></div><div className="auth-copy"><span>SECURE RESET</span><h1>Set a new password.</h1><p>Use a strong password of at least 12 characters. The reset token is single-use and time-limited.</p></div><form onSubmit={async (e)=>{e.preventDefault();setBusy(true);setError("");try{const params=new URLSearchParams(window.location.search);const r=await fetch(`${API_URL}/auth/password-reset/confirm/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:params.get("uid"),token:params.get("token"),password:resetPassword})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(formatApiError(d, "Password reset failed."));window.location.assign("/")}catch(err){setError(err.message)}finally{setBusy(false)}}}><input required type="password" minLength="12" placeholder="New password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)}/>{error&&<div className="error">{error}</div>}<button className="primary wide" disabled={busy}>{busy?"UPDATING...":"RESET PASSWORD →"}</button></form></div></div>;
 
   if (path === "/verify-email") return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card"><div className="auth-logo"><span>{linkState === "verified" ? "✓" : "D"}</span><div>DEVELOPER OS<small>EMAIL SECURITY</small></div></div><div className="auth-copy"><span>VERIFICATION</span><h1>{linkState === "verifying" ? "Verifying your email…" : linkState === "verified" ? "Email verified." : "Verification failed."}</h1><p>{notice || error || "Checking the secure verification link."}</p></div><button className="primary wide" onClick={()=>window.location.assign("/")}>CONTINUE TO SIGN IN →</button></div></div>;
