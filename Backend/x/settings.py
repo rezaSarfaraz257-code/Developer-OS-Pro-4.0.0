@@ -286,7 +286,9 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "json": {"()": "api.security.JsonLogFormatter"},
+        "json": {
+    "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+},
     },
     "handlers": {
         "console_json": {"class": "logging.StreamHandler", "formatter": "json"},
