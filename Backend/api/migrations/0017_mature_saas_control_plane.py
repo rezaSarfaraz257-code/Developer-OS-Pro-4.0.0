@@ -13,9 +13,22 @@ def mark_existing_profiles_verified(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [("api", "0016_saas_maturity")]
     operations = [
-        migrations.RunPython(mark_existing_profiles_verified, migrations.RunPython.noop),
-        migrations.AddField(model_name="userprofile", name="email_verified", field=models.BooleanField(default=False)),
-        migrations.AddField(model_name="userprofile", name="email_verified_at", field=models.DateTimeField(blank=True, null=True)),
+        migrations.AddField(
+        model_name="userprofile",
+        name="email_verified",
+        field=models.BooleanField(default=False),
+    ),
+
+    migrations.AddField(
+        model_name="userprofile",
+        name="email_verified_at",
+        field=models.DateTimeField(blank=True, null=True),
+    ),
+
+    migrations.RunPython(
+        mark_existing_profiles_verified,
+        migrations.RunPython.noop,
+    ),
         migrations.CreateModel(
             name="EmailVerificationToken",
             fields=[
