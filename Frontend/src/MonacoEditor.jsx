@@ -50,7 +50,7 @@ const languageForPath = (path = "") => {
   return ({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",html:"html",htm:"html",css:"css",scss:"scss",json:"json",md:"markdown",yaml:"yaml",yml:"yaml",sql:"sql",sh:"shell",bash:"shell",go:"go",rs:"rust",java:"java",php:"php",xml:"xml",vue:"html",c:"c",cpp:"cpp",h:"cpp",hpp:"cpp",txt:"plaintext",env:"plaintext"})[ext] || "plaintext";
 };
 
-export default function MonacoEditor({ path, value, onChange, onCursorChange }) {
+export default function MonacoEditor({ path, value, onChange, onCursorChange, diagnostics = [] }) {
   const hostRef = useRef(null);
   const editorRef = useRef(null);
   const modelRef = useRef(null);
@@ -97,6 +97,21 @@ export default function MonacoEditor({ path, value, onChange, onCursorChange }) 
     const next = value || "";
     if (model && model.getValue() !== next && !editorRef.current?.hasTextFocus()) model.setValue(next);
   }, [value]);
+
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model) return;
+    const markers = (diagnostics || []).filter((item) => !item.path || item.path === path).map((item) => ({
+      startLineNumber: Math.max(1, item.line || 1),
+      endLineNumber: Math.max(1, item.line || 1),
+      startColumn: Math.max(1, item.column || 1),
+      endColumn: Math.max(2, (item.column || 1) + 1),
+      message: item.message || "Diagnostic",
+      severity: item.severity === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
+    }));
+    monaco.editor.setModelMarkers(model, "developer-os", markers);
+    return () => monaco.editor.setModelMarkers(model, "developer-os", []);
+  }, [diagnostics, path]);
 
   return <div ref={hostRef} className="monaco-host" aria-label={`Developer OS code editor ${path || "untitled"}`} />;
 }
