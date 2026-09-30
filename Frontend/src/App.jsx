@@ -77,13 +77,13 @@ function Shell({ user, onLogout, children, go, current }) {
         </button>
         <div className="rail-section">WORKSPACE</div>
         {nav.slice(0, 6).map(([id, icon, label]) => (
-          <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(id === "dashboard" ? "/" : `/${id}`)}>
+          <button key={id} title={label} aria-label={label} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(id === "dashboard" ? "/" : `/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
         ))}
         <div className="rail-section">SYSTEM</div>
         {nav.slice(6).map(([id, icon, label]) => (
-          <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(`/${id}`)}>
+          <button key={id} title={label} aria-label={label} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(`/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
         ))}
