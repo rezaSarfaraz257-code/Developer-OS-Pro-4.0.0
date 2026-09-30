@@ -29,17 +29,6 @@ function useRoute() {
   }];
 }
 
-async function login(username, password) {
-  const r = await fetch(`${API_URL}/token/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Invalid credentials.");
-  sessionStorage.setItem("access", data.access);
-  sessionStorage.setItem("refresh", data.refresh);
-}
 
 async function register(payload) {
   const r = await fetch(`${API_URL}/register/`, {
