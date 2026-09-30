@@ -27,16 +27,19 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 @media(max-width:680px){.explore-grid-pro{grid-template-columns:1fr}}
 
 
-/* Compact icon-only navigation */
+/* Compact icon-only navigation — D first, then evenly spaced icons */
 @media (min-width:721px){
-  .os-rail{width:72px;padding:16px 8px;align-items:center;overflow:hidden;transition:width .22s ease,box-shadow .22s ease;}
-  .os-rail .brand{width:52px;justify-content:center;padding:5px 0 20px;}
+  .os-rail{width:72px;padding:14px 8px;align-items:center;overflow:hidden;}
+  .os-rail .brand{width:52px;height:48px;margin:0 0 12px;padding:0;display:flex;align-items:center;justify-content:center;}
+  .os-rail .brand-mark{width:38px;height:38px;margin:0;}
   .os-rail .brand-text,.os-rail .rail-section,.os-rail .rail-item em,.os-rail .status-chip,.os-rail .profile-mini span:not(.avatar){display:none!important;}
-  .os-rail .rail-item{width:52px;height:44px;padding:0;justify-content:center;gap:0;margin:3px 0;}
-  .os-rail .rail-item span{width:100%;font-size:19px;text-align:center;}
+  .os-rail .rail-item{width:52px;height:44px;min-height:44px;margin:3px 0;padding:0;display:flex;align-items:center;justify-content:center;gap:0;}
+  .os-rail .rail-item span{width:100%;height:100%;display:grid;place-items:center;font-size:19px;line-height:1;}
+  .os-rail .rail-spacer{flex:1;min-height:18px;}
   .os-rail .status-chip{width:52px;height:28px;display:grid!important;place-items:center;padding:0;font-size:0;}
   .os-rail .status-chip i{margin:0;}
-  .os-rail .profile-mini{width:52px;height:46px;padding:0;justify-content:center;}
+  .os-rail .profile-mini{width:52px;height:46px;padding:0;margin-top:8px;display:flex;align-items:center;justify-content:center;}
   .os-main{margin-left:72px;width:calc(100% - 72px);}
-  .os-rail .rail-item:hover{transform:translateX(1px);}
+  .os-rail .rail-item:hover{background:#0b111a;transform:none;}
+  .os-rail .rail-item.active{background:linear-gradient(90deg,rgba(67,232,255,.12),transparent);border-color:#1b3240;}
 }
