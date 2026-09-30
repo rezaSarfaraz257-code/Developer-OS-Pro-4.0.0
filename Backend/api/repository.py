@@ -15,7 +15,6 @@ from copy import deepcopy
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -128,24 +127,35 @@ def repositories_api(request):
     except ValueError as exc:
         return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    repo = CodeWorkspace.objects.create(
-        owner=request.user,
-        name=name,
-        runtime=REPOSITORY_RUNTIME,
-        framework=DEFAULT_BRANCH,
-        package_manager="developer-os",
-        files=files,
-        active_file=next(iter(files), "README.md"),
-        language="polyglot",
-    )
-    Activity.objects.create(
-        actor=request.user,
-        verb="created a repository",
-        message=name,
-        related_type="repository",
-        related_id=repo.id,
-        metadata={"branch": DEFAULT_BRANCH, "file_count": len(files)},
-    )
+    with transaction.atomic():
+        repo = CodeWorkspace.objects.create(
+            owner=request.user,
+            name=name,
+            runtime=REPOSITORY_RUNTIME,
+            framework=DEFAULT_BRANCH,
+            package_manager="developer-os",
+            files=files,
+            active_file=next(iter(files), "README.md"),
+            language="polyglot",
+        )
+        initial_message = "Initial repository snapshot"
+        initial_hash = _commit_hash(repo.id, DEFAULT_BRANCH, initial_message, None, files)
+        Activity.objects.create(
+            actor=request.user,
+            verb="created repository",
+            message=initial_message,
+            related_type="repository_commit",
+            related_id=repo.id,
+            metadata={"hash": initial_hash, "branch": DEFAULT_BRANCH, "parent": None, "files": deepcopy(files)},
+        )
+        Activity.objects.create(
+            actor=request.user,
+            verb="created a repository",
+            message=name,
+            related_type="repository",
+            related_id=repo.id,
+            metadata={"branch": DEFAULT_BRANCH, "file_count": len(files)},
+        )
     return Response(_repo_payload(repo, request.user, include_files=True), status=status.HTTP_201_CREATED)
 
 
@@ -218,7 +228,11 @@ def repository_push_api(request, pk):
 def repository_history_api(request, pk):
     repo = _repo(request.user, pk)
     branch = str(request.query_params.get("branch") or repo.framework or DEFAULT_BRANCH)
-    limit = min(max(int(request.query_params.get("limit") or 50), 1), 100)
+    try:
+        requested_limit = int(request.query_params.get("limit") or 50)
+    except (TypeError, ValueError):
+        requested_limit = 50
+    limit = min(max(requested_limit, 1), 100)
     commits = _commit_qs(request.user, repo.id, branch)[:limit]
     return Response([_commit_payload(commit) for commit in commits])
 
