@@ -7,7 +7,7 @@ import hmac
 import json
 
 from django.contrib.auth.models import User
-from django.db import connection
+from django.db import connection, DatabaseError
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -2724,6 +2724,7 @@ def ai_chat_api(request):
               "Use only the supplied workspace context for project facts. Be explicit about uncertainty. "
               "Return practical, technically precise steps. You may review architecture, tasks, notes and snippets.")
     answer = ""
+    provider_error = None
     if provider_url and provider_key and provider_model:
         try:
             messages = [{"role":"system","content":system}] + [
@@ -2731,12 +2732,28 @@ def ai_chat_api(request):
                 if item["role"] in {"user", "assistant"}
             ]
             messages.append({"role":"user","content":json.dumps({"workspace":context,"request":message}, default=str)})
-            upstream = requests.post(f"{provider_url}/chat/completions", headers={"Authorization":f"Bearer {provider_key}","Content-Type":"application/json"},
-                                     json={"model":provider_model,"temperature":0.15,"messages":messages}, timeout=35)
+            endpoint = provider_url.rstrip("/")
+            if not endpoint.endswith("/chat/completions"):
+                endpoint = f"{endpoint}/chat/completions"
+            upstream = requests.post(
+                endpoint,
+                headers={"Authorization":f"Bearer {provider_key}","Content-Type":"application/json"},
+                json={"model":provider_model,"temperature":0.15,"messages":messages},
+                timeout=(5, 35),
+            )
             upstream.raise_for_status()
-            answer = upstream.json().get("choices",[{}])[0].get("message",{}).get("content","").strip()
-        except (requests.RequestException, ValueError, IndexError, KeyError):
-            answer = ""
+            payload = upstream.json()
+            answer = str(payload.get("choices",[{}])[0].get("message",{}).get("content","") or "").strip()
+            if not answer:
+                provider_error = "AI provider returned an empty response."
+        except requests.Timeout:
+            provider_error = "AI provider timed out. Developer OS used its safe local engine instead."
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else 502
+            provider_error = f"AI provider rejected the request ({code}). Developer OS used its safe local engine instead."
+        except (requests.RequestException, ValueError, IndexError, KeyError, TypeError):
+            provider_error = "AI provider is temporarily unavailable. Developer OS used its safe local engine instead."
+
     if not answer:
         tasks = context["tasks"]
         blocked = [t for t in tasks if t["status"]=="blocked"]
@@ -2747,7 +2764,16 @@ def ai_chat_api(request):
             f"There are {len(blocked)} blocked and {len(urgent)} urgent active tasks. "
             "Connect an OpenAI-compatible provider for generative reasoning; the local engine will keep returning deterministic workspace signals."
         )
-    assistant_msg = AIMessage.objects.create(conversation=conversation, role="assistant", content=answer, context=context)
-    return Response({"conversation": AIConversationSerializer(conversation).data, "message": AIMessageSerializer(assistant_msg).data, "context": context})
+    try:
+        assistant_msg = AIMessage.objects.create(conversation=conversation, role="assistant", content=answer, context=context)
+        message_payload = AIMessageSerializer(assistant_msg).data
+        conversation_payload = AIConversationSerializer(conversation).data
+    except DatabaseError:
+        message_payload = {"id": None, "role": "assistant", "content": answer, "context": context}
+        conversation_payload = {"id": getattr(conversation, "id", None), "title": getattr(conversation, "title", "Workspace Intelligence")}
+    payload = {"conversation": conversation_payload, "message": message_payload, "context": context}
+    if provider_error:
+        payload["provider_status"] = provider_error
+    return Response(payload)
 
 
