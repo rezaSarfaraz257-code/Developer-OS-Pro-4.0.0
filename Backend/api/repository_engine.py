@@ -241,9 +241,8 @@ def native_branch_api(request, pk):
     if not source_head:
         return Response({"error": "Source branch has no commits."}, status=404)
     if branch not in _branch_heads(request.user, repo):
-        payload = _read_object(request.user, repo.id, "commit", source_head)
         files = _commit_files(request.user, repo, source_head)
-        _commit(request.user, repo, branch, f"Create branch {branch}", files, None, user.username if False else request.user.username)
+        _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
     repo.framework = branch
     repo.files = _commit_files(request.user, repo, _head(request.user, repo, branch) or source_head)
     repo.save()
@@ -272,7 +271,16 @@ def native_merge_api(request, pk):
     merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
     if conflicts:
         return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
-    oid, tree, _ = _commit(request.user, repo, target, str(request.data.get("message") or f"Merge {source} into {target}"), merged, target_head)
+    merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
+    oid, tree, _ = _commit(request.user, repo, target, merge_message, merged, target_head)
+    merge_row = _commits(request.user, repo.id, target).filter(metadata__oid=oid).first()
+    if merge_row:
+        meta = merge_row.metadata or {}
+        payload = meta.get("payload") or {}
+        payload["second_parent"] = source_head
+        meta["payload"] = payload
+        merge_row.metadata = meta
+        merge_row.save(update_fields=["metadata"])
     repo.framework, repo.files = target, merged
     repo.save()
     return Response({"merged": True, "commit": {"id": oid, "tree": tree, "parent": target_head, "second_parent": source_head}})
@@ -290,7 +298,8 @@ def native_diff_api(request, pk):
     if not rows:
         return Response({"branch": branch, "files": []})
     current = _commit_files(request.user, repo, rows[0].metadata["oid"])
-    previous = _commit_files(request.user, repo, (rows[0].metadata.get("payload") or {}).get("parent")) if len(rows) or rows[0].metadata.get("payload", {}).get("parent") else {}
+    parent_oid = (rows[0].metadata.get("payload") or {}).get("parent")
+    previous = _commit_files(request.user, repo, parent_oid) if parent_oid else {}
     changes = []
     for path in sorted(set(current) | set(previous)):
         if path not in previous:
