@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "./services/api";
+import MonacoEditor from "./MonacoEditor";
 import "./ProIDE.css";
 
 const extLanguage = (path = "") => {
@@ -239,7 +240,6 @@ export default function ProIDE({ projectId, message }) {
     return "echo 'No automatic checker configured for this runtime'";
   }, [ws?.runtime]);
 
-  const lineNumbers = useMemo(() => String(files[active] || "").split("\n").map((_, i) => i + 1).join("\n"), [files, active]);
   const visibleFiles = useMemo(() => Object.keys(files).filter((path) => !quickOpen || path.toLowerCase().includes(quickOpen.toLowerCase())), [files, quickOpen]);
 
   useEffect(() => {
@@ -299,8 +299,7 @@ export default function ProIDE({ projectId, message }) {
           {active && <div className="ide-tab active"><span>{active.split("/").pop()}</span>{dirty && <b>●</b>}<em>{extLanguage(active)}</em><button onClick={deleteFile} title="Delete file">×</button></div>}
         </div>
         <div className="ide-editor">
-          <pre className="ide-lines">{lineNumbers}</pre>
-          <textarea ref={editorRef} value={files[active] || ""} onChange={(e) => updateContent(e.target.value)} onSelect={(e) => updateCursor(e.target)} onKeyUp={(e) => updateCursor(e.target)} spellCheck="false" autoCapitalize="off" autoCorrect="off" placeholder="Select a file or create one…" aria-label={`Editor ${active || "empty"}`} />
+          <MonacoEditor path={active} value={files[active] || ""} onChange={updateContent} onCursorChange={setCursor} />
         </div>
         <footer className="ide-footer"><span>{active || "No file selected"}</span><span>Ln {cursor.line}, Col {cursor.column}</span><span>{extLanguage(active)} · UTF-8</span><span>{(files[active] || "").length.toLocaleString()} chars</span><span>{dirty ? "Modified" : "Synced"}</span></footer>
       </section>
