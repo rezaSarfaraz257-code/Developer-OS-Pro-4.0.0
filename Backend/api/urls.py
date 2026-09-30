@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import mature
 from . import repository
+from . import repository_engine
 
 urlpatterns = [
     path("auth/verify-email/", mature.verify_email_api, name="verify-email"),
@@ -76,6 +77,13 @@ urlpatterns = [
     path("repositories/<int:pk>/history/", repository.repository_history_api, name="repository-history"),
     path("repositories/<int:pk>/branch/", repository.repository_branch_api, name="repository-branch"),
     path("repositories/<int:pk>/clone/", repository.repository_clone_api, name="repository-clone"),
+    path("repositories/<int:pk>/native/refs/", repository_engine.refs_api, name="repository-native-refs"),
+    path("repositories/<int:pk>/native/commits/", repository_engine.native_commit_api, name="repository-native-commits"),
+    path("repositories/<int:pk>/native/branches/", repository_engine.native_branch_api, name="repository-native-branches"),
+    path("repositories/<int:pk>/native/merge/", repository_engine.native_merge_api, name="repository-native-merge"),
+    path("repositories/<int:pk>/native/diff/", repository_engine.native_diff_api, name="repository-native-diff"),
+    path("repositories/<int:pk>/native/tags/", repository_engine.native_tag_api, name="repository-native-tag"),
+    path("repositories/<int:pk>/native/tags/list/", repository_engine.native_tag_list_api, name="repository-native-tags"),
     path("api-keys/", views.api_keys_api, name="api-keys"),
     path("subscription/", views.subscription_api, name="subscription"),
     path("billing/portal/", views.billing_portal_api, name="billing-portal"),
