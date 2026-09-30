@@ -55,7 +55,6 @@ export default function ProIDE({ projectId, message }) {
   const [dirty, setDirty] = useState(false);
   const [showTerminal, setShowTerminal] = useState(true);
   const [quickOpen, setQuickOpen] = useState("");
-  const [findText, setFindText] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [diagnostics, setDiagnostics] = useState([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -70,7 +69,6 @@ export default function ProIDE({ projectId, message }) {
   const [repoMessage, setRepoMessage] = useState("");
   const [sourceOpen, setSourceOpen] = useState(true);
   const diagnosticsTimer = useRef(null);
-  const editorRef = useRef(null);
   const autosaveTimer = useRef(null);
   const filesRef = useRef(files);
   const wsRef = useRef(ws);
@@ -114,7 +112,7 @@ export default function ProIDE({ projectId, message }) {
         const current = data.current || names[0] || "main";
         setRepoBranch(current);
         await refreshSourceControl(current);
-      } catch (_) {}
+      } catch (e) { message?.(e.message); }
     })();
   }, [repoId]);
 
@@ -200,14 +198,6 @@ export default function ProIDE({ projectId, message }) {
       setDiagnostics(data.diagnostics || []);
       if (data.status === "failed") setStatus(String((data.diagnostics || []).length || 1) + " diagnostic(s)");
     } catch (e) { setStatus("Diagnostics unavailable: " + e.message); }
-  }
-
-  function updateCursor(target) {
-    if (!target) return;
-    const pos = target.selectionStart || 0;
-    const before = String(target.value || "").slice(0, pos);
-    const lines = before.split("\n");
-    setCursor({ line: lines.length, column: lines[lines.length - 1].length + 1 });
   }
 
   async function openFile(path) {
