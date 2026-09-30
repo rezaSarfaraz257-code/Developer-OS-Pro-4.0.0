@@ -56,8 +56,10 @@ export default function MonacoEditor({ path, value, onChange, onCursorChange, di
   const modelRef = useRef(null);
   const changeRef = useRef(onChange);
   const cursorRef = useRef(onCursorChange);
-  changeRef.current = onChange;
-  cursorRef.current = onCursorChange;
+  useEffect(() => {
+    changeRef.current = onChange;
+    cursorRef.current = onCursorChange;
+  }, [onChange, onCursorChange]);
 
   useEffect(() => {
     if (!hostRef.current || editorRef.current) return undefined;
