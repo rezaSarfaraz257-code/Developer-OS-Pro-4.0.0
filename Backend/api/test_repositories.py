@@ -83,3 +83,74 @@ class IndependentRepositoryApiTests(APITestCase):
         self.assertNotEqual(created.data["id"], clone.data["id"])
         self.assertEqual(clone.data["files"]["README.md"], "source")
         self.assertTrue(Activity.objects.filter(actor=self.user, related_type="repository_commit", related_id=clone.data["id"]).exists())
+
+
+class NativeRepositoryEngineTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="native-user", password="long-test-password-123")
+        self.client.force_authenticate(user=self.user)
+
+    def repo(self):
+        response = self.client.post(
+            "/api/repositories/",
+            {"name": "Native Engine", "files": {"README.md": "# Native\n", "app.py": "print(1)"}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response.data["id"]
+
+    def test_native_commit_creates_content_addressed_tree(self):
+        repo_id = self.repo()
+        response = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "Update app", "files": {"README.md": "# Native\n", "app.py": "print(2)"}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["commit"]["id"]), 64)
+        refs = self.client.get(f"/api/repositories/{repo_id}/native/refs/")
+        self.assertEqual(refs.status_code, status.HTTP_200_OK)
+        self.assertEqual(refs.data["head"], response.data["commit"]["id"])
+
+    def test_native_branch_and_merge_with_conflict_detection(self):
+        repo_id = self.repo()
+        branch = self.client.post(
+            f"/api/repositories/{repo_id}/native/branches/",
+            {"branch": "feature/test", "from": "main"},
+            format="json",
+        )
+        self.assertEqual(branch.status_code, status.HTTP_200_OK)
+        update = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "feature/test", "message": "Feature", "files": {"README.md": "# Native\n", "app.py": "print(2)"}},
+            format="json",
+        )
+        self.assertEqual(update.status_code, status.HTTP_201_CREATED)
+        merge = self.client.post(
+            f"/api/repositories/{repo_id}/native/merge/",
+            {"source": "feature/test", "target": "main"},
+            format="json",
+        )
+        self.assertEqual(merge.status_code, status.HTTP_200_OK)
+        self.assertTrue(merge.data["merged"])
+
+    def test_native_diff_and_tags(self):
+        repo_id = self.repo()
+        commit = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "Change", "files": {"README.md": "# Native\n", "app.py": "print(99)"}},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, status.HTTP_201_CREATED)
+        diff = self.client.get(f"/api/repositories/{repo_id}/native/diff/?branch=main")
+        self.assertEqual(diff.status_code, status.HTTP_200_OK)
+        self.assertIn("app.py", [item["path"] for item in diff.data["files"]])
+        tag = self.client.post(
+            f"/api/repositories/{repo_id}/native/tags/",
+            {"name": "v1.0.0", "branch": "main"},
+            format="json",
+        )
+        self.assertEqual(tag.status_code, status.HTTP_201_CREATED)
+        tags = self.client.get(f"/api/repositories/{repo_id}/native/tags/list/")
+        self.assertEqual(tags.status_code, status.HTTP_200_OK)
+        self.assertEqual(tags.data[0]["name"], "v1.0.0")
