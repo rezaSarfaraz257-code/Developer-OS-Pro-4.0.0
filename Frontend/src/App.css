@@ -28,45 +28,44 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 
 
 
-/* Named navigation rail — D first, icons + labels aligned */
+
+/* Hover-expand navigation — icon only at rest, icon + name on hover */
 @media (min-width:721px){
   .os-rail{
-    width:220px;
-    padding:16px 12px;
-    align-items:stretch;
-    overflow:hidden;
+    width:72px;
+    padding:14px 8px;
+    align-items:center;
+    overflow:visible;
+    transition:width .2s ease, box-shadow .2s ease;
   }
   .os-rail .brand{
-    width:100%;
-    height:52px;
-    margin:0 0 14px;
-    padding:0 10px;
+    width:52px;
+    height:48px;
+    margin:0 0 12px;
+    padding:0;
     display:flex;
     align-items:center;
-    justify-content:flex-start;
+    justify-content:center;
   }
-  .os-rail .brand-mark{
-    width:38px;
-    height:38px;
-    margin:0;
-    flex:none;
-  }
-  .os-rail .brand-text{
-    display:block!important;
-  }
-  .os-rail .rail-section{
-    display:block!important;
+  .os-rail .brand-mark{width:38px;height:38px;margin:0;flex:none;}
+  .os-rail .brand-text,
+  .os-rail .rail-section,
+  .os-rail .rail-item em,
+  .os-rail .status-chip,
+  .os-rail .profile-mini span:not(.avatar){
+    display:none!important;
   }
   .os-rail .rail-item{
-    width:100%;
+    width:52px;
     height:44px;
     min-height:44px;
     margin:3px 0;
-    padding:0 12px;
+    padding:0;
     display:flex;
     align-items:center;
-    justify-content:flex-start;
+    justify-content:center;
     gap:13px;
+    flex:none;
   }
   .os-rail .rail-item span{
     width:20px;
@@ -74,38 +73,85 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     display:grid;
     place-items:center;
     flex:none;
-    font-size:18px;
+    font-size:19px;
     line-height:1;
   }
-  .os-rail .rail-item em{
-    display:block!important;
-    font-style:normal;
-    font-size:11px;
-    white-space:nowrap;
-  }
+  .os-rail .rail-spacer{flex:1;min-height:18px;}
   .os-rail .status-chip{
-    display:flex!important;
-    width:auto;
-    height:auto;
-    padding:10px;
-    font-size:8px;
+    width:52px;
+    height:28px;
+    display:grid!important;
+    place-items:center;
+    padding:0;
+    font-size:0;
   }
-  .os-rail .status-chip i{margin-right:7px;}
+  .os-rail .status-chip i{margin:0;}
   .os-rail .profile-mini{
-    width:100%;
-    height:auto;
-    padding:9px;
+    width:52px;
+    height:46px;
+    padding:0;
     margin-top:8px;
     display:flex;
     align-items:center;
-    justify-content:flex-start;
-  }
-  .os-rail .profile-mini span:not(.avatar){
-    display:block!important;
+    justify-content:center;
   }
   .os-main{
-    margin-left:220px;
-    width:calc(100% - 220px);
+    margin-left:72px;
+    width:calc(100% - 72px);
+    transition:margin-left .2s ease,width .2s ease;
+  }
+
+  /* Hover/focus: expand the whole rail and reveal names */
+  .os-rail:hover,
+  .os-rail:focus-within{
+    width:220px;
+    align-items:stretch;
+    padding:16px 12px;
+    box-shadow:18px 0 45px rgba(0,0,0,.28);
+  }
+  .os-rail:hover .brand,
+  .os-rail:focus-within .brand{
+    width:100%;
+    height:52px;
+    margin:0 0 14px;
+    padding:0 10px;
+    justify-content:flex-start;
+  }
+  .os-rail:hover .brand-text,
+  .os-rail:focus-within .brand-text,
+  .os-rail:hover .rail-section,
+  .os-rail:focus-within .rail-section,
+  .os-rail:hover .rail-item em,
+  .os-rail:focus-within .rail-item em,
+  .os-rail:hover .status-chip,
+  .os-rail:focus-within .status-chip,
+  .os-rail:hover .profile-mini span:not(.avatar),
+  .os-rail:focus-within .profile-mini span:not(.avatar){
+    display:block!important;
+  }
+  .os-rail:hover .rail-item,
+  .os-rail:focus-within .rail-item{
+    width:100%;
+    height:44px;
+    padding:0 12px;
+    justify-content:flex-start;
+  }
+  .os-rail:hover .status-chip,
+  .os-rail:focus-within .status-chip{
+    width:auto;
+    height:auto;
+    padding:10px;
+    display:flex!important;
+    font-size:8px;
+  }
+  .os-rail:hover .status-chip i,
+  .os-rail:focus-within .status-chip i{margin-right:7px;}
+  .os-rail:hover .profile-mini,
+  .os-rail:focus-within .profile-mini{
+    width:100%;
+    height:auto;
+    padding:9px;
+    justify-content:flex-start;
   }
   .os-rail .rail-item:hover{
     background:#0b111a;
