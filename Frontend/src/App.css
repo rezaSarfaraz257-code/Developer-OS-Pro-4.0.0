@@ -29,25 +29,60 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 
 
 
-/* Hover-expand navigation — icon only at rest, icon + name on hover */
+
+/* Developer OS — cinematic command rail */
 @media (min-width:721px){
   .os-rail{
     width:72px;
     padding:14px 8px;
     align-items:center;
     overflow:visible;
-    transition:width .2s ease, box-shadow .2s ease;
+    background:
+      radial-gradient(circle at 50% 0%,rgba(67,232,255,.09),transparent 28%),
+      linear-gradient(180deg,rgba(8,13,21,.97),rgba(3,6,11,.98));
+    border-right:1px solid rgba(67,232,255,.12);
+    box-shadow:inset -1px 0 rgba(255,255,255,.015),12px 0 45px rgba(0,0,0,.18);
+    transition:width .24s cubic-bezier(.2,.8,.2,1),padding .24s ease,box-shadow .24s ease;
+  }
+  .os-rail::before{
+    content:"";
+    position:absolute;
+    top:0;left:0;bottom:0;
+    width:1px;
+    background:linear-gradient(180deg,transparent,var(--cyan),transparent);
+    opacity:.22;
   }
   .os-rail .brand{
-    width:52px;
-    height:48px;
-    margin:0 0 12px;
+    position:relative;
+    width:52px;height:50px;
+    margin:0 0 13px;
     padding:0;
     display:flex;
     align-items:center;
     justify-content:center;
+    border:1px solid rgba(67,232,255,.14);
+    border-radius:10px;
+    background:linear-gradient(145deg,rgba(67,232,255,.055),rgba(141,124,255,.025));
+    box-shadow:inset 0 0 22px rgba(67,232,255,.025),0 8px 25px rgba(0,0,0,.18);
+    transition:all .24s ease;
   }
-  .os-rail .brand-mark{width:38px;height:38px;margin:0;flex:none;}
+  .os-rail .brand::after{
+    content:"";
+    position:absolute;
+    width:7px;height:7px;
+    right:5px;top:5px;
+    border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 10px var(--green);
+  }
+  .os-rail .brand-mark{
+    width:36px;height:36px;
+    margin:0;
+    border-radius:8px;
+    background:radial-gradient(circle at 50% 35%,rgba(67,232,255,.13),transparent 65%);
+    text-shadow:0 0 16px rgba(67,232,255,.7);
+    box-shadow:0 0 24px rgba(67,232,255,.08),inset 0 0 12px rgba(67,232,255,.04);
+  }
   .os-rail .brand-text,
   .os-rail .rail-section,
   .os-rail .rail-item em,
@@ -55,9 +90,14 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-rail .profile-mini span:not(.avatar){
     display:none!important;
   }
+  .os-rail .rail-section{
+    position:relative;
+    font-size:8px;
+    letter-spacing:.2em;
+  }
   .os-rail .rail-item{
-    width:52px;
-    height:44px;
+    position:relative;
+    width:52px;height:44px;
     min-height:44px;
     margin:3px 0;
     padding:0;
@@ -66,53 +106,100 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     justify-content:center;
     gap:13px;
     flex:none;
+    border:1px solid transparent;
+    border-radius:9px;
+    color:#63778d;
+    transition:all .18s ease;
+  }
+  .os-rail .rail-item::before{
+    content:"";
+    position:absolute;
+    left:-8px;
+    width:2px;height:0;
+    border-radius:2px;
+    background:var(--cyan);
+    box-shadow:0 0 12px rgba(67,232,255,.8);
+    transition:height .18s ease;
   }
   .os-rail .rail-item span{
-    width:20px;
-    height:20px;
+    width:20px;height:20px;
     display:grid;
     place-items:center;
     flex:none;
-    font-size:19px;
+    font-size:18px;
     line-height:1;
+    filter:drop-shadow(0 0 0 transparent);
+    transition:transform .18s ease,color .18s ease,filter .18s ease;
+  }
+  .os-rail .rail-item:hover{
+    background:linear-gradient(90deg,rgba(67,232,255,.10),rgba(67,232,255,.025));
+    border-color:rgba(67,232,255,.12);
+    color:#dffbff;
+    transform:translateX(2px);
+  }
+  .os-rail .rail-item:hover span{
+    color:var(--cyan);
+    transform:scale(1.08);
+    filter:drop-shadow(0 0 7px rgba(67,232,255,.45));
+  }
+  .os-rail .rail-item.active{
+    background:linear-gradient(90deg,rgba(67,232,255,.15),rgba(67,232,255,.035));
+    border-color:rgba(67,232,255,.2);
+    color:var(--cyan);
+    box-shadow:inset 0 0 20px rgba(67,232,255,.025),0 5px 20px rgba(0,0,0,.12);
+  }
+  .os-rail .rail-item.active::before{height:22px;}
+  .os-rail .rail-item.active span{
+    filter:drop-shadow(0 0 7px rgba(67,232,255,.4));
   }
   .os-rail .rail-spacer{flex:1;min-height:18px;}
   .os-rail .status-chip{
-    width:52px;
-    height:28px;
+    width:52px;height:28px;
     display:grid!important;
     place-items:center;
     padding:0;
     font-size:0;
+    opacity:.8;
   }
-  .os-rail .status-chip i{margin:0;}
+  .os-rail .status-chip i{
+    margin:0;
+    box-shadow:0 0 14px var(--green);
+  }
   .os-rail .profile-mini{
-    width:52px;
-    height:46px;
+    width:52px;height:46px;
     padding:0;
     margin-top:8px;
     display:flex;
     align-items:center;
     justify-content:center;
+    border-color:rgba(67,232,255,.1);
+    background:linear-gradient(145deg,rgba(12,19,30,.95),rgba(7,11,18,.95));
+    transition:all .2s ease;
+  }
+  .os-rail .profile-mini:hover{
+    border-color:rgba(67,232,255,.25);
+    box-shadow:0 0 25px rgba(67,232,255,.06);
+  }
+  .os-rail .avatar{
+    box-shadow:0 0 18px rgba(67,232,255,.08);
   }
   .os-main{
     margin-left:72px;
     width:calc(100% - 72px);
-    transition:margin-left .2s ease,width .2s ease;
+    transition:margin-left .24s ease,width .24s ease;
   }
 
-  /* Hover/focus: expand the whole rail and reveal names */
+  /* Hover expansion */
   .os-rail:hover,
   .os-rail:focus-within{
-    width:220px;
+    width:236px;
     align-items:stretch;
     padding:16px 12px;
-    box-shadow:18px 0 45px rgba(0,0,0,.28);
+    box-shadow:24px 0 70px rgba(0,0,0,.38),inset -1px 0 rgba(67,232,255,.08);
   }
   .os-rail:hover .brand,
   .os-rail:focus-within .brand{
-    width:100%;
-    height:52px;
+    width:100%;height:52px;
     margin:0 0 14px;
     padding:0 10px;
     justify-content:flex-start;
@@ -129,17 +216,20 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-rail:focus-within .profile-mini span:not(.avatar){
     display:block!important;
   }
+  .os-rail:hover .brand{
+    box-shadow:inset 0 0 30px rgba(67,232,255,.05),0 10px 35px rgba(0,0,0,.22);
+  }
   .os-rail:hover .rail-item,
   .os-rail:focus-within .rail-item{
     width:100%;
-    height:44px;
     padding:0 12px;
     justify-content:flex-start;
   }
+  .os-rail:hover .rail-item::before,
+  .os-rail:focus-within .rail-item::before{left:-12px;}
   .os-rail:hover .status-chip,
   .os-rail:focus-within .status-chip{
-    width:auto;
-    height:auto;
+    width:auto;height:auto;
     padding:10px;
     display:flex!important;
     font-size:8px;
@@ -148,17 +238,16 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-rail:focus-within .status-chip i{margin-right:7px;}
   .os-rail:hover .profile-mini,
   .os-rail:focus-within .profile-mini{
-    width:100%;
-    height:auto;
+    width:100%;height:auto;
     padding:9px;
     justify-content:flex-start;
   }
-  .os-rail .rail-item:hover{
-    background:#0b111a;
-    transform:none;
+  .os-rail:hover .rail-item em,
+  .os-rail:focus-within .rail-item em{
+    animation:railLabelIn .2s ease both;
   }
-  .os-rail .rail-item.active{
-    background:linear-gradient(90deg,rgba(67,232,255,.12),transparent);
-    border-color:#1b3240;
-  }
+}
+@keyframes railLabelIn{
+  from{opacity:0;transform:translateX(-6px);filter:blur(2px)}
+  to{opacity:1;transform:none;filter:none}
 }
