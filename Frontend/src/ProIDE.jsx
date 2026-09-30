@@ -57,6 +57,8 @@ export default function ProIDE({ projectId, message }) {
   const [quickOpen, setQuickOpen] = useState("");
   const [findText, setFindText] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [diagnostics, setDiagnostics] = useState([]);
+  const diagnosticsTimer = useRef(null);
   const editorRef = useRef(null);
   const autosaveTimer = useRef(null);
   const filesRef = useRef(files);
@@ -83,7 +85,7 @@ export default function ProIDE({ projectId, message }) {
     if (!ws && workspaces[0]) openWorkspace(workspaces[0]);
   }, [workspaces, ws]);
 
-  useEffect(() => () => clearTimeout(autosaveTimer.current), []);
+  useEffect(() => () => { clearTimeout(autosaveTimer.current); clearTimeout(diagnosticsTimer.current); }, []);
 
   async function openWorkspace(item) {
     if (!item) return;
@@ -117,7 +119,21 @@ export default function ProIDE({ projectId, message }) {
     setStatus("Unsaved changes · autosave scheduled");
     clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => void saveFile(true), 1200);
-    updateCursor(editorRef.current);
+    clearTimeout(diagnosticsTimer.current);
+    diagnosticsTimer.current = setTimeout(() => void runDiagnostics(active), 1800);
+  }
+
+  async function runDiagnostics(path = active) {
+    if (!ws || !path) return;
+    try {
+      const ext = path.split(".").pop()?.toLowerCase();
+      const language = ext === "py" ? "python" : ["ts","tsx"].includes(ext) ? "typescript" : ["js","jsx"].includes(ext) ? "javascript" : ext;
+      const res = await apiFetch("/ide/workspaces/" + ws.id + "/diagnostics/", { method: "POST", body: JSON.stringify({ path, language }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Diagnostics failed");
+      setDiagnostics(data.diagnostics || []);
+      if (data.status === "failed") setStatus(String((data.diagnostics || []).length || 1) + " diagnostic(s)");
+    } catch (e) { setStatus("Diagnostics unavailable: " + e.message); }
   }
 
   function updateCursor(target) {
@@ -134,7 +150,9 @@ export default function ProIDE({ projectId, message }) {
     clearTimeout(autosaveTimer.current);
     setActive(path);
     setDirty(false);
+    setDiagnostics([]);
     setStatus("Ready");
+    void runDiagnostics(path);
   }
 
   async function saveFile(silent = false) {
@@ -299,9 +317,9 @@ export default function ProIDE({ projectId, message }) {
           {active && <div className="ide-tab active"><span>{active.split("/").pop()}</span>{dirty && <b>●</b>}<em>{extLanguage(active)}</em><button onClick={deleteFile} title="Delete file">×</button></div>}
         </div>
         <div className="ide-editor">
-          <MonacoEditor path={active} value={files[active] || ""} onChange={updateContent} onCursorChange={setCursor} />
+          <MonacoEditor path={active} value={files[active] || ""} onChange={updateContent} onCursorChange={setCursor} diagnostics={diagnostics} />
         </div>
-        <footer className="ide-footer"><span>{active || "No file selected"}</span><span>Ln {cursor.line}, Col {cursor.column}</span><span>{extLanguage(active)} · UTF-8</span><span>{(files[active] || "").length.toLocaleString()} chars</span><span>{dirty ? "Modified" : "Synced"}</span></footer>
+        <footer className="ide-footer"><span>{active || "No file selected"}</span><span>Ln {cursor.line}, Col {cursor.column}</span><span>{extLanguage(active)} · UTF-8</span><span>{(files[active] || "").length.toLocaleString()} chars</span><span>{diagnostics.length ? String(diagnostics.length) + " diagnostic" + (diagnostics.length === 1 ? "" : "s") : "No diagnostics"}</span><span>{dirty ? "Modified" : "Synced"}</span></footer>
       </section>
       {showTerminal && <aside className="ide-terminal">
         <div className="terminal-head"><strong>TERMINAL</strong><span>Isolated · 120s max · network off</span><button onClick={() => setTerminal("")}>Clear</button></div>
