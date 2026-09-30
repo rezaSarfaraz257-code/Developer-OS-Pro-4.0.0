@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import mature
+from . import repository
 
 urlpatterns = [
     path("auth/verify-email/", mature.verify_email_api, name="verify-email"),
@@ -68,6 +69,13 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/install/", views.ide_install_framework_api, name="ide-install-framework"),
     path("ide/workspaces/<int:pk>/execute/", views.ide_execute_api, name="ide-execute"),
     path("ide/workspaces/<int:pk>/packages/", views.ide_install_packages_api, name="ide-install-packages"),
+    path("repositories/", repository.repositories_api, name="repositories"),
+    path("repositories/<int:pk>/", repository.repository_detail_api, name="repository-detail"),
+    path("repositories/<int:pk>/push/", repository.repository_push_api, name="repository-push"),
+    path("repositories/<int:pk>/pull/", repository.repository_pull_api, name="repository-pull"),
+    path("repositories/<int:pk>/history/", repository.repository_history_api, name="repository-history"),
+    path("repositories/<int:pk>/branch/", repository.repository_branch_api, name="repository-branch"),
+    path("repositories/<int:pk>/clone/", repository.repository_clone_api, name="repository-clone"),
     path("api-keys/", views.api_keys_api, name="api-keys"),
     path("subscription/", views.subscription_api, name="subscription"),
     path("billing/portal/", views.billing_portal_api, name="billing-portal"),
