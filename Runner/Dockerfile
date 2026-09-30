@@ -3,10 +3,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
 RUN chmod 0755 /usr/bin/bwrap
 USER runner
 EXPOSE 8080
-CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8080"]
+CMD ["/opt/venv/bin/uvicorn","main:app","--host","0.0.0.0","--port","8080"]
