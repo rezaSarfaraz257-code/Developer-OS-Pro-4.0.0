@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Activity, CodeWorkspace
+from django.contrib.auth.models import User
 
 RUNTIME = "developer-os-repository"
 SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
@@ -27,7 +28,28 @@ MAX_TOTAL_BYTES = 25_000_000
 
 
 def _repo(user, pk):
-    return CodeWorkspace.objects.get(pk=pk, owner=user, runtime=RUNTIME)
+    repo = CodeWorkspace.objects.get(pk=pk, runtime=RUNTIME)
+    if repo.owner_id == user.id:
+        return repo
+    member = Activity.objects.filter(
+        related_type="repo_member",
+        related_id=repo.id,
+        metadata__user_id=user.id,
+        metadata__revoked=False,
+    ).exists()
+    if not member:
+        raise CodeWorkspace.DoesNotExist
+    return repo
+
+
+def _is_owner(user, repo):
+    return repo.owner_id == user.id
+
+
+def _member_rows(repo):
+    return Activity.objects.filter(
+        related_type="repo_member", related_id=repo.id
+    ).order_by("-created_at", "-id")
 
 
 def _files(raw):
@@ -339,3 +361,34 @@ def native_tag_list_api(request, pk):
         p = row.metadata.get("payload", {})
         tags.append(p)
     return Response(tags)
+
+
+@api_view(["GET", "POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+def native_members_api(request, pk):
+    try:
+        repo = _repo(request.user, pk)
+    except CodeWorkspace.DoesNotExist:
+        return Response({"error": "Repository not found."}, status=404)
+    if request.method == "GET":
+        active = {}
+        for row in _member_rows(repo):
+            meta = row.metadata or {}
+            uid = meta.get("user_id")
+            if uid and uid not in active and not meta.get("revoked"):
+                active[uid] = {"user_id": uid, "username": meta.get("username"), "role": meta.get("role", "viewer")}
+        return Response(list(active.values()))
+    if not _is_owner(request.user, repo):
+        return Response({"error": "Only the repository owner can manage members."}, status=403)
+    username = str(request.data.get("username") or "").strip()
+    role = str(request.data.get("role") or "viewer").strip()
+    if role not in {"admin", "developer", "viewer"}:
+        return Response({"error": "Invalid repository role."}, status=400)
+    target = User.objects.filter(username=username).first()
+    if not target or target.id == repo.owner_id:
+        return Response({"error": "User not found or already owner."}, status=404)
+    if request.method == "DELETE":
+        Activity.objects.create(actor=request.user, verb="revoked repository member", message=username, related_type="repo_member", related_id=repo.id, metadata={"user_id": target.id, "username": target.username, "role": role, "revoked": True})
+        return Response(status=204)
+    Activity.objects.create(actor=request.user, verb="added repository member", message=username, related_type="repo_member", related_id=repo.id, metadata={"user_id": target.id, "username": target.username, "role": role, "revoked": False})
+    return Response({"user_id": target.id, "username": target.username, "role": role}, status=201)
