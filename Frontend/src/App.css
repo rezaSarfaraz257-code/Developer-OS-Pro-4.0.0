@@ -27,16 +27,16 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 @media(max-width:680px){.explore-grid-pro{grid-template-columns:1fr}}
 
 
-/* Adaptive navigation rail: compact by default, full on hover/focus. */
-@media (min-width:1101px){
-  .os-rail{width:76px;z-index:100;overflow:hidden;transition:width .22s ease,box-shadow .22s ease;}
-  .os-rail:hover,.os-rail:focus-within{width:250px;box-shadow:18px 0 48px rgba(0,0,0,.28);}
-  .os-rail .brand-text,.os-rail .rail-section,.os-rail .rail-item em,.os-rail .status-chip,.os-rail .profile-mini span:not(.avatar){opacity:0;visibility:hidden;transition:opacity .14s ease,visibility .14s ease;}
-  .os-rail:hover .brand-text,.os-rail:hover .rail-section,.os-rail:hover .rail-item em,.os-rail:hover .status-chip,.os-rail:hover .profile-mini span:not(.avatar),
-  .os-rail:focus-within .brand-text,.os-rail:focus-within .rail-section,.os-rail:focus-within .rail-item em,.os-rail:focus-within .status-chip,.os-rail:focus-within .profile-mini span:not(.avatar){opacity:1;visibility:visible;}
-  .os-rail .brand{justify-content:center;}
-  .os-rail:hover .brand,.os-rail:focus-within .brand{justify-content:flex-start;}
-  .os-rail .rail-item{justify-content:center;}
-  .os-rail:hover .rail-item,.os-rail:focus-within .rail-item{justify-content:flex-start;}
-  .os-rail .status-chip{white-space:nowrap;}
+/* Compact icon-only navigation */
+@media (min-width:721px){
+  .os-rail{width:72px;padding:16px 8px;align-items:center;overflow:hidden;transition:width .22s ease,box-shadow .22s ease;}
+  .os-rail .brand{width:52px;justify-content:center;padding:5px 0 20px;}
+  .os-rail .brand-text,.os-rail .rail-section,.os-rail .rail-item em,.os-rail .status-chip,.os-rail .profile-mini span:not(.avatar){display:none!important;}
+  .os-rail .rail-item{width:52px;height:44px;padding:0;justify-content:center;gap:0;margin:3px 0;}
+  .os-rail .rail-item span{width:100%;font-size:19px;text-align:center;}
+  .os-rail .status-chip{width:52px;height:28px;display:grid!important;place-items:center;padding:0;font-size:0;}
+  .os-rail .status-chip i{margin:0;}
+  .os-rail .profile-mini{width:52px;height:46px;padding:0;justify-content:center;}
+  .os-main{margin-left:72px;width:calc(100% - 72px);}
+  .os-rail .rail-item:hover{transform:translateX(1px);}
 }
