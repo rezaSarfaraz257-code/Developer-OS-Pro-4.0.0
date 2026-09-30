@@ -16,6 +16,7 @@ This repository is the **unified 3.0.0 production release line**, merged from th
 - Workspace analytics and delivery signals
 - AI workspace assistant with optional OpenAI-compatible provider
 - GitHub OAuth with PKCE, repository discovery and activity synchronization
+- **Independent Developer OS repositories with server-side commits, push/pull, history, branches and clone**
 - Production Docker stack: React/Vite + Nginx + Django/Gunicorn + PostgreSQL
 - Security headers, HTTPS-aware settings, upload validation and encrypted GitHub credentials
 - CI configuration and release validation documentation
@@ -35,6 +36,7 @@ Nginx / React static application
   │                              ├── Projects / Tasks
   │                              ├── Knowledge / Resources
   │                              ├── GitHub integration
+  │                              ├── Independent Repository Fabric
   │                              └── AI / collaboration
   │
   └── /media/* ─────────────► Django media storage
@@ -92,6 +94,25 @@ Expected response includes `status=ok` and `database=ok`.
 - Shared catalogs are public-read and staff-write.
 - API throttling is enabled.
 - HTTPS, HSTS, secure cookies, clickjacking and content-type protections are enabled in production.
+- Independent repository paths reject traversal patterns and enforce file-count, per-file and total working-tree limits.
+
+## Independent Repository Fabric
+
+Developer OS now includes a repository layer that does **not** require GitHub. It uses the existing persistent Web IDE workspace as the working tree and stores immutable commit snapshots inside the Developer OS platform. This is intentionally separate from the optional GitHub integration.
+
+Available operations:
+
+- Create and list private repositories
+- Working-tree persistence shared with the Web IDE
+- Commit snapshots with SHA-256 content-addressed identifiers
+- Push and pull against the Developer OS repository store
+- Branch checkout and branch-specific history
+- Repository cloning
+- Commit history with parent relationships and file counts
+- Per-user authorization and isolation
+- Path traversal protection and repository size limits
+
+The management console is available at `/repositories.html` after the frontend is built. The normal Web IDE can open the same repository workspaces, so repository management and coding remain one workflow.
 
 ## GitHub integration
 
@@ -109,6 +130,7 @@ Developer-OS/
 ├── Frontend/
 │   ├── src/
 │   ├── public/
+│   │   └── repositories.html
 │   ├── package.json
 │   ├── Dockerfile
 │   └── nginx.conf
@@ -155,7 +177,6 @@ The repository does not currently declare an open-source license. Treat it as pr
 
 The current release also provides a cross-catalog search endpoint, API request correlation IDs, authentication throttling, GitHub disconnect/repository filtering, runtime production-readiness checks, and a React error-recovery boundary. The public catalog is data-driven rather than dependent on fabricated ratings or static counts.
 
-
 ## Developer OS Pro — Platform Upgrade
 
 This release extends the workspace into a full developer control plane:
@@ -164,6 +185,7 @@ This release extends the workspace into a full developer control plane:
 - **Universal Search**: authenticated cross-entity search for projects, tasks, notes, snippets plus the public developer catalog.
 - **Collaboration Fabric**: project comments, organization/team membership, roles, invites foundation and task dependencies.
 - **Web IDE**: persistent browser workspaces, file tree, multi-file editor, terminal panel and project launch surface.
+- **Independent Repository Fabric**: private repositories, commit snapshots, push/pull, branches, history and cloning without a GitHub account.
 - **SaaS foundation**: subscription/entitlement state, organizations and developer API keys with one-time secret issuance.
 - **Production discipline**: migrations, API boundaries, security controls, health/readiness endpoints and CI/security workflows.
 
@@ -172,7 +194,6 @@ This release extends the workspace into a full developer control plane:
 The Web IDE intentionally does **not** execute arbitrary user code inside the Django web process. The Run action records the execution intent and exposes a safe integration boundary for an isolated runner/worker. A production deployment should connect this to a sandboxed job system (for example, isolated containers with strict CPU, memory, filesystem and network limits).
 
 Payment providers are also intentionally provider-agnostic: subscription state and entitlements are persisted locally, while a verified provider webhook can synchronize external billing state.
-
 
 ## Global SaaS Release 2.0
 
