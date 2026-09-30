@@ -58,6 +58,10 @@ export default function ProIDE({ projectId, message }) {
   const [findText, setFindText] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [diagnostics, setDiagnostics] = useState([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [split, setSplit] = useState(false);
+  const [secondaryFile, setSecondaryFile] = useState("");
+  const [findInFiles, setFindInFiles] = useState("");
   const diagnosticsTimer = useRef(null);
   const editorRef = useRef(null);
   const autosaveTimer = useRef(null);
@@ -259,6 +263,7 @@ export default function ProIDE({ projectId, message }) {
   }, [ws?.runtime]);
 
   const visibleFiles = useMemo(() => Object.keys(files).filter((path) => !quickOpen || path.toLowerCase().includes(quickOpen.toLowerCase())), [files, quickOpen]);
+  const searchResults = useMemo(() => { const q = findInFiles.trim().toLowerCase(); if (!q) return []; return Object.entries(files).flatMap(([path, content]) => String(content || "").split("\n").map((line, i) => ({ path, line: i + 1, text: line })).filter((x) => x.text.toLowerCase().includes(q))).slice(0, 100); }, [files, findInFiles]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -266,6 +271,8 @@ export default function ProIDE({ projectId, message }) {
         const key = event.key.toLowerCase();
         if (key === "s") { event.preventDefault(); void saveFile(); }
         if (key === "p") { event.preventDefault(); setQuickOpen((v) => v ? "" : " "); }
+        if (key === "k") { event.preventDefault(); setPaletteOpen((v) => !v); }
+        if (key === "b") { event.preventDefault(); setSplit((v) => !v); }
         if (key === "enter" && !event.shiftKey) { event.preventDefault(); void runCommand(); }
       }
       if (event.altKey && event.key === "ArrowUp" && commandHistory.length) {
@@ -308,6 +315,11 @@ export default function ProIDE({ projectId, message }) {
       <span className={`ide-status ${/failed|error/i.test(status) ? "bad" : ""}`}>{status}</span>
     </div>
 
+    {paletteOpen && <div className="ide-command-palette"><div className="ide-palette-head"><strong>COMMAND PALETTE</strong><button onClick={() => setPaletteOpen(false)}>×</button></div><button onClick={() => { setPaletteOpen(false); setQuickOpen(" "); }}>⌕ Quick Open <kbd>Ctrl+P</kbd></button><button onClick={() => { setPaletteOpen(false); setSplit((v) => !v); }}>◫ Toggle Split Editor <kbd>Ctrl+B</kbd></button><button onClick={() => { setPaletteOpen(false); setShowTerminal((v) => !v); }}>▣ Toggle Terminal</button><button onClick={() => { setPaletteOpen(false); void saveFile(); }}>↧ Save Current File <kbd>Ctrl+S</kbd></button><button onClick={() => { setPaletteOpen(false); void runDiagnostics(); }}>✓ Run Diagnostics</button></div>}
+
+    <div className="ide-searchbar"><span>SEARCH IN WORKSPACE</span><input value={findInFiles} onChange={(e) => setFindInFiles(e.target.value)} placeholder="Find text across files…" />{findInFiles && <b>{searchResults.length}</b>}</div>
+    {findInFiles && searchResults.length > 0 && <div className="ide-search-results">{searchResults.map((x, i) => <button key={i} onClick={() => { void openFile(x.path); setFindInFiles(""); }}>{x.path}<small>:{x.line} · {x.text.trim().slice(0, 100)}</small></button>)}</div>}
+
     {quickOpen !== "" && <div className="ide-quick-open"><input autoFocus value={quickOpen.trim()} onChange={(e) => setQuickOpen(e.target.value)} placeholder="Type a filename…" onKeyDown={(e) => { if (e.key === "Escape") setQuickOpen(""); }} />{visibleFiles.slice(0, 12).map((path) => <button key={path} onClick={() => { void openFile(path); setQuickOpen(""); }}>{path}<small>{extLanguage(path)}</small></button>)}</div>}
 
     <div className="ide-main">
@@ -316,8 +328,9 @@ export default function ProIDE({ projectId, message }) {
         <div className="ide-tabs">
           {active && <div className="ide-tab active"><span>{active.split("/").pop()}</span>{dirty && <b>●</b>}<em>{extLanguage(active)}</em><button onClick={deleteFile} title="Delete file">×</button></div>}
         </div>
-        <div className="ide-editor">
-          <MonacoEditor path={active} value={files[active] || ""} onChange={updateContent} onCursorChange={setCursor} diagnostics={diagnostics} />
+        <div className={"ide-editor " + (split ? "split" : "")}>
+          <div className="ide-pane"><MonacoEditor path={active} value={files[active] || ""} onChange={updateContent} onCursorChange={setCursor} diagnostics={diagnostics} /></div>
+          {split && <div className="ide-pane ide-pane-secondary"><div className="ide-split-picker"><select value={secondaryFile || active} onChange={(e) => setSecondaryFile(e.target.value)}>{Object.keys(files).map((f) => <option key={f} value={f}>{f}</option>)}</select></div><MonacoEditor path={secondaryFile || active} value={files[secondaryFile || active] || ""} onChange={(value) => { const target = secondaryFile || active; setFiles((x) => ({ ...x, [target]: value })); setDirty(true); }} diagnostics={diagnostics} /></div>}
         </div>
         <footer className="ide-footer"><span>{active || "No file selected"}</span><span>Ln {cursor.line}, Col {cursor.column}</span><span>{extLanguage(active)} · UTF-8</span><span>{(files[active] || "").length.toLocaleString()} chars</span><span>{diagnostics.length ? String(diagnostics.length) + " diagnostic" + (diagnostics.length === 1 ? "" : "s") : "No diagnostics"}</span><span>{dirty ? "Modified" : "Synced"}</span></footer>
       </section>
