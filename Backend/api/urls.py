@@ -84,6 +84,7 @@ urlpatterns = [
     path("repositories/<int:pk>/native/diff/", repository_engine.native_diff_api, name="repository-native-diff"),
     path("repositories/<int:pk>/native/tags/", repository_engine.native_tag_api, name="repository-native-tag"),
     path("repositories/<int:pk>/native/tags/list/", repository_engine.native_tag_list_api, name="repository-native-tags"),
+    path("repositories/<int:pk>/native/members/", repository_engine.native_members_api, name="repository-native-members"),
     path("api-keys/", views.api_keys_api, name="api-keys"),
     path("subscription/", views.subscription_api, name="subscription"),
     path("billing/portal/", views.billing_portal_api, name="billing-portal"),
