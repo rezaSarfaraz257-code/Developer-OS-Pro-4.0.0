@@ -30,28 +30,47 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 
 
 
-/* Developer OS — cinematic command rail */
+
+/* Developer OS — cinematic fluid rail transition */
 @media (min-width:721px){
   .os-rail{
     width:72px;
     padding:14px 8px;
     align-items:center;
     overflow:visible;
+    transform:translateZ(0);
+    will-change:width,padding,box-shadow;
     background:
       radial-gradient(circle at 50% 0%,rgba(67,232,255,.09),transparent 28%),
       linear-gradient(180deg,rgba(8,13,21,.97),rgba(3,6,11,.98));
     border-right:1px solid rgba(67,232,255,.12);
     box-shadow:inset -1px 0 rgba(255,255,255,.015),12px 0 45px rgba(0,0,0,.18);
-    transition:width .24s cubic-bezier(.2,.8,.2,1),padding .24s ease,box-shadow .24s ease;
+    transition:
+      width .48s cubic-bezier(.16,1,.3,1),
+      padding .42s cubic-bezier(.16,1,.3,1),
+      box-shadow .42s ease,
+      background .42s ease;
   }
   .os-rail::before{
     content:"";
     position:absolute;
-    top:0;left:0;bottom:0;
+    top:0;bottom:0;left:0;
     width:1px;
     background:linear-gradient(180deg,transparent,var(--cyan),transparent);
     opacity:.22;
+    transition:opacity .35s ease;
   }
+  .os-rail::after{
+    content:"";
+    position:absolute;
+    z-index:-1;
+    top:0;bottom:0;right:-1px;
+    width:1px;
+    background:linear-gradient(180deg,transparent,rgba(67,232,255,.32),transparent);
+    opacity:0;
+    transition:opacity .38s ease;
+  }
+
   .os-rail .brand{
     position:relative;
     width:52px;height:50px;
@@ -64,7 +83,13 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     border-radius:10px;
     background:linear-gradient(145deg,rgba(67,232,255,.055),rgba(141,124,255,.025));
     box-shadow:inset 0 0 22px rgba(67,232,255,.025),0 8px 25px rgba(0,0,0,.18);
-    transition:all .24s ease;
+    transition:
+      width .45s cubic-bezier(.16,1,.3,1),
+      height .42s ease,
+      margin .42s ease,
+      padding .42s ease,
+      background .4s ease,
+      box-shadow .4s ease;
   }
   .os-rail .brand::after{
     content:"";
@@ -74,6 +99,7 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     border-radius:50%;
     background:var(--green);
     box-shadow:0 0 10px var(--green);
+    transition:transform .35s ease,box-shadow .35s ease;
   }
   .os-rail .brand-mark{
     width:36px;height:36px;
@@ -82,7 +108,9 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     background:radial-gradient(circle at 50% 35%,rgba(67,232,255,.13),transparent 65%);
     text-shadow:0 0 16px rgba(67,232,255,.7);
     box-shadow:0 0 24px rgba(67,232,255,.08),inset 0 0 12px rgba(67,232,255,.04);
+    transition:transform .42s cubic-bezier(.16,1,.3,1),box-shadow .4s ease;
   }
+
   .os-rail .brand-text,
   .os-rail .rail-section,
   .os-rail .rail-item em,
@@ -90,11 +118,16 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-rail .profile-mini span:not(.avatar){
     display:none!important;
   }
+
   .os-rail .rail-section{
     position:relative;
     font-size:8px;
     letter-spacing:.2em;
+    opacity:0;
+    transform:translateY(4px);
+    transition:opacity .22s ease .08s,transform .35s ease;
   }
+
   .os-rail .rail-item{
     position:relative;
     width:52px;height:44px;
@@ -109,7 +142,15 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     border:1px solid transparent;
     border-radius:9px;
     color:#63778d;
-    transition:all .18s ease;
+    transform:translateX(0);
+    transition:
+      width .44s cubic-bezier(.16,1,.3,1),
+      padding .38s ease,
+      justify-content .3s ease,
+      background .25s ease,
+      border-color .25s ease,
+      color .25s ease,
+      transform .3s cubic-bezier(.16,1,.3,1);
   }
   .os-rail .rail-item::before{
     content:"";
@@ -119,7 +160,7 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     border-radius:2px;
     background:var(--cyan);
     box-shadow:0 0 12px rgba(67,232,255,.8);
-    transition:height .18s ease;
+    transition:height .25s ease,opacity .25s ease;
   }
   .os-rail .rail-item span{
     width:20px;height:20px;
@@ -128,9 +169,20 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     flex:none;
     font-size:18px;
     line-height:1;
-    filter:drop-shadow(0 0 0 transparent);
-    transition:transform .18s ease,color .18s ease,filter .18s ease;
+    transition:transform .3s cubic-bezier(.16,1,.3,1),color .25s ease,filter .3s ease;
   }
+  .os-rail .rail-item em{
+    overflow:hidden;
+    white-space:nowrap;
+    opacity:0;
+    transform:translateX(-12px);
+    filter:blur(3px);
+    transition:
+      opacity .28s ease,
+      transform .42s cubic-bezier(.16,1,.3,1),
+      filter .35s ease;
+  }
+
   .os-rail .rail-item:hover{
     background:linear-gradient(90deg,rgba(67,232,255,.10),rgba(67,232,255,.025));
     border-color:rgba(67,232,255,.12);
@@ -149,9 +201,8 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     box-shadow:inset 0 0 20px rgba(67,232,255,.025),0 5px 20px rgba(0,0,0,.12);
   }
   .os-rail .rail-item.active::before{height:22px;}
-  .os-rail .rail-item.active span{
-    filter:drop-shadow(0 0 7px rgba(67,232,255,.4));
-  }
+  .os-rail .rail-item.active span{filter:drop-shadow(0 0 7px rgba(67,232,255,.4));}
+
   .os-rail .rail-spacer{flex:1;min-height:18px;}
   .os-rail .status-chip{
     width:52px;height:28px;
@@ -160,10 +211,12 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     padding:0;
     font-size:0;
     opacity:.8;
+    transition:width .42s ease,height .42s ease,padding .42s ease,font-size .3s ease,opacity .3s ease;
   }
   .os-rail .status-chip i{
     margin:0;
     box-shadow:0 0 14px var(--green);
+    transition:margin .35s ease;
   }
   .os-rail .profile-mini{
     width:52px;height:46px;
@@ -174,22 +227,20 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     justify-content:center;
     border-color:rgba(67,232,255,.1);
     background:linear-gradient(145deg,rgba(12,19,30,.95),rgba(7,11,18,.95));
-    transition:all .2s ease;
+    transition:width .42s cubic-bezier(.16,1,.3,1),height .35s ease,padding .35s ease,justify-content .3s ease,border-color .25s ease,box-shadow .3s ease;
   }
-  .os-rail .profile-mini:hover{
-    border-color:rgba(67,232,255,.25);
-    box-shadow:0 0 25px rgba(67,232,255,.06);
-  }
-  .os-rail .avatar{
-    box-shadow:0 0 18px rgba(67,232,255,.08);
-  }
+  .os-rail .profile-mini:hover{border-color:rgba(67,232,255,.25);box-shadow:0 0 25px rgba(67,232,255,.06);}
+  .os-rail .avatar{box-shadow:0 0 18px rgba(67,232,255,.08);transition:transform .35s ease;}
+
   .os-main{
     margin-left:72px;
     width:calc(100% - 72px);
-    transition:margin-left .24s ease,width .24s ease;
+    transition:
+      margin-left .48s cubic-bezier(.16,1,.3,1),
+      width .48s cubic-bezier(.16,1,.3,1);
   }
 
-  /* Hover expansion */
+  /* Staged expansion: shell → content → labels */
   .os-rail:hover,
   .os-rail:focus-within{
     width:236px;
@@ -197,6 +248,11 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     padding:16px 12px;
     box-shadow:24px 0 70px rgba(0,0,0,.38),inset -1px 0 rgba(67,232,255,.08);
   }
+  .os-rail:hover::before,
+  .os-rail:focus-within::before{opacity:.45;}
+  .os-rail:hover::after,
+  .os-rail:focus-within::after{opacity:.7;}
+
   .os-rail:hover .brand,
   .os-rail:focus-within .brand{
     width:100%;height:52px;
@@ -204,6 +260,14 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     padding:0 10px;
     justify-content:flex-start;
   }
+  .os-rail:hover .brand::after,
+  .os-rail:focus-within .brand::after{
+    transform:scale(1.25);
+    box-shadow:0 0 14px var(--green);
+  }
+  .os-rail:hover .brand-mark,
+  .os-rail:focus-within .brand-mark{transform:scale(1.04);}
+
   .os-rail:hover .brand-text,
   .os-rail:focus-within .brand-text,
   .os-rail:hover .rail-section,
@@ -216,14 +280,25 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-rail:focus-within .profile-mini span:not(.avatar){
     display:block!important;
   }
-  .os-rail:hover .brand{
-    box-shadow:inset 0 0 30px rgba(67,232,255,.05),0 10px 35px rgba(0,0,0,.22);
+
+  .os-rail:hover .rail-section,
+  .os-rail:focus-within .rail-section{
+    opacity:1;
+    transform:none;
   }
+
   .os-rail:hover .rail-item,
   .os-rail:focus-within .rail-item{
     width:100%;
     padding:0 12px;
     justify-content:flex-start;
+  }
+  .os-rail:hover .rail-item em,
+  .os-rail:focus-within .rail-item em{
+    opacity:1;
+    transform:translateX(0);
+    filter:blur(0);
+    transition-delay:.10s;
   }
   .os-rail:hover .rail-item::before,
   .os-rail:focus-within .rail-item::before{left:-12px;}
@@ -242,12 +317,9 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
     padding:9px;
     justify-content:flex-start;
   }
-  .os-rail:hover .rail-item em,
-  .os-rail:focus-within .rail-item em{
-    animation:railLabelIn .2s ease both;
-  }
+  .os-rail:hover .profile-mini .avatar,
+  .os-rail:focus-within .profile-mini .avatar{transform:scale(1.04);}
 }
-@keyframes railLabelIn{
-  from{opacity:0;transform:translateX(-6px);filter:blur(2px)}
-  to{opacity:1;transform:none;filter:none}
+@media (prefers-reduced-motion:reduce){
+  .os-rail,.os-rail *,.os-main{transition-duration:.01ms!important;animation-duration:.01ms!important;}
 }
