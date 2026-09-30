@@ -2183,6 +2183,41 @@ def ide_install_packages_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_diagnostics_api(request, pk):
+    """Run a read-only project check and return editor-friendly diagnostics."""
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    language = str(request.data.get("language") or "").lower()
+    path = _safe_ide_path(request.data.get("path") or "")
+    if not path:
+        return Response({"error": "A valid file path is required."}, status=400)
+    _, sync_error = _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
+    if sync_error:
+        return Response(sync_error, status=503)
+    if language in {"python", "py"} or path.endswith(".py"):
+        command = "python -m py_compile " + shlex.quote(path)
+    elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
+        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
+    else:
+        return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
+    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
+    if error:
+        return Response(error, status=503)
+    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
+    diagnostics = []
+    pattern = re.compile(r"(?P<file>[^:\\n]+?)[(:](?P<line>\d+)(?:[:,](?P<column>\d+))?\)?[: -]+(?P<message>.+)")
+    for raw in output.splitlines():
+        match = pattern.search(raw.strip())
+        if not match:
+            continue
+        diagnostics.append({"path": _safe_ide_path(match.group("file")) or path, "line": max(1, int(match.group("line") or 1)), "column": max(1, int(match.group("column") or 1)), "severity": "error" if data.get("exit_code") not in (0, None) else "warning", "message": match.group("message")[:1000]})
+    if data.get("exit_code") not in (0, None) and not diagnostics:
+        diagnostics.append({"path": path, "line": 1, "column": 1, "severity": "error", "message": (output or "Project check failed.")[-1000:]})
+    return Response({"status": "success" if data.get("exit_code") == 0 else "failed", "command": command, "diagnostics": diagnostics[:100], "stdout": str(data.get("stdout") or "")[-10000:], "stderr": str(data.get("stderr") or "")[-10000:]})
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_execute_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
