@@ -62,6 +62,13 @@ export default function ProIDE({ projectId, message }) {
   const [split, setSplit] = useState(false);
   const [secondaryFile, setSecondaryFile] = useState("");
   const [findInFiles, setFindInFiles] = useState("");
+  const [repos, setRepos] = useState([]);
+  const [repoId, setRepoId] = useState("");
+  const [repoBranch, setRepoBranch] = useState("main");
+  const [repoCommits, setRepoCommits] = useState([]);
+  const [repoDiff, setRepoDiff] = useState([]);
+  const [repoMessage, setRepoMessage] = useState("");
+  const [sourceOpen, setSourceOpen] = useState(true);
   const diagnosticsTimer = useRef(null);
   const editorRef = useRef(null);
   const autosaveTimer = useRef(null);
@@ -88,6 +95,61 @@ export default function ProIDE({ projectId, message }) {
   useEffect(() => {
     if (!ws && workspaces[0]) openWorkspace(workspaces[0]);
   }, [workspaces, ws]);
+
+  useEffect(() => {
+    apiFetch("/repositories/").then((r) => r.json()).then((data) => {
+      setRepos(Array.isArray(data) ? data : []);
+      if (!repoId && data?.[0]?.id) setRepoId(String(data[0].id));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!repoId) return;
+    (async () => {
+      try {
+        const r = await apiFetch("/repositories/" + repoId + "/native/branches/");
+        const data = await r.json();
+        if (!r.ok) return;
+        const names = Object.keys(data.branches || {});
+        const current = data.current || names[0] || "main";
+        setRepoBranch(current);
+        await refreshSourceControl(current);
+      } catch (_) {}
+    })();
+  }, [repoId]);
+
+  async function refreshSourceControl(branch = repoBranch) {
+    if (!repoId) return;
+    const c = await apiFetch("/repositories/" + repoId + "/native/commits/?branch=" + encodeURIComponent(branch));
+    const commits = await c.json();
+    setRepoCommits(Array.isArray(commits) ? commits : []);
+    const d = await apiFetch("/repositories/" + repoId + "/native/diff/?branch=" + encodeURIComponent(branch));
+    const diff = await d.json();
+    setRepoDiff(diff.files || []);
+  }
+
+  async function commitToRepository() {
+    if (!repoId || !repoMessage.trim()) return setStatus("Enter a commit message");
+    if (dirty) await saveFile(true);
+    const res = await apiFetch("/repositories/" + repoId + "/native/commits/", { method: "POST", body: JSON.stringify({ branch: repoBranch, message: repoMessage.trim(), files }) });
+    const data = await res.json();
+    if (!res.ok) return setStatus(data.error || "Commit failed");
+    setRepoMessage("");
+    await refreshSourceControl(repoBranch);
+    setStatus("Repository commit created");
+  }
+
+  async function createRepositoryBranch() {
+    const name = window.prompt("New branch name", "feature/" + Date.now());
+    if (!name?.trim() || !repoId) return;
+    const res = await apiFetch("/repositories/" + repoId + "/native/branches/", { method: "POST", body: JSON.stringify({ branch: name.trim(), from: repoBranch }) });
+    const data = await res.json();
+    if (!res.ok) return setStatus(data.error || "Branch creation failed");
+    setRepoBranch(name.trim());
+    await refreshSourceControl(name.trim());
+    setStatus("Branch created: " + name.trim());
+  }
+
 
   useEffect(() => () => { clearTimeout(autosaveTimer.current); clearTimeout(diagnosticsTimer.current); }, []);
 
@@ -323,6 +385,8 @@ export default function ProIDE({ projectId, message }) {
     {quickOpen !== "" && <div className="ide-quick-open"><input autoFocus value={quickOpen.trim()} onChange={(e) => setQuickOpen(e.target.value)} placeholder="Type a filename…" onKeyDown={(e) => { if (e.key === "Escape") setQuickOpen(""); }} />{visibleFiles.slice(0, 12).map((path) => <button key={path} onClick={() => { void openFile(path); setQuickOpen(""); }}>{path}<small>{extLanguage(path)}</small></button>)}</div>}
 
     <div className="ide-main">
+      {sourceOpen && <aside className="ide-source-control"><div className="source-head"><strong>SOURCE CONTROL</strong><button onClick={() => setSourceOpen(false)}>×</button></div><select value={repoId} onChange={(e) => setRepoId(e.target.value)}><option value="">Repository</option>{repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select><div className="source-row"><select value={repoBranch} onChange={(e) => { setRepoBranch(e.target.value); void refreshSourceControl(e.target.value); }}><option value={repoBranch}>{repoBranch}</option></select><button onClick={createRepositoryBranch}>＋</button></div><div className="source-diff">{repoDiff.map((x) => <div key={x.path} className={"source-file " + x.status}><span>{x.status === "added" ? "A" : x.status === "deleted" ? "D" : "M"}</span>{x.path}</div>)}{!repoDiff.length && <small>No changes in latest commit.</small>}</div><textarea value={repoMessage} onChange={(e) => setRepoMessage(e.target.value)} placeholder="Commit message…" rows="3" /><button className="source-commit" onClick={commitToRepository}>Commit to Developer OS</button><div className="source-history"><strong>HISTORY</strong>{repoCommits.slice(0,8).map((c) => <div key={c.id}><code>{String(c.id).slice(0,8)}</code><span>{c.message}</span></div>)}</div></aside>}
+      {!sourceOpen && <button className="source-reopen" onClick={() => setSourceOpen(true)}>SC</button>}
       <Tree files={files} active={active} onOpen={(path) => { void openFile(path); }} />
       <section className="ide-center">
         <div className="ide-tabs">
