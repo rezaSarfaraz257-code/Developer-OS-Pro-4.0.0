@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-import { API_URL, apiFetch, clearAuth, getAccessToken, revokeRefreshToken, formatApiError } from "./services/api";
+import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
 
 const nav = [
@@ -240,8 +240,9 @@ function Auth({ onReady }) {
         );
       }
 
-      sessionStorage.setItem("access", data.access);
-      sessionStorage.setItem("refresh", data.refresh);
+      if (!setAuthTokens(data.access, data.refresh)) {
+        throw new Error("Authentication succeeded but no valid session tokens were returned.");
+      }
 
       onReady();
     }
