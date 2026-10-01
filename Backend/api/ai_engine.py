@@ -412,23 +412,47 @@ def ai_chat_api(request):
     if len(message) > 12000:
         return Response({"error": "message too long"}, status=400)
 
-    # Validate project/workspace/conversation before charging quota.
-    from .views import _consume_usage
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
-    if not allowed:
-        return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
+    # AI must fail predictably: provider, database, context, and usage failures
+    # are classified without leaking secrets or stack traces to the client.
+    try:
+        from .views import _consume_usage
+        allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
+        if not allowed:
+            return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
-    response = _run(request, message)
-    if response.status_code >= 400:
+        response = _run(request, message)
+        if response.status_code >= 400:
+            return response
+
+        allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
+        if not allowed:
+            return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
+        response.data["usage"] = {"used": used, "limit": limit, "plan": plan}
         return response
-
-    # Charge only a validated AI operation. Keep this server-side so clients
-    # cannot choose their own usage increment.
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
-    if not allowed:
-        return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-    response.data["usage"] = {"used": used, "limit": limit, "plan": plan}
-    return response
+    except DatabaseError as exc:
+        logger.exception("AI database failure")
+        return Response({
+            "error": {
+                "code": "AI_DATABASE_ERROR",
+                "message": "Developer OS could not access the AI conversation database.",
+            }
+        }, status=503)
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        logger.exception("AI context/configuration failure")
+        return Response({
+            "error": {
+                "code": "AI_CONTEXT_ERROR",
+                "message": "Developer OS could not prepare the AI request.",
+            }
+        }, status=422)
+    except Exception as exc:
+        logger.exception("AI endpoint failure")
+        return Response({
+            "error": {
+                "code": "AI_INTERNAL_ERROR",
+                "message": "Developer OS Intelligence failed before completing the request.",
+            }
+        }, status=503)
 
 
 AGENT_SAFE_COMMANDS = {
