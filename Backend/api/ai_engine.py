@@ -672,7 +672,7 @@ def ai_agent_apply_api(request):
     for change in proposal.get("changes", []):
         path = str(change.get("path") or "")
         operation = change.get("operation")
-        if not path or path.startswith("/") or "\" in path or ".." in path.split("/"):
+        if not path or path.startswith("/") or "\\" in path or ".." in path.split("/"):
             return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
         before = str(updated.get(path, ""))
         if operation == "delete":
