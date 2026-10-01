@@ -500,6 +500,8 @@ def ai_health_api(request):
     }, status=200)
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ai_chat_api(request):
     message = str(request.data.get("message") or "").strip()
     if not message:
