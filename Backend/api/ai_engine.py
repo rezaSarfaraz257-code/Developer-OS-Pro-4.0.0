@@ -480,14 +480,17 @@ def _run(request, message: str, action: str | None = None):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def ai_health_api(request):
     """Non-secret AI readiness diagnostics; never performs a billable provider call."""
+    # Health is intentionally public: it must be usable by load balancers and deployment checks.
+    # User-specific checks remain enabled for authenticated callers; anonymous callers only
+    # receive non-secret service/configuration readiness and never workspace or usage data.
+    authenticated = bool(getattr(request.user, "is_authenticated", False))
     checks = {
         "database": False,
-        "usage_meter": False,
+        "usage_meter": None if not authenticated else False,
         "configuration": False,
-        "context": False,
+        "context": None if not authenticated else False,
     }
     details = {}
     try:
@@ -495,14 +498,16 @@ def ai_health_api(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             cursor.fetchone()
-        # Verify the AI conversation table can be queried without creating data.
-        AIConversation.objects.filter(owner=request.user).order_by("-id").values("id").exists()
+        # Verify the AI conversation table exists. User-scoped queries are only
+        # performed when the caller is authenticated.
+        if authenticated:
+            AIConversation.objects.filter(owner=request.user).order_by("-id").values("id").exists()
+            from .models import UsageRecord
+            UsageRecord.objects.filter(user=request.user).order_by("-period").values("id").exists()
+            checks["usage_meter"] = True
+        else:
+            AIConversation.objects.all().order_by("-id").values("id").exists()
         checks["database"] = True
-        # AI chat performs a metered preflight before creating a conversation.
-        # Probe the usage table here so schema drift is reported before chat.
-        from .models import UsageRecord
-        UsageRecord.objects.filter(user=request.user).order_by("-period").values("id").exists()
-        checks["usage_meter"] = True
     except Exception as exc:
         details["database"] = exc.__class__.__name__
 
@@ -515,15 +520,16 @@ def ai_health_api(request):
         "model": cfg["model"],
     }
 
-    try:
-        context = _safe_workspace_context(request.user)
-        _compact_context(context)
-        checks["context"] = True
-    except Exception as exc:
-        details["context"] = exc.__class__.__name__
+    if authenticated:
+        try:
+            context = _safe_workspace_context(request.user)
+            _compact_context(context)
+            checks["context"] = True
+        except Exception as exc:
+            details["context"] = exc.__class__.__name__
 
     return Response({
-        "status": "ready" if all(checks.values()) else "degraded",
+        "status": "ready" if checks["database"] and checks["configuration"] and (not authenticated or (checks["usage_meter"] and checks["context"])) else "degraded",
         "checks": checks,
         "details": details,
     }, status=200)
