@@ -439,10 +439,14 @@ def ai_chat_api(request):
         }, status=503)
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         logger.exception("AI context/configuration failure")
+        # Keep the client-facing diagnostic safe: expose the exception class and
+        # a short sanitized message, never credentials or stack traces.
+        detail = str(exc).strip().replace("\\n", " ")[:240]
         return Response({
             "error": {
                 "code": "AI_CONTEXT_ERROR",
                 "message": "Developer OS could not prepare the AI request.",
+                "detail": f"{exc.__class__.__name__}: {detail}" if detail else exc.__class__.__name__,
             }
         }, status=422)
     except Exception as exc:
