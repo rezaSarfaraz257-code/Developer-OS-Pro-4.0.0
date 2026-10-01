@@ -78,8 +78,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             previous=str(files.get(path,""))
             files[path]=next_content
             ws.files=files
-            ws.revision=(ws.revision or 0)+1
-            ws.save(update_fields={"files","revision","updated_at"})
+            ws.save(update_fields={"files"})
             WorkspaceFileRevision.objects.create(workspace=ws,path=path,revision=ws.revision,content=next_content,author=self.user,client_id=client_id)
             return {"type":"patch-ack","revision":ws.revision,"event":{"type":"file-update","workspace_id":ws.id,"path":path,"content":next_content,"revision":ws.revision,"user_id":self.user.id,"username":self.user.username,"client_id":client_id}}
 
