@@ -38,6 +38,34 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertTrue(post.call_args.kwargs["url"].endswith("/responses"))
 
 
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch("api.ai_engine.requests.post")
+    def test_gpt_5_6_luna_uses_responses_without_temperature(self, post):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"output_text": "ok"}
+        post.return_value = response
+        answer, error = _call_provider("hello", {"projects": []}, [])
+        self.assertEqual(error, None)
+        self.assertEqual(answer, "ok")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertNotIn("temperature", payload)
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch("api.ai_engine.requests.post")
+    def test_provider_http_errors_are_structured(self, post):
+        import requests
+        response = Mock()
+        response.status_code = 401
+        response.json.return_value = {"error": {"message": "invalid api key"}}
+        response.raise_for_status.side_effect = requests.HTTPError(response=response)
+        post.return_value = response
+        answer, provider_error = _call_provider("hello", {"projects": []}, [])
+        self.assertEqual(answer, "")
+        self.assertIn('"code": "AI_AUTH_ERROR"', provider_error)
+        self.assertIn('"provider_status": 401', provider_error)
+
 class AgentEvidenceTests(SimpleTestCase):
     def test_agent_evidence_is_bounded(self):
         from api.ai_engine import _compact_context
