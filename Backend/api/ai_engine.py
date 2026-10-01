@@ -39,32 +39,76 @@ def _provider_config() -> dict[str, str]:
 
 
 def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
-    """Bound context before it becomes an expensive model input."""
-    raw = json.dumps(context, default=str, ensure_ascii=False)
-    if len(raw) <= MAX_CONTEXT_CHARS:
+    """Bound AI context defensively; malformed optional context must not crash chat."""
+    if not isinstance(context, dict):
+        return {"projects": [], "tasks": [], "notes": [], "snippets": [], "workspaces": [], "context_warning": "Invalid context was replaced with an empty context."}
+    try:
+        raw = json.dumps(context, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        raw = ""
+    if raw and len(raw) <= MAX_CONTEXT_CHARS:
         return context
-    # Preserve high-value metadata and truncate large text-bearing collections.
+
     result = dict(context)
-    if isinstance(result.get("workspace"), dict) and isinstance(result["workspace"].get("files"), dict):
-        result["workspace"] = dict(result["workspace"])
-        result["workspace"]["files"] = {k: v[:12000] for k, v in list(result["workspace"]["files"].items())[:80] if isinstance(k, str) and isinstance(v, str)}
+    # Support both the selected-workspace contract and the workspace inventory contract.
+    for workspace_key in ("workspace", "workspaces"):
+        value = result.get(workspace_key)
+        if isinstance(value, dict) and isinstance(value.get("files"), dict):
+            item = dict(value)
+            item["files"] = {k: v[:12000] for k, v in list(value["files"].items())[:80] if isinstance(k, str) and isinstance(v, str)}
+            result[workspace_key] = item
+        elif isinstance(value, list):
+            bounded = []
+            for item in value[:20]:
+                if isinstance(item, dict):
+                    item = dict(item)
+                    if isinstance(item.get("files"), dict):
+                        item["files"] = {k: v[:12000] for k, v in list(item["files"].items())[:80] if isinstance(k, str) and isinstance(v, str)}
+                    bounded.append(item)
+            result[workspace_key] = bounded
+
     for key in ("snippets", "notes", "tasks", "activities", "projects"):
         value = result.get(key)
         if isinstance(value, list):
             result[key] = value[:50]
-    raw = json.dumps(result, default=str, ensure_ascii=False)
-    if len(raw) > MAX_CONTEXT_CHARS:
-        result["context_truncated"] = True
-        result["_context_note"] = "Large workspace context was bounded by the server."
-        while len(json.dumps(result, default=str, ensure_ascii=False)) > MAX_CONTEXT_CHARS and result:
-            for key in ("snippets", "notes", "tasks", "activities"):
-                value = result.get(key)
-                if isinstance(value, list) and value:
-                    result[key] = value[:-max(1, len(value)//5)]
-                    break
-            else:
+
+    result["context_truncated"] = True
+    result["_context_note"] = "Large or malformed workspace context was bounded by the server."
+    for _ in range(12):
+        try:
+            if len(json.dumps(result, default=str, ensure_ascii=False)) <= MAX_CONTEXT_CHARS:
                 break
+        except (TypeError, ValueError):
+            break
+        reduced = False
+        for key in ("snippets", "notes", "tasks", "activities", "projects", "workspaces"):
+            value = result.get(key)
+            if isinstance(value, list) and value:
+                result[key] = value[:max(0, len(value) // 2)]
+                reduced = True
+                break
+        if not reduced:
+            break
     return result
+
+
+def _safe_workspace_context(user, project_id=None, workspace_id=None):
+    """Context is optional enrichment: failures degrade to minimal context, never block chat."""
+    from .views import _workspace_context
+    try:
+        value = _workspace_context(user, project_id, workspace_id)
+        return value if isinstance(value, dict) else {"projects": [], "tasks": [], "notes": [], "snippets": [], "workspaces": []}
+    except Exception as exc:
+        logger.exception("AI workspace context collection failed")
+        return {
+            "projects": [],
+            "tasks": [],
+            "notes": [],
+            "snippets": [],
+            "workspaces": [],
+            "context_warning": "Workspace context was unavailable; the request continued without optional project data.",
+            "context_error_type": exc.__class__.__name__,
+        }
 
 
 def _instructions(action: str | None = None) -> str:
@@ -372,7 +416,16 @@ def _run(request, message: str, action: str | None = None):
         if conversation.project_id and workspace.project_id not in (None, conversation.project_id):
             return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
 
-    context = _compact_context(_workspace_context(request.user, conversation.project_id, workspace_id))
+    # Workspace data is enrichment, not a prerequisite for the AI request.
+    # A broken optional query must never turn a valid chat message into a 422.
+    context = _compact_context(_safe_workspace_context(request.user, conversation.project_id, workspace_id))
+    if workspace is not None:
+        # Make the selected workspace explicit while retaining the inventory for compatibility.
+        workspaces = context.get("workspaces")
+        if isinstance(workspaces, list):
+            selected = next((item for item in workspaces if isinstance(item, dict) and item.get("id") == workspace.id), None)
+            if selected is not None:
+                context["workspace"] = selected
     history = list(
         conversation.messages.order_by("-created_at")
         .values("role", "content")[:MAX_HISTORY_MESSAGES]
