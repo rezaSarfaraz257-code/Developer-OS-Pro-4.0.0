@@ -298,3 +298,51 @@ def repository_clone_api(request, pk):
         meta["parent"] = None
         Activity.objects.create(actor=request.user, verb="cloned repository", message=source_head.message, related_type="repository_commit", related_id=repo.id, metadata=meta)
     return Response(_repo_payload(repo, request.user, include_files=True), status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def repository_sync_workspace_api(request, pk):
+    """Synchronize a native Developer OS repository with an IDE workspace.
+
+    This is deliberately provider-neutral: no GitHub, GitLab, Bitbucket, or
+    external remote is involved. The repository lives inside Developer OS.
+    """
+    repo = _repo(request.user, pk)
+    workspace_id = request.data.get("workspace_id")
+    direction = str(request.data.get("direction") or "push").lower()
+    workspace = get_object_or_404(CodeWorkspace, pk=workspace_id, owner=request.user)
+    if direction not in {"push", "pull"}:
+        return Response({"error": "direction must be push or pull."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if direction == "push":
+        try:
+            files = _clean_files(workspace.files or {})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        repo.files = files
+        repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
+        repo.framework = repo.framework or DEFAULT_BRANCH
+        repo.revision = int(repo.revision or 1) + 1
+        repo.save()
+        return Response({
+            "direction": "push",
+            "repository": _repo_payload(repo, request.user, include_files=True),
+            "workspace_id": workspace.id,
+            "file_count": len(files),
+        })
+
+    files = _clean_files(repo.files or {})
+    workspace.files = files
+    workspace.active_file = repo.active_file if repo.active_file in files else next(iter(files), "")
+    workspace.save()
+    return Response({
+        "direction": "pull",
+        "repository": _repo_payload(repo, request.user, include_files=True),
+        "workspace": {
+            "id": workspace.id,
+            "files": workspace.files,
+            "active_file": workspace.active_file,
+            "revision": workspace.revision,
+        },
+    })
