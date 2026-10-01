@@ -3,6 +3,7 @@ from . import views
 from . import mature
 from . import repository
 from . import repository_engine
+from . import ai_engine
 
 urlpatterns = [
     path("auth/verify-email/", mature.verify_email_api, name="verify-email"),
@@ -97,7 +98,7 @@ urlpatterns = [
     path("audit/", views.audit_log_api, name="audit-log"),
     path("ai/conversations/", views.ai_conversations_api, name="ai-conversations"),
     path("ai/conversations/<int:pk>/messages/", views.ai_conversation_messages_api, name="ai-conversation-messages"),
-    path("ai/chat/", views.ai_chat_api, name="ai-chat"),
-    path("ai/actions/", views.ai_actions_api, name="ai-actions"),
+    path("ai/chat/", ai_engine.ai_chat_api, name="ai-chat"),
+    path("ai/actions/", ai_engine.ai_actions_api, name="ai-actions"),
     path("billing/webhook/", views.billing_webhook_api, name="billing-webhook"),
 ]
