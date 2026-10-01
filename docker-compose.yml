@@ -43,9 +43,11 @@ services:
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-}
       GITHUB_OAUTH_REDIRECT: ${GITHUB_OAUTH_REDIRECT:-http://localhost/api/github/callback/}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
-      AI_API_URL: ${AI_API_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-}
+      AI_API_URL: ${AI_API_URL:-https://api.openai.com/v1}
+      AI_API_PROTOCOL: ${AI_API_PROTOCOL:-responses}
+      AI_MODEL: ${AI_MODEL:-gpt-5.6-luna}
       IDE_RUNNER_URL: ${IDE_RUNNER_URL:-http://runner:8080}
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
