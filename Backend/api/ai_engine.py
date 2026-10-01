@@ -473,12 +473,12 @@ def ai_health_api(request):
             cursor.execute("SELECT 1")
             cursor.fetchone()
         # Verify the AI conversation table can be queried without creating data.
-        AIConversation.objects.filter(owner=request.user).order_by("-id").values("id")[:1]
+        AIConversation.objects.filter(owner=request.user).order_by("-id").values("id").exists()
         checks["database"] = True
         # AI chat performs a metered preflight before creating a conversation.
         # Probe the usage table here so schema drift is reported before chat.
         from .models import UsageRecord
-        UsageRecord.objects.filter(user=request.user).order_by("-period").values("id")[:1]
+        UsageRecord.objects.filter(user=request.user).order_by("-period").values("id").exists()
         checks["usage_meter"] = True
     except Exception as exc:
         details["database"] = exc.__class__.__name__
