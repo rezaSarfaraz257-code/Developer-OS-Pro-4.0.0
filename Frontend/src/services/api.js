@@ -259,7 +259,7 @@ export async function apiFetch(endpoint, options = {}) {
       throw new Error(formatApiError(errorPayload, "Authentication required"));
     }
 
-    throw new Error(message);
+    throw new Error(detailedMessage);
   }
 
   return response;
