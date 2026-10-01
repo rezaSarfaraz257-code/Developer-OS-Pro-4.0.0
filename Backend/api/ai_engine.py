@@ -458,6 +458,50 @@ def _run(request, message: str, action: str | None = None):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ai_health_api(request):
+    """Non-secret AI readiness diagnostics; never performs a billable provider call."""
+    checks = {
+        "database": False,
+        "configuration": False,
+        "context": False,
+    }
+    details = {}
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        # Verify the AI conversation table can be queried without creating data.
+        AIConversation.objects.filter(owner=request.user).order_by("-id").values("id")[:1]
+        checks["database"] = True
+    except Exception as exc:
+        details["database"] = exc.__class__.__name__
+
+    cfg = _provider_config()
+    checks["configuration"] = bool(cfg["key"] and cfg["base"] and cfg["model"] and cfg["protocol"] in {"responses", "chat"})
+    details["provider"] = {
+        "configured": bool(cfg["key"]),
+        "base": cfg["base"],
+        "protocol": cfg["protocol"],
+        "model": cfg["model"],
+    }
+
+    try:
+        context = _safe_workspace_context(request.user)
+        _compact_context(context)
+        checks["context"] = True
+    except Exception as exc:
+        details["context"] = exc.__class__.__name__
+
+    return Response({
+        "status": "ready" if all(checks.values()) else "degraded",
+        "checks": checks,
+        "details": details,
+    }, status=200)
+
+
 def ai_chat_api(request):
     message = str(request.data.get("message") or "").strip()
     if not message:
@@ -491,17 +535,18 @@ def ai_chat_api(request):
             }
         }, status=503)
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        logger.exception("AI context/configuration failure")
-        # Keep the client-facing diagnostic safe: expose the exception class and
-        # a short sanitized message, never credentials or stack traces.
-        detail = str(exc).strip().replace("\\n", " ")[:240]
+        logger.exception("AI request preparation failure")
+        # A valid chat request should not be reported as an opaque 422. Return a
+        # stable operational error with safe diagnostics so deployment logs and
+        # the UI can identify the failing preparation stage.
+        detail = str(exc).strip().replace("\\n", " ").replace("\n", " ")[:240]
         return Response({
             "error": {
-                "code": "AI_CONTEXT_ERROR",
+                "code": "AI_REQUEST_PREPARATION_ERROR",
                 "message": "Developer OS could not prepare the AI request.",
                 "detail": f"{exc.__class__.__name__}: {detail}" if detail else exc.__class__.__name__,
             }
-        }, status=422)
+        }, status=503)
     except Exception as exc:
         logger.exception("AI endpoint failure")
         return Response({
