@@ -456,8 +456,6 @@ def _run(request, message: str, action: str | None = None):
     return Response(payload)
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ai_health_api(request):
