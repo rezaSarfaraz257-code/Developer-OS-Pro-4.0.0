@@ -828,3 +828,22 @@ class WorkspaceFileLock(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['workspace','path'], name='unique_workspace_file_lock')]
         indexes = [models.Index(fields=['workspace','path'])]
+
+class WorkspaceCRDTOperation(models.Model):
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="crdt_operations")
+    path = models.CharField(max_length=500)
+    operation_id = models.CharField(max_length=128, unique=True)
+    actor_id = models.CharField(max_length=128)
+    lamport = models.PositiveBigIntegerField(default=0)
+    kind = models.CharField(max_length=16)
+    position = models.PositiveIntegerField(default=0)
+    delete_count = models.PositiveIntegerField(default=0)
+    text = models.TextField(blank=True, default="")
+    update_blob = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    class Meta:
+        indexes = [
+            models.Index(fields=["workspace", "path", "lamport"]),
+            models.Index(fields=["workspace", "path", "created_at"]),
+        ]
