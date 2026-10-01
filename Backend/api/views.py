@@ -1974,11 +1974,12 @@ def _runner_request(method, path, payload, timeout=30):
     if not RUNNER_TOKEN:
         return None, {"error": "IDE runner is not configured. Set IDE_RUNNER_TOKEN and start the runner service."}
     try:
-        response = requests.request(
-            method, f"{RUNNER_URL}{path}", json=payload,
-            headers={"Authorization": f"Bearer {RUNNER_TOKEN}"},
-            timeout=timeout,
-        )
+        kwargs = {"headers": {"Authorization": f"Bearer {RUNNER_TOKEN}"}, "timeout": timeout}
+        if method.upper() == "GET":
+            kwargs["params"] = payload or {}
+        else:
+            kwargs["json"] = payload
+        response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
         data = response.json() if response.content else {}
         if response.status_code >= 400:
             return None, data
