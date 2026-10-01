@@ -421,13 +421,13 @@ function AI() {
 
   return <div className="page ai-page">
     <div className="hero-row">
-      <div><div className="eyebrow">INTELLIGENCE LAYER / CONTROL PLANE</div><h1>Developer Intelligence</h1><p>AI that understands the workspace and helps plan, execute, verify and manage delivery — not just chat.</p></div>
-      <div className="ai-status"><i/> {health?.status==="ready"?"INTELLIGENCE READY":"INTELLIGENCE DEGRADED"}</div>
+      <div><div className="eyebrow">INTELLIGENCE LAYER / CONTROL PLANE</div><h1>Developer Intelligence</h1><p>Think → Plan → Execute → Verify. Context-aware intelligence for architecture, delivery, code and project operations.</p></div>
+      <div className="ai-status"><i/> {health?.status==="ready"?"INTELLIGENCE READY":"INTELLIGENCE DEGRADED"}<small>{project?"PROJECT CONTEXT":"GLOBAL CONTEXT"} · {mode.toUpperCase()}</small></div>
     </div>
     <div className="ai-toolbar panel">
       <label>PROJECT <select value={project} onChange={e=>setProject(e.target.value)}><option value="">Workspace-wide</option>{projects.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
       <label>WORKSPACE <select value={workspace} onChange={e=>setWorkspace(e.target.value)}><option value="">Auto context</option>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
-      <div className="ai-modes"><button className={mode==="chat"?"active":""} onClick={()=>setMode("chat")}>ASK</button><button className={mode==="agent"?"active":""} onClick={()=>setMode("agent")}>AGENT</button><button className={mode==="action"?"active":""} onClick={()=>setMode("action")}>MANAGE</button></div>
+      <div className="ai-modes"><button className={mode==="chat"?"active":""} onClick={()=>setMode("chat")}>ASK <small>REASON</small></button><button className={mode==="agent"?"active":""} onClick={()=>setMode("agent")}>AGENT <small>EXECUTE</small></button><button className={mode==="action"?"active":""} onClick={()=>setMode("action")}>MANAGE <small>OPERATE</small></button></div>
       {mode==="action"&&<select value={action} onChange={e=>setAction(e.target.value)}><option value="">Choose operation</option><option value="project">PROJECT PLAN</option><option value="sprint">NEXT SPRINT</option><option value="risk">DELIVERY RISKS</option><option value="review">CODE REVIEW</option><option value="tests">TEST PLAN</option><option value="debug">DEBUG</option><option value="plan">IMPLEMENTATION PLAN</option><option value="explain">EXPLAIN</option></select>}
     </div>
     <div className="ai-layout">
