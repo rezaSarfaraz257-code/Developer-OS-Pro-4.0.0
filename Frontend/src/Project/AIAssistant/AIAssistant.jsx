@@ -75,7 +75,24 @@ export default function AIAssistantPage({ setPage }) {
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(errorText(data, "AI request failed."));
+      if (!response.ok) {
+        const message = errorText(data, "AI request failed.");
+        // If the deployed backend still returns the legacy preparation error,
+        // run the non-billable readiness check once and expose the actual stage.
+        if (!agentMode && response.status >= 500 && message.includes("could not prepare")) {
+          try {
+            const healthResponse = await apiFetch("/ai/health/");
+            const health = await healthResponse.json().catch(() => ({}));
+            const checks = health?.checks ? Object.entries(health.checks).map(([key, value]) => `${key}=${value ? "ok" : "failed"}`).join(" · ") : "";
+            const provider = health?.details?.provider;
+            const providerInfo = provider ? ` · model=${provider.model || "unknown"} · protocol=${provider.protocol || "unknown"}` : "";
+            throw new Error(`${message} · readiness: ${health.status || "unavailable"}${checks ? ` · ${checks}` : ""}${providerInfo}`);
+          } catch (healthError) {
+            if (healthError?.message && healthError.message !== message) throw healthError;
+          }
+        }
+        throw new Error(`${message} · HTTP ${response.status}`);
+      }
       if (agentMode) setLastAgentRequest(text);
       setConversation(data.conversation || null);
       setEvidence(data.evidence || null);
