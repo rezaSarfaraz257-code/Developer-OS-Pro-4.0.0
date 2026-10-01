@@ -384,3 +384,31 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 @keyframes explore-shimmer{to{background-position:-220% 0}}@keyframes explore-scan{50%{transform:translateX(140%)}}@keyframes explore-pulse{50%{transform:translate(-50%,-50%) scale(1.08)}}@keyframes explore-orbit{to{transform:rotate(360deg) translateX(115px) rotate(-360deg)}}
 @media(max-width:1050px){.explore-orbit{opacity:.45;right:-30px}.explore-command{grid-template-columns:1fr}.explore-insights{grid-template-columns:repeat(2,1fr)}.explore-grid-pro{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.explore-hero{padding:30px 22px;min-height:360px}.explore-orbit{width:170px;height:170px;right:-50px;top:auto;bottom:-35px}.explore-orbit i{transform-origin:0 88px}.explore-hero-actions{align-items:flex-start;flex-direction:column;gap:10px}.explore-insights,.explore-grid-pro{grid-template-columns:1fr}.explore-motto{display:none!important}.explore-tabs{overflow:auto}.explore-tabs button{white-space:nowrap}.explore-search-wrap kbd{display:none}}
+
+/* =========================================================
+   EXPLORE 2.1 — intelligent marketplace layer
+   ========================================================= */
+.explore-controls{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0 12px;position:relative;z-index:2}
+.explore-categories{display:flex;gap:8px;flex-wrap:wrap}
+.explore-categories button,.explore-tags button{border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.025);color:var(--muted,#8e9aaa);padding:8px 13px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer;transition:.2s}
+.explore-categories button:hover,.explore-categories button.active,.explore-tags button:hover,.explore-tags button.active{color:#fff;border-color:rgba(91,214,255,.45);background:rgba(91,214,255,.09);box-shadow:0 0 22px rgba(91,214,255,.08)}
+.explore-controls select{min-width:165px;border:1px solid rgba(255,255,255,.1);background:#0a1018;color:#dce7f4;border-radius:10px;padding:10px 12px;font-size:11px;font-weight:800}
+.explore-tags{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:4px 0 20px}
+.explore-tags>span{font-size:10px;font-weight:900;letter-spacing:.16em;color:#657487;margin-right:4px}
+.explore-tags button{padding:6px 10px}
+.explore-ai-btn{border-color:rgba(155,111,255,.35)!important}
+.explore-ai-panel{margin:18px 0;padding:18px 20px;border:1px solid rgba(155,111,255,.3);border-radius:16px;background:linear-gradient(135deg,rgba(105,72,190,.14),rgba(30,160,190,.07));box-shadow:0 18px 60px rgba(0,0,0,.2)}
+.explore-ai-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.explore-ai-head div{display:flex;align-items:baseline;gap:12px}
+.explore-ai-head span{font-size:10px;letter-spacing:.16em;color:#bca8ff;font-weight:900}
+.explore-ai-head strong{font-size:16px}
+.explore-ai-head button{background:none;border:0;color:#738195;font-size:20px;cursor:pointer}
+.explore-ai-panel p{margin:12px 0 0;color:#c5cfdd;line-height:1.7;white-space:pre-wrap}
+.trending-card{position:relative;overflow:hidden}
+.trending-card:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(120deg,rgba(75,210,255,.045),transparent 42%)}
+.trending-badge{position:absolute;top:12px;right:12px;font-size:8px;letter-spacing:.12em;font-weight:900;color:#7ee7ff;background:rgba(54,194,236,.08);border:1px solid rgba(54,194,236,.18);padding:5px 7px;border-radius:6px}
+.explore-card-tags{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;color:#718196;font-size:10px}
+.explore-card-tags span{background:rgba(255,255,255,.035);padding:4px 7px;border-radius:5px}
+.explore-card-footer button{border:0;background:none;color:inherit;font:inherit;font-size:10px;font-weight:900;letter-spacing:.08em;cursor:pointer;padding:0}
+.explore-toast{position:fixed;right:24px;bottom:24px;z-index:1000;padding:12px 16px;border:1px solid rgba(86,222,255,.3);border-radius:10px;background:rgba(7,14,22,.94);box-shadow:0 15px 45px rgba(0,0,0,.35);color:#bff5ff;font-size:12px;font-weight:800}
+@media(max-width:760px){.explore-controls{align-items:stretch;flex-direction:column}.explore-controls select{width:100%}.explore-ai-head div{flex-direction:column;gap:4px}}
