@@ -405,9 +405,13 @@ def _run(request, message: str, action: str | None = None):
     workspace_id = request.data.get("workspace")
     conversation_id = request.data.get("conversation")
 
-    conversation = _conversation(request, project_id, conversation_id)
-    if conversation is None:
-        return Response({"error": "Forbidden"}, status=403)
+    try:
+        conversation = _conversation(request, project_id, conversation_id)
+    except DatabaseError:
+        logger.exception("AI conversation persistence unavailable; continuing in stateless mode")
+        conversation = None
+    if conversation is None and conversation_id:
+        return Response({"error": "Conversation not found or unavailable."}, status=404)
 
     from .views import _workspace_context, _workspace_for_user
     workspace = None
@@ -421,7 +425,7 @@ def _run(request, message: str, action: str | None = None):
 
     # Workspace data is enrichment, not a prerequisite for the AI request.
     # A broken optional query must never turn a valid chat message into a 422.
-    context = _compact_context(_safe_workspace_context(request.user, conversation.project_id, workspace_id))
+    context = _compact_context(_safe_workspace_context(request.user, conversation.project_id if conversation else project_id, workspace_id))
     if workspace is not None:
         # Make the selected workspace explicit while retaining the inventory for compatibility.
         workspaces = context.get("workspaces")
@@ -429,14 +433,25 @@ def _run(request, message: str, action: str | None = None):
             selected = next((item for item in workspaces if isinstance(item, dict) and item.get("id") == workspace.id), None)
             if selected is not None:
                 context["workspace"] = selected
-    history = list(
-        conversation.messages.order_by("-created_at")
-        .values("role", "content")[:MAX_HISTORY_MESSAGES]
-    )[::-1]
+    history = []
+    if conversation is not None:
+        history = list(
+            conversation.messages.order_by("-created_at")
+            .values("role", "content")[:MAX_HISTORY_MESSAGES]
+        )[::-1]
 
     answer, provider_error = _call_provider(message, context, history, action)
     if not answer:
         answer = _local_fallback(context, message)
+
+    if conversation is None:
+        return Response({
+            "conversation": {"id": None, "title": "Developer OS Intelligence"},
+            "message": {"id": None, "role": "assistant", "content": answer, "context": context},
+            "context": context,
+            "mode": "provider" if provider_error is None else "fallback",
+            "persistence": "degraded",
+        })
 
     try:
         AIMessage.objects.create(conversation=conversation, role="user", content=message, context=context)
@@ -453,6 +468,7 @@ def _run(request, message: str, action: str | None = None):
             "message": {"id": None, "role": "assistant", "content": answer, "context": context},
             "context": context,
             "mode": "provider" if provider_error is None else "fallback",
+            "persistence": "degraded",
         }
     if provider_error:
         payload["provider_status"] = provider_error
