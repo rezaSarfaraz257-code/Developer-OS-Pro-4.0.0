@@ -2283,10 +2283,14 @@ def _subscription_for(user):
     return sub
 
 def _plan_for(user):
+    """Return a valid entitlement plan even if legacy subscription data is malformed."""
     sub = _subscription_for(user)
-    if sub.status in {"canceled"} and sub.plan != "free":
-        return "free", sub
-    return sub.plan, sub
+    plan = str(getattr(sub, "plan", "") or "free").lower()
+    if plan not in PLAN_LIMITS:
+        plan = "free"
+    if getattr(sub, "status", "") == "canceled" and plan != "free":
+        plan = "free"
+    return plan, sub
 
 def _usage_period():
     now = timezone.now()
@@ -2300,7 +2304,8 @@ def _consume_usage(user, metric, amount=1):
     if amount < 0:
         raise ValueError("Usage amount cannot be negative.")
     plan, _ = _plan_for(user)
-    limit = PLAN_LIMITS[plan].get(metric)
+    limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+    limit = limits.get(metric)
     period = _usage_period()
     with transaction.atomic():
         record, _ = UsageRecord.objects.select_for_update().get_or_create(
