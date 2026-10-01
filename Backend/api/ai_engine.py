@@ -616,6 +616,32 @@ def _issue_patch_approval_token(request, answer):
     })
 
 
+
+AGENT_MAX_ITERATIONS = 3
+
+
+def _verification_state(verification: dict[str, Any], diagnostics: dict[str, Any]) -> dict[str, Any]:
+    runner_ok = str((verification or {}).get("status") or "").lower() in {"ok", "success", "passed"}
+    diag_status = str((diagnostics or {}).get("status") or "").lower()
+    diagnostics_ok = diag_status in {"ok", "passed", "clean", "success"} or not diag_status
+    return {
+        "passed": runner_ok and diagnostics_ok,
+        "runner": verification or {},
+        "diagnostics": diagnostics or {},
+    }
+
+
+def _agent_repair_plan(evidence: dict[str, Any], iteration: int) -> dict[str, Any]:
+    state = _verification_state(evidence.get("runner") or {}, evidence.get("diagnostics") or {})
+    return {
+        "iteration": iteration,
+        "max_iterations": AGENT_MAX_ITERATIONS,
+        "passed": state["passed"],
+        "next_step": "complete" if state["passed"] else ("reanalyze" if iteration < AGENT_MAX_ITERATIONS else "manual_review"),
+        "reason": "Verification passed." if state["passed"] else "Verification requires another analysis cycle or manual review.",
+    }
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agent_apply_api(request):
@@ -695,6 +721,7 @@ def ai_agent_apply_api(request):
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
+        "repair_loop": _agent_repair_plan({"runner": verification, "diagnostics": diagnostics}, 1),
     })
 
 
