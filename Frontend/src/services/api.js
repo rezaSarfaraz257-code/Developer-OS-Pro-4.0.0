@@ -13,8 +13,41 @@ function authStorage() {
   return window.sessionStorage;
 }
 
+function legacyAuthStorage() {
+  return window.localStorage;
+}
+
 export function getAccessToken() {
-  return authStorage().getItem("access");
+  const sessionToken = authStorage().getItem("access");
+  if (sessionToken) return sessionToken;
+
+  // Migrate tokens created by older Developer OS releases. Session storage
+  // remains the canonical store; legacy localStorage is only a one-time
+  // compatibility source and is never preferred over the current session.
+  const legacyAccess = legacyAuthStorage().getItem("access");
+  const legacyRefresh = legacyAuthStorage().getItem("refresh");
+  if (legacyAccess) {
+    authStorage().setItem("access", legacyAccess);
+    if (legacyRefresh) authStorage().setItem("refresh", legacyRefresh);
+    legacyAuthStorage().removeItem("access");
+    legacyAuthStorage().removeItem("refresh");
+    return legacyAccess;
+  }
+  return null;
+}
+
+export function setAuthTokens(access, refresh) {
+  if (!access || !refresh) {
+    clearAuth();
+    return false;
+  }
+  authStorage().setItem("access", access);
+  authStorage().setItem("refresh", refresh);
+  // Remove stale tokens left by older releases so they cannot be accidentally
+  // reused by debugging scripts or other legacy code.
+  legacyAuthStorage().removeItem("access");
+  legacyAuthStorage().removeItem("refresh");
+  return true;
 }
 
 export function clearAuth() {
@@ -26,7 +59,7 @@ export function clearAuth() {
 }
 
 export function revokeRefreshToken() {
-  const refresh = authStorage().getItem("refresh");
+  const refresh = authStorage().getItem("refresh") || legacyAuthStorage().getItem("refresh");
   const access = getAccessToken();
 
   if (!refresh || !access) {
