@@ -949,6 +949,9 @@ ACTION_INSTRUCTIONS = {
     "debug": "Debug the supplied issue. Separate observed evidence from hypotheses and give the smallest safe fix plus verification.",
     "plan": "Create an implementation plan with dependencies, files likely affected, risks, and a verification checklist.",
     "explain": "Explain the supplied code or architecture from high level to implementation detail, using the actual context.",
+    "project": "Act as a senior project manager for this workspace. Analyze project scope, tasks, deadlines, priorities, blockers and delivery signals. Return: current state, top risks, priority order, next milestone, task candidates with rationale, dependencies, and a verification checklist. Do not invent missing project facts.",
+    "sprint": "Design the next practical sprint from the real workspace context. Prioritize the smallest high-impact deliverables, identify dependencies and blockers, define acceptance criteria, and separate observed facts from recommendations.",
+    "risk": "Perform a delivery-risk review of the workspace. Identify schedule, technical, security, dependency and quality risks from available evidence, assign qualitative severity only when supported, and give concrete mitigations and owners/next actions.",
 }
 
 
