@@ -24,6 +24,8 @@ export default function AIAssistantPage({ setPage }) {
   const [workspace, setWorkspace] = useState("");
   const [conversation, setConversation] = useState(null);
   const [usage, setUsage] = useState(null);
+  const [agentMode, setAgentMode] = useState(false);
+  const [evidence, setEvidence] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +53,7 @@ export default function AIAssistantPage({ setPage }) {
     setBusy(true);
     setError("");
     try {
-      const response = await apiFetch("/ai/chat/", {
+      const response = await apiFetch(agentMode ? "/ai/agent/" : "/ai/chat/", {
         method: "POST",
         body: JSON.stringify({
           message: text,
@@ -62,8 +64,9 @@ export default function AIAssistantPage({ setPage }) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(errorText(data, "AI request failed."));
       setConversation(data.conversation || null);
+      setEvidence(data.evidence || null);
       setAnswer(data.message?.content || data.answer || "The intelligence engine returned no answer.");
-      setMode(data.mode === "fallback" ? "local fallback" : "workspace intelligence");
+      setMode(agentMode ? (data.mode || "agentic intelligence") : (data.mode === "fallback" ? "local fallback" : "workspace intelligence"));
       setMessage("");
       if (data.usage) setUsage((old) => old ? { ...old, metrics: { ...old.metrics, ai_messages: { ...old.metrics?.ai_messages, used: data.usage.used } } } : old);
     } catch (err) {
@@ -115,7 +118,7 @@ export default function AIAssistantPage({ setPage }) {
       <div className="ai-layout ai-layout-pro">
         <section className="ai-card ai-main-card">
           <div className="ai-status-row">
-            <div className="ai-badge">✦ CONTEXT-AWARE ENGINE</div>
+            <div className="ai-badge">✦ {agentMode ? "AGENTIC DEVELOPER INTELLIGENCE" : "CONTEXT-AWARE ENGINE"}</div>
             <span className={mode === "local fallback" ? "ai-fallback" : "ai-online"}>{busy ? "THINKING…" : mode || "READY"}</span>
           </div>
           {answer ? (
@@ -133,6 +136,7 @@ export default function AIAssistantPage({ setPage }) {
             <textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={busy} placeholder="Ask Developer OS Intelligence…" />
             <div className="ai-composer-bottom">
               <span>{activeWorkspace ? `Workspace: ${activeWorkspace.name}` : "Context: projects + tasks + notes + snippets"}</span>
+              <label className="ai-agent-toggle"><input type="checkbox" checked={agentMode} onChange={(e) => setAgentMode(e.target.checked)} /> Agent mode</label>
               <button className="primary" disabled={busy || !message.trim()}>{busy ? "ANALYZING…" : "ASK INTELLIGENCE →"}</button>
             </div>
           </form>
@@ -147,6 +151,7 @@ export default function AIAssistantPage({ setPage }) {
           {["Review my current workspace", "Find the biggest delivery risk", "Explain this error", "Plan my next milestone"].map((prompt) => (
             <button className="prompt" key={prompt} onClick={() => setMessage(prompt)}>{prompt}<span>→</span></button>
           ))}
+          {agentMode && evidence && <div className="ai-context-box"><small>AGENT EVIDENCE</small><b>IDE · Repository · Diagnostics · Runner</b><span>Repo {evidence.repository?.connected ? "connected" : "not connected"} · Diagnostics {evidence.diagnostics?.status || "unknown"} · Runner {evidence.runner?.status || "unknown"}</span></div>}
           <div className="ai-context-box">
             <small>ACTIVE CONTEXT</small>
             <b>{activeWorkspace?.name || "All accessible workspaces"}</b>
