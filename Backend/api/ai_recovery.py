@@ -103,7 +103,23 @@ def ai_chat_api_recovery(request):
         provider_error = '{"code":"AI_INTERNAL_PROVIDER_ERROR","message":"The AI provider could not complete the request."}'
 
     if not answer:
-        answer = _local_fallback(context, message)
+        # Do not hide provider failures behind the generic workspace fallback.
+        # The frontend needs the real provider diagnosis (config/auth/model/quota/network)
+        # so operators can fix the actual production failure.
+        if provider_error:
+            try:
+                error_info = __import__("json").loads(provider_error)
+            except Exception:
+                error_info = {"code": "AI_PROVIDER_ERROR", "message": str(provider_error)}
+            code = str(error_info.get("code") or "AI_PROVIDER_ERROR")
+            provider_message = str(error_info.get("message") or "The AI provider could not complete the request.")
+            detail = str(error_info.get("detail") or "").strip()
+            status_code = error_info.get("status")
+            answer = provider_message
+            if detail and code not in {"AI_CONFIG_ERROR"}:
+                answer = f"{answer} ({detail[:500]})"
+        else:
+            answer = _local_fallback(context, message)
 
     # Persistence is best-effort. A serializer/model/schema mismatch must not
     # turn a successful provider response into the preparation error seen by UI.
