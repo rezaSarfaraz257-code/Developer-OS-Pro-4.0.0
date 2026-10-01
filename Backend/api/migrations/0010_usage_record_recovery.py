@@ -81,8 +81,8 @@ class Migration(migrations.Migration):
                             ),
                         ],
                         "indexes": [
-                            models.Index(fields=["user", "period"]),
-                            models.Index(fields=["metric", "period"]),
+                            models.Index(fields=["user", "period"], name="api_usage_user_period_idx"),
+                            models.Index(fields=["metric", "period"], name="api_usage_metric_period_idx"),
                         ],
                     },
                 ),
