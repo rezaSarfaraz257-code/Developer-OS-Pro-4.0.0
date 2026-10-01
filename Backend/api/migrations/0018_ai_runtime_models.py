@@ -12,12 +12,12 @@ def create_model_if_missing(apps, schema_editor, model_name):
 def create_ai_runtime_models(apps, schema_editor):
     # Create in dependency order. Older deployments may have model state without
     # physical tables, so each operation is idempotent.
-    for name in ("CodeWorkspace", "FrameworkInstallation", "IDEExecution", "AIConversation", "AIMessage"):
+    for name in ("Subscription", "CodeWorkspace", "FrameworkInstallation", "IDEExecution", "AIConversation", "AIMessage"):
         create_model_if_missing(apps, schema_editor, name)
 
 
 def drop_ai_runtime_models(apps, schema_editor):
-    for name in ("AIMessage", "AIConversation", "IDEExecution", "FrameworkInstallation", "CodeWorkspace"):
+    for name in ("AIMessage", "AIConversation", "IDEExecution", "FrameworkInstallation", "CodeWorkspace", "Subscription"):
         Model = apps.get_model("api", name)
         table = Model._meta.db_table
         if table in schema_editor.connection.introspection.table_names():
@@ -38,6 +38,20 @@ class Migration(migrations.Migration):
                 ),
             ],
             state_operations=[
+                migrations.CreateModel(
+                    name="Subscription",
+                    fields=[
+                        ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                        ("plan", models.CharField(choices=[("free", "Free"), ("pro", "Pro"), ("team", "Team"), ("enterprise", "Enterprise")], default="free", max_length=20)),
+                        ("status", models.CharField(choices=[("trialing", "Trialing"), ("active", "Active"), ("past_due", "Past due"), ("canceled", "Canceled")], default="active", max_length=20)),
+                        ("provider_customer_id", models.CharField(blank=True, default="", max_length=180)),
+                        ("provider_subscription_id", models.CharField(blank=True, default="", max_length=180)),
+                        ("current_period_end", models.DateTimeField(blank=True, null=True)),
+                        ("cancel_at_period_end", models.BooleanField(default=False)),
+                        ("updated_at", models.DateTimeField(auto_now=True)),
+                        ("user", models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name="subscription", to="auth.user")),
+                    ],
+                ),
                 migrations.CreateModel(
                     name="CodeWorkspace",
                     fields=[
