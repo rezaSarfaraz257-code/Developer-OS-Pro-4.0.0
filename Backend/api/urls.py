@@ -98,6 +98,7 @@ urlpatterns = [
     path("audit/", views.audit_log_api, name="audit-log"),
     path("ai/conversations/", views.ai_conversations_api, name="ai-conversations"),
     path("ai/conversations/<int:pk>/messages/", views.ai_conversation_messages_api, name="ai-conversation-messages"),
+    path("ai/health/", ai_engine.ai_health_api, name="ai-health"),
     path("ai/chat/", ai_engine.ai_chat_api, name="ai-chat"),
     path("ai/agent/", ai_engine.ai_agent_api, name="ai-agent"),
     path("ai/agent/apply/", ai_engine.ai_agent_apply_api, name="ai-agent-apply"),
