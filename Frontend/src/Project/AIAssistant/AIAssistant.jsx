@@ -31,6 +31,7 @@ export default function AIAssistantPage({ setPage }) {
   const [timeline, setTimeline] = useState([]);
   const [toolCalls, setToolCalls] = useState([]);
   const [showDiff, setShowDiff] = useState(true);
+  const [lastAgentRequest, setLastAgentRequest] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +70,7 @@ export default function AIAssistantPage({ setPage }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(errorText(data, "AI request failed."));
+      if (agentMode) setLastAgentRequest(text);
       setConversation(data.conversation || null);
       setEvidence(data.evidence || null);
       if (agentMode) { setToolCalls(data.tool_calls || []); setTimeline((items) => items.map((x) => ({...x,state:"complete"})).concat(data.approval_token ? [{label:"PATCH PROPOSAL",state:"ready"}] : [{label:"VERIFY",state:"complete"}])); }
@@ -156,6 +158,7 @@ export default function AIAssistantPage({ setPage }) {
             <div className="acc-header"><div><small>AGENT CONTROL CENTER</small><strong>ENGINEERING LOOP</strong></div><span>{busy ? "LIVE · WORKING" : "READY · OBSERVABLE"}</span></div>
             <div className="acc-timeline">{timeline.length ? timeline.map((item,index) => <div className={"acc-step "+item.state} key={index}><i></i><span>{item.label}</span></div>) : <div className="acc-muted">Start an Agent request to initialize the engineering loop.</div>}</div>
             <div className="acc-tools"><div className="acc-section-title">TOOL CALLS <b>{toolCalls.length}</b></div>{toolCalls.length ? toolCalls.map((call,index) => <div className="acc-tool" key={index}><span>●</span><b>{call.name || call.tool || "tool"}</b><em>{call.state || "complete"}</em></div>) : <div className="acc-muted">Tool activity will appear here when the Agent invokes evidence tools.</div>}</div>
+            {agentMode && <div className="acc-intel-grid"><div><small>CONFIDENCE</small><b>LIVE</b></div><div><small>RISK</small><b>REVIEW</b></div><div><small>LOOP</small><b>{applyResult ? "VERIFYING" : approvalToken ? "APPROVAL" : busy ? "RUNNING" : "READY"}</b></div></div>}
             {evidence?.repository && <div className="acc-metrics"><div><small>REPOSITORY</small><b>{evidence.repository.connected ? "CONNECTED" : "OFFLINE"}</b></div><div><small>DIAGNOSTICS</small><b>{evidence.diagnostics?.status || "UNKNOWN"}</b></div><div><small>RUNNER</small><b>{evidence.runner?.status || "UNKNOWN"}</b></div></div>}
             {answer && answer.trim().startsWith("{") && <div className="acc-proposal"><div className="acc-section-title">PATCH PREVIEW <button onClick={() => setShowDiff(!showDiff)}>{showDiff ? "HIDE" : "SHOW"}</button></div>{showDiff && <pre>{answer}</pre>}</div>}
           </div>}
