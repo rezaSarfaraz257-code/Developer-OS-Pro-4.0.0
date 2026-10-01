@@ -585,6 +585,118 @@ def ai_agent_api(request):
     })
 
 
+
+from django.core import signing
+from django.db import transaction
+import difflib
+
+AGENT_PATCH_TOKEN_MAX_AGE = 900
+
+
+def _issue_patch_approval_token(request, answer):
+    try:
+        proposal = json.loads(answer)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(proposal, dict) or proposal.get("type") != "patch_proposal":
+        return None
+    if _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) is None:
+        return None
+    from .views import _workspace_for_user
+    workspace_id = request.data.get("workspace")
+    workspace = _workspace_for_user(workspace_id, request.user) if workspace_id else None
+    if not workspace:
+        return None
+    return signing.dumps({
+        "user_id": request.user.id,
+        "workspace_id": workspace.id,
+        "workspace_revision": workspace.revision,
+        "proposal": proposal,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_agent_apply_api(request):
+    token = str(request.data.get("approval_token") or "")
+    if not token:
+        return Response({"error": "approval_token is required"}, status=400)
+    try:
+        payload = signing.loads(token, max_age=AGENT_PATCH_TOKEN_MAX_AGE)
+    except signing.BadSignature:
+        return Response({"error": "Patch approval token is invalid or expired."}, status=400)
+    if payload.get("user_id") != request.user.id:
+        return Response({"error": "Patch approval belongs to another user."}, status=403)
+
+    from .views import _workspace_for_user, _runner_request, _workspace_payload
+    workspace = _workspace_for_user(payload.get("workspace_id"), request.user)
+    if not workspace:
+        return Response({"error": "Workspace not found."}, status=404)
+    if workspace.revision != payload.get("workspace_revision"):
+        return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
+
+    proposal = payload.get("proposal")
+    if not isinstance(proposal, dict) or _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) is None:
+        return Response({"error": "Patch proposal failed safety validation."}, status=400)
+
+    current = dict(workspace.files or {})
+    updated = dict(current)
+    diffs = []
+    for change in proposal.get("changes", []):
+        path = str(change.get("path") or "")
+        operation = change.get("operation")
+        if not path or path.startswith("/") or "\" in path or ".." in path.split("/"):
+            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
+        before = str(updated.get(path, ""))
+        if operation == "delete":
+            if path not in updated:
+                return Response({"error": f"Cannot delete missing file: {path}"}, status=400)
+            del updated[path]
+            after = ""
+        elif operation == "modify":
+            if path not in updated:
+                return Response({"error": f"Cannot modify missing file: {path}"}, status=400)
+            after = str(change.get("content") or "")
+            updated[path] = after
+        elif operation == "create":
+            if path in updated:
+                return Response({"error": f"Cannot create existing file: {path}"}, status=400)
+            after = str(change.get("content") or "")
+            updated[path] = after
+        else:
+            return Response({"error": "Unsupported patch operation."}, status=400)
+        diffs.append({
+            "path": path,
+            "operation": operation,
+            "diff": "".join(difflib.unified_diff(
+                before.splitlines(True), after.splitlines(True),
+                fromfile=path, tofile=path
+            )),
+        })
+
+    total_bytes = sum(len(str(value).encode("utf-8")) for value in updated.values())
+    if len(updated) > 2000 or total_bytes > 25_000_000:
+        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+
+    with transaction.atomic():
+        workspace.files = updated
+        workspace.save(update_fields={"files"})
+
+    sync_data, sync_error = _runner_request("POST", "/sync", _workspace_payload(workspace), timeout=30)
+    verification = _agent_runner_evidence(workspace)
+    diagnostics = _agent_diagnostics_evidence(workspace)
+    return Response({
+        "status": "applied",
+        "workspace": {"id": workspace.id, "revision": workspace.revision},
+        "changed_files": [item["path"] for item in diffs],
+        "diffs": diffs,
+        "sync": {"ok": sync_error is None, "error": sync_error, "data": sync_data},
+        "verification": verification,
+        "diagnostics": diagnostics,
+        "reanalysis_required": True,
+    })
+
+
 ACTION_INSTRUCTIONS = {
     "review": "Perform a senior-level code review. Group findings by severity and give exact fixes.",
     "tests": "Design focused automated tests for the supplied code and context. Include edge cases and expected assertions.",
