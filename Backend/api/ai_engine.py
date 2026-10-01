@@ -22,13 +22,6 @@ from rest_framework.response import Response
 
 from .models import AIConversation, AIMessage, Project
 from .serializers import AIConversationSerializer, AIMessageSerializer
-from .views import (
-    AssistantRateThrottle,
-    _consume_usage,
-    _project_access,
-    _workspace_context,
-    _workspace_for_user,
-)
 
 logger = logging.getLogger("developer_os.ai")
 
@@ -40,7 +33,7 @@ AI_TIMEOUT = (5, int(os.getenv("AI_TIMEOUT_SECONDS", "45")))
 def _provider_config() -> dict[str, str]:
     key = os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or ""
     base = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").rstrip("/")
-    model = os.getenv("AI_MODEL") or "gpt-5.6-luna"
+    model = os.getenv("AI_MODEL") or "gpt-5"
     protocol = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
     return {"key": key, "base": base, "model": model, "protocol": protocol}
 
@@ -182,6 +175,7 @@ def _local_fallback(context: dict[str, Any], message: str) -> str:
 
 
 def _conversation(request, project_id=None, conversation_id=None):
+    from .views import _project_access
     if conversation_id:
         return get_object_or_404(AIConversation, pk=conversation_id, owner=request.user)
     if project_id:
@@ -204,6 +198,7 @@ def _run(request, message: str, action: str | None = None):
     if conversation is None:
         return Response({"error": "Forbidden"}, status=403)
 
+    from .views import _workspace_context, _workspace_for_user
     workspace = None
     if workspace_id:
         workspace = _workspace_for_user(workspace_id, request.user)
@@ -243,7 +238,6 @@ def _run(request, message: str, action: str | None = None):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AssistantRateThrottle])
 def ai_chat_api(request):
     message = str(request.data.get("message") or "").strip()
     if not message:
@@ -252,6 +246,8 @@ def ai_chat_api(request):
         return Response({"error": "message too long"}, status=400)
 
     # Validate project/workspace/conversation before charging quota.
+    from .views import _consume_usage
+    from .views import _consume_usage
     allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
     if not allowed:
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
