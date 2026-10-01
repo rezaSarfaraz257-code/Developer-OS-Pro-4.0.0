@@ -2297,8 +2297,8 @@ def _usage_count(user, metric):
 
 def _consume_usage(user, metric, amount=1):
     """Atomically consume metered usage so concurrent requests cannot overspend a plan."""
-    if amount <= 0:
-        raise ValueError("Usage amount must be positive.")
+    if amount < 0:
+        raise ValueError("Usage amount cannot be negative.")
     plan, _ = _plan_for(user)
     limit = PLAN_LIMITS[plan].get(metric)
     period = _usage_period()
@@ -2307,6 +2307,8 @@ def _consume_usage(user, metric, amount=1):
             user=user, period=period, metric=metric
         )
         current = record.quantity
+        if amount == 0:
+            return current < limit if limit is not None else True, current, limit, plan
         if limit is not None and current + amount > limit:
             return False, current, limit, plan
         record.quantity = current + amount
