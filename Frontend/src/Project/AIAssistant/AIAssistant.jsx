@@ -11,7 +11,13 @@ const QUICK_ACTIONS = [
 ];
 
 function errorText(data, fallback) {
-  return data?.error || data?.detail || fallback;
+  const error = data?.error;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const message = [error.message, error.detail].filter(Boolean).join(" · ");
+    if (message) return message;
+  }
+  return data?.detail || fallback;
 }
 
 export default function AIAssistantPage({ setPage }) {
