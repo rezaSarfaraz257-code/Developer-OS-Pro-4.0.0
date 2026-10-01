@@ -816,3 +816,15 @@ class WorkspaceFileRevision(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["workspace", "path", "revision"], name="unique_workspace_file_revision"),
         ]
+
+
+class WorkspaceFileLock(models.Model):
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name='file_locks')
+    path = models.CharField(max_length=500)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    client_id = models.CharField(max_length=96)
+    acquired_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['workspace','path'], name='unique_workspace_file_lock')]
+        indexes = [models.Index(fields=['workspace','path'])]
