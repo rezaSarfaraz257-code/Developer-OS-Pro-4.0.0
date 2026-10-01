@@ -11,7 +11,7 @@ class IntelligenceEngineTests(SimpleTestCase):
         with patch.dict(os.environ, {}, clear=True):
             config = _provider_config()
         self.assertEqual(config["base"], "https://api.openai.com/v1")
-        self.assertEqual(config["model"], "gpt-5")
+        self.assertEqual(config["model"], "gpt-5.6-luna")
         self.assertEqual(config["protocol"], "responses")
 
     def test_extracts_responses_output_text(self):
