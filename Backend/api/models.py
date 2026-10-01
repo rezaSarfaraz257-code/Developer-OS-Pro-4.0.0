@@ -786,3 +786,33 @@ class OrganizationRolePermission(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["organization", "role"], name="unique_org_role_permission")]
+
+
+class WorkspaceCollaborationSession(models.Model):
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="collaboration_sessions")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workspace_collaboration_sessions")
+    client_id = models.CharField(max_length=96)
+    cursor = models.JSONField(default=dict, blank=True)
+    selection = models.JSONField(default=dict, blank=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "user", "client_id"], name="unique_workspace_collab_client"),
+        ]
+        indexes = [models.Index(fields=["workspace", "-last_seen_at"])]
+
+class WorkspaceFileRevision(models.Model):
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="file_revisions")
+    path = models.CharField(max_length=500)
+    revision = models.PositiveBigIntegerField()
+    content = models.TextField()
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    client_id = models.CharField(max_length=96, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["workspace", "path", "-revision"])]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "path", "revision"], name="unique_workspace_file_revision"),
+        ]
