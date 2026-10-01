@@ -280,7 +280,10 @@ def _safe_provider_detail(response: requests.Response | None) -> str:
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
     cfg = _provider_config()
     if not cfg["key"]:
-        return "", _provider_error("AI_CONFIG_ERROR", "AI provider is not configured. Set AI_API_KEY on the backend.")
+        return "", _provider_error(
+            "AI_CONFIG_ERROR",
+            "OpenAI provider is not configured. Set OPENAI_API_KEY on the backend (AI_API_KEY is also supported).",
+        )
 
     if cfg["protocol"] not in {"responses", "chat"}:
         return "", _provider_error("AI_CONFIG_ERROR", "AI_API_PROTOCOL must be 'responses' or 'chat'.")
