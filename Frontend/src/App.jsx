@@ -469,14 +469,14 @@ function Explore() {
         apiFetch(`/resources/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch("/favorites/").then(x=>x.json()),
       ]);
-      setTools(Array.isArray(t)?t:[]);
-      setWorkflows(Array.isArray(w)?w:[]);
-      setResources(Array.isArray(r)?r:[]);
-      setFavorites(Array.isArray(f)?f:[]);
+      setTools(Array.isArray(t)?t:(t.results||[]));
+      setWorkflows(Array.isArray(w)?w:(w.results||[]));
+      setResources(Array.isArray(r)?r:(r.results||[]));
+      setFavorites(Array.isArray(f)?f:(f.results||[]));
     }catch(e){setError(e.message)}
     finally{setBusy(false)}
   };
-  useEffect(()=>{const t=setTimeout(load,250);return()=>clearTimeout(t)},[q]);
+  useEffect(()=>{const t=setTimeout(load,220);return()=>clearTimeout(t)},[q]);
 
   const toggle=async tool=>{
     const saved=favorites.some(f=>f.tool?.name?.toLowerCase()===tool.name.toLowerCase());
@@ -492,26 +492,78 @@ function Explore() {
   };
 
   const data=tab==="tools"?tools:tab==="workflows"?workflows:resources;
+  const favoriteCount=favorites.length;
+  const total=tools.length+workflows.length+resources.length;
+
   return <div className="page explore-page">
-    <div className="hero-row">
-      <div><div className="eyebrow">DEVELOPER OS / DISCOVERY</div><h1>Explore</h1><p>Discover tools, workflows and knowledge from the Developer OS catalog — then save the pieces that belong to your stack.</p></div>
-      <div className="hero-actions"><button className="ghost" onClick={()=>load()}>↻ SYNC CATALOG</button><button className="primary" onClick={()=>document.querySelector(".explore-search")?.focus()}>⌕ SEARCH</button></div>
-    </div>
-    <section className="explore-command panel">
-      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Search tools, workflows, resources..." /></div>
-      <div className="explore-tabs">{[["tools","TOOLS"],["workflows","WORKFLOWS"],["resources","RESOURCES"]].map(([id,label])=><button className={tab===id?"active":""} onClick={()=>setTab(id)} key={id}>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
+    <section className="explore-hero">
+      <div className="explore-hero-glow"/>
+      <div className="explore-hero-copy">
+        <div className="eyebrow">DEVELOPER OS / DISCOVERY ENGINE</div>
+        <h1>Explore <span>what’s next.</span></h1>
+        <p>Find the tools, workflows and knowledge that turn ideas into shipped software. Build your stack. Keep moving.</p>
+        <div className="explore-hero-actions">
+          <button className="primary" onClick={()=>document.querySelector(".explore-search")?.focus()}>⌕ EXPLORE CATALOG</button>
+          <span className="explore-shortcut">Press <kbd>/</kbd> to search</span>
+        </div>
+      </div>
+      <div className="explore-orbit" aria-hidden="true"><div className="orbit-core">✦</div><i/><i/><i/></div>
     </section>
+
+    <section className="explore-command panel">
+      <div className="explore-search-wrap">
+        <span>⌕</span>
+        <input className="explore-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Search tools, workflows, resources..." />
+        {q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}
+        <kbd>⌘ K</kbd>
+      </div>
+      <div className="explore-tabs">
+        {[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=>
+          <button className={tab===id?"active":""} onClick={()=>setTab(id)} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>
+        )}
+      </div>
+    </section>
+
+    <div className="explore-insights">
+      <div><span>CATALOG SIGNAL</span><strong>{total || "—"}</strong><small>discoverable items</small></div>
+      <div><span>YOUR SAVED STACK</span><strong>{favoriteCount}</strong><small>favorite tools</small></div>
+      <div><span>ACTIVE SURFACE</span><strong>{tab.toUpperCase()}</strong><small>{data.length} indexed now</small></div>
+      <div className="explore-motto"><span>BUILD WITH INTENT.</span><strong>SHIP WITH MOMENTUM.</strong></div>
+    </div>
+
     {error&&<div className="error">{error}</div>}
-    {busy?<div className="loading">INDEXING DEVELOPER CATALOG...</div>:
+
+    {busy?
+      <section className="explore-grid-pro">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>
+      :
       <section className="explore-grid-pro">
-        {tab==="tools"&&tools.map(t=><article className="explore-card" key={t.id}><div className="explore-card-top"><span>{t.category||t.tag}</span><button onClick={()=>toggle(t)} aria-label={`Save ${t.name}`}>{favorites.some(f=>f.tool?.name?.toLowerCase()===t.name.toLowerCase())?"♥":"♡"}</button></div><h3>{t.name}</h3><p>{t.description}</p><div className="explore-meta"><span>★ {t.rating}</span><span>{(t.features||[]).slice(0,2).join(" · ")}</span></div></article>)}
-        {tab==="workflows"&&workflows.map(w=><article className="explore-card" key={w.id}><div className="explore-card-top"><span>{w.level}</span><span>{w.duration}</span></div><h3>{w.title}</h3><p>{w.summary||"Repeatable engineering playbook."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,4).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol></article>)}
-        {tab==="resources"&&resources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span>{r.resource_type||"RESOURCE"}</span><span>{r.category}</span></div><h3>{r.title}</h3><p>{r.description||"Developer knowledge resource."}</p>{r.link&&<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE ↗</a>}</article>)}
-        {!data.length&&<div className="empty">Nothing matched this query. Try another term or sync the catalog.</div>}
-      </section>}
+        {tab==="tools"&&tools.map(t=>{
+          const saved=favorites.some(f=>f.tool?.name?.toLowerCase()===t.name.toLowerCase());
+          return <article className="explore-card" key={t.id}>
+            <div className="explore-card-top"><span className="explore-tag">{t.category||t.tag||"DEVELOPER TOOL"}</span><button className={saved?"saved":""} onClick={()=>toggle(t)} aria-label={saved?`Remove ${t.name} from favorites`:`Save ${t.name}`}>{saved?"♥":"♡"}</button></div>
+            <div className="explore-icon">⌘</div>
+            <h3>{t.name}</h3>
+            <p>{t.description||"A developer tool ready for your next build."}</p>
+            <div className="explore-meta"><span>★ {t.rating??"—"}</span><span>{(t.features||[]).slice(0,2).join(" · ")||"Developer workflow"}</span></div>
+            <div className="explore-card-footer"><span>READY TO USE</span><i>→</i></div>
+          </article>
+        })}
+        {tab==="workflows"&&workflows.map(w=><article className="explore-card workflow-card" key={w.id}>
+          <div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span className="explore-duration">{w.duration||"PLAYBOOK"}</span></div>
+          <div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p>
+          <ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol>
+          <div className="explore-card-footer"><span>START PLAYBOOK</span><i>→</i></div>
+        </article>)}
+        {tab==="resources"&&resources.map(r=><article className="explore-card" key={r.id}>
+          <div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div>
+          <div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>
+          {r.link?<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}
+        </article>)}
+        {!data.length&&<div className="explore-empty"><div>⌕</div><h3>Nothing found.</h3><p>Try a different signal, category or keyword.</p><button className="ghost" onClick={()=>setQ("")}>CLEAR SEARCH</button></div>}
+      </section>
+    }
   </div>;
 }
-
 function SearchPage() {
   const params=new URLSearchParams(window.location.search); const [q,setQ]=useState(params.get("q")||""); const [results,setResults]=useState([]);
   useEffect(()=>{if(q)apiFetch(`/platform/search/?q=${encodeURIComponent(q)}`).then(r=>r.json()).then(d=>setResults(d.results||[])).catch(()=>{});},[q]);
