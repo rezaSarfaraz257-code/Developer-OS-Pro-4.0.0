@@ -53,15 +53,19 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in {"1", "true", "ye
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 CACHE_URL = os.getenv("CACHE_URL", "")
 
-# AI gateway configuration. Never commit the API key. OPENAI_API_KEY is accepted
-# as the canonical secret and mapped to the existing AI gateway variable.
-if os.getenv("OPENAI_API_KEY") and not os.getenv("AI_API_KEY"):
-    os.environ["AI_API_KEY"] = os.environ["OPENAI_API_KEY"]
-os.environ.setdefault("AI_API_URL", "https://api.openai.com/v1")
-os.environ.setdefault("AI_MODEL", "gpt-5")
-AI_API_URL = os.environ.get("AI_API_URL", "").rstrip("/")
-AI_API_KEY_CONFIGURED = bool(os.environ.get("AI_API_KEY"))
-AI_MODEL = os.environ.get("AI_MODEL", "gpt-5")
+# AI gateway configuration. Never commit the API key.
+# OPENAI_API_KEY is the canonical deployment variable; AI_API_KEY remains
+# supported for backward compatibility. Empty Docker/Render variables must
+# not override the OpenAI defaults.
+AI_API_KEY = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").strip()
+AI_API_URL = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
+AI_MODEL = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
+AI_API_PROTOCOL = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
+os.environ["AI_API_KEY"] = AI_API_KEY
+os.environ["AI_API_URL"] = AI_API_URL
+os.environ["AI_MODEL"] = AI_MODEL
+os.environ["AI_API_PROTOCOL"] = AI_API_PROTOCOL
+AI_API_KEY_CONFIGURED = bool(AI_API_KEY)
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
