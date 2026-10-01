@@ -509,50 +509,54 @@ def ai_chat_api(request):
     if len(message) > 12000:
         return Response({"error": "message too long"}, status=400)
 
-    # AI must fail predictably: provider, database, context, and usage failures
-    # are classified without leaking secrets or stack traces to the client.
+    stage = "usage_preflight"
     try:
         from .views import _consume_usage
         allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
         if not allowed:
             return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
+        stage = "conversation_and_context"
         response = _run(request, message)
         if response.status_code >= 400:
             return response
 
+        stage = "usage_commit"
         allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
         if not allowed:
             return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
         response.data["usage"] = {"used": used, "limit": limit, "plan": plan}
         return response
     except DatabaseError as exc:
-        logger.exception("AI database failure")
+        logger.exception("AI database failure stage=%s", stage)
         return Response({
             "error": {
                 "code": "AI_DATABASE_ERROR",
                 "message": "Developer OS could not access the AI conversation database.",
+                "stage": stage,
+                "detail": exc.__class__.__name__,
             }
         }, status=503)
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        logger.exception("AI request preparation failure")
-        # A valid chat request should not be reported as an opaque 422. Return a
-        # stable operational error with safe diagnostics so deployment logs and
-        # the UI can identify the failing preparation stage.
+        logger.exception("AI request preparation failure stage=%s", stage)
         detail = str(exc).strip().replace("\\n", " ").replace("\n", " ")[:240]
         return Response({
             "error": {
                 "code": "AI_REQUEST_PREPARATION_ERROR",
                 "message": "Developer OS could not prepare the AI request.",
+                "stage": stage,
                 "detail": f"{exc.__class__.__name__}: {detail}" if detail else exc.__class__.__name__,
             }
         }, status=503)
     except Exception as exc:
-        logger.exception("AI endpoint failure")
+        logger.exception("AI endpoint failure stage=%s", stage)
+        detail = str(exc).strip().replace("\\n", " ").replace("\n", " ")[:240]
         return Response({
             "error": {
                 "code": "AI_INTERNAL_ERROR",
                 "message": "Developer OS Intelligence failed before completing the request.",
+                "stage": stage,
+                "detail": f"{exc.__class__.__name__}: {detail}" if detail else exc.__class__.__name__,
             }
         }, status=503)
 
