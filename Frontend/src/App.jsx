@@ -362,16 +362,93 @@ function Collab({projectId}) {
 }
 
 function AI() {
-  const [conversations,setConversations]=useState([]); const [conversation,setConversation]=useState(null); const [messages,setMessages]=useState([]); const [input,setInput]=useState(""); const [busy,setBusy]=useState(false); const bottom=useRef(null);
-  useEffect(()=>{apiFetch("/ai/conversations/").then(r=>r.json()).then(setConversations).catch(()=>{});},[]);
+  const [conversations,setConversations]=useState([]);
+  const [conversation,setConversation]=useState(null);
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [mode,setMode]=useState("chat");
+  const [action,setAction]=useState("");
+  const [project,setProject]=useState("");
+  const [projects,setProjects]=useState([]);
+  const [workspace,setWorkspace]=useState("");
+  const [workspaces,setWorkspaces]=useState([]);
+  const [health,setHealth]=useState(null);
+  const [error,setError]=useState("");
+  const bottom=useRef(null);
+
+  useEffect(()=>{
+    apiFetch("/ai/conversations/").then(r=>r.json()).then(setConversations).catch(()=>{});
+    apiFetch("/projects/").then(r=>r.json()).then(d=>setProjects(Array.isArray(d)?d:d.results||[])).catch(()=>{});
+    apiFetch("/ide/workspaces/").then(r=>r.json()).then(d=>setWorkspaces(Array.isArray(d)?d:[])).catch(()=>{});
+    apiFetch("/ai/health/").then(r=>r.json()).then(setHealth).catch(()=>{});
+  },[]);
   useEffect(()=>{bottom.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  const open=async id=>{const c=conversations.find(x=>x.id===id);setConversation(c);const r=await apiFetch(`/ai/conversations/${id}/messages/`);setMessages(await r.json());};
-  const send=async()=>{if(!input.trim()||busy)return;const text=input.trim();setInput("");setMessages(m=>[...m,{role:"user",content:text}]);setBusy(true);try{const r=await apiFetch("/ai/chat/",{method:"POST",body:JSON.stringify({message:text,conversation:conversation?.id})});const d=await r.json();setConversation(d.conversation);setMessages(m=>[...m,d.message]);if(!conversation)setConversations(c=>[d.conversation,...c]);}catch(e){setMessages(m=>[...m,{role:"assistant",content:`Engine error: ${e.message}`}]);}finally{setBusy(false);}};
-  return <div className="page ai-page"><div className="hero-row"><div><div className="eyebrow">INTELLIGENCE LAYER</div><h1>Developer Intelligence</h1><p>Context-aware reasoning over your actual workspace. No invented project facts.</p></div><div className="ai-status"><i/> CONTEXT ENGINE ONLINE</div></div>
-    <div className="ai-layout"><aside className="panel ai-history"><button className="primary wide" onClick={()=>{setConversation(null);setMessages([])}}>+ NEW THREAD</button><div className="history-label">THREADS</div>{conversations.map(c=><button className={conversation?.id===c.id?"history-on":""} onClick={()=>open(c.id)} key={c.id}>{c.title}</button>)}</aside><section className="panel chat"><div className="chat-head"><span>✦</span><div><b>{conversation?.title||"Workspace Intelligence"}</b><small>Projects · Tasks · Notes · Snippets · GitHub context</small></div></div><div className="messages">{!messages.length&&<div className="ai-welcome"><div className="ai-orb">✦</div><h2>What are we building next?</h2><p>Ask for architecture review, delivery risks, task planning, code review or project analysis.</p><div className="prompt-chips">{["Review my workspace","Find delivery risks","Plan the next milestone","Review my architecture"].map(x=><button onClick={()=>setInput(x)} key={x}>{x}</button>)}</div></div>}{messages.map((m,i)=><div className={`message ${m.role}`} key={m.id||i}><span>{m.role==="user"?"YOU":"DOS"}</span><div>{m.content}</div></div>)}<div ref={bottom}/></div><div className="chat-input"><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Ask Developer OS anything about your workspace..." /><button className="primary" disabled={busy} onClick={send}>{busy?"THINKING...":"SEND →"}</button></div></section></div>
+
+  const open=async id=>{
+    const c=conversations.find(x=>x.id===id);
+    setConversation(c); setError("");
+    try{
+      const r=await apiFetch(`/ai/conversations/${id}/messages/`);
+      setMessages(await r.json());
+      if(c?.project)setProject(String(c.project));
+    }catch(e){setError(e.message);}
+  };
+
+  const send=async()=>{
+    if(!input.trim()||busy)return;
+    const text=input.trim(); setInput(""); setError("");
+    setMessages(m=>[...m,{role:"user",content:text}]); setBusy(true);
+    try{
+      const body={message:text,conversation:conversation?.id||undefined,project:project||undefined,workspace:workspace||undefined};
+      let endpoint="/ai/chat/";
+      if(mode==="agent"){endpoint="/ai/agent/";}
+      if(mode==="action"){endpoint="/ai/actions/"; body.action=action||"project"; body.input=text; delete body.message;}
+      const r=await apiFetch(endpoint,{method:"POST",body:JSON.stringify(body)});
+      const d=await r.json();
+      if(!r.ok)throw new Error(formatApiError(d,"Developer OS Intelligence failed."));
+      const answer=d.message?.content||d.answer||"No response returned.";
+      setConversation(d.conversation||conversation);
+      setMessages(m=>[...m,{role:"assistant",content:answer}]);
+      if(d.conversation&&!conversation)setConversations(x=>[d.conversation,...x]);
+    }catch(e){
+      setError(e.message);
+      setMessages(m=>[...m,{role:"assistant",content:`Engine error: ${e.message}`}]);
+    }finally{setBusy(false);}
+  };
+
+  const quick=(text)=>{setInput(text);setMode("action");setAction("project");};
+
+  return <div className="page ai-page">
+    <div className="hero-row">
+      <div><div className="eyebrow">INTELLIGENCE LAYER / CONTROL PLANE</div><h1>Developer Intelligence</h1><p>AI that understands the workspace and helps plan, execute, verify and manage delivery — not just chat.</p></div>
+      <div className="ai-status"><i/> {health?.status==="ready"?"INTELLIGENCE READY":"INTELLIGENCE DEGRADED"}</div>
+    </div>
+    <div className="ai-toolbar panel">
+      <label>PROJECT <select value={project} onChange={e=>setProject(e.target.value)}><option value="">Workspace-wide</option>{projects.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
+      <label>WORKSPACE <select value={workspace} onChange={e=>setWorkspace(e.target.value)}><option value="">Auto context</option>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+      <div className="ai-modes"><button className={mode==="chat"?"active":""} onClick={()=>setMode("chat")}>ASK</button><button className={mode==="agent"?"active":""} onClick={()=>setMode("agent")}>AGENT</button><button className={mode==="action"?"active":""} onClick={()=>setMode("action")}>MANAGE</button></div>
+      {mode==="action"&&<select value={action} onChange={e=>setAction(e.target.value)}><option value="">Choose operation</option><option value="project">PROJECT PLAN</option><option value="sprint">NEXT SPRINT</option><option value="risk">DELIVERY RISKS</option><option value="review">CODE REVIEW</option><option value="tests">TEST PLAN</option><option value="debug">DEBUG</option><option value="plan">IMPLEMENTATION PLAN</option><option value="explain">EXPLAIN</option></select>}
+    </div>
+    <div className="ai-layout">
+      <aside className="panel ai-history">
+        <button className="primary wide" onClick={()=>{setConversation(null);setMessages([]);setError("");}}>+ NEW THREAD</button>
+        <div className="history-label">THREADS</div>
+        {conversations.map(c=><button className={conversation?.id===c.id?"history-on":""} onClick={()=>open(c.id)} key={c.id}>{c.title}</button>)}
+      </aside>
+      <section className="panel chat">
+        <div className="chat-head"><span>✦</span><div><b>{conversation?.title||"Workspace Intelligence"}</b><small>Projects · Tasks · Notes · IDE · Repository · Delivery</small></div></div>
+        <div className="messages">
+          {!messages.length&&<div className="ai-welcome"><div className="ai-orb">✦</div><h2>Operate the project, not just the conversation.</h2><p>Use real project context to plan milestones, identify risks, review code, generate tests, inspect the workspace and verify changes.</p><div className="prompt-chips">{["Analyze my project and give me the next milestone","Find blockers and delivery risks","Create a practical sprint plan","Review my workspace architecture"].map(x=><button onClick={()=>quick(x)} key={x}>{x}</button>)}</div></div>}
+          {messages.map((m,i)=><div className={`message ${m.role}`} key={m.id||i}><span>{m.role==="user"?"YOU":"DOS"}</span><div>{m.content}</div></div>)}
+          <div ref={bottom}/>
+        </div>
+        {error&&<div className="error">{error}</div>}
+        <div className="chat-input"><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder={mode==="agent"?"Describe the engineering problem; the agent will inspect evidence...":"Ask, plan or manage your Developer OS workspace..."} /><button className="primary" disabled={busy} onClick={send}>{busy?"THINKING...":"RUN →"}</button></div>
+      </section>
+    </div>
   </div>;
 }
-
 
 function Explore() {
   const [tab,setTab]=useState("tools");
