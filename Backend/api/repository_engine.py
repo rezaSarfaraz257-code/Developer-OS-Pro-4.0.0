@@ -78,10 +78,22 @@ def _hash(kind, payload):
 
 
 def _objects(user, repo_id, kind=None):
-    qs = Activity.objects.filter(actor=user, related_type=f"repo_object:{kind}" if kind else "")
+    """Read repository objects independently of the requesting actor.
+
+    Repository membership is authorized by _repo(). Object rows are therefore
+    keyed by the globally unique repository id rather than by actor. The old
+    actor filter made collaborators unable to read the owner's commits, trees,
+    and blobs even though _repo() correctly granted repository access.
+    """
     if kind is None:
-        qs = Activity.objects.filter(actor=user, related_type__startswith="repo_object:")
-    return qs.filter(related_id=repo_id).order_by("-created_at", "-id")
+        return Activity.objects.filter(
+            related_id=repo_id,
+            related_type__startswith="repo_object:",
+        ).order_by("-created_at", "-id")
+    return Activity.objects.filter(
+        related_id=repo_id,
+        related_type=f"repo_object:{kind}",
+    ).order_by("-created_at", "-id")
 
 
 def _write_object(user, repo_id, kind, payload):
@@ -241,7 +253,8 @@ def native_commit_api(request, pk):
         oid, tree, created = _commit(request.user, repo, branch, message, files, parent)
         repo.framework = branch
         repo.files = _files(files)
-        repo.revision = int(repo.revision or 1) + 1
+        # CodeWorkspace.save() owns revision increments. Do not increment here
+        # as well or one mutation appears as two revisions to the editor.
         repo.save()
     return Response({"commit": {"id": oid, "tree": tree, "parent": parent, "branch": branch, "created": created}}, status=201 if created else 200)
 
@@ -299,13 +312,14 @@ def native_merge_api(request, pk):
     if merge_row:
         meta = merge_row.metadata or {}
         payload = meta.get("payload") or {}
-        payload["second_parent"] = source_head
+        payload["parents"] = [target_head, source_head]
         meta["payload"] = payload
         merge_row.metadata = meta
         merge_row.save(update_fields=["metadata"])
-    repo.framework, repo.files = target, merged
+    repo.framework = target
+    repo.files = merged
     repo.save()
-    return Response({"merged": True, "commit": {"id": oid, "tree": tree, "parent": target_head, "second_parent": source_head}})
+    return Response({"merged": True, "head": oid, "tree": tree, "branch": target})
 
 
 @api_view(["GET"])
@@ -316,21 +330,19 @@ def native_diff_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     branch = str(request.query_params.get("branch") or repo.framework or "main")
-    rows = list(_commits(request.user, repo.id, branch)[:2])
-    if not rows:
-        return Response({"branch": branch, "files": []})
-    current = _commit_files(request.user, repo, rows[0].metadata["oid"])
-    parent_oid = (rows[0].metadata.get("payload") or {}).get("parent")
-    previous = _commit_files(request.user, repo, parent_oid) if parent_oid else {}
-    changes = []
-    for path in sorted(set(current) | set(previous)):
-        if path not in previous:
-            changes.append({"path": path, "status": "added"})
-        elif path not in current:
-            changes.append({"path": path, "status": "deleted"})
-        elif current[path] != previous[path]:
-            changes.append({"path": path, "status": "modified"})
-    return Response({"branch": branch, "head": rows[0].metadata["oid"], "files": changes})
+    head = _head(request.user, repo, branch)
+    if not head:
+        return Response({"branch": branch, "files": [], "head": None})
+    payload = _read_object(request.user, repo.id, "commit", head) or {}
+    parent = payload.get("parent")
+    if not parent:
+        return Response({"branch": branch, "files": list(_commit_files(request.user, repo, head).keys()), "head": head})
+    before, after = _commit_files(request.user, repo, parent), _commit_files(request.user, repo, head)
+    changed = []
+    for path in sorted(set(before) | set(after)):
+        if before.get(path) != after.get(path):
+            changed.append({"path": path, "added": path not in before, "deleted": path not in after})
+    return Response({"branch": branch, "files": changed, "head": head, "parent": parent})
 
 
 @api_view(["POST"])
@@ -341,12 +353,13 @@ def native_tag_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     name = str(request.data.get("name") or "").strip()
-    branch = str(request.data.get("branch") or repo.framework or "main").strip()
-    head = _head(request.user, repo, branch)
-    if not name or not head or not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", name):
-        return Response({"error": "Valid tag name and branch are required."}, status=400)
-    _write_object(request.user, repo.id, "tag", {"name": name, "target": head, "branch": branch})
-    return Response({"tag": name, "target": head}, status=201)
+    head = str(request.data.get("commit") or _head(request.user, repo, repo.framework or "main") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", name):
+        return Response({"error": "Invalid tag name."}, status=400)
+    if not head:
+        return Response({"error": "Repository has no commits."}, status=400)
+    _write_object(request.user, repo.id, "tag", {"name": name, "commit": head})
+    return Response({"name": name, "commit": head}, status=201)
 
 
 @api_view(["GET"])
@@ -358,8 +371,8 @@ def native_tag_list_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     tags = []
     for row in _objects(request.user, repo.id, "tag"):
-        p = row.metadata.get("payload", {})
-        tags.append(p)
+        payload = (row.metadata or {}).get("payload") or {}
+        tags.append({"name": payload.get("name"), "commit": payload.get("commit")})
     return Response(tags)
 
 
@@ -371,24 +384,17 @@ def native_members_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     if request.method == "GET":
-        active = {}
-        for row in _member_rows(repo):
-            meta = row.metadata or {}
-            uid = meta.get("user_id")
-            if uid and uid not in active and not meta.get("revoked"):
-                active[uid] = {"user_id": uid, "username": meta.get("username"), "role": meta.get("role", "viewer")}
-        return Response(list(active.values()))
+        rows = _member_rows(repo)
+        return Response([{"user_id": (r.metadata or {}).get("user_id"), "username": (r.metadata or {}).get("username"), "revoked": (r.metadata or {}).get("revoked", False), "created_at": r.created_at} for r in rows])
     if not _is_owner(request.user, repo):
         return Response({"error": "Only the repository owner can manage members."}, status=403)
-    username = str(request.data.get("username") or "").strip()
-    role = str(request.data.get("role") or "viewer").strip()
-    if role not in {"admin", "developer", "viewer"}:
-        return Response({"error": "Invalid repository role."}, status=400)
-    target = User.objects.filter(username=username).first()
-    if not target or target.id == repo.owner_id:
-        return Response({"error": "User not found or already owner."}, status=404)
-    if request.method == "DELETE":
-        Activity.objects.create(actor=request.user, verb="revoked repository member", message=username, related_type="repo_member", related_id=repo.id, metadata={"user_id": target.id, "username": target.username, "role": role, "revoked": True})
-        return Response(status=204)
-    Activity.objects.create(actor=request.user, verb="added repository member", message=username, related_type="repo_member", related_id=repo.id, metadata={"user_id": target.id, "username": target.username, "role": role, "revoked": False})
-    return Response({"user_id": target.id, "username": target.username, "role": role}, status=201)
+    user_id = request.data.get("user_id")
+    try:
+        member = User.objects.get(pk=user_id)
+    except (User.DoesNotExist, TypeError, ValueError):
+        return Response({"error": "User not found."}, status=404)
+    if request.method == "POST":
+        Activity.objects.create(actor=request.user, verb="added repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": False})
+        return Response({"user_id": member.id, "username": member.username, "revoked": False}, status=201)
+    Activity.objects.create(actor=request.user, verb="revoked repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": True})
+    return Response(status=204)
