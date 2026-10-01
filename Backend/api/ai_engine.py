@@ -462,6 +462,7 @@ def ai_health_api(request):
     """Non-secret AI readiness diagnostics; never performs a billable provider call."""
     checks = {
         "database": False,
+        "usage_meter": False,
         "configuration": False,
         "context": False,
     }
@@ -474,6 +475,11 @@ def ai_health_api(request):
         # Verify the AI conversation table can be queried without creating data.
         AIConversation.objects.filter(owner=request.user).order_by("-id").values("id")[:1]
         checks["database"] = True
+        # AI chat performs a metered preflight before creating a conversation.
+        # Probe the usage table here so schema drift is reported before chat.
+        from .models import UsageRecord
+        UsageRecord.objects.filter(user=request.user).order_by("-period").values("id")[:1]
+        checks["usage_meter"] = True
     except Exception as exc:
         details["database"] = exc.__class__.__name__
 
