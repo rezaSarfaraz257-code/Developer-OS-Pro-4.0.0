@@ -36,3 +36,17 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertIn("diagnostics endpoint", answer)
         post.assert_called_once()
         self.assertTrue(post.call_args.kwargs["url"].endswith("/responses"))
+
+
+class AgentEvidenceTests(SimpleTestCase):
+    def test_agent_evidence_is_bounded(self):
+        from api.ai_engine import _compact_context
+        evidence = {"workspace": {"files": {"main.py": "x" * 70000}}, "repository": {}, "diagnostics": {}, "runner": {}}
+        bounded = _compact_context(evidence)
+        self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
+
+    def test_agent_instructions_require_structured_evidence(self):
+        from api.ai_engine import _agent_instructions
+        text = _agent_instructions()
+        self.assertIn("affected_files", text)
+        self.assertIn("Never claim files were changed", text)
