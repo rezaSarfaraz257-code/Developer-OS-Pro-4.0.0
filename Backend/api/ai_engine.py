@@ -45,6 +45,9 @@ def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
         return context
     # Preserve high-value metadata and truncate large text-bearing collections.
     result = dict(context)
+    if isinstance(result.get("workspace"), dict) and isinstance(result["workspace"].get("files"), dict):
+        result["workspace"] = dict(result["workspace"])
+        result["workspace"]["files"] = {k: v[:12000] for k, v in list(result["workspace"]["files"].items())[:80] if isinstance(k, str) and isinstance(v, str)}
     for key in ("snippets", "notes", "tasks", "activities", "projects"):
         value = result.get(key)
         if isinstance(value, list):
