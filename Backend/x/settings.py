@@ -9,7 +9,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def load_local_env(path):
-    """Load simple KEY=VALUE pairs without adding a production dependency."""
     if not path.exists():
         return
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -26,11 +25,9 @@ load_local_env(BASE_DIR.parent / ".env")
 
 
 def env_list(name, default=""):
-    """Return a comma-separated environment variable as a clean list."""
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
 def get_secret_key():
     key = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY")
     if not key:
@@ -56,17 +53,15 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in {"1", "true", "ye
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 CACHE_URL = os.getenv("CACHE_URL", "")
 
-# AI provider defaults. Secrets are never committed. The existing AI gateway
-# reads these environment variables, so OpenAI works without requiring a
-# custom provider URL/model in every deployment. An OPENAI_API_KEY is accepted
-# as the canonical secret and mirrored to the legacy AI_API_KEY name.
+# AI gateway configuration. Never commit the API key. OPENAI_API_KEY is accepted
+# as the canonical secret and mapped to the existing AI gateway variable.
 if os.getenv("OPENAI_API_KEY") and not os.getenv("AI_API_KEY"):
     os.environ["AI_API_KEY"] = os.environ["OPENAI_API_KEY"]
 os.environ.setdefault("AI_API_URL", "https://api.openai.com/v1")
-os.environ.setdefault("AI_MODEL", "gpt-5.6-luna")
+os.environ.setdefault("AI_MODEL", "gpt-5")
 AI_API_URL = os.environ.get("AI_API_URL", "").rstrip("/")
 AI_API_KEY_CONFIGURED = bool(os.environ.get("AI_API_KEY"))
-AI_MODEL = os.environ.get("AI_MODEL", "gpt-5.6-luna")
+AI_MODEL = os.environ.get("AI_MODEL", "gpt-5")
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
@@ -79,42 +74,23 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "api.middleware.RequestObservabilityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "api.security.ApiRateLimitMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "api.middleware.ApiSecurityHeadersMiddleware",
+    "api.middleware.RequestObservabilityMiddleware", "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware", "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware", "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware", "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "api.security.ApiRateLimitMiddleware", "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware", "api.middleware.ApiSecurityHeadersMiddleware",
 ]
 
 ROOT_URLCONF = "x.urls"
-TEMPLATES = [{
-    "BACKEND": "django.template.backends.django.DjangoTemplates",
-    "DIRS": [], "APP_DIRS": True,
-    "OPTIONS": {"context_processors": [
-        "django.template.context_processors.request",
-        "django.contrib.auth.context_processors.auth",
-        "django.contrib.messages.context_processors.messages",
-    ]},
-}]
+TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIRS": [], "APP_DIRS": True, "OPTIONS": {"context_processors": ["django.template.context_processors.request", "django.contrib.auth.context_processors.auth", "django.contrib.messages.context_processors.messages"]}}]
 WSGI_APPLICATION = "x.wsgi.application"
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
     if parsed.scheme.startswith("postgres"):
-        DATABASES = {"default": {
-            "ENGINE": "django.db.backends.postgresql", "NAME": parsed.path.lstrip("/"),
-            "USER": parsed.username or "", "PASSWORD": parsed.password or "",
-            "HOST": parsed.hostname or "", "PORT": str(parsed.port or 5432),
-            "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")), "CONN_HEALTH_CHECKS": True,
-        }}
+        DATABASES = {"default": {"ENGINE": "django.db.backends.postgresql", "NAME": parsed.path.lstrip("/"), "USER": parsed.username or "", "PASSWORD": parsed.password or "", "HOST": parsed.hostname or "", "PORT": str(parsed.port or 5432), "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")), "CONN_HEALTH_CHECKS": True}}
     else:
         raise ImproperlyConfigured("DATABASE_URL must be a PostgreSQL URL.")
 else:
@@ -169,22 +145,6 @@ if CACHE_URL:
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "developer-os"}}
 
-REST_FRAMEWORK = {
-    "EXCEPTION_HANDLER": "api.security.api_exception_handler",
-    "DEFAULT_AUTHENTICATION_CLASSES": ("api.authentication.APIKeyAuthentication", "rest_framework_simplejwt.authentication.JWTAuthentication"),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"),
-    "DEFAULT_THROTTLE_RATES": {"anon": "60/hour", "user": "2000/day", "auth": "10/hour", "assistant": "30/hour"},
-}
-
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
-    "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",),
-}
-
-LOGGING = {
-    "version": 1, "disable_existing_loggers": False,
-    "formatters": {"json": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    "handlers": {"console_json": {"class": "logging.StreamHandler", "formatter": "json"}},
-    "loggers": {"developer_os": {"handlers": ["console_json"], "level": os.getenv("LOG_LEVEL", "INFO"), "propagate": False}},
-}
+REST_FRAMEWORK = {"EXCEPTION_HANDLER": "api.security.api_exception_handler", "DEFAULT_AUTHENTICATION_CLASSES": ("api.authentication.APIKeyAuthentication", "rest_framework_simplejwt.authentication.JWTAuthentication"), "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",), "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"), "DEFAULT_THROTTLE_RATES": {"anon": "60/hour", "user": "2000/day", "auth": "10/hour", "assistant": "30/hour"}}
+SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",)}
+LOGGING = {"version": 1, "disable_existing_loggers": False, "formatters": {"json": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}}, "handlers": {"console_json": {"class": "logging.StreamHandler", "formatter": "json"}}, "loggers": {"developer_os": {"handlers": ["console_json"], "level": os.getenv("LOG_LEVEL", "INFO"), "propagate": False}}}
