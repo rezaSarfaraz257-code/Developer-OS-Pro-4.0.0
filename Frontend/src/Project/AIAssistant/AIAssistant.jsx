@@ -63,7 +63,7 @@ export default function AIAssistantPage({ setPage }) {
       if (!response.ok) throw new Error(errorText(data, "AI request failed."));
       setConversation(data.conversation || null);
       setAnswer(data.message?.content || data.answer || "The intelligence engine returned no answer.");
-      setMode(data.provider_status ? "local fallback" : data.message ? "workspace intelligence" : "assistant");
+      setMode(data.mode === "fallback" ? "local fallback" : "workspace intelligence");
       setMessage("");
       if (data.usage) setUsage((old) => old ? { ...old, metrics: { ...old.metrics, ai_messages: { ...old.metrics?.ai_messages, used: data.usage.used } } } : old);
     } catch (err) {
