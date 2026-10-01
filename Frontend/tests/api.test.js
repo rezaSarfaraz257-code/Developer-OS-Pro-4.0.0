@@ -21,3 +21,9 @@ test("safeExternalUrl rejects dangerous or malformed URLs", () => {
   assert.equal(safeExternalUrl("not-a-url"), null);
   assert.equal(safeExternalUrl(""), null);
 });
+
+
+test("API errors include HTTP status for operator diagnostics", async () => {
+  const source = await import("../src/services/api.js");
+  assert.equal(source.formatApiError({ error: { message: "AI unavailable" } }), "AI unavailable");
+});
