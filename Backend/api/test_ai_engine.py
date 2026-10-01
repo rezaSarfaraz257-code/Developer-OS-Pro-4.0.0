@@ -70,3 +70,23 @@ class AIHealthAPITests(TestCase):
         response = self.client.get("/api/ai/health/")
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("secret-key", json.dumps(response.json()))
+
+
+class AIAgentApprovalTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="agent-test", password="StrongPassword123!")
+        self.client = APIClient()
+
+    def test_agent_requires_authentication(self):
+        response = self.client.post("/api/ai/agent/", {"message": "inspect", "workspace": 1}, format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_agent_apply_rejects_missing_token(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post("/api/ai/agent/apply/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_agent_apply_rejects_tampered_token(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post("/api/ai/agent/apply/", {"approval_token": "tampered"}, format="json")
+        self.assertEqual(response.status_code, 400)
