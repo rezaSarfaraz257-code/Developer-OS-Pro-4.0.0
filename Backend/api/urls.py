@@ -87,6 +87,7 @@ urlpatterns = [
     path("repositories/<int:pk>/history/", repository.repository_history_api, name="repository-history"),
     path("repositories/<int:pk>/branch/", repository.repository_branch_api, name="repository-branch"),
     path("repositories/<int:pk>/clone/", repository.repository_clone_api, name="repository-clone"),
+    path("repositories/<int:pk>/sync-workspace/", repository.repository_sync_workspace_api, name="repository-sync-workspace"),
     path("repositories/<int:pk>/native/refs/", repository_engine.refs_api, name="repository-native-refs"),
     path("repositories/<int:pk>/native/commits/", repository_engine.native_commit_api, name="repository-native-commits"),
     path("repositories/<int:pk>/native/branches/", repository_engine.native_branch_api, name="repository-native-branches"),
