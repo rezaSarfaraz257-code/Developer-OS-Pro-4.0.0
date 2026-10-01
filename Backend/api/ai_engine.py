@@ -232,13 +232,17 @@ def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
             return None
         path = str(change.get("path") or "")
         operation = str(change.get("operation") or "")
-        patch = str(change.get("patch") or "")
+        full_content = change.get("content")
+        if full_content is not None and not isinstance(full_content, str):
+            return None
+        if operation in {"modify", "create"} and full_content is None:
+            return None
         if not path or operation not in {"modify", "create", "delete"}:
             return None
         normalized = path.replace("\\", "/")
         if normalized.startswith("/") or ".." in normalized.split("/"):
             return None
-        total += len(patch)
+        total += len(full_content or "")
         if total > AGENT_PATCH_MAX_CHARS:
             return None
     return data
@@ -250,7 +254,8 @@ def _agent_prompt_with_tools() -> str:
         + " You have read-only tools. Use them when supplied evidence is insufficient. "
         + "Never apply changes. If proposing a patch, return JSON only with type=patch_proposal, "
         + "summary, root_cause, confidence, affected_files, changes, test_plan, risks, requires_approval=true. "
-        + "Each change must contain path, operation, reason, and patch. Keep patches minimal."
+        + "Each change must contain path, operation, reason, and for create/modify the COMPLETE resulting file content in content. "
+        + "Do not return unified diffs or partial snippets. Keep changes minimal and preserve existing project conventions."
     )
 
 
@@ -328,10 +333,19 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
                             "call_id": call.get("call_id"),
                             "output": json.dumps(_agent_tool_result(str(call.get("name") or ""), args, context.get("agent_evidence") or {}), ensure_ascii=False)[:AGENT_TOOL_OUTPUT_CHARS],
                         })
-                    followup = dict(payload)
-                    followup["input"] = input_items + outputs
-                    followup.pop("tools", None)
-                    followup.pop("tool_choice", None)
+                    # Responses tool loops must return the function_call_output items
+                    # against the exact prior response. Re-sending only the original input
+                    # can detach tool outputs from their calls and cause provider-side
+                    # "invalid input" errors.
+                    response_id = data.get("id")
+                    if not response_id:
+                        return "", _provider_error("AI_RESPONSE_ERROR", "AI tool response did not include a response id.")
+                    followup = {
+                        "model": cfg["model"],
+                        "instructions": _agent_prompt_with_tools(),
+                        "previous_response_id": response_id,
+                        "input": outputs,
+                    }
                     response = requests.post(endpoint, headers=headers, json=followup, timeout=AI_TIMEOUT)
                     response.raise_for_status()
                     data = response.json()
@@ -359,7 +373,7 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
             message = "The configured AI model or endpoint was not found."
         elif status_code == 429:
             code = "AI_RATE_LIMIT"
-            message = "The AI provider rate limit or quota was exceeded."
+            message = "The AI provider rate limit or quota was exceeded. Check API billing/usage or retry after the provider's rate-limit window."
         elif 400 <= status_code < 500:
             code = "AI_REQUEST_ERROR"
             message = "The AI provider rejected the request."
