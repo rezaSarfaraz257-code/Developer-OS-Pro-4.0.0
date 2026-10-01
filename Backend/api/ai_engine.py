@@ -209,10 +209,36 @@ def _agent_prompt_with_tools() -> str:
     )
 
 
+def _provider_error(code: str, message: str, *, status: int | None = None, detail: str | None = None) -> str:
+    payload: dict[str, Any] = {"code": code, "message": message}
+    if status is not None:
+        payload["provider_status"] = status
+    if detail:
+        payload["detail"] = detail[:1000]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _safe_provider_detail(response: requests.Response | None) -> str:
+    if response is None:
+        return ""
+    try:
+        data = response.json()
+        error = data.get("error") if isinstance(data, dict) else None
+        if isinstance(error, dict):
+            value = error.get("message") or error.get("code") or error.get("type")
+            return str(value or "")
+        return str(data.get("message") or "") if isinstance(data, dict) else ""
+    except (ValueError, TypeError):
+        return ""
+
+
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
     cfg = _provider_config()
     if not cfg["key"]:
-        return "", "AI provider is not configured. Set OPENAI_API_KEY on the backend."
+        return "", _provider_error("AI_CONFIG_ERROR", "AI provider is not configured. Set AI_API_KEY on the backend.")
+
+    if cfg["protocol"] not in {"responses", "chat"}:
+        return "", _provider_error("AI_CONFIG_ERROR", "AI_API_PROTOCOL must be 'responses' or 'chat'.")
 
     headers = {"Authorization": f"Bearer {cfg['key']}", "Content-Type": "application/json"}
     input_items = _build_input(message, context, history)
@@ -221,7 +247,6 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
             endpoint = cfg["base"] if cfg["base"].endswith("/chat/completions") else f"{cfg['base']}/chat/completions"
             payload = {
                 "model": cfg["model"],
-                "temperature": 0.15,
                 "messages": [{"role": "system", "content": _instructions(action)}] + input_items,
             }
             response = requests.post(endpoint, headers=headers, json=payload, timeout=AI_TIMEOUT)
@@ -234,7 +259,6 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
                 "model": cfg["model"],
                 "instructions": _agent_prompt_with_tools() if action == "agentic developer intelligence" else _instructions(action),
                 "input": input_items,
-                "temperature": 0.15,
             }
             if action == "agentic developer intelligence":
                 payload["tools"] = _agent_tools()
@@ -270,18 +294,37 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
                     proposal["requires_approval"] = True
                     answer = json.dumps(proposal, ensure_ascii=False)
         if not answer:
-            return "", "AI provider returned an empty response."
+            return "", _provider_error("AI_EMPTY_RESPONSE", "AI provider returned an empty response.")
         return answer, None
     except requests.Timeout:
-        logger.warning("AI provider timeout")
-        return "", "AI provider timed out. Try again."
+        logger.warning("AI provider timeout model=%s", cfg["model"])
+        return "", _provider_error("AI_TIMEOUT", "AI provider timed out. Try again.")
     except requests.HTTPError as exc:
-        code = exc.response.status_code if exc.response is not None else 502
-        logger.warning("AI provider HTTP error status=%s", code)
-        return "", f"AI provider rejected the request ({code})."
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError):
+        status_code = exc.response.status_code if exc.response is not None else 502
+        detail = _safe_provider_detail(exc.response)
+        logger.warning("AI provider HTTP error status=%s model=%s detail=%s", status_code, cfg["model"], detail[:300])
+        if status_code in {401, 403}:
+            code = "AI_AUTH_ERROR"
+            message = "OpenAI rejected the API credentials."
+        elif status_code == 404:
+            code = "AI_MODEL_ERROR"
+            message = "The configured AI model or endpoint was not found."
+        elif status_code == 429:
+            code = "AI_RATE_LIMIT"
+            message = "The AI provider rate limit or quota was exceeded."
+        elif 400 <= status_code < 500:
+            code = "AI_REQUEST_ERROR"
+            message = "The AI provider rejected the request."
+        else:
+            code = "AI_PROVIDER_ERROR"
+            message = "The AI provider returned a server error."
+        return "", _provider_error(code, message, status=status_code, detail=detail)
+    except requests.RequestException as exc:
         logger.exception("AI provider request failed")
-        return "", "AI provider is temporarily unavailable."
+        return "", _provider_error("AI_NETWORK_ERROR", "The AI provider could not be reached.", detail=str(exc))
+    except (ValueError, TypeError, KeyError, IndexError) as exc:
+        logger.exception("AI provider response parsing failed")
+        return "", _provider_error("AI_RESPONSE_ERROR", "The AI provider returned an unexpected response.", detail=str(exc))
 
 
 def _local_fallback(context: dict[str, Any], message: str) -> str:
