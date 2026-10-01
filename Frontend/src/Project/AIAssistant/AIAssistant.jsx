@@ -182,7 +182,7 @@ export default function AIAssistantPage({ setPage }) {
             <div className="ai-approval-result">
               <strong>VERIFICATION COMPLETE</strong>
               <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner: {applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
-              <small>Re-analysis is recommended after verification.</small>
+              <small>{applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback captured — re-analysis ready."}</small>
             </div>
           )}
           {error && <div className="ai-error">{error}</div>}
