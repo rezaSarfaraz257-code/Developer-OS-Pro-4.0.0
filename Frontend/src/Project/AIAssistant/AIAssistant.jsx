@@ -26,6 +26,8 @@ export default function AIAssistantPage({ setPage }) {
   const [usage, setUsage] = useState(null);
   const [agentMode, setAgentMode] = useState(false);
   const [evidence, setEvidence] = useState(null);
+  const [approvalToken, setApprovalToken] = useState(null);
+  const [applyResult, setApplyResult] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +67,8 @@ export default function AIAssistantPage({ setPage }) {
       if (!response.ok) throw new Error(errorText(data, "AI request failed."));
       setConversation(data.conversation || null);
       setEvidence(data.evidence || null);
+      setApprovalToken(data.approval_token || null);
+      setApplyResult(null);
       setAnswer(data.message?.content || data.answer || "The intelligence engine returned no answer.");
       setMode(agentMode ? (data.mode || "agentic intelligence") : (data.mode === "fallback" ? "local fallback" : "workspace intelligence"));
       setMessage("");
@@ -143,6 +147,29 @@ export default function AIAssistantPage({ setPage }) {
           <div className="ai-actions ai-actions-pro">
             {QUICK_ACTIONS.map(([id, label, hint]) => <button type="button" key={id} onClick={() => runAction(id)} disabled={busy || !message.trim()} title={hint}>{label}</button>)}
           </div>
+          {approvalToken && (
+            <div className="ai-approval-panel">
+              <div><strong>PATCH PROPOSAL READY</strong><span>Review the generated change before applying it to your workspace.</span></div>
+              <button type="button" className="primary" disabled={busy} onClick={async () => {
+                setBusy(true); setError(""); setApplyResult(null);
+                try {
+                  const response = await apiFetch("/ai/agent/apply/", { method: "POST", body: JSON.stringify({ approval_token: approvalToken }) });
+                  const data = await response.json().catch(() => ({}));
+                  if (!response.ok) throw new Error(errorText(data, "Patch application failed."));
+                  setApplyResult(data); setApprovalToken(null); setMode("PATCH APPLIED · VERIFYING");
+                } catch (err) { setError(err.message || "Patch application failed."); }
+                finally { setBusy(false); }
+              }}>APPROVE & APPLY →</button>
+              <button type="button" disabled={busy} onClick={() => setApprovalToken(null)}>REJECT</button>
+            </div>
+          )}
+          {applyResult && (
+            <div className="ai-approval-result">
+              <strong>VERIFICATION COMPLETE</strong>
+              <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner: {applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
+              <small>Re-analysis is recommended after verification.</small>
+            </div>
+          )}
           {error && <div className="ai-error">{error}</div>}
         </section>
 
