@@ -580,6 +580,7 @@ def ai_agent_api(request):
         "mode": "agent" if provider_error is None else "agent-fallback",
         "answer": answer,
         "evidence": evidence,
+        "approval_token": _issue_patch_approval_token(request, answer),
         "usage": {"used": used, "limit": limit, "plan": plan},
         "provider_status": provider_error,
     })
