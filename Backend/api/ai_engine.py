@@ -412,8 +412,11 @@ def _run(request, message: str, action: str | None = None):
     from .views import _workspace_context, _workspace_for_user
     workspace = None
     if workspace_id:
-        workspace = _workspace_for_user(workspace_id, request.user)
-        if conversation.project_id and workspace.project_id not in (None, conversation.project_id):
+        try:
+            workspace = _workspace_for_user(workspace_id, request.user)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            workspace = None
+        if workspace is not None and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
             return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
 
     # Workspace data is enrichment, not a prerequisite for the AI request.
