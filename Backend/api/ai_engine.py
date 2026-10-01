@@ -537,7 +537,13 @@ def ai_chat_api(request):
     stage = "usage_preflight"
     try:
         from .views import _consume_usage
-        allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
+        try:
+            allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
+        except DatabaseError:
+            # Usage metering is non-critical to request execution. Keep AI available
+            # during a legacy/schema transition and expose the degraded state in the response.
+            logger.exception("AI usage preflight unavailable; continuing without metering")
+            allowed, used, limit, plan = True, None, None, "free"
         if not allowed:
             return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
@@ -547,10 +553,14 @@ def ai_chat_api(request):
             return response
 
         stage = "usage_commit"
-        allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
+        try:
+            allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
+        except DatabaseError:
+            logger.exception("AI usage commit unavailable; returning response without metering")
+            allowed, used, limit, plan = True, None, None, "free"
         if not allowed:
             return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-        response.data["usage"] = {"used": used, "limit": limit, "plan": plan}
+        response.data["usage"] = {"used": used, "limit": limit, "plan": plan, "metering": "degraded" if used is None else "active"}
         return response
     except DatabaseError as exc:
         logger.exception("AI database failure stage=%s", stage)
