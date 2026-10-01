@@ -117,6 +117,98 @@ def _extract_responses_text(payload: dict[str, Any]) -> str:
     return "\n".join(chunks).strip()
 
 
+AGENT_TOOL_LIMIT = 6
+AGENT_TOOL_OUTPUT_CHARS = 10000
+AGENT_PATCH_MAX_FILES = 20
+AGENT_PATCH_MAX_CHARS = 12000
+
+
+def _agent_tools() -> list[dict[str, Any]]:
+    """Read-only tools exposed to the model; none can mutate a workspace."""
+    return [
+        {"type": "function", "name": "inspect_file", "description": "Inspect a file already present in the selected IDE workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}},
+        {"type": "function", "name": "search_code", "description": "Search exact text across the selected workspace files.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "path_prefix": {"type": "string"}}, "required": ["query"], "additionalProperties": False}},
+        {"type": "function", "name": "get_workspace", "description": "Return bounded workspace metadata and file inventory.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
+        {"type": "function", "name": "get_git_diff", "description": "Return native repository working-tree change evidence.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
+        {"type": "function", "name": "get_diagnostics", "description": "Return diagnostics evidence collected by Developer OS.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
+        {"type": "function", "name": "get_runner_result", "description": "Return safe runner verification evidence collected by Developer OS.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
+    ]
+
+
+def _agent_tool_result(name: str, args: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    workspace = evidence.get("workspace") or {}
+    files = workspace.get("files") if isinstance(workspace.get("files"), dict) else {}
+    if name == "inspect_file":
+        path = str(args.get("path") or "").replace("\\", "/").lstrip("/")
+        if path not in files:
+            return {"error": "File is not present in the selected workspace.", "path": path}
+        return {"path": path, "content": str(files[path])[:AGENT_TOOL_OUTPUT_CHARS]}
+    if name == "search_code":
+        query = str(args.get("query") or "")
+        prefix = str(args.get("path_prefix") or "").replace("\\", "/").lstrip("/")
+        if not query:
+            return {"error": "query is required"}
+        hits = []
+        for path, content in files.items():
+            if prefix and not str(path).startswith(prefix):
+                continue
+            lines = str(content).splitlines()
+            for index, line in enumerate(lines, 1):
+                if query.lower() in line.lower():
+                    hits.append({"path": path, "line": index, "text": line[:1000]})
+                    if len(hits) >= 100:
+                        return {"query": query, "hits": hits}
+        return {"query": query, "hits": hits}
+    if name == "get_workspace":
+        return {k: workspace.get(k) for k in ("id", "name", "project", "language", "framework", "runtime", "package_manager", "active_file", "revision")}
+    if name == "get_git_diff":
+        return evidence.get("repository") or {"connected": False}
+    if name == "get_diagnostics":
+        return evidence.get("diagnostics") or {"status": "unknown"}
+    if name == "get_runner_result":
+        return evidence.get("runner") or {"status": "unknown"}
+    return {"error": "Unknown agent tool."}
+
+
+def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
+    """Validate a model patch proposal; applying it is a separate approval action."""
+    try:
+        data = json.loads(answer)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("type") != "patch_proposal":
+        return None
+    changes = data.get("changes")
+    if not isinstance(changes, list) or len(changes) > AGENT_PATCH_MAX_FILES:
+        return None
+    total = 0
+    for change in changes:
+        if not isinstance(change, dict):
+            return None
+        path = str(change.get("path") or "")
+        operation = str(change.get("operation") or "")
+        patch = str(change.get("patch") or "")
+        if not path or operation not in {"modify", "create", "delete"}:
+            return None
+        normalized = path.replace("\\", "/")
+        if normalized.startswith("/") or ".." in normalized.split("/"):
+            return None
+        total += len(patch)
+        if total > AGENT_PATCH_MAX_CHARS:
+            return None
+    return data
+
+
+def _agent_prompt_with_tools() -> str:
+    return (
+        _agent_instructions()
+        + " You have read-only tools. Use them when supplied evidence is insufficient. "
+        + "Never apply changes. If proposing a patch, return JSON only with type=patch_proposal, "
+        + "summary, root_cause, confidence, affected_files, changes, test_plan, risks, requires_approval=true. "
+        + "Each change must contain path, operation, reason, and patch. Keep patches minimal."
+    )
+
+
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
     cfg = _provider_config()
     if not cfg["key"]:
@@ -140,14 +232,43 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
             endpoint = cfg["base"] if cfg["base"].endswith("/responses") else f"{cfg['base']}/responses"
             payload = {
                 "model": cfg["model"],
-                "instructions": _instructions(action),
+                "instructions": _agent_prompt_with_tools() if action == "agentic developer intelligence" else _instructions(action),
                 "input": input_items,
                 "temperature": 0.15,
             }
+            if action == "agentic developer intelligence":
+                payload["tools"] = _agent_tools()
+                payload["tool_choice"] = "auto"
             response = requests.post(endpoint, headers=headers, json=payload, timeout=AI_TIMEOUT)
             response.raise_for_status()
             data = response.json()
+            if action == "agentic developer intelligence":
+                calls = [item for item in (data.get("output") or []) if item.get("type") == "function_call"]
+                if calls:
+                    outputs = []
+                    for call in calls[:AGENT_TOOL_LIMIT]:
+                        try:
+                            args = json.loads(call.get("arguments") or "{}")
+                        except (TypeError, ValueError):
+                            args = {}
+                        outputs.append({
+                            "type": "function_call_output",
+                            "call_id": call.get("call_id"),
+                            "output": json.dumps(_agent_tool_result(str(call.get("name") or ""), args, context.get("agent_evidence") or {}), ensure_ascii=False)[:AGENT_TOOL_OUTPUT_CHARS],
+                        })
+                    followup = dict(payload)
+                    followup["input"] = input_items + outputs
+                    followup.pop("tools", None)
+                    followup.pop("tool_choice", None)
+                    response = requests.post(endpoint, headers=headers, json=followup, timeout=AI_TIMEOUT)
+                    response.raise_for_status()
+                    data = response.json()
             answer = _extract_responses_text(data)
+            if action == "agentic developer intelligence":
+                proposal = _agent_parse_patch(answer)
+                if proposal is not None:
+                    proposal["requires_approval"] = True
+                    answer = json.dumps(proposal, ensure_ascii=False)
         if not answer:
             return "", "AI provider returned an empty response."
         return answer, None
