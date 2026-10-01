@@ -26,6 +26,7 @@ def drop_ai_runtime_models(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
+        ("api", "0010_usage_record_recovery"),
         ("api", "0017_mature_saas_control_plane"),
     ]
 
