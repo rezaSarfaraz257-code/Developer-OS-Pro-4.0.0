@@ -78,3 +78,33 @@ class AgentEvidenceTests(SimpleTestCase):
         text = _agent_instructions()
         self.assertIn("affected_files", text)
         self.assertIn("Never claim files were changed", text)
+
+
+class SafeWorkspaceContextTests(TestCase):
+    def test_safe_workspace_context_degrades_on_context_exception(self):
+        from unittest.mock import patch
+        from api import ai_engine
+
+        with patch("api.views._workspace_context", side_effect=RuntimeError("context failure")):
+            context = ai_engine._safe_workspace_context(User.objects.create_user("ctx-user"))
+
+        self.assertEqual(context["projects"], [])
+        self.assertEqual(context["workspaces"], [])
+        self.assertEqual(context["context_error_type"], "RuntimeError")
+
+    def test_compact_context_accepts_workspace_inventory(self):
+        from api import ai_engine
+
+        context = {
+            "workspaces": [{
+                "id": 1,
+                "files": {"app.py": "print('ok')"}
+            }],
+            "projects": [],
+            "tasks": [],
+            "notes": [],
+            "snippets": [],
+        }
+        compact = ai_engine._compact_context(context)
+        self.assertEqual(compact["workspaces"][0]["files"]["app.py"], "print('ok')")
+
