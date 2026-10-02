@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
