@@ -2348,7 +2348,15 @@ def ide_execute_api(request, pk):
             return Response({"error": "You have read-only access to this workspace."}, status=403)
 
         stage = "usage_limit"
-        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        usage_warning = None
+        try:
+            allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        except (DatabaseError, IntegrityError):
+            # Usage telemetry must never make the actual sandbox unavailable.
+            # This also keeps IDE usable during a rolling schema migration.
+            logger.exception("IDE usage metering unavailable: user=%s", getattr(request.user, "pk", None))
+            allowed, used, limit, plan = True, None, None, "free"
+            usage_warning = "Usage metering temporarily unavailable; execution was allowed."
         if not allowed:
             return Response({
                 "error": "Monthly IDE execution limit reached.",
@@ -2449,8 +2457,9 @@ def ide_execute_api(request, pk):
             "stderr": str(data.get("stderr") or ""),
             "duration_ms": duration,
         }
-        if sync_warning:
-            response_data["warning"] = sync_warning
+        warnings = [x for x in [usage_warning, sync_warning] if x]
+        if warnings:
+            response_data["warnings"] = warnings
         return Response(response_data)
 
     except PermissionError:
@@ -2470,7 +2479,7 @@ def ide_execute_api(request, pk):
             "error": "IDE workspace access configuration is invalid.",
             "code": "workspace_invariant_error",
             "stage": stage,
-        }, status=500)
+        }, status=403)
 
     except Exception:
         logger.exception(
@@ -2487,10 +2496,11 @@ def ide_execute_api(request, pk):
             except Exception:
                 logger.exception("Failed to persist IDE internal failure: workspace=%s", pk)
         return Response({
-            "error": "IDE execution failed.",
+            "error": "IDE execution service encountered an internal failure.",
             "code": "ide_execution_internal_error",
             "stage": stage,
-        }, status=500)
+            "detail": "The execution request was isolated from the sandbox and did not execute on the web process.",
+        }, status=503)
 
 
 @api_view(["GET", "POST", "DELETE"])
