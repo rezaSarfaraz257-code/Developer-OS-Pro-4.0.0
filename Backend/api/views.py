@@ -2373,16 +2373,10 @@ def ide_execute_api(request, pk):
         # Execution must remain functional even when telemetry/history persistence
         # is temporarily unavailable. A database write failure must never turn a
         # successful sandbox execution into a generic HTTP 500.
-        stage = "execution_create"
-        try:
-            execution = IDEExecution.objects.create(
-                workspace=ws,
-                command=command,
-                status="running",
-            )
-        except DatabaseError:
-            logger.exception("IDE execution history unavailable: workspace=%s", pk)
-            execution = None
+        # History persistence is deliberately non-blocking. The runner is the
+        # source of truth for execution; a broken/stale IDEExecution table must
+        # never prevent code from reaching the sandbox.
+        execution = None
         started = timezone.now()
 
         stage = "runner_payload"
@@ -2436,18 +2430,22 @@ def ide_execute_api(request, pk):
             if data.get("exit_code") == 124
             else ("success" if data.get("exit_code") == 0 else "failed")
         )
-        if execution is not None:
-            try:
-                execution.exit_code = data.get("exit_code")
-                execution.stdout = str(data.get("stdout") or "")[-50000:]
-                execution.stderr = str(data.get("stderr") or "")[-50000:]
-                execution.duration_ms = duration
-                execution.status = execution_status
-                execution.finished_at = timezone.now()
-                execution.save()
-            except DatabaseError:
-                logger.exception("IDE execution history persist failed: workspace=%s", pk)
-                execution = None
+        # Persist history only after the sandbox result is available. Any
+        # schema/migration problem remains non-fatal to the actual execution.
+        try:
+            execution = IDEExecution.objects.create(
+                workspace=ws,
+                command=command,
+                status=execution_status,
+                exit_code=data.get("exit_code"),
+                stdout=str(data.get("stdout") or "")[-50000:],
+                stderr=str(data.get("stderr") or "")[-50000:],
+                duration_ms=duration,
+                finished_at=timezone.now(),
+            )
+        except (DatabaseError, IntegrityError):
+            logger.exception("IDE execution history persist failed: workspace=%s", pk)
+            execution = None
 
         response_data = {
             "id": execution.id if execution is not None else None,
