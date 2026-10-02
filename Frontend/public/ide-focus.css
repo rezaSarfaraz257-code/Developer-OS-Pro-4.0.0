@@ -1,21 +1,48 @@
 /* Developer OS Pro IDE — focus-first Explorer
-   Keeps the Explorer available without permanently consuming editor width.
-   Hover the slim left edge to reveal it; move back to the editor and it collapses.
+   Compact by default, but visibly discoverable. Hover/focus the explorer rail
+   to reveal the full file tree without sacrificing coding space.
 */
 .dos-ide-pro .dos-body{
-  grid-template-columns:48px 4px minmax(0,1fr) 220px;
+  grid-template-columns:48px 24px minmax(0,1fr) 220px;
 }
 
 .dos-ide-pro .dos-explorer{
   position:relative;
   z-index:80;
-  width:4px !important;
-  min-width:4px !important;
-  max-width:4px !important;
+  width:24px !important;
+  min-width:24px !important;
+  max-width:24px !important;
   overflow:visible;
   transition:max-width .16s ease,width .16s ease,box-shadow .16s ease;
   background:#081019;
   border-right:1px solid #20384b;
+  cursor:ew-resize;
+}
+
+/* Always-visible discovery control: folder icon + tiny EXPLORER label. */
+.dos-ide-pro .dos-explorer::after{
+  content:"▣  EXPLORER";
+  position:absolute;
+  left:3px;
+  top:50%;
+  transform:translateY(-50%) rotate(-90deg);
+  transform-origin:center;
+  width:88px;
+  height:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  color:#6f8aa0;
+  background:#0b1722;
+  border:1px solid #29465b;
+  border-radius:6px;
+  box-shadow:0 5px 18px rgba(0,0,0,.35);
+  font:700 8px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.13em;
+  opacity:.9;
+  pointer-events:none;
+  transition:opacity .16s ease,color .16s ease,border-color .16s ease,background .16s ease;
 }
 
 .dos-ide-pro .dos-explorer::before{
@@ -25,8 +52,8 @@
   top:0;
   bottom:0;
   width:3px;
-  background:linear-gradient(180deg,rgba(85,220,255,.75),rgba(85,220,255,.12));
-  opacity:.55;
+  background:linear-gradient(180deg,rgba(85,220,255,.95),rgba(85,220,255,.18));
+  opacity:.8;
   transition:opacity .16s ease;
 }
 
@@ -42,7 +69,13 @@
   width:235px !important;
   min-width:235px !important;
   max-width:235px !important;
+  cursor:default;
   box-shadow:18px 0 45px rgba(0,0,0,.45),0 0 0 1px rgba(85,220,255,.08);
+}
+
+.dos-ide-pro .dos-explorer:hover::after,
+.dos-ide-pro .dos-explorer:focus-within::after{
+  opacity:0;
 }
 
 .dos-ide-pro .dos-explorer:hover::before,
@@ -60,7 +93,7 @@
 
 /* Keep the coding canvas dominant on smaller screens too. */
 @media(max-width:1200px){
-  .dos-ide-pro .dos-body{grid-template-columns:48px 4px minmax(0,1fr) !important;}
+  .dos-ide-pro .dos-body{grid-template-columns:48px 24px minmax(0,1fr) !important;}
   .dos-ide-pro .dos-explorer:hover,
   .dos-ide-pro .dos-explorer:focus-within{
     width:210px !important;
@@ -70,7 +103,7 @@
 }
 
 @media(max-width:800px){
-  .dos-ide-pro .dos-body{grid-template-columns:42px 4px minmax(0,1fr) !important;}
+  .dos-ide-pro .dos-body{grid-template-columns:42px 24px minmax(0,1fr) !important;}
   .dos-ide-pro .dos-explorer:hover,
   .dos-ide-pro .dos-explorer:focus-within{
     width:165px !important;
