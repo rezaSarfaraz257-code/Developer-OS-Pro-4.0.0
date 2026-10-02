@@ -2500,6 +2500,8 @@ def ide_execute_api(request, pk):
             "code": "ide_execution_internal_error",
             "stage": stage,
             "detail": "The execution request was isolated from the sandbox and did not execute on the web process.",
+            "service": "developer-os-ide",
+            "service_version": "ide-exec-2026-10-02-r3",
         }, status=503)
 
 
