@@ -2220,6 +2220,54 @@ def ide_diagnostics_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_debug_api(request, pk):
+    """Debugger orchestration contract for the isolated runner.
+
+    The Django API never executes user code itself. It forwards debugger
+    commands to the configured sandbox runner, which owns the actual DAP/
+    runtime process.
+    """
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+    if not allowed:
+        return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
+    action = str(request.data.get("action") or "status").strip().lower()
+    allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
+    if action not in allowed_actions:
+        return Response({"error": "Unsupported debugger action."}, status=400)
+    payload = {
+        **_workspace_payload(ws),
+        "action": action,
+        "path": str(request.data.get("path") or "")[:1000],
+        "line": int(request.data.get("line") or 0),
+        "column": int(request.data.get("column") or 1),
+        "condition": str(request.data.get("condition") or "")[:1000],
+        "expression": str(request.data.get("expression") or "")[:4000],
+        "breakpoints": request.data.get("breakpoints") or [],
+        "session_id": str(request.data.get("session_id") or "")[:200],
+    }
+    data, error = _runner_request("POST", "/debug", payload, timeout=35)
+    if error:
+        return Response(error, status=503)
+    return Response({
+        "session_id": data.get("session_id"),
+        "state": data.get("state", "paused" if action in {"pause","step_over","step_into","step_out"} else "ready"),
+        "thread_id": data.get("thread_id"),
+        "frame": data.get("frame"),
+        "stack": data.get("stack", []),
+        "scopes": data.get("scopes", []),
+        "variables": data.get("variables", []),
+        "breakpoints": data.get("breakpoints", []),
+        "output": data.get("output", ""),
+        "diagnostics": data.get("diagnostics", []),
+        "result": data.get("result"),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_execute_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
