@@ -1,4 +1,5 @@
 import os, re, subprocess, time, shutil, signal, resource, hmac, threading
+import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
