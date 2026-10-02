@@ -800,7 +800,7 @@ class WorkspaceCollaborationSession(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["workspace", "user", "client_id"], name="unique_workspace_collab_client"),
         ]
-        indexes = [models.Index(fields=["workspace", "-last_seen_at"])]
+        indexes = [models.Index(fields=["workspace", "-last_seen_at"], name="api_ws_collab_last_seen_idx")]
 
 class WorkspaceFileRevision(models.Model):
     workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="file_revisions")
@@ -812,7 +812,7 @@ class WorkspaceFileRevision(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["workspace", "path", "-revision"])]
+        indexes = [models.Index(fields=["workspace", "path", "-revision"], name="api_ws_file_rev_idx")]
         constraints = [
             models.UniqueConstraint(fields=["workspace", "path", "revision"], name="unique_workspace_file_revision"),
         ]
@@ -827,7 +827,7 @@ class WorkspaceFileLock(models.Model):
     expires_at = models.DateTimeField()
     class Meta:
         constraints = [models.UniqueConstraint(fields=['workspace','path'], name='unique_workspace_file_lock')]
-        indexes = [models.Index(fields=['workspace','path'])]
+        indexes = [models.Index(fields=['workspace','path'], name='api_ws_file_lock_idx')]
 
 class WorkspaceCRDTOperation(models.Model):
     workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="crdt_operations")
@@ -844,6 +844,6 @@ class WorkspaceCRDTOperation(models.Model):
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     class Meta:
         indexes = [
-            models.Index(fields=["workspace", "path", "lamport"]),
-            models.Index(fields=["workspace", "path", "created_at"]),
+            models.Index(fields=["workspace", "path", "lamport"], name="api_crdt_path_lam_idx"),
+            models.Index(fields=["workspace", "path", "created_at"], name="api_crdt_path_created_idx"),
         ]
