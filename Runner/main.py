@@ -139,10 +139,9 @@ def _sandbox_command(root, command, allow_network=False):
         return ["bash", "-lc", command]
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        # Render and other rootless container platforms may expose bwrap but
-        # deny the container CAP_SYS_ADMIN. Explicitly create an unprivileged
-        # user namespace so bwrap can make mount propagation private.
-        "--unshare-user", "--uid", "0", "--gid", "0",
+        # Keep sandbox startup compatible with managed container runtimes.
+        # Bubblewrap handles its own namespace setup; forcing a nested
+        # unprivileged user namespace can fail before the mount namespace exists.
         "--unshare-pid", "--unshare-uts", "--unshare-ipc",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
