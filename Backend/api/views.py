@@ -2443,8 +2443,13 @@ def ide_execute_api(request, pk):
                 duration_ms=duration,
                 finished_at=timezone.now(),
             )
-        except (DatabaseError, IntegrityError):
-            logger.exception("IDE execution history persist failed: workspace=%s", pk)
+        except Exception as exc:
+            # Execution history is observability only. Never convert a valid
+            # sandbox result into a 503 because of a stale schema/DB issue.
+            logger.exception(
+                "IDE execution history unavailable: workspace=%s error=%s",
+                pk, exc.__class__.__name__,
+            )
             execution = None
 
         response_data = {
