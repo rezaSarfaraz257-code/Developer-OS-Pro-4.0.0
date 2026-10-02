@@ -1,4 +1,7 @@
-export const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const PRODUCTION_API_URL = "https://dos-o91y.onrender.com/api";
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const isRenderFrontend = typeof window !== "undefined" && window.location.hostname.endsWith(".onrender.com");
+export const API_URL = (configuredApiUrl || (isRenderFrontend ? PRODUCTION_API_URL : "/api")).replace(/\/$/, "");
 
 export function safeExternalUrl(value) {
   try {
