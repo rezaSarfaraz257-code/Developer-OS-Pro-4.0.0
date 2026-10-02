@@ -376,8 +376,8 @@ class Notification(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["user", "read", "-created_at"]),
-            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["user", "read", "-created_at"], name="api_notif_user_read_created"),
+            models.Index(fields=["user", "-created_at"], name="api_notif_user_created"),
         ]
 
 
@@ -438,7 +438,7 @@ class CodeWorkspace(models.Model):
         super().save(*args, **kwargs)
 
     class Meta:
-        indexes = [models.Index(fields=["owner", "-updated_at"])]
+        indexes = [models.Index(fields=["owner", "-updated_at"], name="api_codework_owner_updated")]
 
 class FrameworkInstallation(models.Model):
     STATUS_CHOICES = [("queued", "Queued"), ("running", "Running"), ("success", "Success"), ("failed", "Failed")]
@@ -504,7 +504,7 @@ class BillingEvent(models.Model):
     processed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["event_type", "-processed_at"])]
+        indexes = [models.Index(fields=["event_type", "-processed_at"], name="api_billing_event_type_9c6a0b_idx")]
 
 
 class UsageRecord(models.Model):
@@ -517,7 +517,7 @@ class UsageRecord(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "period", "metric"], name="unique_user_usage_period_metric")]
-        indexes = [models.Index(fields=["user", "period"]), models.Index(fields=["metric", "period"])]
+        indexes = [models.Index(fields=["user", "period"], name="api_usage_r_user_id_3d6fcb_idx"), models.Index(fields=["metric", "period"], name="api_usage_r_metric_1c7b4d_idx")]
 
 
 class OrganizationInvite(models.Model):
@@ -532,7 +532,7 @@ class OrganizationInvite(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["organization", "email"]), models.Index(fields=["token"])]
+        indexes = [models.Index(fields=["organization", "email"], name="api_orginvi_organiz_1e3f55_idx"), models.Index(fields=["token"], name="api_orginvi_token_2e4b72_idx")]
 
 
 class AuditLog(models.Model):
@@ -545,7 +545,7 @@ class AuditLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["organization", "-created_at"]), models.Index(fields=["user", "-created_at"])]
+        indexes = [models.Index(fields=["organization", "-created_at"], name="api_auditlo_organiz_2c6f42_idx"), models.Index(fields=["user", "-created_at"], name="api_auditlo_user_id_9d8b23_idx")]
 
 
 class APIKey(models.Model):
@@ -558,7 +558,7 @@ class APIKey(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["user", "revoked_at"])]
+        indexes = [models.Index(fields=["user", "revoked_at"], name="api_securit_user_id_0a7b20_idx")]
 
 
 # =========================================================
@@ -587,7 +587,7 @@ class SecuritySession(models.Model):
     revoked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        indexes = [models.Index(fields=["user", "revoked_at"]), models.Index(fields=["user", "-last_seen_at"])]
+        indexes = [models.Index(fields=["user", "revoked_at"]), models.Index(fields=["user", "-last_seen_at"], name="api_securit_user_id_72e6d1_idx")]
 
 
 class MFADevice(models.Model):
@@ -610,7 +610,7 @@ class LoginAttempt(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["identifier", "-created_at"]), models.Index(fields=["ip_address", "-created_at"])]
+        indexes = [models.Index(fields=["identifier", "-created_at"], name="api_loginat_identif_1fdc3b_idx"), models.Index(fields=["ip_address", "-created_at"], name="api_loginat_ip_addr_9c1d5b_idx")]
 
 
 class NotificationPreference(models.Model):
@@ -699,9 +699,9 @@ class BackgroundJob(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["status", "available_at"]),
-            models.Index(fields=["kind", "-created_at"]),
-            models.Index(fields=["idempotency_key", "kind"]),
+            models.Index(fields=["status", "available_at"], name="api_backgro_status_53ef0d_idx"),
+            models.Index(fields=["kind", "-created_at"], name="api_backgro_kind_1d4b0f_idx"),
+            models.Index(fields=["idempotency_key", "kind"], name="api_backgr_idem_k_3e3e8b_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -753,7 +753,7 @@ class ProductEvent(models.Model):
     occurred_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["name", "-occurred_at"]), models.Index(fields=["user", "name", "-occurred_at"])]
+        indexes = [models.Index(fields=["name", "-occurred_at"], name="api_product_name_9f2d11_idx"), models.Index(fields=["user", "name", "-occurred_at"], name="api_product_user_id_0cc22f_idx")]
 
 
 class Incident(models.Model):
