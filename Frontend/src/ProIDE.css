@@ -3,3 +3,21 @@
 
 .dos-remote-cursor{border-left:2px solid currentColor;position:relative}.dos-remote-cursor-label{border-left:3px solid currentColor;margin-left:-1px}
 .dos-collab-presence{display:flex;gap:5px;align-items:center}.dos-presence-dot{width:7px;height:7px;border-radius:50%;background:#65e6a8;box-shadow:0 0 7px #65e6a8}
+
+/* Developer OS Pro IDE — productivity polish */
+.dos-ide-pro{isolation:isolate}
+.dos-ide-pro .dos-topbar,.dos-ide-pro .dos-commandbar{user-select:none}
+.dos-ide-pro .dos-top-actions button,.dos-ide-pro .dos-editor-toolbar button,.dos-ide-pro .dos-activity button,.dos-ide-pro .dos-tab-action{transition:transform .12s ease,background .12s ease,border-color .12s ease,color .12s ease}
+.dos-ide-pro .dos-top-actions button:hover,.dos-ide-pro .dos-editor-toolbar button:hover,.dos-ide-pro .dos-activity button:hover,.dos-ide-pro .dos-tab-action:hover{transform:translateY(-1px)}
+.dos-ide-pro .dos-file.active{box-shadow:inset 2px 0 0 var(--accent)}
+.dos-ide-pro .dos-editor-shell{box-shadow:inset 0 0 0 1px rgba(85,220,255,.025)}
+.dos-ide-pro .dos-statusbar{box-shadow:0 -1px 0 rgba(255,255,255,.04)}
+.dos-ide-pro .dos-terminal{transition:max-height .18s ease}
+.dos-ide-pro.dos-zen-mode .dos-topbar{height:48px}
+.dos-ide-pro.dos-zen-mode .dos-brand span,.dos-ide-pro.dos-zen-mode .dos-workspace-select,.dos-ide-pro.dos-zen-mode .dos-commandbar,.dos-ide-pro.dos-zen-mode .dos-inspector,.dos-ide-pro.dos-zen-mode .dos-activity{display:none}
+.dos-ide-pro.dos-zen-mode .dos-body{grid-template-columns:24px minmax(0,1fr)}
+.dos-ide-pro.dos-zen-mode .dos-explorer{display:none}
+.dos-ide-pro.dos-zen-mode .dos-terminal{min-height:130px}
+.dos-ide-pro .dos-collab-status{display:inline-flex;align-items:center;gap:5px}
+.dos-ide-pro .dos-collab-status i{width:6px;height:6px;border-radius:50%;background:#71849a;box-shadow:0 0 8px currentColor}
+.dos-ide-pro .dos-collab-status.online i{background:#55e6a5}.dos-ide-pro .dos-collab-status.connecting i{background:#ffd36a}
