@@ -8,4 +8,5 @@ COPY main.py .
 RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
 USER runner
 EXPOSE 8080
+ENTRYPOINT ["/usr/bin/tini","--"]
 CMD ["/bin/sh","-c","exec /opt/venv/bin/uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
