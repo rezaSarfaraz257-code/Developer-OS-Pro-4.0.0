@@ -71,6 +71,7 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/sync/", views.ide_workspace_sync_api, name="ide-workspace-sync"),
     path("ide/workspaces/<int:pk>/install/", views.ide_install_framework_api, name="ide-install-framework"),
     path("ide/workspaces/<int:pk>/execute/", views.ide_execute_api, name="ide-execute"),
+    path("ide/workspaces/<int:pk>/debug/", views.ide_debug_api, name="ide-debug"),
     path("ide/workspaces/<int:pk>/process/start/", views.ide_process_start_api, name="ide-process-start"),
     path("ide/workspaces/<int:pk>/processes/", views.ide_processes_api, name="ide-processes"),
     path("ide/workspaces/<int:pk>/process/<str:process_id>/", views.ide_process_detail_api, name="ide-process-detail"),
