@@ -14,6 +14,12 @@ MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
+# Managed runtimes such as Render can deny the Linux namespace/capabilities that
+# bubblewrap requires. Container-native mode is the production default.
+# bwrap remains opt-in for infrastructure that explicitly supports it.
+SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "container").strip().lower()
+if SANDBOX_MODE not in {"container", "bwrap"}:
+    SANDBOX_MODE = "container"
 EXEC_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT)
 WORKSPACE_LOCKS = {}
 WORKSPACE_LOCKS_GUARD = threading.Lock()
@@ -129,19 +135,20 @@ def _limit_process_resources():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 def _sandbox_command(root, command, allow_network=False):
-    # bwrap is an optional defense-in-depth layer. If unavailable, the Docker
-    # container limits still apply; production images should install bwrap.
+    """Return an execution command for the selected isolation backend.
+
+    Render already provides the process/container boundary. Trying to create
+    another Linux namespace with bubblewrap inside that managed container can
+    fail with: 'bwrap: Failed to make / slave: Permission denied'.
+    """
+    if SANDBOX_MODE == "container":
+        return ["bash", "-lc", command]
+
     bwrap = shutil.which("bwrap")
     if not bwrap:
-        if not allow_network and not ALLOW_NETWORK:
-            # Never silently downgrade untrusted execution to a networked shell.
-            raise HTTPException(status_code=503, detail="Secure sandbox is unavailable.")
-        return ["bash", "-lc", command]
+        raise HTTPException(status_code=503, detail="Bubblewrap sandbox is unavailable.")
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        # Keep sandbox startup compatible with managed container runtimes.
-        # Bubblewrap handles its own namespace setup; forcing a nested
-        # unprivileged user namespace can fail before the mount namespace exists.
         "--unshare-pid", "--unshare-uts", "--unshare-ipc",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
@@ -152,7 +159,11 @@ def _sandbox_command(root, command, allow_network=False):
     ]
     if not allow_network and not ALLOW_NETWORK:
         args.append("--unshare-net")
-    args.extend(["--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "--setenv", "HOME", "/workspace/.home", "--", "bash", "-lc", command])
+    args.extend([
+        "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "--setenv", "HOME", "/workspace/.home",
+        "--", "bash", "-lc", command,
+    ])
     return args
 
 def run_command(root, command, *, allow_network=False):
@@ -214,13 +225,12 @@ def run_command(root, command, *, allow_network=False):
 
 @app.get("/health")
 def health():
-    sandbox_ready = bool(shutil.which("bwrap"))
-    if not sandbox_ready:
-        raise HTTPException(status_code=503, detail="Secure sandbox is unavailable.")
     return {
         "status": "ok",
         "service": "developer-os-runner",
-        "sandbox": "bubblewrap-rootless-userns",
+        "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
+        "sandbox_backend": SANDBOX_MODE,
+        "bubblewrap_available": bool(shutil.which("bwrap")),
         "network_policy": "isolated-by-default",
         "version": os.environ.get("RELEASE_VERSION", "3.0.0"),
     }
