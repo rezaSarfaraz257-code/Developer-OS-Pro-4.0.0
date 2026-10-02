@@ -1971,21 +1971,81 @@ RUNNER_URL = os.environ.get("IDE_RUNNER_URL", "http://runner:8080").rstrip("/")
 RUNNER_TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 
 def _runner_request(method, path, payload, timeout=30):
+    """Call the isolated IDE runner and normalize failures into API-safe JSON."""
+    if not RUNNER_URL:
+        return None, {
+            "error": "IDE runner URL is not configured.",
+            "code": "runner_url_not_configured",
+        }
     if not RUNNER_TOKEN:
-        return None, {"error": "IDE runner is not configured. Set IDE_RUNNER_TOKEN and start the runner service."}
+        return None, {
+            "error": "IDE runner is not configured. Set IDE_RUNNER_TOKEN and start the runner service.",
+            "code": "runner_not_configured",
+        }
+
     try:
-        kwargs = {"headers": {"Authorization": f"Bearer {RUNNER_TOKEN}"}, "timeout": timeout}
+        kwargs = {
+            "headers": {
+                "Authorization": f"Bearer {RUNNER_TOKEN}",
+                "Accept": "application/json",
+            },
+            "timeout": timeout,
+        }
         if method.upper() == "GET":
             kwargs["params"] = payload or {}
         else:
             kwargs["json"] = payload
+
         response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
-        data = response.json() if response.content else {}
+
+        # A proxy, platform error page, or crashed runner may return HTML/text
+        # instead of JSON. Never let response.json() escape as a Django 500.
+        try:
+            data = response.json() if response.content else {}
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            preview = response.text[:500].strip() if response.text else ""
+            return None, {
+                "error": f"Runner returned a non-JSON response (HTTP {response.status_code}).",
+                "code": "runner_invalid_response",
+                "status": response.status_code,
+                "details": preview,
+            }
+
         if response.status_code >= 400:
-            return None, data
+            if isinstance(data, dict):
+                error = dict(data)
+                error.setdefault("code", "runner_http_error")
+                error.setdefault("status", response.status_code)
+                return None, error
+            return None, {
+                "error": "Runner request failed.",
+                "code": "runner_http_error",
+                "status": response.status_code,
+            }
+
+        if not isinstance(data, dict):
+            return None, {
+                "error": "Runner returned an invalid response payload.",
+                "code": "runner_invalid_payload",
+            }
+
         return data, None
+
+    except requests.Timeout:
+        return None, {
+            "error": "IDE runner request timed out.",
+            "code": "runner_timeout",
+        }
+    except requests.ConnectionError:
+        return None, {
+            "error": "IDE runner is unreachable. Check IDE_RUNNER_URL and the runner service.",
+            "code": "runner_unreachable",
+        }
     except requests.RequestException as exc:
-        return None, {"error": f"IDE runner unavailable: {exc.__class__.__name__}"}
+        return None, {
+            "error": f"IDE runner request failed: {exc.__class__.__name__}.",
+            "code": "runner_request_failed",
+        }
 
 def _workspace_access_queryset(user):
     return CodeWorkspace.objects.select_related("project").filter(
