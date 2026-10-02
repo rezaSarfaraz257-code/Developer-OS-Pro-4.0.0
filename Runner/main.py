@@ -138,8 +138,13 @@ def _sandbox_command(root, command, allow_network=False):
             raise HTTPException(status_code=503, detail="Secure sandbox is unavailable.")
         return ["bash", "-lc", command]
     args = [
-        bwrap, "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-uts",
-        "--unshare-ipc", "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
+        bwrap, "--die-with-parent", "--new-session",
+        # Render and other rootless container platforms may expose bwrap but
+        # deny the container CAP_SYS_ADMIN. Explicitly create an unprivileged
+        # user namespace so bwrap can make mount propagation private.
+        "--unshare-user", "--uid", "0", "--gid", "0",
+        "--unshare-pid", "--unshare-uts", "--unshare-ipc",
+        "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
         "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
         "--tmpfs", "/workspaces", "--bind", str(root), "/workspace",
@@ -216,7 +221,7 @@ def health():
     return {
         "status": "ok",
         "service": "developer-os-runner",
-        "sandbox": "bubblewrap",
+        "sandbox": "bubblewrap-rootless-userns",
         "network_policy": "isolated-by-default",
         "version": os.environ.get("RELEASE_VERSION", "3.0.0"),
     }
