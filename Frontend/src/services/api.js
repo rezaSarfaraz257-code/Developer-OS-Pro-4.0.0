@@ -230,14 +230,19 @@ export async function apiFetch(endpoint, options = {}) {
   if (!response.ok) {
     const errorPayload = await readErrorPayload(response);
     const message = formatApiError(errorPayload);
-    const diagnostic = errorPayload && typeof errorPayload === "object" && errorPayload.error && typeof errorPayload.error === "object"
+    const diagnostic = errorPayload && typeof errorPayload === "object"
       ? [
-          errorPayload.error.code,
-          errorPayload.error.stage,
-          errorPayload.error.detail,
+          errorPayload.code,
+          errorPayload.stage,
+          errorPayload.service_version,
+          errorPayload.detail,
+          errorPayload.error && typeof errorPayload.error === "object" ? errorPayload.error.code : "",
+          errorPayload.error && typeof errorPayload.error === "object" ? errorPayload.error.stage : "",
         ].filter(Boolean).join(" · ")
       : "";
-    const detailedMessage = diagnostic ? `${message} [${diagnostic}]` : `${message} [HTTP ${response.status}]`;
+    const detailedMessage = diagnostic
+      ? `${message} [${diagnostic} · HTTP ${response.status}]`
+      : `${message} [HTTP ${response.status}]`;
 
     // If authentication failed and refresh is not available or refresh failed, clear auth.
     if (response.status === 401) {
