@@ -2362,12 +2362,19 @@ def ide_execute_api(request, pk):
         if not command or len(command) > 2000:
             return Response({"error": "A command up to 2,000 characters is required."}, status=400)
 
+        # Execution must remain functional even when telemetry/history persistence
+        # is temporarily unavailable. A database write failure must never turn a
+        # successful sandbox execution into a generic HTTP 500.
         stage = "execution_create"
-        execution = IDEExecution.objects.create(
-            workspace=ws,
-            command=command,
-            status="running",
-        )
+        try:
+            execution = IDEExecution.objects.create(
+                workspace=ws,
+                command=command,
+                status="running",
+            )
+        except DatabaseError:
+            logger.exception("IDE execution history unavailable: workspace=%s", pk)
+            execution = None
         started = timezone.now()
 
         stage = "runner_payload"
@@ -2378,16 +2385,19 @@ def ide_execute_api(request, pk):
         duration = int((timezone.now() - started).total_seconds() * 1000)
 
         if error:
-            stage = "execution_failure_persist"
-            execution.status = "failed"
-            execution.stderr = json.dumps(error, ensure_ascii=False)[:50000]
-            execution.duration_ms = duration
-            execution.finished_at = timezone.now()
-            execution.save(update_fields=["status", "stderr", "duration_ms", "finished_at"])
+            if execution is not None:
+                try:
+                    execution.status = "failed"
+                    execution.stderr = json.dumps(error, ensure_ascii=False)[:50000]
+                    execution.duration_ms = duration
+                    execution.finished_at = timezone.now()
+                    execution.save(update_fields=["status", "stderr", "duration_ms", "finished_at"])
+                except DatabaseError:
+                    logger.exception("Failed to persist IDE runner failure: workspace=%s", pk)
             return Response({
                 **error,
                 "stage": "runner_request",
-                "execution_id": execution.id,
+                "execution_id": execution.id if execution is not None else None,
             }, status=503)
 
         if not isinstance(data, dict):
@@ -2395,37 +2405,53 @@ def ide_execute_api(request, pk):
 
         stage = "workspace_sync"
         runner_files = data.get("files")
+        sync_warning = None
         if isinstance(runner_files, dict):
-            serializer = CodeWorkspaceSerializer(
-                ws,
-                data={"files": runner_files},
-                partial=True,
-                context={"request": request},
-            )
-            serializer.is_valid(raise_exception=True)
-            ws = serializer.save()
+            try:
+                serializer = CodeWorkspaceSerializer(
+                    ws,
+                    data={"files": runner_files},
+                    partial=True,
+                    context={"request": request},
+                )
+                serializer.is_valid(raise_exception=True)
+                ws = serializer.save()
+            except (DatabaseError, IntegrityError, ValidationError) as exc:
+                # Runner output is authoritative for this invocation. Keep the
+                # command result usable while surfacing a non-fatal sync warning.
+                logger.exception("IDE workspace sync failed: workspace=%s", pk)
+                sync_warning = f"Workspace sync deferred ({exc.__class__.__name__})."
 
         stage = "execution_persist"
-        execution.exit_code = data.get("exit_code")
-        execution.stdout = str(data.get("stdout") or "")[-50000:]
-        execution.stderr = str(data.get("stderr") or "")[-50000:]
-        execution.duration_ms = duration
-        execution.status = (
+        execution_status = (
             "timeout"
-            if execution.exit_code == 124
-            else ("success" if execution.exit_code == 0 else "failed")
+            if data.get("exit_code") == 124
+            else ("success" if data.get("exit_code") == 0 else "failed")
         )
-        execution.finished_at = timezone.now()
-        execution.save()
+        if execution is not None:
+            try:
+                execution.exit_code = data.get("exit_code")
+                execution.stdout = str(data.get("stdout") or "")[-50000:]
+                execution.stderr = str(data.get("stderr") or "")[-50000:]
+                execution.duration_ms = duration
+                execution.status = execution_status
+                execution.finished_at = timezone.now()
+                execution.save()
+            except DatabaseError:
+                logger.exception("IDE execution history persist failed: workspace=%s", pk)
+                execution = None
 
-        return Response({
-            "id": execution.id,
-            "status": execution.status,
-            "exit_code": execution.exit_code,
-            "stdout": execution.stdout,
-            "stderr": execution.stderr,
+        response_data = {
+            "id": execution.id if execution is not None else None,
+            "status": execution_status,
+            "exit_code": data.get("exit_code"),
+            "stdout": str(data.get("stdout") or ""),
+            "stderr": str(data.get("stderr") or ""),
             "duration_ms": duration,
-        })
+        }
+        if sync_warning:
+            response_data["warning"] = sync_warning
+        return Response(response_data)
 
     except PermissionError:
         logger.exception(
