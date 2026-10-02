@@ -21,3 +21,6 @@
 .dos-ide-pro .dos-collab-status{display:inline-flex;align-items:center;gap:5px}
 .dos-ide-pro .dos-collab-status i{width:6px;height:6px;border-radius:50%;background:#71849a;box-shadow:0 0 8px currentColor}
 .dos-ide-pro .dos-collab-status.online i{background:#55e6a5}.dos-ide-pro .dos-collab-status.connecting i{background:#ffd36a}
+
+/* Pro tab workflow */
+.dos-tab{position:relative}.dos-tab.pinned{border-top-color:#55dcff}.dos-tab em{font-size:8px;color:#55dcff}.dos-editor-toolbar button{white-space:nowrap}.dos-editor-toolbar{overflow-x:auto;scrollbar-width:none}.dos-editor-toolbar::-webkit-scrollbar{display:none}
