@@ -946,7 +946,8 @@ def ai_agent_apply_api(request):
     diagnostics = _agent_diagnostics_evidence(workspace)
     return Response({
         "status": "applied",
-        "workspace": {"id": workspace.id, "revision": workspace.revision},
+        "workspace": {"id": workspace.id, "revision": workspace.revision, "files": workspace.files, "active_file": workspace.active_file},
+        "files": workspace.files,
         "changed_files": [item["path"] for item in diffs],
         "diffs": diffs,
         "sync": {"ok": sync_error is None, "error": sync_error, "data": sync_data},
