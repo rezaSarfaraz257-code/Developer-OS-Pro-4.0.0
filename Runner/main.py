@@ -249,10 +249,27 @@ def install(payload: InstallRequest, authorization: str = Header(default="")):
 
 @app.post("/exec")
 def execute(payload: ExecRequest, authorization: str = Header(default="")):
+    """Execute one isolated command with API-safe error responses."""
     auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    return run_command(root, payload.command)
+    try:
+        root = safe_workspace(payload.workspace_id)
+        files = payload.files or {}
+        if not isinstance(files, dict):
+            raise HTTPException(status_code=400, detail="Workspace files must be an object.")
+        write_snapshot(root, files)
+        return run_command(root, payload.command)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Runner execution timed out.")
+    except Exception as exc:
+        # Never leak stack traces or internal paths to the API consumer.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Runner execution failed: {exc.__class__.__name__}",
+        )
 
 # ---------------------------------------------------------------------------
 # CLOUD IDE RUNTIME: process lifecycle, Git operations and preview services
