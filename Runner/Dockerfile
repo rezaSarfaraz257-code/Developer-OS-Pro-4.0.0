@@ -1,5 +1,6 @@
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-pip git curl ca-certificates build-essential bubblewrap tini && rm -rf /var/lib/apt/lists/*
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python && ln -sf /usr/bin/pip3 /usr/local/bin/pip || true
 RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
 COPY requirements.txt .
