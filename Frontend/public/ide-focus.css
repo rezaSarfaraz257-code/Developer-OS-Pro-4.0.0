@@ -13,7 +13,7 @@
   position:relative;
   min-width:0;
   overflow:visible;
-  grid-template-columns:24px minmax(0,1fr) 220px;
+  grid-template-columns:48px 24px minmax(0,1fr) 220px;
 }
 
 /* Explorer is an ordinary IDE column, not a viewport overlay. */
@@ -100,7 +100,7 @@
 
 @media(max-width:1200px){
   .dos-ide-pro .dos-body{
-    grid-template-columns:24px minmax(0,1fr) !important;
+    grid-template-columns:48px 24px minmax(0,1fr) !important;
   }
   .dos-ide-pro .dos-explorer:hover,
   .dos-ide-pro .dos-explorer:focus-within{
@@ -112,7 +112,7 @@
 
 @media(max-width:800px){
   .dos-ide-pro .dos-body{
-    grid-template-columns:22px minmax(0,1fr) !important;
+    grid-template-columns:42px 22px minmax(0,1fr) !important;
   }
   .dos-ide-pro .dos-explorer:hover,
   .dos-ide-pro .dos-explorer:focus-within{
