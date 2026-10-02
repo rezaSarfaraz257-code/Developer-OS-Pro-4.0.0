@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 
 from django.contrib.auth.models import User
 from django.db import connection, DatabaseError
@@ -67,6 +68,8 @@ from .serializers import (
 
 from .mature import queue_email, sha256
 from .security import can_access_project, can_manage_project, audit_security_event, require_safe_url
+
+logger = logging.getLogger(__name__)
 
 
 class AuthRateThrottle(AnonRateThrottle):
@@ -2064,9 +2067,12 @@ def _workspace_write_allowed(ws, user):
     return bool(ws.owner_id == user.id or (ws.project_id and _project_access(ws.project, user)))
 
 def _workspace_payload(ws):
-    if ws.project_id and not can_access_project(ws.project, ws.owner):
-        raise PermissionError("workspace project access invariant failed")
-    return {"workspace_id": str(ws.id), "files": ws.files, "active_file": ws.active_file}
+    """Build a runner payload after the caller has already enforced workspace access."""
+    return {
+        "workspace_id": str(ws.id),
+        "files": dict(ws.files or {}),
+        "active_file": str(ws.active_file or ""),
+    }
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -2329,35 +2335,136 @@ def ide_debug_api(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ide_execute_api(request, pk):
-    ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user):
-        return Response({"error": "You have read-only access to this workspace."}, status=403)
-    allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
-    if not allowed:
-        return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-    command = str(request.data.get("command") or "").strip()
-    if not command or len(command) > 2000:
-        return Response({"error": "A command up to 2,000 characters is required."}, status=400)
-    execution = IDEExecution.objects.create(workspace=ws, command=command, status="running")
+    """Execute a workspace command through the isolated runner."""
+    stage = "workspace_lookup"
+    execution = None
     started = timezone.now()
-    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
-    duration = int((timezone.now() - started).total_seconds() * 1000)
-    if error:
-        execution.status = "failed"; execution.stderr = json.dumps(error); execution.duration_ms = duration; execution.finished_at = timezone.now(); execution.save()
-        return Response(error, status=503)
-    runner_files = data.get("files")
-    if isinstance(runner_files, dict):
-        serializer = CodeWorkspaceSerializer(ws, data={"files": runner_files}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-    execution.exit_code = data.get("exit_code")
-    execution.stdout = str(data.get("stdout") or "")[-50000:]
-    execution.stderr = str(data.get("stderr") or "")[-50000:]
-    execution.duration_ms = duration
-    execution.status = "timeout" if execution.exit_code == 124 else ("success" if execution.exit_code == 0 else "failed")
-    execution.finished_at = timezone.now()
-    execution.save()
-    return Response({"id": execution.id, "status": execution.status, "exit_code": execution.exit_code, "stdout": execution.stdout, "stderr": execution.stderr, "duration_ms": duration})
+
+    try:
+        ws = _workspace_for_user(pk, request.user)
+
+        stage = "workspace_permission"
+        if not _workspace_write_allowed(ws, request.user):
+            return Response({"error": "You have read-only access to this workspace."}, status=403)
+
+        stage = "usage_limit"
+        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        if not allowed:
+            return Response({
+                "error": "Monthly IDE execution limit reached.",
+                "plan": plan,
+                "used": used,
+                "limit": limit,
+            }, status=429)
+
+        stage = "command_validation"
+        command = str(request.data.get("command") or "").strip()
+        if not command or len(command) > 2000:
+            return Response({"error": "A command up to 2,000 characters is required."}, status=400)
+
+        stage = "execution_create"
+        execution = IDEExecution.objects.create(
+            workspace=ws,
+            command=command,
+            status="running",
+        )
+        started = timezone.now()
+
+        stage = "runner_payload"
+        payload = {**_workspace_payload(ws), "command": command}
+
+        stage = "runner_request"
+        data, error = _runner_request("POST", "/exec", payload, timeout=125)
+        duration = int((timezone.now() - started).total_seconds() * 1000)
+
+        if error:
+            stage = "execution_failure_persist"
+            execution.status = "failed"
+            execution.stderr = json.dumps(error, ensure_ascii=False)[:50000]
+            execution.duration_ms = duration
+            execution.finished_at = timezone.now()
+            execution.save(update_fields=["status", "stderr", "duration_ms", "finished_at"])
+            return Response({
+                **error,
+                "stage": "runner_request",
+                "execution_id": execution.id,
+            }, status=503)
+
+        if not isinstance(data, dict):
+            raise ValueError("Runner returned a non-object payload.")
+
+        stage = "workspace_sync"
+        runner_files = data.get("files")
+        if isinstance(runner_files, dict):
+            serializer = CodeWorkspaceSerializer(
+                ws,
+                data={"files": runner_files},
+                partial=True,
+                context={"request": request},
+            )
+            serializer.is_valid(raise_exception=True)
+            ws = serializer.save()
+
+        stage = "execution_persist"
+        execution.exit_code = data.get("exit_code")
+        execution.stdout = str(data.get("stdout") or "")[-50000:]
+        execution.stderr = str(data.get("stderr") or "")[-50000:]
+        execution.duration_ms = duration
+        execution.status = (
+            "timeout"
+            if execution.exit_code == 124
+            else ("success" if execution.exit_code == 0 else "failed")
+        )
+        execution.finished_at = timezone.now()
+        execution.save()
+
+        return Response({
+            "id": execution.id,
+            "status": execution.status,
+            "exit_code": execution.exit_code,
+            "stdout": execution.stdout,
+            "stderr": execution.stderr,
+            "duration_ms": duration,
+        })
+
+    except PermissionError:
+        logger.exception(
+            "IDE execution permission/invariant failure: workspace=%s user=%s stage=%s",
+            pk, getattr(request.user, "pk", None), stage,
+        )
+        if execution is not None:
+            try:
+                execution.status = "failed"
+                execution.stderr = "Workspace access invariant failed."
+                execution.finished_at = timezone.now()
+                execution.save(update_fields=["status", "stderr", "finished_at"])
+            except Exception:
+                logger.exception("Failed to persist IDE permission failure: workspace=%s", pk)
+        return Response({
+            "error": "IDE workspace access configuration is invalid.",
+            "code": "workspace_invariant_error",
+            "stage": stage,
+        }, status=500)
+
+    except Exception:
+        logger.exception(
+            "IDE execution failed: workspace=%s user=%s stage=%s",
+            pk, getattr(request.user, "pk", None), stage,
+        )
+        if execution is not None:
+            try:
+                execution.status = "failed"
+                execution.stderr = "IDE execution failed during " + stage + "."
+                execution.duration_ms = int((timezone.now() - started).total_seconds() * 1000)
+                execution.finished_at = timezone.now()
+                execution.save(update_fields=["status", "stderr", "duration_ms", "finished_at"])
+            except Exception:
+                logger.exception("Failed to persist IDE internal failure: workspace=%s", pk)
+        return Response({
+            "error": "IDE execution failed.",
+            "code": "ide_execution_internal_error",
+            "stage": stage,
+        }, status=500)
 
 
 @api_view(["GET", "POST", "DELETE"])
