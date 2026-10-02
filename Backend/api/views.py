@@ -2557,10 +2557,27 @@ def _usage_period():
 def _usage_count(user, metric):
     return UsageRecord.objects.filter(user=user, period=_usage_period(), metric=metric).values_list("quantity", flat=True).first() or 0
 
+def _is_unlimited_admin(user):
+    """Return True only for the platform's Django superuser/admin account.
+
+    Quotas remain enforced for every normal user. The admin bypass is based on
+    Django's server-side superuser flag, not a client-provided role or username,
+    so another account cannot unlock unlimited usage by changing frontend data.
+    """
+    return bool(getattr(user, "is_superuser", False))
+
+
 def _consume_usage(user, metric, amount=1):
-    """Atomically consume metered usage so concurrent requests cannot overspend a plan."""
+    """Atomically consume metered usage; platform admins are not quota-limited."""
     if amount < 0:
         raise ValueError("Usage amount cannot be negative.")
+
+    if _is_unlimited_admin(user):
+        # Do not create UsageRecord rows for unlimited admin traffic. This keeps
+        # admin activity out of customer quota accounting while preserving the
+        # normal metering path for every other account.
+        return True, None, None, "admin"
+
     plan, _ = _plan_for(user)
     limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
     limit = limits.get(metric)
@@ -2615,12 +2632,28 @@ def _stripe_request(path, data=None, method="POST"):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def usage_api(request):
+    if _is_unlimited_admin(request.user):
+        return Response({
+            "plan": "admin",
+            "status": "active",
+            "period": _usage_period().isoformat(),
+            "unlimited": True,
+            "metrics": {
+                "ai_messages": {"used": 0, "limit": None},
+                "ide_runs": {"used": 0, "limit": None},
+                "api_keys": {"used": APIKey.objects.filter(user=request.user, revoked_at__isnull=True).count(), "limit": None},
+                "workspaces": {"used": CodeWorkspace.objects.filter(owner=request.user).count(), "limit": None},
+                "projects": {"used": Project.objects.filter(owner=request.user).count(), "limit": None},
+            },
+        })
+
     plan, sub = _plan_for(request.user)
     limits = PLAN_LIMITS[plan]
     return Response({
         "plan": plan,
         "status": sub.status,
         "period": _usage_period().isoformat(),
+        "unlimited": False,
         "metrics": {
             "ai_messages": {"used": _usage_count(request.user, "ai_messages_month"), "limit": limits["ai_messages_month"]},
             "ide_runs": {"used": _usage_count(request.user, "ide_runs_month"), "limit": limits["ide_runs_month"]},
