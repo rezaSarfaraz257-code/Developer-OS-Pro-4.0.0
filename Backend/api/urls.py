@@ -111,6 +111,7 @@ urlpatterns = [
     path("ai/chat/", ai_recovery.ai_chat_api_recovery, name="ai-chat"),
     path("ai/agent/", ai_engine.ai_agent_api, name="ai-agent"),
     path("ai/agent/apply/", ai_engine.ai_agent_apply_api, name="ai-agent-apply"),
+    path("ai/agent/rollback/", ai_engine.ai_agent_rollback_api, name="ai-agent-rollback"),
     path("ai/actions/", ai_engine.ai_actions_api, name="ai-actions"),
     path("billing/webhook/", views.billing_webhook_api, name="billing-webhook"),
 ]
