@@ -957,6 +957,63 @@ def ai_agent_apply_api(request):
     })
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_agent_rollback_api(request):
+    """Atomically restore the workspace snapshot captured before an AI patch."""
+    from .views import _workspace_for_user
+    workspace_id = request.data.get("workspace")
+    expected_revision = request.data.get("revision")
+    files = request.data.get("files")
+    if not workspace_id or not isinstance(files, dict):
+        return Response({"error": "workspace and files are required."}, status=400)
+    try:
+        expected_revision = int(expected_revision)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid workspace revision."}, status=400)
+
+    with transaction.atomic():
+        workspace = _workspace_for_user(workspace_id, request.user, for_update=True)
+        if workspace.revision != expected_revision:
+            return Response({
+                "error": "Workspace changed after the AI apply. Reload before undoing.",
+                "code": "stale_workspace",
+                "revision": workspace.revision,
+            }, status=409)
+
+        safe_files = {}
+        total_bytes = 0
+        for raw_path, value in files.items():
+            path = str(raw_path or "").replace("\\", "/").strip().lstrip("/")
+            if (
+                not path or len(path) > 500 or
+                any(part in {"", ".", ".."} for part in path.split("/")) or
+                path == ".git" or path.startswith(".git/")
+            ):
+                return Response({"error": f"Unsafe workspace path: {raw_path}"}, status=400)
+            if not isinstance(value, str):
+                return Response({"error": f"Invalid file content: {path}"}, status=400)
+            total_bytes += len(value.encode("utf-8"))
+            if len(value) > 2_000_000:
+                return Response({"error": f"File is too large: {path}"}, status=400)
+            safe_files[path] = value
+
+        if len(safe_files) > 2000 or total_bytes > 25_000_000:
+            return Response({"error": "Workspace limits would be exceeded."}, status=400)
+
+        active_file = workspace.active_file if workspace.active_file in safe_files else next(iter(safe_files), "")
+        workspace.files = safe_files
+        workspace.active_file = active_file
+        workspace.save(update_fields={"files", "active_file"})
+
+    return Response({
+        "status": "rolled_back",
+        "workspace": {"id": workspace.id, "revision": workspace.revision},
+        "files": workspace.files,
+        "active_file": workspace.active_file,
+    })
+
+
 ACTION_INSTRUCTIONS = {
     "review": "Perform a senior-level code review. Group findings by severity and give exact fixes.",
     "tests": "Design focused automated tests for the supplied code and context. Include edge cases and expected assertions.",
