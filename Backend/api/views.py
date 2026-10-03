@@ -2167,6 +2167,8 @@ def ide_workspace_files_api(request, pk):
     content = request.data.get("content", "")
     if not path or not isinstance(content, str):
         return Response({"error": "Valid path and text content are required."}, status=400)
+    if path in files and action == "create":
+        return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
     files[path] = content
     serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": path}, partial=True, context={"request": request})
     serializer.is_valid(raise_exception=True)
