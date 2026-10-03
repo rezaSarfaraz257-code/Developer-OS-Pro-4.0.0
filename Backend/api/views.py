@@ -1914,6 +1914,10 @@ def task_dependencies_api(request, pk):
 @api_view(["GET", "POST", "PATCH"])
 @permission_classes([IsAuthenticated])
 def ide_workspaces_api(request):
+    if request.method == "DELETE":
+        ws = get_object_or_404(CodeWorkspace, pk=request.data.get("id"), owner=request.user)
+        ws.delete()
+        return Response(status=204)
     if request.method == "GET":
         qs = _workspace_access_queryset(request.user).order_by("-updated_at")
         return Response(CodeWorkspaceSerializer(qs[:30], many=True).data)
