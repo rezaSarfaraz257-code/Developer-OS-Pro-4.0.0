@@ -2181,13 +2181,19 @@ def ide_workspace_files_api(request, pk):
         partial=True,
         context={"request": request},
     )
-    serializer.is_valid(raise_exception=True)
     try:
+        serializer.is_valid(raise_exception=True)
         ws = serializer.save()
     except (DatabaseError, IntegrityError) as exc:
         logger.exception("IDE file persistence failed: workspace=%s path=%s", ws.pk, path)
         return Response(
-            {"error": "Could not save the file.", "code": "workspace_persistence_error", "details": str(exc)},
+            {"error": "Could not save the file.", "code": "workspace_persistence_error"},
+            status=503,
+        )
+    except Exception as exc:
+        logger.exception("Unexpected IDE file creation failure: workspace=%s path=%s", ws.pk, path)
+        return Response(
+            {"error": "File could not be created.", "code": "file_creation_error", "details": str(exc)[:500]},
             status=503,
         )
 
