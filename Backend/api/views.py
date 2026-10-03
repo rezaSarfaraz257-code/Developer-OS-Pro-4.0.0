@@ -2380,7 +2380,12 @@ def ide_execute_api(request, pk):
         started = timezone.now()
 
         stage = "runner_payload"
+        submitted_files = request.data.get("files")
+        if submitted_files is not None and not isinstance(submitted_files, dict):
+            return Response({"error": "Workspace files must be an object."}, status=400)
         payload = {**_workspace_payload(ws), "command": command}
+        if isinstance(submitted_files, dict):
+            payload["files"] = submitted_files
 
         stage = "runner_request"
         data, error = _runner_request("POST", "/exec", payload, timeout=125)
