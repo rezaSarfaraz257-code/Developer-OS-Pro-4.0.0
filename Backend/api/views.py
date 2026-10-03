@@ -2130,10 +2130,11 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        ws.files = files
-        ws.save(update_fields=["files", "active_file", "updated_at"])
+        serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": ws.active_file}, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        ws = serializer.save()
         _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
-        return Response({"files": files, "active_file": ws.active_file, "revision": ws.revision})
+        return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write")
     path = _safe_ide_path(request.data.get("path"))
     if action == "rename":
@@ -2160,10 +2161,11 @@ def ide_workspace_files_api(request, pk):
             ws.active_file = target
         elif ws.active_file.startswith(path.rstrip("/") + "/"):
             ws.active_file = target.rstrip("/") + ws.active_file[len(path.rstrip("/")): ]
-        ws.files = files
-        ws.save(update_fields=["files", "active_file", "updated_at"])
+        serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": ws.active_file}, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        ws = serializer.save()
         _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
-        return Response({"files": files, "active_file": ws.active_file, "revision": ws.revision})
+        return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     content = request.data.get("content", "")
     if not path or not isinstance(content, str):
         return Response({"error": "Valid path and text content are required."}, status=400)
