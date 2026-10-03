@@ -52,3 +52,15 @@
 .dos-debug-grid small{color:#71829a}.dos-debug-var{display:flex;justify-content:space-between;padding:5px 0;color:#b9c8db}.dos-debug-var span{color:#d7e4f5;max-width:60%;overflow:hidden;text-overflow:ellipsis}
 .dos-debug-console{padding:12px;display:flex;flex-direction:column;gap:8px;flex:1}
 .dos-debug-console>div{display:flex;justify-content:space-between}.dos-debug-console input{background:#080e18;border:1px solid #26364d;color:#e8f1fb;padding:9px;border-radius:6px}.dos-debug-console pre{margin:0;white-space:pre-wrap;color:#a9bdd5;overflow:auto}
+
+/* Modern IDE workspace chrome */
+.dos-ide-shell{isolation:isolate;contain:layout paint style;}
+.dos-explorer{backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}
+.dos-file,.dos-folder{transition:background .16s ease,transform .16s ease,border-color .16s ease;}
+.dos-file:hover,.dos-folder:hover{transform:translateX(2px);}
+.dos-file.active{box-shadow:inset 3px 0 0 currentColor;}
+.dos-file-list{scrollbar-gutter:stable;}
+.dos-tree-search input:focus,.dos-palette input:focus{outline:2px solid color-mix(in srgb,currentColor 35%,transparent);outline-offset:1px;}
+.dos-palette{animation:dosPaletteIn .16s ease-out;}
+@keyframes dosPaletteIn{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.dos-file,.dos-folder,.dos-palette{transition:none;animation:none}}
