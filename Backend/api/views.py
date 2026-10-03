@@ -2171,12 +2171,41 @@ def ide_workspace_files_api(request, pk):
         return Response({"error": "Valid path and text content are required."}, status=400)
     if path in files and action == "create":
         return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
+
+    # Persist the file first. Runner synchronization is best-effort and must
+    # never turn a successful database write into a generic HTTP 500.
     files[path] = content
-    serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": path}, partial=True, context={"request": request})
+    serializer = CodeWorkspaceSerializer(
+        ws,
+        data={"files": files, "active_file": path},
+        partial=True,
+        context={"request": request},
+    )
     serializer.is_valid(raise_exception=True)
-    ws = serializer.save()
-    _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
-    return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
+    try:
+        ws = serializer.save()
+    except (DatabaseError, IntegrityError) as exc:
+        logger.exception("IDE file persistence failed: workspace=%s path=%s", ws.pk, path)
+        return Response(
+            {"error": "Could not save the file.", "code": "workspace_persistence_error", "details": str(exc)},
+            status=503,
+        )
+
+    runner_data, runner_error = _runner_request(
+        "POST", "/sync", _workspace_payload(ws), timeout=30
+    )
+    if runner_error:
+        logger.warning(
+            "IDE file saved but runner sync failed: workspace=%s path=%s error=%s",
+            ws.pk, path, runner_error,
+        )
+
+    return Response({
+        "files": ws.files,
+        "active_file": ws.active_file,
+        "revision": ws.revision,
+        "runner_sync": "ok" if runner_data is not None else "pending",
+    })
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
