@@ -66,3 +66,6 @@
 @media(prefers-reduced-motion:reduce){.dos-file,.dos-folder,.dos-palette{transition:none;animation:none}}
 
 .dos-explorer-create{width:100%;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);color:inherit;padding:7px 10px;border-radius:7px;margin-top:6px;cursor:pointer;transition:.16s ease}.dos-explorer-create:hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}
+
+.dos-file.selected,.dos-folder.selected{background:rgba(60,180,220,.13);outline:1px solid rgba(85,220,255,.12)}
+.dos-file[draggable],.dos-folder[draggable]{cursor:grab}.dos-file[draggable]:active,.dos-folder[draggable]:active{cursor:grabbing}
