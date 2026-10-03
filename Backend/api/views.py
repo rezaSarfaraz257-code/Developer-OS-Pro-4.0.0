@@ -1911,7 +1911,7 @@ def task_dependencies_api(request, pk):
     return Response(TaskDependencySerializer(dep).data, status=201)
 
 
-@api_view(["GET", "POST", "PATCH"])
+@api_view(["GET", "POST", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def ide_workspaces_api(request):
     if request.method == "DELETE":
