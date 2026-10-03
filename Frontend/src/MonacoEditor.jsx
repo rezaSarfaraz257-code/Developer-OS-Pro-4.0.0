@@ -21,7 +21,7 @@ monaco.editor.defineTheme("developer-os-dark",{base:"vs-dark",inherit:true,rules
 const lang=p=>({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",html:"html",htm:"html",css:"css",scss:"scss",json:"json",md:"markdown",yaml:"yaml",yml:"yaml",sql:"sql",sh:"shell",bash:"shell",go:"go",rs:"rust",java:"java",php:"php",xml:"xml",vue:"html",c:"c",cpp:"cpp",h:"cpp",hpp:"cpp",txt:"plaintext",env:"plaintext"}[p.split(".").pop()?.toLowerCase()]||"plaintext");
 
 
-const importPathRegex=/((?:from\\s+|import\\s*\\(\\s*|require\\s*\\(\\s*)["'])([^"']+)(["'])/g;
+const importPathRegex=/((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
 function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
 export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols}){
  const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),remoteDecorations=useRef([]),completion=useRef(null),models=useRef(new Map()),viewStates=useRef(new Map());
