@@ -37,7 +37,6 @@ export default function AIAssistantPage({ setPage }) {
   const [timeline, setTimeline] = useState([]);
   const [toolCalls, setToolCalls] = useState([]);
   const [showDiff, setShowDiff] = useState(true);
-  const [lastAgentRequest, setLastAgentRequest] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +92,6 @@ export default function AIAssistantPage({ setPage }) {
         }
         throw new Error(`${message} · HTTP ${response.status}`);
       }
-      if (agentMode) setLastAgentRequest(text);
       setConversation(data.conversation || null);
       setEvidence(data.evidence || null);
       if (agentMode) { setToolCalls(data.tool_calls || []); setTimeline((items) => items.map((x) => ({...x,state:"complete"})).concat(data.approval_token ? [{label:"PATCH PROPOSAL",state:"ready"}] : [{label:"VERIFY",state:"complete"}])); }
