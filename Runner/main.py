@@ -15,6 +15,7 @@ from observability_engine import record as observability_record, snapshot as obs
 from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
 from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
 from extension_engine import manifest as extension_manifest
+from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -298,9 +299,30 @@ def _capability_manifest():
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
         },
-        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"]},
+        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"], "lsp": True},
+        "lsp": LSP_MANAGER.capability(),
     }
 
+
+
+class LSPRequest(Workspace):
+    language: str = "python"
+    method: str = ""
+    uri: str = ""
+    params: dict = Field(default_factory=dict)
+
+@app.post("/lsp/request")
+def lsp_request(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root=safe_workspace(payload.workspace_id)
+    try:
+        session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+        params=dict(payload.params or {})
+        if payload.uri and "textDocument" not in params:
+            params["textDocument"]={"uri":payload.uri}
+        return session.request(payload.method,params)
+    except LSPError as exc:
+        raise HTTPException(status_code=503,detail=str(exc)[:300])
 @app.get("/health")
 def health():
     return {
