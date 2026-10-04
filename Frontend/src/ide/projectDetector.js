@@ -69,6 +69,36 @@ export const LSP_PROFILES = Object.freeze({
   csharp:{server:"OmniSharp",languageId:"csharp",transport:"stdio",priority:"extended"},
 });
 
+export const PACKAGE_PROFILES = Object.freeze({
+  npm:{manager:"npm",manifest:["package.json"],lockfiles:["package-lock.json"]},
+  pnpm:{manager:"pnpm",manifest:["package.json"],lockfiles:["pnpm-lock.yaml"]},
+  yarn:{manager:"yarn",manifest:["package.json"],lockfiles:["yarn.lock"]},
+  pip:{manager:"pip",manifest:["requirements.txt","pyproject.toml"],lockfiles:["requirements.txt","poetry.lock"]},
+  cargo:{manager:"cargo",manifest:["Cargo.toml"],lockfiles:["Cargo.lock"]},
+  go:{manager:"go",manifest:["go.mod"],lockfiles:["go.sum"]},
+  maven:{manager:"maven",manifest:["pom.xml"],lockfiles:[]},
+  gradle:{manager:"gradle",manifest:["build.gradle","build.gradle.kts"],lockfiles:[]},
+  composer:{manager:"composer",manifest:["composer.json"],lockfiles:["composer.lock"]},
+  bundler:{manager:"bundler",manifest:["Gemfile"],lockfiles:["Gemfile.lock"]},
+  pub:{manager:"dart pub",manifest:["pubspec.yaml"],lockfiles:["pubspec.lock"]},
+  swiftpm:{manager:"swift package manager",manifest:["Package.swift"],lockfiles:["Package.resolved"]},
+  mix:{manager:"mix",manifest:["mix.exs"],lockfiles:["mix.lock"]},
+  rebar3:{manager:"rebar3",manifest:["rebar.config"],lockfiles:[]},
+  dotnet:{manager:"dotnet",manifest:["*.csproj","*.fsproj"],lockfiles:["packages.lock.json"]},
+});
+
+export function detectPackageManager(files={}){
+  const paths=Object.keys(files), names=new Set(paths.map(base));
+  const candidates=[];
+  for(const [id,p] of Object.entries(PACKAGE_PROFILES)){
+    const matched=p.manifest.some(m=>m.startsWith("*")?paths.some(x=>base(x).endsWith(m.slice(1))):names.has(m));
+    if(matched)candidates.push({id,...p,lockfile:p.lockfiles.some(x=>names.has(x))});
+  }
+  const priority=["pnpm","yarn","npm","poetry","pip","cargo","go","maven","gradle","composer","bundler","pub","swiftpm","mix","rebar3","dotnet"];
+  candidates.sort((a,b)=>Number(b.lockfile)-Number(a.lockfile)||priority.indexOf(a.id)-priority.indexOf(b.id));
+  return candidates[0]||null;
+}
+
 export function lspProfileForLanguage(language){
   return LSP_PROFILES[language] || null;
 }
