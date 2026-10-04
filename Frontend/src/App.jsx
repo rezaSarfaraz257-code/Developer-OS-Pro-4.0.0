@@ -461,6 +461,7 @@ function Explore() {
   const [resources,setResources]=useState([]);
   const [favorites,setFavorites]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
+  const [projects,setProjects]=useState([]);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
   const [aiResult,setAiResult]=useState("");
@@ -645,7 +646,6 @@ function Settings() {
 
 export default function App() {
   const [authenticated,setAuthenticated]=useState(Boolean(getAccessToken()));
-  const [projects,setProjects]=useState([]);
   const [user,setUser]=useState(null);
   const [path,go]=useRoute();
 
