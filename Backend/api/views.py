@@ -2198,7 +2198,10 @@ def ide_workspace_files_api(request, pk):
             ws.active_file = target
         elif ws.active_file.startswith(path.rstrip("/") + "/"):
             ws.active_file = target.rstrip("/") + ws.active_file[len(path.rstrip("/")): ]
-        ws = _persist_workspace_files(ws, files, ws.active_file)
+        try:
+            ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     content = request.data.get("content", "")
     if not path or not isinstance(content, str):
