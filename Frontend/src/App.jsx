@@ -372,6 +372,7 @@ function AI() {
   const [project,setProject]=useState("");
   const [workspace,setWorkspace]=useState("");
   const [workspaces,setWorkspaces]=useState([]);
+  const [projects,setProjects]=useState([]);
   const [health,setHealth]=useState(null);
   const [error,setError]=useState("");
   const bottom=useRef(null);
@@ -459,7 +460,6 @@ function Explore() {
   const [workflows,setWorkflows]=useState([]);
   const [resources,setResources]=useState([]);
   const [favorites,setFavorites]=useState([]);
-  const [projects,setProjects]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
