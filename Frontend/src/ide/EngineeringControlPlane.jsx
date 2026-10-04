@@ -17,7 +17,7 @@ function detect(files){
 }
 
 export default function EngineeringControlPlane({workspace,files,onClose,onStatus}){
-  const [caps,setCaps]=useState(null),[busy,setBusy]=useState(false),[output,setOutput]=useState("Control plane ready."),[action,setAction]=useState("install"),[packageName,setPackageName]=useState(""),[buildPlan,setBuildPlan]=useState(null),[buildBusy,setBuildBusy]=useState(false),[tests,setTests]=useState([]),[testBusy,setTestBusy]=useState(false);
+  const [caps,setCaps]=useState(null),[busy,setBusy]=useState(false),[output,setOutput]=useState("Control plane ready."),[action,setAction]=useState("install"),[packageName,setPackageName]=useState(""),[buildBusy,setBuildBusy]=useState(false),[tests,setTests]=useState([]),[testBusy,setTestBusy]=useState(false);
   const manager=useMemo(()=>detect(files),[files]);
   useEffect(()=>{apiFetch("/ide/capabilities/").then(r=>r.json()).then(setCaps).catch(()=>{});},[]);
   async function build(){
@@ -27,7 +27,7 @@ export default function EngineeringControlPlane({workspace,files,onClose,onStatu
       const r=await apiFetch("/ide/workspaces/"+workspace.id+"/build/plan/",{method:"POST",body:JSON.stringify({files:files||{}})});
       const d=await r.json();
       if(!r.ok)throw Error(d.error||d.detail||"No supported build target");
-      setBuildPlan(d); setOutput(JSON.stringify(d,null,2)); onStatus?.("Build plan ready");
+      setOutput(JSON.stringify(d,null,2)); onStatus?.("Build plan ready");
     }catch(e){setOutput(e.message);onStatus?.("Build planning failed")}
     finally{setBusy(false)}
   }
@@ -38,7 +38,7 @@ export default function EngineeringControlPlane({workspace,files,onClose,onStatu
       const r=await apiFetch("/ide/workspaces/"+workspace.id+"/build/",{method:"POST",body:JSON.stringify({})});
       const d=await r.json();
       if(!r.ok)throw Error(d.error||d.detail||"Build failed");
-      setBuildPlan(d.plan||null);
+
       const summary=[d.status?.toUpperCase(),d.plan?.strategy?.command,d.exit_code===0?"BUILD VERIFIED":"BUILD FAILED",(d.artifacts||[]).length+" artifact(s)"].filter(Boolean).join(" · ");
       setOutput([summary,d.stdout,d.stderr].filter(Boolean).join("\n"));
       onStatus?.(d.exit_code===0?"Build verified":"Build failed");
