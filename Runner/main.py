@@ -3,6 +3,16 @@ import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
+from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
+from build_engine import plan as build_plan, artifact_manifest
+from environment_engine import plan as environment_plan
+from debug_engine import capability as debug_capability, handle as debug_handle
+from preview_engine import plan as preview_plan
+from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
+from observability_engine import record as observability_record, snapshot as observability_snapshot
+from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
+from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
+from extension_engine import manifest as extension_manifest
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -44,6 +54,17 @@ class ExecRequest(Workspace):
 class InstallRequest(ExecRequest):
     framework: str = ""
     package_manager: str = ""
+    action: str = "install"
+    package: str = ""
+
+class PackagePlanRequest(Workspace):
+    action: str = "install"
+    package: str = ""
+    package_manager: str = ""
+
+class TestPlanRequest(Workspace):
+    framework: str = ""
+
 
 def auth(value):
     expected = f"Bearer {TOKEN}" if TOKEN else ""
@@ -275,7 +296,7 @@ def _capability_manifest():
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
         },
-        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": False},
+        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"]},
     }
 
 @app.get("/health")
@@ -314,6 +335,49 @@ def sync(payload: Workspace, authorization: str = Header(default="")):
 def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     return {"files": snapshot(safe_workspace(payload.workspace_id))}
+
+@app.post("/build/plan")
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.post("/build")
+def build_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files or {})
+    try:
+        plan = build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    started = time.monotonic()
+    result = run_command(root, plan["strategy"]["command"])
+    artifacts = artifact_manifest(payload.files or {}, str(root))
+    return {"status":"success" if result.get("exit_code")==0 else "failed","plan":plan,"result":result,"artifacts":artifacts,"duration_ms":int((time.monotonic()-started)*1000)}
+
+
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.get("/packages/capabilities")
+def package_capabilities_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return package_capabilities()
+
+@app.post("/packages/plan")
+def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return package_plan_response(payload.files or {}, payload.action, payload.package, payload.package_manager)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
 
 @app.post("/install")
 def install(payload: InstallRequest, authorization: str = Header(default="")):
@@ -480,6 +544,42 @@ def _git_run(root, args):
     result = run_command(root, command, allow_network=False)
     return result
 
+@app.post("/environment/plan")
+def environment_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return environment_plan(payload.files)
+
+@app.get("/debug/capability")
+def debug_capability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return debug_capability()
+
+class DebugRequest(Workspace):
+    action: str = "status"
+    session_id: str = ""
+    path: str = ""
+    line: int = 0
+    column: int = 1
+    condition: str = ""
+    expression: str = ""
+    breakpoints: list = Field(default_factory=list)
+
+@app.post("/debug")
+def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        return debug_handle(
+            payload.action, session_id=payload.session_id, path=payload.path,
+            line=payload.line, column=payload.column, condition=payload.condition,
+            expression=payload.expression, breakpoints=payload.breakpoints
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
 @app.post("/process/start")
 def process_start(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
@@ -523,6 +623,81 @@ def git_api(payload: ExecRequest, authorization: str = Header(default="")):
     if not args or not isinstance(args, list):
         raise HTTPException(status_code=400, detail="Git arguments required.")
     return _git_run(root, args)
+
+class AIRequest(Workspace):
+    action: str = "fix"
+    goal: str = ""
+    active_file: str = ""
+    paths: list = Field(default_factory=list)
+
+class RecoveryRequest(Workspace):
+    session_id: str = ""
+    reason: str = "unknown"
+    state: dict = Field(default_factory=dict)
+
+@app.post("/recovery/checkpoint")
+def recovery_checkpoint_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_checkpoint(payload.session_id, payload.workspace_id, payload.files, payload.state)
+
+@app.post("/recovery/restore")
+def recovery_restore_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_recover(payload.session_id, payload.reason)
+
+@app.post("/recovery/verify")
+def recovery_verify_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_verified(payload.session_id)
+
+@app.get("/extensions")
+def extensions_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return extension_manifest()
+
+@app.get("/recovery/status")
+def recovery_status_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return recovery_status()
+
+@app.get("/performance")
+def performance_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return profiler_report()
+
+@app.get("/observability")
+def observability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return observability_snapshot()
+
+@app.post("/ai/engineering/plan")
+def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    return ai_plan(payload.model_dump(), payload.files)
+
+class AIPatchRequest(Workspace):
+    patch: list = Field(default_factory=list)
+
+@app.post("/ai/engineering/validate-patch")
+def ai_engineering_validate_patch_api(payload: AIPatchRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    try:
+        return {"status":"valid","patch":validate_ai_patch(payload.patch, payload.files)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/preview/plan")
+def preview_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return preview_plan(payload.files)
 
 @app.post("/preview/start")
 def preview_start(payload: ExecRequest, authorization: str = Header(default="")):

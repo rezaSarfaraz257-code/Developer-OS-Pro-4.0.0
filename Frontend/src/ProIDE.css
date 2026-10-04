@@ -276,3 +276,22 @@
 .dos-ide-pro .dos-command-head{display:flex;justify-content:space-between;padding:9px 13px;color:#72dbf7;font:9px Consolas,monospace;border-bottom:1px solid #173347}.dos-ide-pro .dos-command-head kbd{color:#607b8c}
 .dos-ide-pro .dos-command-results{max-height:55vh;overflow:auto}
 @media(max-width:800px){.dos-ide-pro .dos-editors.split{grid-template-columns:1fr}.dos-ide-pro .dos-secondary{display:none}.dos-ide-pro .dos-tab{min-width:105px}.dos-ide-pro .dos-editor-toolbar button:nth-of-type(n+7){display:none}}
+
+.dos-engineering-panel{position:fixed;z-index:80;right:18px;bottom:54px;width:min(760px,calc(100vw - 90px));max-height:72vh;overflow:auto;background:rgba(8,12,20,.97);border:1px solid rgba(90,180,255,.28);box-shadow:0 24px 80px rgba(0,0,0,.5);backdrop-filter:blur(18px);border-radius:14px;color:inherit}
+.dos-engineering-panel header,.dos-engineering-panel footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.dos-engineering-panel header small{display:block;opacity:.58;margin-top:3px;font-size:10px;letter-spacing:.12em}
+.dos-engineering-panel header button{background:none;border:0;color:inherit;font-size:20px;cursor:pointer}
+.dos-engineering-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px}
+.dos-engineering-grid>div{padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.025)}
+.dos-engineering-grid span,.dos-engineering-grid small{display:block;opacity:.55;font-size:10px}
+.dos-engineering-grid b{display:block;margin:6px 0}
+.dos-engineering-actions{display:flex;gap:8px;padding:0 16px 14px}
+.dos-engineering-actions select,.dos-engineering-actions input{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:inherit;border-radius:8px;padding:9px}
+.dos-engineering-actions input{flex:1}
+.dos-engineering-actions button,.dos-engineering-panel footer button{border:1px solid rgba(90,180,255,.3);background:rgba(90,180,255,.1);color:inherit;border-radius:8px;padding:8px 12px;cursor:pointer}
+.dos-engineering-pipeline{display:flex;align-items:center;gap:8px;padding:12px 16px;overflow:auto;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
+.dos-engineering-pipeline span{white-space:nowrap;padding:6px 9px;border-radius:999px;background:rgba(255,255,255,.05);font-size:11px}
+.dos-engineering-pipeline i{opacity:.35}
+.dos-engineering-output{margin:14px 16px;padding:12px;min-height:100px;max-height:220px;overflow:auto;background:#05080d;border-radius:10px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+.dos-engineering-panel footer{border-top:1px solid rgba(255,255,255,.06);border-bottom:0;font-size:11px;opacity:.8}
+@media(max-width:720px){.dos-engineering-grid{grid-template-columns:1fr}.dos-engineering-actions{flex-wrap:wrap}.dos-engineering-actions input{min-width:100%}}

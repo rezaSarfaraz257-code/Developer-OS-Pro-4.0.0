@@ -1,4 +1,99 @@
-from datetime import timedelta, timezone as dt_timezone
+    packages = request.data.get("packages") or []
+    if isinstance(packages, str):
+        packages = [x.strip() for x in packages.split(",") if x.strip()]
+    if not isinstance(packages, list) or not packages or len(packages) > 50:
+        return Response({"error": "Provide 1–50 packages."}, status=400)
+    if action not in {"install", "add", "remove", "update"}:
+        return Response({"error": "Unsupported package action."}, status=400)
+    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
+        return Response({"error": "One or more package names are invalid."}, status=400)
+    package = str(packages[0]) if len(packages) == 1 else ""
+    plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager}, timeout=15)
+    if plan_error:
+        return Response(plan_error, status=503)
+    if len(packages) > 1:
+        # Compile each package through the same runner policy instead of accepting
+        # arbitrary shell input from the browser.
+        plans=[]
+        for pkg in packages:
+            p, pe = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)
+            if pe: return Response(pe, status=503)
+            plans.append(p.get("command",""))
+        command=" && ".join(plans)
+    else:
+        command=plan.get("command","")
+    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)
+    if error:
+        return Response(error, status=503)
+    if isinstance(data.get("files"), dict):
+        serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        ws = serializer.save()
+    return Response({
+        "status": "success" if data.get("exit_code") == 0 else "failed",
+        "command": command,
+        "exit_code": data.get("exit_code"),
+        "stdout": data.get("stdout", ""),
+        "stderr": data.get("stderr", ""),
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ide_build_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    allowed, used, limit, plan_name = _consume_usage(request.user, "ide_runs_month", 1)
+    if not allowed:
+        return Response({"error": "Monthly IDE execution limit reached.", "plan": plan_name, "used": used, "limit": limit}, status=429)
+    data, error = _runner_request("POST", "/build", _workspace_payload(ws), timeout=240)
+    if error:
+        return Response(error, status=503)
+    runner_files = data.get("result", {}).get("files") if isinstance(data.get("result"), dict) else None
+    if isinstance(runner_files, dict):
+        try:
+            ws = _persist_workspace_files(ws, runner_files, expected_revision=ws.revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed during build. Reload before applying build results.", "code": "stale_workspace"}, status=409)
+    return Response({"status": data.get("status"), "plan": data.get("plan"), "exit_code": data.get("result", {}).get("exit_code"), "stdout": data.get("result", {}).get("stdout", ""), "stderr": data.get("result", {}).get("stderr", ""), "artifacts": data.get("artifacts", []), "duration_ms": data.get("duration_ms"), "workspace": CodeWorkspaceSerializer(ws).data})
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ide_build_plan_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    data, error = _runner_request("POST", "/build/plan", _workspace_payload(ws), timeout=15)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ide_diagnostics_api(request, pk):
+    """Run a read-only project check and return editor-friendly diagnostics."""
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    language = str(request.data.get("language") or "").lower()
+    path = _safe_ide_path(request.data.get("path") or "")
+    if not path:
+        return Response({"error": "A valid file path is required."}, status=400)
+    _, sync_error = _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
+    if sync_error:
+        return Response(sync_error, status=503)
+    if language in {"python", "py"} or path.endswith(".py"):
+        command = "python -m py_compile " + shlex.quote(path)
+    elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
+        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
+    else:
+        return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
+    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
+    if error:
+        return Response(error, status=503)
+    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
+    diagnostics = []from datetime import timedelta, timezone as dt_timezone
 import secrets
 from urllib.parse import urlencode, urlparse
 import base64
@@ -2306,32 +2401,32 @@ def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    manager = str(request.data.get("package_manager") or ws.package_manager or "npm").lower()
+    manager = str(request.data.get("package_manager") or ws.package_manager or "").lower()
+    action = str(request.data.get("action") or "add").lower()
     packages = request.data.get("packages") or []
     if isinstance(packages, str):
         packages = [x.strip() for x in packages.split(",") if x.strip()]
-    if manager not in {"npm", "pip"} or not isinstance(packages, list) or not packages or len(packages) > 50:
-        return Response({"error": "Use npm or pip and provide 1–50 packages."}, status=400)
-    safe = re.compile(r"^[A-Za-z0-9_.@/\-<>=!~\[\],]+$")
-    if any(not isinstance(pkg, str) or len(pkg) > 160 or not safe.fullmatch(pkg) for pkg in packages):
+    if not isinstance(packages, list) or not packages or len(packages) > 50:
+        return Response({"error": "Provide 1–50 packages."}, status=400)
+    if action not in {"install", "add", "remove", "update"}:
+        return Response({"error": "Unsupported package action."}, status=400)
+    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
         return Response({"error": "One or more package names are invalid."}, status=400)
-    quoted_packages = " ".join(shlex.quote(pkg) for pkg in packages)
-    command = ("npm install " + quoted_packages) if manager == "npm" else ("python -m pip install " + quoted_packages)
-    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=240)
+    plans = []
+    for pkg in packages:
+        plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)
+        if plan_error:
+            return Response(plan_error, status=503)
+        plans.append(plan.get("command", ""))
+    command = " && ".join(plans)
+    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)
     if error:
         return Response(error, status=503)
     if isinstance(data.get("files"), dict):
         serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         ws = serializer.save()
-    return Response({
-        "status": "success" if data.get("exit_code") == 0 else "failed",
-        "command": command,
-        "exit_code": data.get("exit_code"),
-        "stdout": data.get("stdout", ""),
-        "stderr": data.get("stderr", ""),
-        "workspace": CodeWorkspaceSerializer(ws).data,
-    })
+    return Response({"status": "success" if data.get("exit_code") == 0 else "failed", "command": command, "exit_code": data.get("exit_code"), "stdout": data.get("stdout", ""), "stderr": data.get("stderr", ""), "workspace": CodeWorkspaceSerializer(ws).data})
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
