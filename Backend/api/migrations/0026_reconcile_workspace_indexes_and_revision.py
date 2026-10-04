@@ -121,7 +121,7 @@ class Migration(migrations.Migration):
         ),
         migrations.SeparateDatabaseAndState(
             database_operations=[migrations.RunSQL(
-                sql='ALTER INDEX IF EXISTS "api_usage_metric_period_idx" RENAME TO "api_usage_metric_period"',
+                sql='DO $ BEGIN IF to_regclass(''public.api_usage_metric_period_idx'') IS NOT NULL AND to_regclass(''public.api_usage_metric_period'') IS NULL THEN ALTER INDEX "api_usage_metric_period_idx" RENAME TO "api_usage_metric_period"; END IF; END $;',
                 reverse_sql='ALTER INDEX IF EXISTS "api_usage_metric_period" RENAME TO "api_usage_metric_period_idx"',
             )],
             state_operations=[migrations.RenameIndex(model_name="usagerecord", old_name="api_usage_metric_period_idx", new_name="api_usage_metric_period")],
