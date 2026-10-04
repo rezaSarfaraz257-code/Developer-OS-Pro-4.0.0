@@ -48,7 +48,8 @@ class LSPSession:
         self.command=command
         self.proc=None
         self.seq=0
-        self.lock=threading.RLock()\n        self.notifications=[]
+        self.lock=threading.RLock()
+        self.notifications=[]
 
     def start(self):
         self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False)
@@ -73,6 +74,36 @@ class LSPSession:
     def notify(self,method,params):
         with self.lock:
             if self.alive(): self._send({"jsonrpc":"2.0","method":method,"params":params})
+    def drain_notifications(self):
+        import select
+        out=[]
+        with self.lock:
+            if not self.alive(): return out
+            while True:
+                ready,_,_=select.select([self.proc.stdout],[],[],0)
+                if not ready: break
+                msg=self._read_message()
+                if msg is None: break
+                if msg.get("id") is not None:
+                    self.notifications.append(msg)
+                else:
+                    out.append(msg)
+            out.extend(self.notifications)
+            self.notifications.clear()
+        return out
+
+    def _read_message(self):
+        headers=b""
+        while b"\\r\\n\\r\\n" not in headers:
+            chunk=self.proc.stdout.read(1)
+            if not chunk: return None
+            headers+=chunk
+        length=0
+        for line in headers.decode(errors="replace").split("\\r\\n"):
+            if line.lower().startswith("content-length:"):
+                length=int(line.split(":",1)[1].strip())
+        body=self.proc.stdout.read(length)
+        return json.loads(body.decode("utf-8"))
 
     def _read_response(self,ident,timeout):
         import select,time
@@ -92,6 +123,8 @@ class LSPSession:
             body=self.proc.stdout.read(length)
             msg=json.loads(body.decode("utf-8"))
             if msg.get("id")==ident: return msg
+            if msg.get("method") and msg.get("id") is None: self.notifications.append(msg)
+            elif msg.get("id") is not None: self.notifications.append(msg)
         raise LSPError("LSP request timeout")
 
     def stop(self):
