@@ -155,3 +155,48 @@ def safe_rel_local(path):
     if not raw or raw.startswith("/") or ".." in raw.split("/"):
         raise ValueError("unsafe path")
     return raw
+
+
+def diagnostics(root, path=""):
+    """Static diagnostics: syntax errors plus conservative undefined-name checks."""
+    root=Path(root).resolve()
+    results=[]
+    targets=[]
+    for p in _files(root):
+        rel=_rel(root,p)
+        if path and rel != path:
+            continue
+        targets.append((p,rel))
+    for p,rel in targets:
+        try: text=p.read_text(encoding="utf-8")
+        except (OSError,UnicodeDecodeError): continue
+        if p.suffix == ".py":
+            try:
+                tree=ast.parse(text, filename=rel)
+            except SyntaxError as exc:
+                results.append({"severity":"error","code":"PY001","message":exc.msg,"path":rel,"line":exc.lineno or 1,"column":exc.offset or 1,"source":"static"})
+                continue
+            defined=set()
+            imported=set()
+            for node in ast.walk(tree):
+                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+                    defined.add(node.name)
+                    for arg in node.args.args: defined.add(arg.arg)
+                elif isinstance(node,ast.Import):
+                    for n in node.names: imported.add(n.asname or n.name.split(".")[0])
+                elif isinstance(node,ast.ImportFrom):
+                    for n in node.names: imported.add(n.asname or n.name)
+                elif isinstance(node,ast.Name) and isinstance(node.ctx,ast.Store):
+                    defined.add(node.id)
+            builtins=set(dir(__builtins__)) if isinstance(__builtins__,dict) else set(dir(__builtins__))
+            for node in ast.walk(tree):
+                if isinstance(node,ast.Name) and isinstance(node.ctx,ast.Load) and node.id not in defined|imported|builtins:
+                    results.append({"severity":"warning","code":"PY002","message":f"Possibly undefined name: {node.id}","path":rel,"line":node.lineno,"column":node.col_offset+1,"source":"static"})
+                    if len(results)>=500: return results
+        elif p.suffix in {".js",".jsx",".ts",".tsx"}:
+            for i,line in enumerate(text.splitlines(),1):
+                if re.search(r"(^|[;,{]\\s*)(const|let|var)\\s+[^=;]+;$",line):
+                    continue
+                if re.search(r"\\b(console\\.log|debugger)\\b",line):
+                    results.append({"severity":"info","code":"JS001","message":"Debug statement found.","path":rel,"line":i,"column":max(1,line.find("console")+1),"source":"static"})
+    return results[:500]
