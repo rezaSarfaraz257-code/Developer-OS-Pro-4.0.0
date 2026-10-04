@@ -2371,26 +2371,25 @@ def ide_diagnostics_api(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ide_symbols_api(request, pk):
-    """Static workspace intelligence: symbols, references and safe rename preview."""
+    """Static workspace intelligence delegated to the isolated runner."""
     ws = _workspace_for_user(pk, request.user)
     action = str(request.data.get("action") or "symbols").strip().lower()
-    try:
-        from .symbol_engine import index, references, rename_preview
-        root = _workspace_runner_root(ws)
-        if action == "symbols":
-            return Response({"symbols": index(root, request.data.get("query"), request.data.get("path"))})
-        if action == "references":
-            return Response({"references": references(root, request.data.get("name"), request.data.get("path"))})
-        if action == "rename_preview":
-            old = str(request.data.get("old") or "").strip()
-            new = str(request.data.get("new") or "").strip()
-            return Response({"preview": rename_preview(root, old, new, request.data.get("path"))})
+    if action not in {"symbols", "references", "rename_preview"}:
         return Response({"error": "Unsupported symbol action."}, status=400)
-    except ValueError as exc:
-        return Response({"error": str(exc)}, status=400)
-    except Exception:
-        logger.exception("IDE symbol analysis failed workspace=%s user=%s", pk, request.user.pk)
-        return Response({"error": "Symbol analysis temporarily unavailable."}, status=503)
+    payload = {
+        **_workspace_payload(ws),
+        "action": action,
+        "query": str(request.data.get("query") or "")[:200],
+        "path": str(request.data.get("path") or "")[:500],
+        "name": str(request.data.get("name") or "")[:200],
+        "old": str(request.data.get("old") or "")[:200],
+        "new": str(request.data.get("new") or "")[:200],
+    }
+    data, error = _runner_request("POST", "/symbols", payload, timeout=35)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
