@@ -2415,6 +2415,19 @@ def ide_lsp_api(request, pk):
     return Response(data)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_lsp_notifications_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    language = str(request.data.get("language") or "python").strip().lower()
+    if language not in {"python", "javascript", "typescript"}:
+        return Response({"error": "Unsupported LSP language."}, status=400)
+    payload = {**_workspace_payload(ws), "language": language}
+    data, error = _runner_request("POST", "/lsp/notifications", payload, timeout=5)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_debug_api(request, pk):
     """Debugger orchestration contract for the isolated runner.
 
