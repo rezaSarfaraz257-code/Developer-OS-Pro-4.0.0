@@ -1973,7 +1973,7 @@ FRAMEWORK_CATALOG = {
     "django-ninja": {"label": "Django Ninja", "runtime": "python", "package_manager": "pip", "install": "python -m pip install django django-ninja", "start": "python manage.py runserver 0.0.0.0:8000"},
 }
 
-RUNNER_URL = os.environ.get("IDE_RUNNER_URL", "http://runner:8080").rstrip("/")
+RUNNER_URL = os.environ.get("IDE_RUNNER_URL", "http://developer-os-runner:8080").rstrip("/")
 RUNNER_TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 
 def _runner_request(method, path, payload, timeout=30):
