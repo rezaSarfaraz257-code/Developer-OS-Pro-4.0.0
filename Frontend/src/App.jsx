@@ -461,7 +461,6 @@ function Explore() {
   const [resources,setResources]=useState([]);
   const [favorites,setFavorites]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
-  const [projects,setProjects]=useState([]);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
   const [aiResult,setAiResult]=useState("");
