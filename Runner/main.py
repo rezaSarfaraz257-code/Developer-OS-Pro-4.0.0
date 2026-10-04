@@ -12,6 +12,7 @@ from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 from observability_engine import record as observability_record, snapshot as observability_snapshot
 from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
 from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
+from extension_engine import manifest as extension_manifest
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -651,6 +652,11 @@ def recovery_verify_api(payload: RecoveryRequest, authorization: str = Header(de
     auth(authorization)
     safe_workspace(payload.workspace_id)
     return recovery_verified(payload.session_id)
+
+@app.get("/extensions")
+def extensions_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return extension_manifest()
 
 @app.get("/recovery/status")
 def recovery_status_api(authorization: str = Header(default="")):
