@@ -20,7 +20,6 @@ export function RunCenter({workspace,files,onClose}) {
  const [capabilities,setCapabilities]=useState(null),[capState,setCapState]=useState("loading"),[capError,setCapError]=useState("");
  const [command,setCommand]=useState("npm run build"),[running,setRunning]=useState(false),[output,setOutput]=useState(""),[exitCode,setExitCode]=useState(null),[duration,setDuration]=useState(0),[tab,setTab]=useState("terminal"),[processes,setProcesses]=useState([]),[busy,setBusy]=useState(false);
  const runtimes=capabilities?.runtimes||{};
- const runtimeFor=cmd=>/^python(\s|$)/.test(cmd)&&!runtimes.python?.available&&runtimes.python3?.available?"python3":/^node(\s|$)/.test(cmd)&&!runtimes.node?.available?"node":cmd.split(/\s+/)[0];
  const presets=[["Build","npm run build"],["Test","npm test"],["Lint","npm run lint"],["Python","python main.py"],["Django","python manage.py check"],["TypeScript","npx tsc --noEmit"]];
  useEffect(()=>{let alive=true;apiFetch("/ide/capabilities/").then(async r=>{const d=await r.json();if(!r.ok||d.status!=="ready")throw Error(d.error||"Runner capability handshake unavailable");if(alive){setCapabilities(d.runner);setCapState("ready")}}).catch(e=>{if(alive){setCapState("degraded");setCapError(e.message)}});return()=>{alive=false}},[]);
  const adapt=cmd=>/^python(\s|$)/.test(cmd)&&!runtimes.python?.available&&runtimes.python3?.available?cmd.replace(/^python(?=\s|$)/,"python3"):cmd;
