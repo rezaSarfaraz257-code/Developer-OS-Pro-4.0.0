@@ -1,7 +1,29 @@
     packages = request.data.get("packages") or []
     if isinstance(packages, str):
         packages = [x.strip() for x in packages.split(",") if x.strip()]
-    if not isinstance(packages, list) or not packages or len(packages) > 50:\n        return Response({"error": "Provide 1–50 packages."}, status=400)\n    if action not in {"install", "add", "remove", "update"}:\n        return Response({"error": "Unsupported package action."}, status=400)\n    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):\n        return Response({"error": "One or more package names are invalid."}, status=400)\n    package = str(packages[0]) if len(packages) == 1 else ""\n    plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager}, timeout=15)\n    if plan_error:\n        return Response(plan_error, status=503)\n    if len(packages) > 1:\n        # Compile each package through the same runner policy instead of accepting\n        # arbitrary shell input from the browser.\n        plans=[]\n        for pkg in packages:\n            p, pe = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)\n            if pe: return Response(pe, status=503)\n            plans.append(p.get("command",""))\n        command=" && ".join(plans)\n    else:\n        command=plan.get("command","")\n    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)\n    if error:
+    if not isinstance(packages, list) or not packages or len(packages) > 50:
+        return Response({"error": "Provide 1–50 packages."}, status=400)
+    if action not in {"install", "add", "remove", "update"}:
+        return Response({"error": "Unsupported package action."}, status=400)
+    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
+        return Response({"error": "One or more package names are invalid."}, status=400)
+    package = str(packages[0]) if len(packages) == 1 else ""
+    plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager}, timeout=15)
+    if plan_error:
+        return Response(plan_error, status=503)
+    if len(packages) > 1:
+        # Compile each package through the same runner policy instead of accepting
+        # arbitrary shell input from the browser.
+        plans=[]
+        for pkg in packages:
+            p, pe = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)
+            if pe: return Response(pe, status=503)
+            plans.append(p.get("command",""))
+        command=" && ".join(plans)
+    else:
+        command=plan.get("command","")
+    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)
+    if error:
         return Response(error, status=503)
     if isinstance(data.get("files"), dict):
         serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
