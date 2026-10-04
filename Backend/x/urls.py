@@ -12,6 +12,7 @@ from api.mature import MatureTokenObtainPairView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
+    path('ide/', include('api.urls')),
 
     path(
         'api/token/',
