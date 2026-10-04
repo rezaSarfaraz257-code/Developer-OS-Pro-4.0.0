@@ -54,6 +54,10 @@ class PackagePlanRequest(Workspace):
     package: str = ""
     package_manager: str = ""
 
+class TestPlanRequest(Workspace):
+    framework: str = ""
+
+
 def auth(value):
     expected = f"Bearer {TOKEN}" if TOKEN else ""
     if not TOKEN or not hmac.compare_digest(str(value or ""), expected):
