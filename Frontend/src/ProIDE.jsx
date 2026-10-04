@@ -22,8 +22,54 @@ useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch(
  function togglePin(p=active){if(!p)return;setPinned(x=>x.includes(p)?x.filter(v=>v!==p):[...x,p])}
  function closeOthers(p=active){setTabs(t=>t.filter(x=>x===p||pinned.includes(x)))}
  function closeAll(){setTabs(t=>pinned.filter(x=>files[x]))}
- async function newFolder(){const w=refs.ws.current;if(!w)return;const folder=prompt("Folder path","src/components")?.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");if(!folder)return;const marker=folder+"/.gitkeep";try{if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a folder.");}const latest=refs.ws.current;const r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({path:marker,content:"",action:"create",revision:latest.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||d.detail||`Create folder failed (HTTP ${r.status})`);const next=(d.files&&typeof d.files==="object")?d.files:{};setFiles(next);setWs(x=>x?({...x,files:next,revision:d.revision??x.revision}):x);setStatus("Folder created")}catch(e){setStatus(e.message||"Create folder failed")}}
- async function newFile(){const currentWs=refs.ws.current;if(!currentWs)return;const selectedPath=[...selected][0]||"";const selectedIsFile=selectedPath&&Object.prototype.hasOwnProperty.call(refs.files.current,selectedPath);const base=selectedIsFile?(selectedPath.includes("/")?selectedPath.slice(0,selectedPath.lastIndexOf("/")):""):(selectedPath||"");const defaultPath=(base?base+"/":"")+"untitled.txt";const raw=prompt("New file path",defaultPath);if(raw===null)return;const p=raw.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");if(!p)return;try{if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a new file.");}const latestWs=refs.ws.current;if(!latestWs)return;const r=await apiFetch(`/ide/workspaces/${latestWs.id}/files/`,{method:"POST",body:JSON.stringify({path:p,content:"",action:"create",revision:latestWs.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||d.detail||`Create failed (HTTP ${r.status})`);const nextFiles=(d.files&&typeof d.files==="object")?d.files:{...refs.files.current,[p]:""};const nextWs={...latestWs,files:nextFiles,revision:d.revision??latestWs.revision,active_file:p};refs.files.current=nextFiles;refs.ws.current=nextWs;refs.active.current=p;refs.dirty.current=false;setFiles(nextFiles);setWs(nextWs);setActive(p);setTabs(t=>t.includes(p)?t:[...t,p]);setSelected(new Set([p]));setDirty(false);setExpanded(x=>{const n=new Set(x);const parts=p.split("/");for(let i=1;i<parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});setStatus("File created in Explorer")}catch(e){setStatus(e.message||"Create failed")}}
+ async function explorerMutation(payload,retry=true){
+   const w=refs.ws.current;
+   if(!w) throw Error("No workspace selected.");
+   const body={...payload,revision:w.revision};
+   let r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify(body)});
+   let d=await r.json().catch(()=>({}));
+   if(!r.ok&&r.status===409&&retry){
+     await load(w);
+     const latest=refs.ws.current;
+     if(!latest) throw Error("Workspace is no longer available.");
+     r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:latest.revision})});
+     d=await r.json().catch(()=>({}));
+   }
+   if(!r.ok) throw Error(d.error||d.detail||`Explorer operation failed (HTTP ${r.status})`);
+   return d;
+ }
+ async function newFolder(){
+   const w=refs.ws.current;if(!w)return;
+   const folder=prompt("New folder path","src/components")?.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");
+   if(!folder)return;
+   try{
+     if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a folder.")}
+     const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"});
+     const next=d.files||{};const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
+     refs.files.current=next;refs.ws.current=nextWs;setFiles(next);setWs(nextWs);
+     setExpanded(x=>{const n=new Set(x);const parts=folder.split("/");for(let i=1;i<=parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
+     setSelected(new Set([folder]));setStatus("Folder created");
+   }catch(e){setStatus(e.message||"Create folder failed")}
+ }
+ async function newFile(){
+   const currentWs=refs.ws.current;if(!currentWs)return;
+   const selectedPath=[...selected][0]||"";
+   const selectedIsFile=selectedPath&&Object.prototype.hasOwnProperty.call(refs.files.current,selectedPath);
+   const base=selectedIsFile?(selectedPath.includes("/")?selectedPath.slice(0,selectedPath.lastIndexOf("/")):""):(selectedPath||"");
+   const defaultPath=(base?base+"/":"")+"untitled.txt";
+   const raw=prompt("New file path",defaultPath);if(raw===null)return;
+   const p=raw.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");if(!p)return;
+   try{
+     if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a new file.")}
+     const d=await explorerMutation({path:p,content:"",action:"create"});
+     const nextFiles=d.files||{...refs.files.current,[p]:""};
+     const nextWs={...refs.ws.current,files:nextFiles,revision:d.revision??refs.ws.current.revision,active_file:d.active_file||p};
+     refs.files.current=nextFiles;refs.ws.current=nextWs;refs.active.current=d.active_file||p;refs.dirty.current=false;
+     setFiles(nextFiles);setWs(nextWs);setActive(d.active_file||p);setTabs(t=>t.includes(p)?t:[...t,p]);setSelected(new Set([p]));setDirty(false);
+     setExpanded(x=>{const n=new Set(x);const parts=p.split("/");for(let i=1;i<parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
+     setStatus("File created");
+   }catch(e){setStatus(e.message||"Create failed")}
+ }
  async function movePath(from,toFolder){const w=refs.ws.current;if(!w||!from||!toFolder)return;const destination=refs.files.current[toFolder]!==undefined?(toFolder.includes("/")?toFolder.slice(0,toFolder.lastIndexOf("/")):"."):toFolder;const base=destination.replace(/\\\\+$/,"");const name=from.split("/").pop();const target=(base==="."?"":base+"/")+name;if(target===from||target.startsWith(from+"/"))return setStatus("Invalid move destination");try{if(refs.dirty.current&&refs.active.current===from){const saved=await save(true);if(!saved)throw Error("Save current file first.");}const latest=refs.ws.current;const r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({action:"rename",path:from,to:target,revision:latest.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Move failed");setFiles(d.files||{});setWs(x=>x?({...x,files:d.files||x.files,revision:d.revision??x.revision,active_file:d.active_file}):x);setTabs(t=>t.map(x=>x===from?target:x));setPinned(t=>t.map(x=>x===from?target:x));setSelected(new Set([target]));setStatus("Moved");}catch(e){setStatus(e.message||"Move failed")}}
  async function duplicatePath(path){const w=refs.ws.current;if(!w||!path)return;const content=refs.files.current[path];if(typeof content!=="string")return;const target=prompt("Duplicate as",path.replace(/([^/]+)$/,"$1.copy"))?.trim();if(!target)return;try{const latest=refs.ws.current;const r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({action:"create",path:target,content,revision:latest.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Duplicate failed");setFiles(d.files||{});setWs(x=>x?({...x,files:d.files||x.files,revision:d.revision??x.revision}):x);setSelected(new Set([target]));setStatus("Duplicated");}catch(e){setStatus(e.message||"Duplicate failed")}}
  async function renamePath(path){const currentWs=refs.ws.current;if(!currentWs||!path)return;const target=prompt("Rename to",path)?.trim();if(!target||target===path)return;try{if(refs.dirty.current&&refs.active.current===path){const saved=await save(true);if(!saved)throw Error("Save current file before renaming.");}const latest=refs.ws.current;const r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({action:"rename",path,to:target,revision:latest.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Rename failed");const next=d.files||{};setFiles(next);setWs(w=>w?({...w,files:next,revision:d.revision??w.revision,active_file:d.active_file||w.active_file}):w);setTabs(t=>t.map(x=>x===path?target:x));if(active===path)setActive(d.active_file||target);if(pinned.includes(path))setPinned(x=>x.map(x=>x===path?target:x));setStatus("Renamed");}catch(e){setStatus(e.message||"Rename failed")}}
