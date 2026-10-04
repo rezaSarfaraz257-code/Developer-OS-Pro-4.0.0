@@ -39,6 +39,8 @@ def get_secret_key():
 
 SECRET_KEY = get_secret_key()
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true" if not DEBUG else "false").lower() in {"1", "true", "yes", "on"}
@@ -92,6 +94,8 @@ TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIR
 WSGI_APPLICATION = "x.wsgi.application"
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if IS_PRODUCTION and not DATABASE_URL:
+    raise ImproperlyConfigured("DATABASE_URL is required in production.")
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
     if parsed.scheme.startswith("postgres"):
@@ -145,6 +149,8 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5_242_880
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2_621_440
 
+if IS_PRODUCTION and not CACHE_URL:
+    raise ImproperlyConfigured("CACHE_URL is required in production.")
 if CACHE_URL:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": CACHE_URL}}
 else:
