@@ -7,7 +7,7 @@ from package_engine import capabilities as package_capabilities, plan_response a
 from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
-from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview, definitions as symbol_definitions, hover as symbol_hover, completion as symbol_completion, rename_diff as symbol_rename_diff, code_actions as symbol_code_actions
+from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview, definitions as symbol_definitions, hover as symbol_hover, completion as symbol_completion, rename_diff as symbol_rename_diff, code_actions as symbol_code_actions, diagnostics as symbol_diagnostics
 
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
@@ -608,6 +608,8 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
             return {"preview": symbol_rename_diff(root, payload.old, payload.new, payload.path)}
         if payload.action == "code_actions":
             return {"actions": symbol_code_actions(root, payload.path, payload.line)}
+        if payload.action == "diagnostics":
+            return {"diagnostics": symbol_diagnostics(root, payload.path)}
         if payload.action == "definitions":
             return {"definitions": symbol_definitions(root, payload.name, payload.path)}
         if payload.action == "hover":
