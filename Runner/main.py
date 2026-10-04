@@ -324,8 +324,9 @@ def lsp_request(payload: LSPRequest, authorization: str = Header(default="")):
             session.notify(payload.method, params)
             return {"jsonrpc":"2.0","method":payload.method,"status":"notified"}
         result = session.request(payload.method,params)
-        if payload.method == "textDocument/diagnostic":
-            result["notifications"] = session.drain_notifications()
+        notifications = session.drain_notifications()
+        if notifications:
+            result["notifications"] = notifications
         return result
     except LSPError as exc:
         raise HTTPException(status_code=503,detail=str(exc)[:300])
