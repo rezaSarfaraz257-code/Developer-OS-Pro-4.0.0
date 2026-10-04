@@ -18,6 +18,26 @@
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_build_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    allowed, used, limit, plan_name = _consume_usage(request.user, "ide_runs_month", 1)
+    if not allowed:
+        return Response({"error": "Monthly IDE execution limit reached.", "plan": plan_name, "used": used, "limit": limit}, status=429)
+    data, error = _runner_request("POST", "/build", _workspace_payload(ws), timeout=240)
+    if error:
+        return Response(error, status=503)
+    runner_files = data.get("result", {}).get("files") if isinstance(data.get("result"), dict) else None
+    if isinstance(runner_files, dict):
+        try:
+            ws = _persist_workspace_files(ws, runner_files, expected_revision=ws.revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed during build. Reload before applying build results.", "code": "stale_workspace"}, status=409)
+    return Response({"status": data.get("status"), "plan": data.get("plan"), "exit_code": data.get("result", {}).get("exit_code"), "stdout": data.get("result", {}).get("stdout", ""), "stderr": data.get("result", {}).get("stderr", ""), "artifacts": data.get("artifacts", []), "duration_ms": data.get("duration_ms"), "workspace": CodeWorkspaceSerializer(ws).data})
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_build_plan_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
