@@ -20,7 +20,17 @@ export default function EngineeringControlPlane({workspace,files,onClose,onStatu
   const [caps,setCaps]=useState(null),[busy,setBusy]=useState(false),[output,setOutput]=useState("Control plane ready."),[action,setAction]=useState("install"),[packageName,setPackageName]=useState(""),[buildPlan,setBuildPlan]=useState(null);
   const manager=useMemo(()=>detect(files),[files]);
   useEffect(()=>{apiFetch("/ide/capabilities/").then(r=>r.json()).then(setCaps).catch(()=>{});},[]);
-  async function build(){\n    if(!workspace||busy)return; setBusy(true); setOutput("Analyzing project → compiling build plan…");\n    try{const r=await apiFetch("/ide/workspaces/"+workspace.id+"/build/plan/",{method:"POST",body:JSON.stringify({files:files||{}})});const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"No supported build target");setBuildPlan(d);setOutput(JSON.stringify(d,null,2));onStatus?.("Build plan ready");}catch(e){setOutput(e.message);onStatus?.("Build planning failed")}finally{setBusy(false)}}\n  async function packageAction(){
+  async function build(){
+    if(!workspace||busy)return;
+    setBusy(true); setOutput("Analyzing project → compiling build plan…");
+    try{
+      const r=await apiFetch("/ide/workspaces/"+workspace.id+"/build/plan/",{method:"POST",body:JSON.stringify({files:files||{}})});
+      const d=await r.json();
+      if(!r.ok)throw Error(d.error||d.detail||"No supported build target");
+      setBuildPlan(d); setOutput(JSON.stringify(d,null,2)); onStatus?.("Build plan ready");
+    }catch(e){setOutput(e.message);onStatus?.("Build planning failed")}
+    finally{setBusy(false)}
+  }\n  async function packageAction(){
     if(!workspace||busy)return;
     setBusy(true);setOutput("Compiling package operation → secure runner…");
     try{
