@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
-from build_engine import plan as build_plan
+from build_engine import plan as build_plan, artifact_manifest
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -325,6 +325,28 @@ def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
     return {"files": snapshot(safe_workspace(payload.workspace_id))}
 
 @app.post("/build/plan")
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.post("/build")
+def build_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files or {})
+    try:
+        plan = build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    started = time.monotonic()
+    result = run_command(root, plan["strategy"]["command"])
+    artifacts = artifact_manifest(payload.files or {}, str(root))
+    return {"status":"success" if result.get("exit_code")==0 else "failed","plan":plan,"result":result,"artifacts":artifacts,"duration_ms":int((time.monotonic()-started)*1000)}
+
+
 def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     try:
