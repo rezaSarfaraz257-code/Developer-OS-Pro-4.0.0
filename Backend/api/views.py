@@ -2146,10 +2146,7 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": ws.active_file}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-        _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
+        ws = _persist_workspace_files(ws, files, ws.active_file)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
     if action not in {"write", "create", "rename"}:
@@ -2179,10 +2176,7 @@ def ide_workspace_files_api(request, pk):
             ws.active_file = target
         elif ws.active_file.startswith(path.rstrip("/") + "/"):
             ws.active_file = target.rstrip("/") + ws.active_file[len(path.rstrip("/")): ]
-        serializer = CodeWorkspaceSerializer(ws, data={"files": files, "active_file": ws.active_file}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-        _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
+        ws = _persist_workspace_files(ws, files, ws.active_file)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     content = request.data.get("content", "")
     if not path or not isinstance(content, str):
