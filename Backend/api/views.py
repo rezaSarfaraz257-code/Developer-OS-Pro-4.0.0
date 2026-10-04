@@ -2392,6 +2392,27 @@ def ide_symbols_api(request, pk):
     return Response(data)
 
 
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ide_lsp_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    language = str(request.data.get("language") or "python").strip().lower()
+    if language not in {"python", "javascript", "typescript"}:
+        return Response({"error": "Unsupported LSP language."}, status=400)
+    method = str(request.data.get("method") or "").strip()
+    if not method or len(method) > 200:
+        return Response({"error": "Invalid LSP method."}, status=400)
+    params = request.data.get("params") or {}
+    if not isinstance(params, dict):
+        return Response({"error": "LSP params must be an object."}, status=400)
+    payload = {**_workspace_payload(ws), "language": language, "method": method,
+               "uri": str(request.data.get("uri") or "")[:2000], "params": params}
+    data, error = _runner_request("POST", "/lsp/request", payload, timeout=15)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ide_debug_api(request, pk):
