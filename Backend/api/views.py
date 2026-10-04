@@ -3258,6 +3258,17 @@ def ide_diagnostics_api(request, pk):
 # CLOUD IDE CONTROL PLANE
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_build_plan_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    data, error = _runner_request("POST", "/build/plan", _workspace_payload(ws), timeout=15)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_build_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
