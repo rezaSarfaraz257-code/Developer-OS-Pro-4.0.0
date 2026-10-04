@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { languageProfile } from "./ide/languageRegistry";
 import * as monaco from "monaco-editor";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
@@ -18,10 +19,9 @@ monaco.languages.typescript.javascriptDefaults.addExtraLib(extraLibs.javascript[
 monaco.languages.typescript.typescriptDefaults.addExtraLib(extraLibs.typescript[0].content,"file:///developer-os/global.d.ts");
 
 monaco.editor.defineTheme("developer-os-dark",{base:"vs-dark",inherit:true,rules:[{token:"comment",foreground:"61768b"},{token:"keyword",foreground:"57dfff"},{token:"string",foreground:"8ee6b5"},{token:"number",foreground:"d9a7ff"}],colors:{"editor.background":"#060b12","editor.foreground":"#d8eaff","editorLineNumber.foreground":"#385168","editorLineNumber.activeForeground":"#65e6ff","editorCursor.foreground":"#55e8ff","editor.selectionBackground":"#174363","editor.lineHighlightBackground":"#091725","editorIndentGuide.background1":"#102335","editorIndentGuide.activeBackground1":"#24455e","editorWidget.background":"#0b1622","editorWidget.border":"#1c3c55","editorSuggestWidget.background":"#0a1420","editorSuggestWidget.border":"#244b63","editorSuggestWidget.selectedBackground":"#12364c","editorHoverWidget.background":"#0b1622","editorHoverWidget.border":"#28516a","editorOverviewRuler.border":"#00000000"}});
-const lang=p=>({js:"javascript",mjs:"javascript",cjs:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",html:"html",htm:"html",css:"css",scss:"scss",sass:"plaintext",less:"less",json:"json",jsonc:"json",md:"markdown",mdx:"markdown",yaml:"yaml",yml:"yaml",toml:"plaintext",sql:"sql",sh:"shell",bash:"shell",zsh:"shell",go:"go",rs:"rust",java:"java",kt:"plaintext",kts:"plaintext",php:"php",xml:"xml",vue:"html",svelte:"html",c:"c",h:"c",cc:"cpp",cpp:"cpp",cxx:"cpp",hpp:"cpp",cs:"csharp",swift:"plaintext",dart:"plaintext",lua:"plaintext",r:"plaintext",ex:"plaintext",exs:"plaintext",erl:"plaintext",hrl:"plaintext",fs:"plaintext",fsx:"plaintext",graphql:"graphql",gql:"graphql",dockerfile:"dockerfile",txt:"plaintext",env:"plaintext"}[p.split(".").pop()?.toLowerCase()]||"plaintext");
+const lang=p=>languageProfile(p).monaco||"plaintext";
 
-
-const importPathRegex=/((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
+const importPathRegex=//((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
 function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
 export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols}){
  const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),remoteDecorations=useRef([]),completion=useRef(null),models=useRef(new Map()),viewStates=useRef(new Map());
