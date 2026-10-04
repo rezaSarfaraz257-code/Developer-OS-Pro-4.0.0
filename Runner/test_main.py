@@ -58,6 +58,21 @@ class RunnerSecurityTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 run_command(Path("/tmp"), command)
 
+    def test_debug_capability_requires_live_runtime(self):
+        from debug_engine import capability
+        cap = capability()
+        self.assertIn(cap["mode"], {"live-dap", "unavailable"})
+        self.assertEqual(cap["protocol"], "DAP" if cap["available"] else None)
+
+    def test_debug_target_stays_inside_workspace(self):
+        from debug_engine import Session
+        root = Path("/tmp/runner-debug-test")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("x = 1\\n")
+        session = Session(root, "../main.py", 1)
+        with self.assertRaises(RuntimeError):
+            session.start()
+
     def test_workspace_path_is_rejected_before_filesystem_access(self):
         for path in ("../x", "/tmp/x", "C:/x", ".git/config"):
             with self.assertRaises(ValueError):
