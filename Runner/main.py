@@ -5,6 +5,8 @@ from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
 from build_engine import plan as build_plan, artifact_manifest
+from environment_engine import plan as environment_plan
+from debug_engine import capability as debug_capability, handle as debug_handle
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -288,7 +290,7 @@ def _capability_manifest():
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
         },
-        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": False},
+        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"]},
     }
 
 @app.get("/health")
@@ -535,6 +537,42 @@ def _git_run(root, args):
     command = "git " + " ".join(shlex.quote(str(x)) for x in args)
     result = run_command(root, command, allow_network=False)
     return result
+
+@app.post("/environment/plan")
+def environment_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return environment_plan(payload.files)
+
+@app.get("/debug/capability")
+def debug_capability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return debug_capability()
+
+class DebugRequest(Workspace):
+    action: str = "status"
+    session_id: str = ""
+    path: str = ""
+    line: int = 0
+    column: int = 1
+    condition: str = ""
+    expression: str = ""
+    breakpoints: list = Field(default_factory=list)
+
+@app.post("/debug")
+def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        return debug_handle(
+            payload.action, session_id=payload.session_id, path=payload.path,
+            line=payload.line, column=payload.column, condition=payload.condition,
+            expression=payload.expression, breakpoints=payload.breakpoints
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/process/start")
 def process_start(payload: ExecRequest, authorization: str = Header(default="")):
