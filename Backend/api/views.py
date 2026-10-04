@@ -2079,17 +2079,11 @@ def _workspace_payload(ws):
 
 
 def _persist_workspace_files(ws, files, active_file=None):
-    """Persist IDE files without invoking CodeWorkspace.save() or the Runner."""
-    payload = {
-        "files": dict(files),
-        "revision": F("revision") + 1,
-        "updated_at": timezone.now(),
-    }
+    """Persist Explorer state through the model's revision-aware save()."""
+    ws.files = dict(files)
     if active_file is not None:
-        payload["active_file"] = str(active_file)
-    updated = CodeWorkspace.objects.filter(pk=ws.pk).update(**payload)
-    if updated != 1:
-        raise DatabaseError("Workspace disappeared while saving IDE files.")
+        ws.active_file = str(active_file)
+    ws.save(update_fields={"files", "active_file"})
     ws.refresh_from_db(fields=["files", "active_file", "revision", "updated_at"])
     return ws
 
