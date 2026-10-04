@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
+from build_engine import plan as build_plan
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -322,6 +323,14 @@ def sync(payload: Workspace, authorization: str = Header(default="")):
 def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     return {"files": snapshot(safe_workspace(payload.workspace_id))}
+
+@app.post("/build/plan")
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
 
 @app.get("/packages/capabilities")
 def package_capabilities_api(authorization: str = Header(default="")):
