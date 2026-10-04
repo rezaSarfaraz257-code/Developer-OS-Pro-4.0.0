@@ -2068,6 +2068,16 @@ def _runner_request(method, path, payload, timeout=30):
             "code": "runner_request_failed",
         }
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ide_capabilities_api(request):
+    """Expose runner capabilities so the IDE can adapt instead of guessing."""
+    data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
+    if error:
+        return Response({"status": "degraded", "runner": None, "error": error}, status=503)
+    return Response({"status": "ready", "runner": data})
+
+
 def _workspace_access_queryset(user):
     return CodeWorkspace.objects.select_related("project").filter(
         Q(owner=user) | Q(project__owner=user) | Q(project__collaborators=user)
