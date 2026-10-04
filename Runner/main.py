@@ -262,30 +262,55 @@ def _runtime_info():
     return runtimes
 
 LANGUAGE_PROFILES = {
-    "python": {"extensions":["py"],"runtime":"python","run":"python {file}","debug":False},
-    "javascript": {"extensions":["js","mjs","cjs"],"runtime":"node","run":"node {file}","debug":False},
-    "typescript": {"extensions":["ts"],"runtime":"node","run":"npx tsx {file}","debug":False},
-    "tsx": {"extensions":["tsx"],"runtime":"node","run":"npx tsx {file}","debug":False},
-    "jsx": {"extensions":["jsx"],"runtime":"node","run":"node {file}","debug":False},
-    "go": {"extensions":["go"],"runtime":"go","run":"go run {file}","debug":False},
-    "rust": {"extensions":["rs"],"runtime":"rustc","run":"rustc {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
-    "java": {"extensions":["java"],"runtime":"java","run":"javac {file} && java {basename}","debug":False},
-    "c": {"extensions":["c"],"runtime":"gcc","run":"gcc {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
-    "cpp": {"extensions":["cc","cpp","cxx","hpp"],"runtime":"g++","run":"g++ {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
-    "php": {"extensions":["php"],"runtime":"php","run":"php {file}","debug":False},
-    "ruby": {"extensions":["rb"],"runtime":"ruby","run":"ruby {file}","debug":False},
-    "perl": {"extensions":["pl","pm"],"runtime":"perl","run":"perl {file}","debug":False},
-    "shell": {"extensions":["sh","bash"],"runtime":"bash","run":"bash {file}","debug":False},
-    "html": {"extensions":["html","htm"],"runtime":None,"run":None,"debug":False},
-    "css": {"extensions":["css"],"runtime":None,"run":None,"debug":False},
-    "json": {"extensions":["json"],"runtime":None,"run":None,"debug":False},
-    "yaml": {"extensions":["yml","yaml"],"runtime":None,"run":None,"debug":False},
-    "markdown": {"extensions":["md","markdown"],"runtime":None,"run":None,"debug":False},
+    "python": {"extensions":["py"],"runtime":"python","runner":"python","package_manager":"pip","run":"python {file}"},
+    "javascript": {"extensions":["js","mjs","cjs"],"runtime":"node","runner":"node","package_manager":"npm","run":"node {file}"},
+    "typescript": {"extensions":["ts"],"runtime":"node","runner":"npx","package_manager":"npm","run":"npx tsx {file}"},
+    "jsx": {"extensions":["jsx"],"runtime":"node","runner":"node","package_manager":"npm","run":"node {file}"},
+    "tsx": {"extensions":["tsx"],"runtime":"node","runner":"npx","package_manager":"npm","run":"npx tsx {file}"},
+    "go": {"extensions":["go"],"runtime":"go","runner":"go","package_manager":"go","run":"go run {file}"},
+    "rust": {"extensions":["rs"],"runtime":"rustc","runner":"rustc","package_manager":"cargo","run":"rustc {file} -o /tmp/dos_bin && /tmp/dos_bin"},
+    "java": {"extensions":["java"],"runtime":"java","runner":"javac","package_manager":"maven","run":"javac {file} && java {basename}"},
+    "kotlin": {"extensions":["kt","kts"],"runtime":"kotlin","runner":"kotlinc","package_manager":"gradle","run":"kotlinc {file} -include-runtime -d /tmp/dos.jar && java -jar /tmp/dos.jar"},
+    "c": {"extensions":["c"],"runtime":"gcc","runner":"gcc","package_manager":None,"run":"gcc {file} -o /tmp/dos_bin && /tmp/dos_bin"},
+    "cpp": {"extensions":["cc","cpp","cxx","hpp"],"runtime":"g++","runner":"g++","package_manager":None,"run":"g++ {file} -o /tmp/dos_bin && /tmp/dos_bin"},
+    "csharp": {"extensions":["cs"],"runtime":"dotnet","runner":"dotnet","package_manager":"dotnet","run":"dotnet run"},
+    "php": {"extensions":["php"],"runtime":"php","runner":"php","package_manager":"composer","run":"php {file}"},
+    "ruby": {"extensions":["rb"],"runtime":"ruby","runner":"ruby","package_manager":"gem","run":"ruby {file}"},
+    "perl": {"extensions":["pl","pm"],"runtime":"perl","runner":"perl","package_manager":"cpan","run":"perl {file}"},
+    "shell": {"extensions":["sh","bash"],"runtime":"bash","runner":"bash","package_manager":None,"run":"bash {file}"},
+    "lua": {"extensions":["lua"],"runtime":"lua","runner":"lua","package_manager":"luarocks","run":"lua {file}"},
+    "r": {"extensions":["r"],"runtime":"r","runner":"Rscript","package_manager":"cran","run":"Rscript {file}"},
+    "dart": {"extensions":["dart"],"runtime":"dart","runner":"dart","package_manager":"pub","run":"dart {file}"},
+    "swift": {"extensions":["swift"],"runtime":"swift","runner":"swift","package_manager":"swiftpm","run":"swift {file}"},
+    "elixir": {"extensions":["ex","exs"],"runtime":"elixir","runner":"elixir","package_manager":"mix","run":"elixir {file}"},
+    "erlang": {"extensions":["erl","hrl"],"runtime":"erl","runner":"escript","package_manager":"rebar3","run":"escript {file}"},
+    "fsharp": {"extensions":["fs","fsx"],"runtime":"dotnet","runner":"dotnet","package_manager":"dotnet","run":"dotnet fsi {file}"},
+    "html": {"extensions":["html","htm"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "css": {"extensions":["css"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "scss": {"extensions":["scss"],"runtime":"node","runner":"npx","package_manager":"npm","run":"npx sass {file}"},
+    "less": {"extensions":["less"],"runtime":"node","runner":"npx","package_manager":"npm","run":"npx lessc {file}"},
+    "json": {"extensions":["json","jsonc"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "yaml": {"extensions":["yml","yaml"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "toml": {"extensions":["toml"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "markdown": {"extensions":["md","markdown","mdx"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "sql": {"extensions":["sql"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "graphql": {"extensions":["graphql","gql"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "xml": {"extensions":["xml"],"runtime":None,"runner":None,"package_manager":None,"run":None},
+    "dockerfile": {"extensions":["dockerfile"],"runtime":None,"runner":None,"package_manager":None,"run":None},
 }
 
 def _capability_manifest():
     """Stable control-plane contract consumed by the Django IDE."""
     container_native = SANDBOX_MODE == "container"
+    runtime_info = _runtime_info()
+    languages = {}
+    for name, profile in LANGUAGE_PROFILES.items():
+        runtime = profile.get("runtime")
+        languages[name] = {
+            **profile,
+            "available": bool(runtime is None or runtime_info.get(runtime, {}).get("available")),
+            "status": "native" if runtime is None else ("ready" if runtime_info.get(runtime, {}).get("available") else "unavailable"),
+        }
     return {
         "service": "developer-os-runner",
         "api_version": "1",
@@ -296,14 +321,8 @@ def _capability_manifest():
             "process_boundary": True,
             "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
         },
-        "runtimes": _runtime_info(),
-        "languages": {
-            name: {
-                **profile,
-                "available": bool(profile.get("runtime") is None or _runtime_info().get(profile["runtime"], {}).get("available"))
-            }
-            for name, profile in LANGUAGE_PROFILES.items()
-        },
+        "runtimes": runtime_info,
+        "languages": languages,
         "limits": {
             "timeout_seconds": TIMEOUT,
             "max_concurrent": MAX_CONCURRENT,
