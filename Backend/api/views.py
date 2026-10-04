@@ -13,7 +13,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.conf import settings
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
@@ -2077,6 +2077,22 @@ def _workspace_payload(ws):
         "active_file": str(ws.active_file or ""),
     }
 
+
+def _persist_workspace_files(ws, files, active_file=None):
+    """Persist IDE files without invoking CodeWorkspace.save() or the Runner."""
+    payload = {
+        "files": dict(files),
+        "revision": F("revision") + 1,
+        "updated_at": timezone.now(),
+    }
+    if active_file is not None:
+        payload["active_file"] = str(active_file)
+    updated = CodeWorkspace.objects.filter(pk=ws.pk).update(**payload)
+    if updated != 1:
+        raise DatabaseError("Workspace disappeared while saving IDE files.")
+    ws.refresh_from_db(fields=["files", "active_file", "revision", "updated_at"])
+    return ws
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ide_frameworks_api(request):
@@ -2190,51 +2206,22 @@ def ide_workspace_files_api(request, pk):
     if total_bytes > 50_000_000:
         return Response({"error": "Workspace source must be 50 MB or smaller.", "code": "workspace_too_large"}, status=413)
 
-    # Persist directly on the locked workspace. Using the model here avoids
-    # serializer-side mutation surprises and keeps revision handling in the
-    # CodeWorkspace.save() implementation.
+    # Database is authoritative. Runner execution is intentionally decoupled
+    # from Explorer persistence so runner outages can never block file creation.
     try:
-        ws.files = projected
-        ws.active_file = path
-        ws.save(update_fields={"files", "active_file"})
-        ws.refresh_from_db(fields=["files", "active_file", "revision", "updated_at"])
-    except (DatabaseError, IntegrityError) as exc:
+        ws = _persist_workspace_files(ws, projected, path)
+    except (DatabaseError, IntegrityError):
         logger.exception("IDE file persistence failed: workspace=%s path=%s", ws.pk, path)
-        return Response(
-            {"error": "Could not save the file.", "code": "workspace_persistence_error"},
-            status=503,
-        )
-    except Exception as exc:
+        return Response({"error": "Could not save the file.", "code": "workspace_persistence_error"}, status=503)
+    except Exception:
         logger.exception("Unexpected IDE file persistence failure: workspace=%s path=%s", ws.pk, path)
-        return Response(
-            {"error": "File could not be created.", "code": "file_creation_error"},
-            status=503,
-        )
-
-    # Database persistence is authoritative. Runner synchronization is best-effort
-    # and must never turn a successful file creation into HTTP 500.
-    runner_sync = "pending"
-    try:
-        runner_data, runner_error = _runner_request(
-            "POST", "/sync", _workspace_payload(ws), timeout=15
-        )
-        if runner_error:
-            logger.warning(
-                "IDE file saved but runner sync failed: workspace=%s path=%s error=%s",
-                ws.pk, path, runner_error,
-            )
-        else:
-            runner_sync = "ok"
-    except Exception as exc:
-        logger.exception("Unexpected runner sync failure: workspace=%s path=%s", ws.pk, path)
-        runner_error = {"code": "runner_sync_exception", "error": str(exc)[:300]}
+        return Response({"error": "File could not be created.", "code": "file_creation_error"}, status=503)
 
     return Response({
         "ok": True,
         "files": dict(ws.files or {}),
         "active_file": ws.active_file,
         "revision": ws.revision,
-        "runner_sync": runner_sync,
     }, status=201 if action == "create" else 200)
 
 @api_view(["POST"])
