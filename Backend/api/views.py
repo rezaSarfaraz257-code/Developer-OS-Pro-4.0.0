@@ -2384,6 +2384,7 @@ def ide_symbols_api(request, pk):
         "name": str(request.data.get("name") or "")[:200],
         "old": str(request.data.get("old") or "")[:200],
         "new": str(request.data.get("new") or "")[:200],
+        "line": int(request.data.get("line") or 0),
     }
     data, error = _runner_request("POST", "/symbols", payload, timeout=35)
     if error:
