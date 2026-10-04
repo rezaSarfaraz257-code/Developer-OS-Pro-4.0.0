@@ -11,6 +11,7 @@ from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 from observability_engine import record as observability_record, snapshot as observability_snapshot
 from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
+from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -627,6 +628,34 @@ class AIRequest(Workspace):
     goal: str = ""
     active_file: str = ""
     paths: list = Field(default_factory=list)
+
+class RecoveryRequest(Workspace):
+    session_id: str = ""
+    reason: str = "unknown"
+    state: dict = Field(default_factory=dict)
+
+@app.post("/recovery/checkpoint")
+def recovery_checkpoint_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_checkpoint(payload.session_id, payload.workspace_id, payload.files, payload.state)
+
+@app.post("/recovery/restore")
+def recovery_restore_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_recover(payload.session_id, payload.reason)
+
+@app.post("/recovery/verify")
+def recovery_verify_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_verified(payload.session_id)
+
+@app.get("/recovery/status")
+def recovery_status_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return recovery_status()
 
 @app.get("/performance")
 def performance_api(authorization: str = Header(default="")):
