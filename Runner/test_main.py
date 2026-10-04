@@ -86,6 +86,16 @@ class RunnerSecurityTests(unittest.TestCase):
         items = completion(root, "gre")
         self.assertTrue(any(x["label"] == "greet" for x in items))
 
+    def test_symbol_engine_diagnostics(self):
+        from symbol_engine import diagnostics
+        root = Path("/tmp/runner-symbol-diagnostics")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "bad.py").write_text("def broken(:\n")
+        result = diagnostics(root, "bad.py")
+        self.assertTrue(result)
+        self.assertEqual(result[0]["severity"], "error")
+        self.assertEqual(result[0]["code"], "PY001")
+
     def test_symbol_engine_rename_diff(self):
         from symbol_engine import rename_diff
         root = Path("/tmp/runner-symbol-rename")
