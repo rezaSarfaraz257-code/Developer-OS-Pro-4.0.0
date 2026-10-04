@@ -2370,6 +2370,30 @@ def ide_diagnostics_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_symbols_api(request, pk):
+    """Static workspace intelligence: symbols, references and safe rename preview."""
+    ws = _workspace_for_user(pk, request.user)
+    action = str(request.data.get("action") or "symbols").strip().lower()
+    try:
+        from .symbol_engine import index, references, rename_preview
+        root = _workspace_runner_root(ws)
+        if action == "symbols":
+            return Response({"symbols": index(root, request.data.get("query"), request.data.get("path"))})
+        if action == "references":
+            return Response({"references": references(root, request.data.get("name"), request.data.get("path"))})
+        if action == "rename_preview":
+            old = str(request.data.get("old") or "").strip()
+            new = str(request.data.get("new") or "").strip()
+            return Response({"preview": rename_preview(root, old, new, request.data.get("path"))})
+        return Response({"error": "Unsupported symbol action."}, status=400)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("IDE symbol analysis failed workspace=%s user=%s", pk, request.user.pk)
+        return Response({"error": "Symbol analysis temporarily unavailable."}, status=503)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_debug_api(request, pk):
     """Debugger orchestration contract for the isolated runner.
 
