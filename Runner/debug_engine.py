@@ -1,78 +1,158 @@
-"""Developer OS debugger control-plane primitives.
-
-The runner owns debugger lifecycle. This module intentionally does not execute
-debuggee code itself; it exposes a small, deterministic session state machine
-that can be backed by a DAP adapter when the runtime image provides one.
-"""
+"""Live Python debugging over debugpy's Debug Adapter Protocol (DAP)."""
 from __future__ import annotations
-import importlib.util
-import threading
-import time
-import uuid
+import importlib.util, json, socket, subprocess, threading, time, uuid, os
+from pathlib import Path
 
 DEBUGPY_AVAILABLE = importlib.util.find_spec("debugpy") is not None
-_LOCK = threading.RLock()
-_SESSIONS = {}
+_LOCK=threading.RLock(); SESSIONS={}
 
-SUPPORTED_ACTIONS = {
-    "start", "continue", "pause", "step_over", "step_into", "step_out",
-    "stop", "set_breakpoint", "remove_breakpoint", "evaluate",
-    "stack", "variables", "scopes", "watch", "status",
-}
+def _port():
+    s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); return p
+
+class DAP:
+    def __init__(self,port):
+        self.s=socket.create_connection(("127.0.0.1",port),timeout=10); self.s.settimeout(.5)
+        self.seq=0; self.buf=b""; self.pending={}; self.events=[]; self.closed=False
+        threading.Thread(target=self._read,daemon=True).start()
+    def _read(self):
+        while not self.closed:
+            try:
+                self.buf+=self.s.recv(65536)
+                while b"\r\n\r\n" in self.buf:
+                    h,b=self.buf.split(b"\r\n\r\n",1); n=None
+                    for line in h.decode("ascii","replace").split("\r\n"):
+                        if line.lower().startswith("content-length:"): n=int(line.split(":",1)[1])
+                    if n is None or len(b)<n: self.buf=h+b"\r\n\r\n"+b; break
+                    raw,self.buf=b[:n],b[n:]; m=json.loads(raw)
+                    if m.get("type")=="response":
+                        w=self.pending.get(m.get("request_seq"))
+                        if w is not None: w.append(m)
+                    else: self.events.append(m)
+            except socket.timeout: continue
+            except Exception: return
+    def call(self,command,args=None,timeout=10):
+        self.seq+=1; q=[]; seq=self.seq; self.pending[seq]=q
+        m={"seq":seq,"type":"request","command":command}
+        if args is not None:m["arguments"]=args
+        raw=json.dumps(m,separators=(",",":")).encode()
+        self.s.sendall(f"Content-Length: {len(raw)}\r\n\r\n".encode()+raw)
+        end=time.monotonic()+timeout
+        try:
+            while time.monotonic()<end:
+                if q:
+                    r=q.pop(0)
+                    if not r.get("success"): raise RuntimeError(r.get("message") or command)
+                    return r.get("body") or {}
+                time.sleep(.01)
+            raise RuntimeError("DAP timeout: "+command)
+        finally:self.pending.pop(seq,None)
+    def drain(self):
+        e=self.events[:]; self.events.clear(); return e
+    def close(self):
+        self.closed=True
+        try:self.s.close()
+        except OSError:pass
+
+class Session:
+    def __init__(self,root,path,line):
+        self.id=uuid.uuid4().hex[:16]; self.root=Path(root).resolve()
+        self.path=path; self.line=max(1,int(line or 1)); self.ap=_port(); self.dp=_port()
+        self.adapter=None; self.debuggee=None; self.dap=None; self.state="starting"; self.stop_event=None; self.breakpoints=[]
+    def start(self):
+        if not DEBUGPY_AVAILABLE: raise RuntimeError("debugpy is not installed")
+        target=(self.root/self.path).resolve()
+        if self.root not in target.parents or not target.is_file(): raise RuntimeError("Invalid debug target")
+        env={"PATH":"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","HOME":str(self.root/".home"),"PYTHONUNBUFFERED":"1"}
+        (self.root/".home").mkdir(exist_ok=True)
+        self.adapter=subprocess.Popen(["python","-m","debugpy.adapter","--host","127.0.0.1","--port",str(self.ap)],cwd=self.root,env=env,start_new_session=True)
+        end=time.monotonic()+5
+        while time.monotonic()<end:
+            try:self.dap=DAP(self.ap);break
+            except OSError:time.sleep(.05)
+        if not self.dap: raise RuntimeError("DAP adapter failed to start")
+        self.dap.call("initialize",{"clientID":"developer-os","adapterID":"debugpy","pathFormat":"path","linesStartAt1":True,"columnsStartAt1":True})
+        self.debuggee=subprocess.Popen(["python","-m","debugpy","--listen",f"127.0.0.1:{self.dp}","--wait-for-client",str(target)],cwd=self.root,env=env,start_new_session=True)
+        self.dap.call("attach",{"name":"Developer OS","type":"python","request":"attach","connect":{"host":"127.0.0.1","port":self.dp},"justMyCode":False},15)
+        self.dap.call("setExceptionBreakpoints",{"filters":[]})
+        self.set_breakpoint(self.path,self.line)
+        self.dap.call("configurationDone")
+        self.dap.call("continue",{"threadId":1})
+        self.state="running"; return self.snapshot()
+    def _events(self):
+        for e in self.dap.drain():
+            if e.get("event")=="stopped": self.state="paused"; self.stop_event=e.get("body") or {}
+            elif e.get("event")=="continued": self.state="running"
+            elif e.get("event") in ("terminated","exited"): self.state="stopped"
+    def set_breakpoint(self,path,line,column=1,condition=""):
+        b=self.dap.call("setBreakpoints",{"source":{"path":str((self.root/path).resolve())},"breakpoints":[{"line":int(line),"column":int(column),**({"condition":condition} if condition else {})}],"sourceModified":False}).get("breakpoints",[])
+        self.breakpoints=[{"path":path,"line":x.get("line",line),"column":x.get("column",column),"verified":bool(x.get("verified")),"id":x.get("id")} for x in b]
+        return self.snapshot()
+    def remove_breakpoint(self,path,line):
+        self.dap.call("setBreakpoints",{"source":{"path":str((self.root/path).resolve())},"breakpoints":[]})
+        self.breakpoints=[b for b in self.breakpoints if not(b["path"]==path and b["line"]==int(line))]
+        return self.snapshot()
+    def _thread(self):
+        self._events(); return int((self.stop_event or {}).get("threadId") or 1)
+    def stack(self):
+        self._events(); return self.dap.call("stackTrace",{"threadId":self._thread(),"startFrame":0,"levels":50}).get("stackFrames",[])
+    def action(self,a,expression=""):
+        self._events()
+        if a=="continue":self.dap.call("continue",{"threadId":self._thread()})
+        elif a=="pause":self.dap.call("pause",{"threadId":self._thread()})
+        elif a=="step_over":self.dap.call("next",{"threadId":self._thread()})
+        elif a=="step_into":self.dap.call("stepIn",{"threadId":self._thread()})
+        elif a=="step_out":self.dap.call("stepOut",{"threadId":self._thread()})
+        elif a=="evaluate":
+            frames=self.stack(); fid=frames[0]["id"] if frames else 1
+            r=self.dap.call("evaluate",{"expression":expression,"frameId":fid,"context":"repl"})
+            return {"result":{"expression":expression,"value":r.get("result"),"type":r.get("type")},"live":True}
+        elif a=="stack":return {"stack":self.stack(),"live":True}
+        elif a=="scopes":
+            frames=self.stack(); return {"scopes":self.dap.call("scopes",{"frameId":frames[0]["id"]}).get("scopes",[]) if frames else [],"live":True}
+        elif a=="variables":
+            return {"variables":self.dap.call("variables",{"variablesReference":int(expression or 0)}).get("variables",[]),"live":True}
+        self._events(); return self.snapshot()
+    def snapshot(self):
+        self._events(); st=self.stack() if self.state=="paused" else []
+        return {"session_id":self.id,"state":self.state,"thread_id":(self.stop_event or {}).get("threadId"),"frame":st[0] if st else None,"stack":st,"breakpoints":self.breakpoints,"scopes":[],"variables":[],"diagnostics":[],"live":True}
+    def stop(self):
+        try:
+            if self.dap:
+                try:self.dap.call("disconnect",{"terminateDebuggee":True},3)
+                except Exception:pass
+                self.dap.close()
+        finally:
+            for p in (self.debuggee,self.adapter):
+                if p and p.poll() is None:
+                    try:p.kill()
+                    except OSError:pass
+            self.state="stopped"
+        return self.snapshot()
 
 def capability():
-    # Importing debugpy does not mean a DAP server is connected to a live
-    # workspace process. Report that limitation instead of claiming support.
-    return {
-        "available": False,
-        "adapter": None,
-        "protocol": None,
-        "mode": "control-plane-only",
-        "debugpy_installed": bool(DEBUGPY_AVAILABLE),
-        "reason": "Runtime DAP integration is not implemented; breakpoint/step/inspect are not connected to a live debuggee.",
-    }
+    return {"available":bool(DEBUGPY_AVAILABLE),"adapter":"debugpy" if DEBUGPY_AVAILABLE else None,"protocol":"DAP" if DEBUGPY_AVAILABLE else None,"mode":"live-dap" if DEBUGPY_AVAILABLE else "unavailable","reason":None if DEBUGPY_AVAILABLE else "debugpy is not installed"}
 
-def _session(sid):
-    return _SESSIONS.get(sid)
-
-def handle(action, *, session_id="", path="", line=0, column=1,
-           condition="", expression="", breakpoints=None):
-    action = str(action or "status").strip().lower()
-    if action not in SUPPORTED_ACTIONS:
-        raise ValueError("Unsupported debugger action.")
-    with _LOCK:
-        sid = str(session_id or "")
-        if action == "start" and not sid:
-            sid = uuid.uuid4().hex[:16]
-            _SESSIONS[sid] = {
-                "id": sid, "state": "paused", "thread_id": 1,
-                "started_at": time.time(), "breakpoints": [],
-                "path": path, "line": max(1, int(line or 1)),
-            }
-        item = _SESSIONS.get(sid)
-        if not item:
-            if action == "status":
-                return {"session_id": None, "state": "idle", "breakpoints": [], "stack": [], "scopes": [], "variables": []}
-            raise ValueError("Debug session not found.")
-        if action == "stop":
-            item["state"] = "stopped"
-        elif action in {"continue", "step_over", "step_into", "step_out", "pause"}:
-            item["state"] = "paused" if action != "continue" else "running"
-        elif action == "set_breakpoint":
-            bp = {"path": path, "line": max(1, int(line or 1)), "column": max(1, int(column or 1)), "verified": True}
-            item["breakpoints"] = [b for b in item["breakpoints"] if not (b["path"] == bp["path"] and b["line"] == bp["line"])]
-            item["breakpoints"].append(bp)
-        elif action == "remove_breakpoint":
-            item["breakpoints"] = [b for b in item["breakpoints"] if not (b["path"] == path and b["line"] == max(1, int(line or 1)))]
-        stack = []
-        if item["state"] == "paused":
-            stack = [{"id": 1, "name": "main", "path": item.get("path") or path, "line": item.get("line") or 1, "column": 1}]
-        return {
-            "session_id": sid, "state": item["state"], "thread_id": item["thread_id"],
-            "frame": stack[0] if stack else None, "stack": stack,
-            "scopes": [{"name": "Locals", "variables_reference": 1}] if stack else [],
-            "variables": [], "breakpoints": item["breakpoints"],
-            "output": "Debugger control-plane simulation only; no live debuggee is attached.",
-            "diagnostics": [{"severity": "warning", "message": capability()["reason"]}],
-            "result": {"expression": expression, "value": None} if action == "evaluate" else None,
-        }
+def handle(action,*,root=None,session_id="",path="",line=0,column=1,condition="",expression="",breakpoints=None):
+    action=str(action or "status").lower()
+    if action=="start":
+        if not root:raise ValueError("Workspace root is required")
+        s=Session(root,path,line)
+        with _LOCK:SESSIONS[s.id]=s
+        try:return s.start()
+        except Exception:
+            s.stop()
+            with _LOCK:SESSIONS.pop(s.id,None)
+            raise
+    with _LOCK:s=SESSIONS.get(str(session_id))
+    if not s:
+        if action=="status":return {"session_id":None,"state":"idle","breakpoints":[],"stack":[],"live":False}
+        raise ValueError("Debug session not found")
+    if action=="set_breakpoint":return s.set_breakpoint(path,line,column,condition)
+    if action=="remove_breakpoint":return s.remove_breakpoint(path,line)
+    if action=="stop":
+        r=s.stop()
+        with _LOCK:SESSIONS.pop(s.id,None)
+        return r
+    if action in {"continue","pause","step_over","step_into","step_out","evaluate","stack","scopes","variables"}:return s.action(action,expression)
+    if action=="status":return s.snapshot()
+    raise ValueError("Unsupported debugger action")
