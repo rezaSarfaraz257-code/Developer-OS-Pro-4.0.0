@@ -378,7 +378,7 @@ function AI() {
   const bottom=useRef(null);
 
   useEffect(()=>{
-    apiFetch("/ai/conversations/").then(r=>r.json()).then(setConversations).catch(()=>{});
+    apiFetch("/ai/conversations/").then(r=>r.json()).then(d=>setConversations(Array.isArray(d)?d:d.results||[])).catch(()=>{});
     apiFetch("/projects/").then(r=>r.json()).then(d=>setProjects(Array.isArray(d)?d:d.results||[])).catch(()=>{});
     apiFetch("/ide/workspaces/").then(r=>r.json()).then(d=>setWorkspaces(Array.isArray(d)?d:[])).catch(()=>{});
     apiFetch("/ai/health/").then(r=>r.json()).then(setHealth).catch(()=>{});
