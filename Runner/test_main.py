@@ -32,6 +32,15 @@ class RunnerSecurityTests(unittest.TestCase):
             command = _sandbox_command(__import__("pathlib").Path("/tmp"), "npm install react", allow_network=True)
             self.assertNotIn("--unshare-net", command)
 
+    def test_capability_manifest_is_machine_readable(self):
+        from main import _capability_manifest
+        manifest = _capability_manifest()
+        self.assertEqual(manifest["api_version"], "1")
+        self.assertIn("runtimes", manifest)
+        self.assertIn("limits", manifest)
+        self.assertIn("operations", manifest)
+        self.assertIn("network_enforcement", manifest["sandbox"])
+
     def test_runtime_info_has_stable_capability_shape(self):
         info = _runtime_info()
         for name in ("python", "node", "npm", "git", "bash"):

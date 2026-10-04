@@ -67,6 +67,7 @@ urlpatterns = [
     path("tasks/<int:pk>/dependencies/", views.task_dependencies_api, name="task-dependencies"),
     path("ide/workspaces/", views.ide_workspaces_api, name="ide-workspaces"),
     path("ide/frameworks/", views.ide_frameworks_api, name="ide-frameworks"),
+    path("ide/capabilities/", views.ide_capabilities_api, name="ide-capabilities"),
     path("ide/workspaces/<int:pk>/files/", views.ide_workspace_files_api, name="ide-workspace-files"),
     path("ide/workspaces/<int:pk>/sync/", views.ide_workspace_sync_api, name="ide-workspace-sync"),
     path("ide/workspaces/<int:pk>/install/", views.ide_install_framework_api, name="ide-install-framework"),
