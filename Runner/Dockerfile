@@ -5,7 +5,8 @@ RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
-COPY main.py .
+COPY . .
+RUN python3 -m compileall -q .
 RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
 USER runner
 EXPOSE 8080
