@@ -482,8 +482,7 @@ function Explore() {
     }catch(e){setError(e.message)}
     finally{setBusy(false)}
   };
-  const loadRef=useRef(load); loadRef.current=load;
-  useEffect(()=>{const t=setTimeout(()=>loadRef.current(),220);return()=>clearTimeout(t)},[q]);
+  useEffect(()=>{const t=setTimeout(()=>load(),220);return()=>clearTimeout(t)},[q]);
   useEffect(()=>{const fn=e=>{if(e.key==="/"&&!["INPUT","TEXTAREA"].includes(document.activeElement?.tagName)){e.preventDefault();document.querySelector(".explore-search")?.focus()}};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn)},[]);
 
   const toggle=async tool=>{
