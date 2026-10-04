@@ -35,7 +35,10 @@ useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch(
      r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:latest.revision})});
      d=await r.json().catch(()=>({}));
    }
-   if(!r.ok) throw Error(d.error||d.detail||`Explorer operation failed (HTTP ${r.status})`);
+   if(!r.ok){
+     const detail=d.error||d.detail||d.message||`Explorer operation failed (HTTP ${r.status})`;
+     throw Error(detail);
+   }
    return d;
  }
  async function newFolder(){
