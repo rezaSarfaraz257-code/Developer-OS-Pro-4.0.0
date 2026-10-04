@@ -13,6 +13,13 @@ MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+# Resource-aware execution policy. Conservative defaults are configurable for small managed containers.
+MAX_MEMORY_MB = max(128, int(os.environ.get("RUNNER_MAX_MEMORY_MB", "768")))
+MAX_MEMORY_BYTES = MAX_MEMORY_MB * 1024 * 1024
+MAX_CPU_SECONDS = min(TIMEOUT, max(1, int(os.environ.get("RUNNER_MAX_CPU_SECONDS", str(TIMEOUT)))))
+MAX_PROCESSES = max(16, int(os.environ.get("RUNNER_MAX_PROCESSES", "128")))
+MAX_PROCESS_OUTPUT = max(16_384, int(os.environ.get("RUNNER_MAX_PROCESS_OUTPUT_BYTES", "200000")))
+RESOURCE_QUEUE_SECONDS = max(1, int(os.environ.get("RUNNER_RESOURCE_QUEUE_SECONDS", "5")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
 # bubblewrap requires. Container-native mode is the production default.
@@ -127,12 +134,52 @@ def snapshot(root):
 
 def _limit_process_resources():
     '''Apply per-execution POSIX limits before untrusted code starts.'''
-    resource.setrlimit(resource.RLIMIT_CPU, (TIMEOUT, TIMEOUT + 2))
-    resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024, 768 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_CPU, (MAX_CPU_SECONDS, MAX_CPU_SECONDS + 2))
+    resource.setrlimit(resource.RLIMIT_AS, (MAX_MEMORY_BYTES, MAX_MEMORY_BYTES))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_WORKSPACE_BYTES, MAX_WORKSPACE_BYTES))
     resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
-    resource.setrlimit(resource.RLIMIT_NPROC, (128, 128))
+    resource.setrlimit(resource.RLIMIT_NPROC, (MAX_PROCESSES, MAX_PROCESSES))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+def _resource_status():
+    """Return bounded container resource telemetry without exposing host paths."""
+    status = {
+        "policy": {
+            "memory_mb": MAX_MEMORY_MB,
+            "cpu_seconds": MAX_CPU_SECONDS,
+            "max_processes": MAX_PROCESSES,
+            "max_concurrent": MAX_CONCURRENT,
+            "queue_seconds": RESOURCE_QUEUE_SECONDS,
+            "output_bytes": MAX_OUTPUT,
+        },
+        "active_executions": MAX_CONCURRENT - getattr(EXEC_SEMAPHORE, "_value", MAX_CONCURRENT),
+        "memory": {"limit_bytes": MAX_MEMORY_BYTES, "current_bytes": None, "available": True},
+        "pressure": "normal",
+    }
+    try:
+        current = Path("/sys/fs/cgroup/memory.current")
+        limit = Path("/sys/fs/cgroup/memory.max")
+        if current.exists() and limit.exists():
+            cur = int(current.read_text().strip())
+            raw_limit = limit.read_text().strip()
+            lim = None if raw_limit == "max" else int(raw_limit)
+            status["memory"]["current_bytes"] = cur
+            if lim:
+                status["memory"]["container_limit_bytes"] = lim
+                ratio = cur / lim
+                status["pressure"] = "critical" if ratio >= .90 else ("elevated" if ratio >= .75 else "normal")
+                status["memory"]["available"] = ratio < .92
+    except (OSError, ValueError):
+        pass
+    return status
+
+def _resource_diagnostic(exit_code, stderr=""):
+    text = str(stderr or "").lower()
+    if exit_code in (-9, 137) or "out of memory" in text or "std::bad_alloc" in text or "cannot allocate memory" in text:
+        return {"code": "RESOURCE_OOM", "severity": "error", "message": "Process exceeded the runner memory budget and was terminated safely.", "action": "Reduce workspace scope, exclude dependency directories, or run a project-aware typecheck."}
+    if exit_code in (124, -24) or "timed out" in text:
+        return {"code": "RESOURCE_TIMEOUT", "severity": "error", "message": "Process exceeded the execution time budget.", "action": "Run a narrower command or increase the configured runner timeout for trusted workloads."}
+    return None
 
 def _sandbox_command(root, command, allow_network=False):
     """Return an execution command for the selected isolation backend.
@@ -190,7 +237,7 @@ def run_command(root, command, *, allow_network=False):
     (root / ".home").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
-    acquired = EXEC_SEMAPHORE.acquire(timeout=5)
+    acquired = EXEC_SEMAPHORE.acquire(timeout=RESOURCE_QUEUE_SECONDS)
     if not acquired:
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     try:
