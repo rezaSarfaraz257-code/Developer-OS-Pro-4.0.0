@@ -63,6 +63,67 @@ const ai = await request("/ai/actions/", {
 });
 if (!ai.answer) throw new Error("AI action returned no answer.");
 
+
+// --- P0 IDE execution / process lifecycle / debugger contract ---
+const execute = await request(`/ide/workspaces/${workspace.id}/execute/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({
+    command: "python main.py",
+  }),
+});
+if (execute.status !== "success" || execute.exit_code !== 0 || !String(execute.stdout || "").includes("42")) {
+  throw new Error("IDE execute E2E failed.");
+}
+
+const processStarted = await request(`/ide/workspaces/${workspace.id}/process/start/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({command: "python -c \"import time; print('PROCESS_READY', flush=True); time.sleep(30)\""}),
+});
+if (!processStarted.id) throw new Error("IDE process start failed.");
+
+const processes = await request(`/ide/workspaces/${workspace.id}/processes/`, {headers: auth});
+const processList = Array.isArray(processes) ? processes : processes.processes;
+if (!Array.isArray(processList) || !processList.some((p) => String(p.id) === String(processStarted.id))) {
+  throw new Error("Started process was not visible in process list.");
+}
+
+const stopped = await request(`/ide/workspaces/${workspace.id}/process/${encodeURIComponent(processStarted.id)}/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({}),
+});
+if (stopped.status === "running") throw new Error("Process stop did not terminate the process.");
+
+const debugStarted = await request(`/ide/workspaces/${workspace.id}/debug/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({action: "start", path: "main.py", line: 1}),
+});
+if (!debugStarted.session_id) throw new Error("Debugger session did not start.");
+
+const debugBreakpoint = await request(`/ide/workspaces/${workspace.id}/debug/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({
+    action: "set_breakpoint",
+    session_id: debugStarted.session_id,
+    path: "main.py",
+    line: 1,
+  }),
+});
+if (!Array.isArray(debugBreakpoint.breakpoints) || !debugBreakpoint.breakpoints.length) {
+  throw new Error("Debugger breakpoint contract failed.");
+}
+
+const debugStopped = await request(`/ide/workspaces/${workspace.id}/debug/`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({action: "stop", session_id: debugStarted.session_id}),
+});
+if (debugStopped.state !== "stopped") throw new Error("Debugger stop contract failed.");
+
 const usage = await request("/usage/", {headers: auth});
 if (!usage.metrics || usage.plan !== "free") throw new Error("Usage endpoint failed.");
 
