@@ -89,7 +89,7 @@ if (!Array.isArray(processList) || !processList.some((p) => String(p.id) === Str
   throw new Error("Started process was not visible in process list.");
 }
 
-const stopped = await request(`/ide/workspaces/${workspace.id}/process/${encodeURIComponent(processStarted.id)}/`, {
+const stopped = await request(`/ide/workspaces/${workspace.id}/process/${encodeURIComponent(processStarted.id)}/stop/`, {
   method: "POST",
   headers: auth,
   body: JSON.stringify({}),
