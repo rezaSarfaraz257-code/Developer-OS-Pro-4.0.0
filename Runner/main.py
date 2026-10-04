@@ -320,7 +320,13 @@ def lsp_request(payload: LSPRequest, authorization: str = Header(default="")):
         params=dict(payload.params or {})
         if payload.uri and "textDocument" not in params:
             params["textDocument"]={"uri":payload.uri}
-        return session.request(payload.method,params)
+        if payload.method in {"textDocument/didOpen","textDocument/didChange","textDocument/didClose","initialized","exit"}:
+            session.notify(payload.method, params)
+            return {"jsonrpc":"2.0","method":payload.method,"status":"notified"}
+        result = session.request(payload.method,params)
+        if payload.method == "textDocument/diagnostic":
+            result["notifications"] = session.drain_notifications()
+        return result
     except LSPError as exc:
         raise HTTPException(status_code=503,detail=str(exc)[:300])
 @app.get("/health")
