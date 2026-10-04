@@ -8,6 +8,7 @@ from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
 from preview_engine import plan as preview_plan
+from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -618,6 +619,32 @@ def git_api(payload: ExecRequest, authorization: str = Header(default="")):
     if not args or not isinstance(args, list):
         raise HTTPException(status_code=400, detail="Git arguments required.")
     return _git_run(root, args)
+
+class AIRequest(Workspace):
+    action: str = "fix"
+    goal: str = ""
+    active_file: str = ""
+    paths: list = Field(default_factory=list)
+
+@app.post("/ai/engineering/plan")
+def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    return ai_plan(payload.model_dump(), payload.files)
+
+class AIPatchRequest(Workspace):
+    patch: list = Field(default_factory=list)
+
+@app.post("/ai/engineering/validate-patch")
+def ai_engineering_validate_patch_api(payload: AIPatchRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    try:
+        return {"status":"valid","patch":validate_ai_patch(payload.patch, payload.files)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/preview/plan")
 def preview_plan_api(payload: Workspace, authorization: str = Header(default="")):
