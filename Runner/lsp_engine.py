@@ -1,4 +1,4 @@
-import asyncio, json, os, subprocess, threading
+import asyncio, json, os, subprocess, threading, time
 from pathlib import Path
 
 class LSPError(RuntimeError):
@@ -50,6 +50,7 @@ class LSPSession:
         self.seq=0
         self.lock=threading.RLock()
         self.notifications=[]
+        self._closed=False
 
     def start(self):
         self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False)
@@ -129,6 +130,8 @@ class LSPSession:
 
     def stop(self):
         with self.lock:
+            if self._closed: return
+            self._closed=True
             try:
                 if self.alive(): self.request("shutdown",{},2)
             except Exception: pass
