@@ -10,6 +10,7 @@ from debug_engine import capability as debug_capability, handle as debug_handle
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 from observability_engine import record as observability_record, snapshot as observability_snapshot
+from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -626,6 +627,11 @@ class AIRequest(Workspace):
     goal: str = ""
     active_file: str = ""
     paths: list = Field(default_factory=list)
+
+@app.get("/performance")
+def performance_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return profiler_report()
 
 @app.get("/observability")
 def observability_api(authorization: str = Header(default="")):
