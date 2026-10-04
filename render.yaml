@@ -3,7 +3,7 @@
 # Then set the backend IDE_RUNNER_URL to the Runner's internal address
 # (for example: http://<runner-internal-host>:8080) and use the same IDE_RUNNER_TOKEN.
 services:
-  - type: pserv
+  - type: web
     name: developer-os-runner
     runtime: docker
     region: oregon
