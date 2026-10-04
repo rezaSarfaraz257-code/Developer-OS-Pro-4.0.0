@@ -7,6 +7,8 @@ from package_engine import capabilities as package_capabilities, plan_response a
 from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
+from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview
+
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 from observability_engine import record as observability_record, snapshot as observability_snapshot
@@ -577,6 +579,31 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
             line=payload.line, column=payload.column, condition=payload.condition,
             expression=payload.expression, breakpoints=payload.breakpoints
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+class SymbolRequest(Workspace):
+    action: str = "symbols"
+    query: str = ""
+    path: str = ""
+    name: str = ""
+    old: str = ""
+    new: str = ""
+
+@app.post("/symbols")
+def symbols_api(payload: SymbolRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        if payload.action == "symbols":
+            return {"symbols": symbol_index(root, payload.query, payload.path)}
+        if payload.action == "references":
+            return {"references": symbol_references(root, payload.name, payload.path)}
+        if payload.action == "rename_preview":
+            return {"preview": symbol_rename_preview(root, payload.old, payload.new, payload.path)}
+        raise HTTPException(status_code=400, detail="Unsupported symbol action.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
