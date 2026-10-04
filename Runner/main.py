@@ -269,6 +269,8 @@ def run_command(root, command, *, allow_network=False):
             "stderr": f"Execution timed out after {TIMEOUT} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
+            "resources": _resource_status(),
+            "resource_diagnostic": {"code": "RESOURCE_TIMEOUT", "severity": "error", "message": f"Execution timed out after {TIMEOUT} seconds.", "action": "Run a narrower command or increase the configured timeout."},
         }
     finally:
         EXEC_SEMAPHORE.release()
@@ -387,7 +389,12 @@ def _capability_manifest():
             "max_command_bytes": MAX_COMMAND,
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
+            "memory_mb": MAX_MEMORY_MB,
+            "cpu_seconds": MAX_CPU_SECONDS,
+            "max_processes": MAX_PROCESSES,
+            "queue_seconds": RESOURCE_QUEUE_SECONDS,
         },
+        "resources": _resource_status(),
         "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": False},
     }
 
@@ -405,6 +412,11 @@ def health():
         "capabilities_version": "1",
         "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
     }
+
+@app.get("/resources")
+def resources(authorization: str = Header(default="")):
+    auth(authorization)
+    return _resource_status()
 
 @app.get("/capabilities")
 def capabilities(authorization: str = Header(default="")):
