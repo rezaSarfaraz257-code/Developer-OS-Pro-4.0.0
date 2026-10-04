@@ -645,6 +645,7 @@ function Settings() {
 
 export default function App() {
   const [authenticated,setAuthenticated]=useState(Boolean(getAccessToken()));
+  const [projects,setProjects]=useState([]);
   const [user,setUser]=useState(null);
   const [path,go]=useRoute();
 
