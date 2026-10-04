@@ -21,6 +21,33 @@ monaco.languages.typescript.typescriptDefaults.addExtraLib(extraLibs.typescript[
 monaco.editor.defineTheme("developer-os-dark",{base:"vs-dark",inherit:true,rules:[{token:"comment",foreground:"61768b"},{token:"keyword",foreground:"57dfff"},{token:"string",foreground:"8ee6b5"},{token:"number",foreground:"d9a7ff"}],colors:{"editor.background":"#060b12","editor.foreground":"#d8eaff","editorLineNumber.foreground":"#385168","editorLineNumber.activeForeground":"#65e6ff","editorCursor.foreground":"#55e8ff","editor.selectionBackground":"#174363","editor.lineHighlightBackground":"#091725","editorIndentGuide.background1":"#102335","editorIndentGuide.activeBackground1":"#24455e","editorWidget.background":"#0b1622","editorWidget.border":"#1c3c55","editorSuggestWidget.background":"#0a1420","editorSuggestWidget.border":"#244b63","editorSuggestWidget.selectedBackground":"#12364c","editorHoverWidget.background":"#0b1622","editorHoverWidget.border":"#28516a","editorOverviewRuler.border":"#00000000"}});
 const lang=p=>languageProfile(p).monaco||"plaintext";
 
+const localCompletionProvider=monaco.languages.registerCompletionItemProvider(["javascript","typescript","javascriptreact","typescriptreact"],{
+  triggerCharacters:[".","/","<"],
+  provideCompletionItems(model,position){
+    const word=model.getWordUntilPosition(position),range={startLineNumber:position.lineNumber,startColumn:word.startColumn,endLineNumber:position.lineNumber,endColumn:word.endColumn};
+    const suggestions=[
+      ["console","console","variable"],["log","log","method"],["map","map","method"],["filter","filter","method"],
+      ["async","async","keyword"],["await","await","keyword"],["const","const","keyword"],["function","function","keyword"],
+      ["import","import","keyword"],["export","export","keyword"],["Promise","Promise","class"],["JSON","JSON","class"]
+    ];
+    return {suggestions:suggestions.map(([label,insertText,kind])=>({label,insertText,kind:monaco.languages.CompletionItemKind[kind]||monaco.languages.CompletionItemKind.Text,range,sortText:"1"}))};
+  }
+});
+
+const codeActionProvider=monaco.languages.registerCodeActionProvider(["javascript","typescript","javascriptreact","typescriptreact"],{
+  provideCodeActions(model,range,context){
+    const actions=[];
+    for(const marker of context.markers||[]){
+      if(/console is not defined/i.test(marker.message)){
+        actions.push({title:"Declare console globally",diagnostics:[marker],kind:"quickfix",edit:{edits:[{resource:model.uri,edit:{range:new monaco.Range(1,1,1,1),text:"/* Developer OS quick fix */\n"}}]}});
+      }
+    }
+    return {actions,dispose(){}};
+  }
+});
+
+
+
 const importPathRegex=//((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
 function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
 export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols}){
@@ -43,7 +70,7 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
  const references=ed.addAction({id:"developer-os.find-references",label:"Developer OS: Find References",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{e.getAction("editor.action.referenceSearch.trigger")?.run();}});
  const openImport=ed.addAction({id:"developer-os.open-import",label:"Developer OS: Open Workspace Import",run:e=>{const m=e.getModel(),p=e.getPosition();if(!m||!p)return;const line=m.getLineContent(p.lineNumber),before=line.slice(0,p.column-1);let hit=null;for(const match of before.matchAll(importPathRegex)){hit=match}if(!hit)return;const target=resolveWorkspaceImport(pathRef.current,hit[2]);if(target)window.dispatchEvent(new CustomEvent("developer-os:open-file",{detail:{path:target}}));e.focus();}});
  const workspaceSymbolsAction=ed.addAction({id:"developer-os.workspace-symbols",label:"Developer OS: Workspace Symbols",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO],run:e=>{const m=e.getModel();if(!m)return;const symbols=workspaceSymbols(m.getValue());onWorkspaceSymbols?.(symbols.map((s,index)=>({name:s.name,line:m.getPositionAt(s.offset).lineNumber,column:m.getPositionAt(s.offset).column,index})));window.dispatchEvent(new CustomEvent("developer-os:workspace-symbols",{detail:{path:pathRef.current,symbols}}));e.focus();}});
-  return()=>{c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
+  return()=>{localCompletionProvider.dispose();codeActionProvider.dispose();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&!ed.hasTextFocus())next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;const saved=viewStates.current.get(normalized);if(saved)ed.restoreViewState(saved);ed.focus();return()=>{if(model.current===next)model.current=null}},[path]);
  useEffect(()=>{const m=model.current;if(m&&m.getValue()!==(value||"")&&!editor.current?.hasTextFocus())m.setValue(value||"")},[value]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const reveal=e=>{const line=Math.max(1,Number(e.detail?.line||1));const column=Math.max(1,Number(e.detail?.column||1));ed.revealPositionInCenter({lineNumber:line,column});ed.setPosition({lineNumber:line,column});ed.focus()};window.addEventListener("developer-os:reveal-line",reveal);return()=>window.removeEventListener("developer-os:reveal-line",reveal)},[path]);
