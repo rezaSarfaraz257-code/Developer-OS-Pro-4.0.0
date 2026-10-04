@@ -86,6 +86,17 @@ class RunnerSecurityTests(unittest.TestCase):
         items = completion(root, "gre")
         self.assertTrue(any(x["label"] == "greet" for x in items))
 
+    def test_symbol_engine_rename_diff(self):
+        from symbol_engine import rename_diff
+        root = Path("/tmp/runner-symbol-rename")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "a.py").write_text("def greet():\n    return greet\n")
+        result = rename_diff(root, "greet", "hello")
+        self.assertEqual(result["references"], 2)
+        self.assertTrue(result["changes"])
+        self.assertIn("-def greet()", result["changes"][0]["diff"])
+        self.assertIn("+def hello()", result["changes"][0]["diff"])
+
     def test_symbol_engine_rejects_invalid_rename(self):
         from symbol_engine import rename_preview
         root = Path("/tmp/runner-symbol-invalid")
