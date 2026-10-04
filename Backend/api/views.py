@@ -1,4 +1,46 @@
-from datetime import timedelta, timezone as dt_timezone
+    packages = request.data.get("packages") or []
+    if isinstance(packages, str):
+        packages = [x.strip() for x in packages.split(",") if x.strip()]
+    if not isinstance(packages, list) or not packages or len(packages) > 50:\n        return Response({"error": "Provide 1–50 packages."}, status=400)\n    if action not in {"install", "add", "remove", "update"}:\n        return Response({"error": "Unsupported package action."}, status=400)\n    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):\n        return Response({"error": "One or more package names are invalid."}, status=400)\n    package = str(packages[0]) if len(packages) == 1 else ""\n    plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager}, timeout=15)\n    if plan_error:\n        return Response(plan_error, status=503)\n    if len(packages) > 1:\n        # Compile each package through the same runner policy instead of accepting\n        # arbitrary shell input from the browser.\n        plans=[]\n        for pkg in packages:\n            p, pe = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)\n            if pe: return Response(pe, status=503)\n            plans.append(p.get("command",""))\n        command=" && ".join(plans)\n    else:\n        command=plan.get("command","")\n    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)\n    if error:
+        return Response(error, status=503)
+    if isinstance(data.get("files"), dict):
+        serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        ws = serializer.save()
+    return Response({
+        "status": "success" if data.get("exit_code") == 0 else "failed",
+        "command": command,
+        "exit_code": data.get("exit_code"),
+        "stdout": data.get("stdout", ""),
+        "stderr": data.get("stderr", ""),
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ide_diagnostics_api(request, pk):
+    """Run a read-only project check and return editor-friendly diagnostics."""
+    ws = _workspace_for_user(pk, request.user)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    language = str(request.data.get("language") or "").lower()
+    path = _safe_ide_path(request.data.get("path") or "")
+    if not path:
+        return Response({"error": "A valid file path is required."}, status=400)
+    _, sync_error = _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
+    if sync_error:
+        return Response(sync_error, status=503)
+    if language in {"python", "py"} or path.endswith(".py"):
+        command = "python -m py_compile " + shlex.quote(path)
+    elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
+        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
+    else:
+        return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
+    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
+    if error:
+        return Response(error, status=503)
+    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
+    diagnostics = []from datetime import timedelta, timezone as dt_timezone
 import secrets
 from urllib.parse import urlencode, urlparse
 import base64
