@@ -449,7 +449,6 @@ function AI() {  const [conversations,setConversations]=useState([]);
 }
 
 function Explore() {
-  const [projects,setProjects]=useState([]);
   const [tab,setTab]=useState("tools");
   const [q,setQ]=useState("");
   const [category,setCategory]=useState("All");
