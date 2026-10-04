@@ -150,6 +150,22 @@ if CACHE_URL:
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "developer-os"}}
 
+# Channels needs an explicit layer. Use Redis in production when CACHE_URL is
+# configured; keep a safe in-process fallback for local/free Render testing.
+if CACHE_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [CACHE_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+
 REST_FRAMEWORK = {"EXCEPTION_HANDLER": "api.security.api_exception_handler", "DEFAULT_AUTHENTICATION_CLASSES": ("api.authentication.APIKeyAuthentication", "rest_framework_simplejwt.authentication.JWTAuthentication"), "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",), "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"), "DEFAULT_THROTTLE_RATES": {"anon": "60/hour", "user": "2000/day", "auth": "10/hour", "assistant": "30/hour"}}
 SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",)}
 LOGGING = {"version": 1, "disable_existing_loggers": False, "formatters": {"json": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}}, "handlers": {"console_json": {"class": "logging.StreamHandler", "formatter": "json"}}, "loggers": {"developer_os": {"handlers": ["console_json"], "level": os.getenv("LOG_LEVEL", "INFO"), "propagate": False}}}
