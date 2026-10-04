@@ -330,6 +330,17 @@ def lsp_request(payload: LSPRequest, authorization: str = Header(default="")):
         return result
     except LSPError as exc:
         raise HTTPException(status_code=503,detail=str(exc)[:300])
+@app.post("/lsp/notifications")
+def lsp_notifications(payload: LSPRequest, authorization: str = Header(default="")):
+    """Drain queued LSP notifications without issuing an LSP request."""
+    auth(authorization)
+    root=safe_workspace(payload.workspace_id)
+    try:
+        session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+        return {"notifications": session.drain_notifications()}
+    except LSPError as exc:
+        raise HTTPException(status_code=503,detail=str(exc)[:300])
+
 @app.get("/health")
 def health():
     return {
