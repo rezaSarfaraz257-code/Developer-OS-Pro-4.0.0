@@ -56,6 +56,28 @@ const workspace = await request("/ide/workspaces/", {
 });
 if (!workspace.id) throw new Error("Workspace creation failed.");
 
+let fileRevision = workspace.revision;
+const createdFile = await request(`/ide/workspaces/${workspace.id}/files/`, {
+  method: "POST", headers: auth,
+  body: JSON.stringify({action: "create", path: "src/e2e.txt", content: "hello", revision: fileRevision}),
+});
+if (!createdFile.files?.["src/e2e.txt"]) throw new Error("File create E2E failed.");
+fileRevision = createdFile.revision;
+
+const writtenFile = await request(`/ide/workspaces/${workspace.id}/files/`, {
+  method: "POST", headers: auth,
+  body: JSON.stringify({action: "write", path: "src/e2e.txt", content: "hello updated", revision: fileRevision}),
+});
+if (writtenFile.files?.["src/e2e.txt"] !== "hello updated") throw new Error("File write E2E failed.");
+fileRevision = writtenFile.revision;
+
+const renamedFile = await request(`/ide/workspaces/${workspace.id}/files/`, {
+  method: "POST", headers: auth,
+  body: JSON.stringify({action: "rename", path: "src/e2e.txt", to: "src/e2e-renamed.txt", revision: fileRevision}),
+});
+if (!renamedFile.files?.["src/e2e-renamed.txt"] || renamedFile.files?.["src/e2e.txt"]) throw new Error("File rename E2E failed.");
+
+
 const ai = await request("/ai/actions/", {
   method: "POST",
   headers: auth,
