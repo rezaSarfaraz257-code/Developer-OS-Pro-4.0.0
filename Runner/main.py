@@ -172,6 +172,9 @@ def run_command(root, command, *, allow_network=False):
         raise HTTPException(status_code=400, detail="Invalid command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
+    # Keep the IDE contract stable on images that expose only python3.
+    if re.match(r"^python(?:\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
+        command = re.sub(r"^python(?=\s|$)", "python3", command, count=1)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
@@ -223,6 +226,31 @@ def run_command(root, command, *, allow_network=False):
     finally:
         EXEC_SEMAPHORE.release()
 
+def _runtime_info():
+    """Expose deterministic runtime capabilities to the IDE without exposing host details."""
+    candidates = {
+        "python": ["python", "python3"],
+        "node": ["node"],
+        "npm": ["npm"],
+        "git": ["git"],
+        "bash": ["bash"],
+    }
+    runtimes = {}
+    for name, commands in candidates.items():
+        executable = next((shutil.which(c) for c in commands if shutil.which(c)), None)
+        version = ""
+        if executable:
+            try:
+                probe = subprocess.run(
+                    [executable, "--version"], capture_output=True, text=True, timeout=2,
+                    env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+                )
+                version = (probe.stdout or probe.stderr).strip().splitlines()[0][:120]
+            except Exception:
+                version = "available"
+        runtimes[name] = {"available": bool(executable), "version": version}
+    return runtimes
+
 @app.get("/health")
 def health():
     return {
@@ -232,7 +260,29 @@ def health():
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
         "network_policy": "isolated-by-default",
-        "version": os.environ.get("RELEASE_VERSION", "3.0.0"),
+        "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
+        "runtimes": _runtime_info(),
+        "version": os.environ.get("RELEASE_VERSION", "3.1.0"),
+    }
+
+@app.get("/capabilities")
+def capabilities(authorization: str = Header(default="")):
+    """IDE capability handshake used before execution/install/preview operations."""
+    auth(authorization)
+    return {
+        "service": "developer-os-runner",
+        "api_version": "1",
+        "sandbox": SANDBOX_MODE,
+        "network": "provisioning-only" if ALLOW_NETWORK else "isolated-by-default",
+        "limits": {
+            "timeout_seconds": TIMEOUT,
+            "max_concurrent": MAX_CONCURRENT,
+            "max_files": MAX_FILES,
+            "max_file_bytes": MAX_FILE,
+            "max_workspace_bytes": MAX_WORKSPACE_BYTES,
+        },
+        "runtimes": _runtime_info(),
+        "operations": ["sync", "snapshot", "execute", "process", "git", "preview", "install"],
     }
 
 @app.post("/sync")
