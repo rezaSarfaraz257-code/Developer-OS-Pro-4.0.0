@@ -50,7 +50,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             await sync_to_async(WorkspaceCollaborationSession.objects.filter(workspace=self.workspace,user=self.user,client_id=self.client_id).update)(
                 cursor=content.get("cursor") or {},selection=content.get("selection") or {},last_seen_at=__import__("django").utils.timezone.now()
             )
-            await self.channel_layer.group_send(self.group_name,{"type":"presence_event","payload":{"type":"presence","user_id":self.user.id,"username":self.user.username,"client_id":self.client_id,"cursor":content.get("cursor") or {},"selection":content.get("selection") or {}})
+            await self.channel_layer.group_send(self.group_name, {"type": "presence_event", "payload": {"type": "presence", "user_id": self.user.id, "username": self.user.username, "client_id": self.client_id, "cursor": content.get("cursor") or {}, "selection": content.get("selection") or {}}})
         elif kind=="crdt-op":
             await self._crdt_receive(content)
         elif kind=="crdt-sync":
