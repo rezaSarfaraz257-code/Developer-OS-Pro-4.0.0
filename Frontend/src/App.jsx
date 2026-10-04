@@ -370,7 +370,6 @@ function AI() {
   const [mode,setMode]=useState("chat");
   const [action,setAction]=useState("");
   const [project,setProject]=useState("");
-  const [projects,setProjects]=useState([]);
   const [workspace,setWorkspace]=useState("");
   const [workspaces,setWorkspaces]=useState([]);
   const [health,setHealth]=useState(null);
