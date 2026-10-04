@@ -2135,7 +2135,9 @@ def ide_workspace_files_api(request, pk):
         ws = serializer.save()
         _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
-    action = str(request.data.get("action") or "write")
+    action = str(request.data.get("action") or "write").strip().lower()
+    if action not in {"write", "create", "rename"}:
+        return Response({"error": "Unsupported file action.", "code": "invalid_file_action"}, status=400)
     path = _safe_ide_path(request.data.get("path"))
     if action == "rename":
         target = _safe_ide_path(request.data.get("to"))
