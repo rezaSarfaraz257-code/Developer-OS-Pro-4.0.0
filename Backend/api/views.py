@@ -2008,7 +2008,7 @@ def _runner_request(method, path, payload, timeout=30):
         # instead of JSON. Never let response.json() escape as a Django 500.
         try:
             data = response.json() if response.content else {}
-        except (ValueError, requests.exceptions.JSONDecodeError):
+        except ValueError:
             preview = response.text[:500].strip() if response.text else ""
             return None, {
                 "error": f"Runner returned a non-JSON response (HTTP {response.status_code}).",
@@ -2197,21 +2197,31 @@ def ide_workspace_files_api(request, pk):
             status=503,
         )
 
-    runner_data, runner_error = _runner_request(
-        "POST", "/sync", _workspace_payload(ws), timeout=30
-    )
-    if runner_error:
-        logger.warning(
-            "IDE file saved but runner sync failed: workspace=%s path=%s error=%s",
-            ws.pk, path, runner_error,
+    # Database persistence is authoritative. Runner synchronization is best-effort
+    # and must never turn a successful file creation into HTTP 500.
+    runner_sync = "pending"
+    try:
+        runner_data, runner_error = _runner_request(
+            "POST", "/sync", _workspace_payload(ws), timeout=15
         )
+        if runner_error:
+            logger.warning(
+                "IDE file saved but runner sync failed: workspace=%s path=%s error=%s",
+                ws.pk, path, runner_error,
+            )
+        else:
+            runner_sync = "ok"
+    except Exception as exc:
+        logger.exception("Unexpected runner sync failure: workspace=%s path=%s", ws.pk, path)
+        runner_error = {"code": "runner_sync_exception", "error": str(exc)[:300]}
 
     return Response({
-        "files": ws.files,
+        "ok": True,
+        "files": dict(ws.files or {}),
         "active_file": ws.active_file,
         "revision": ws.revision,
-        "runner_sync": "ok" if runner_data is not None else "pending",
-    })
+        "runner_sync": runner_sync,
+    }, status=201 if action == "create" else 200)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
