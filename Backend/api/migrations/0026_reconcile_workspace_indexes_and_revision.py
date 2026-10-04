@@ -25,4 +25,15 @@ class Migration(migrations.Migration):
         migrations.RenameIndex(model_name="securitysession", old_name="api_securit_user_id_72e6d1_idx", new_name="api_session_user_seen"),
         migrations.RenameIndex(model_name="usagerecord", old_name="api_usage_metric_period_idx", new_name="api_usage_metric_period"),
         migrations.AddField(model_name="codeworkspace", name="revision", field=models.PositiveBigIntegerField(default=1)),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    sql='ALTER INDEX IF EXISTS "api_codework_owner_i_8f5a7c_idx" RENAME TO "api_codework_owner_updated"',
+                    reverse_sql='ALTER INDEX IF EXISTS "api_codework_owner_updated" RENAME TO "api_codework_owner_i_8f5a7c_idx"',
+                ),
+            ],
+            state_operations=[
+                migrations.RemoveIndex(model_name="codeworkspace", name="api_codework_owner_i_8f5a7c_idx"),
+            ],
+        ),
     ]
