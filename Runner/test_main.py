@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
 
-from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command
+from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
 
 class RunnerSecurityTests(unittest.TestCase):
@@ -31,6 +31,13 @@ class RunnerSecurityTests(unittest.TestCase):
         with patch("main.shutil.which", return_value="/usr/bin/bwrap"):
             command = _sandbox_command(__import__("pathlib").Path("/tmp"), "npm install react", allow_network=True)
             self.assertNotIn("--unshare-net", command)
+
+    def test_runtime_info_has_stable_capability_shape(self):
+        info = _runtime_info()
+        for name in ("python", "node", "npm", "git", "bash"):
+            self.assertIn(name, info)
+            self.assertIn("available", info[name])
+            self.assertIn("version", info[name])
 
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
