@@ -89,3 +89,33 @@ def rename_preview(root,old,new,path=""):
         if updated!=text:
             changes.append({"path":_rel(root,p),"content":updated,"matches":len(rx.findall(text))})
     return {"old":old,"new":new,"references":len(refs),"changes":changes}
+
+def definitions(root, name, path=""):
+    """Return static definitions without importing or executing workspace code."""
+    name=str(name or "").strip()
+    if not name or len(name)>200:
+        return []
+    return [s for s in index(root, query=name, path=path) if s.get("name")==name and s.get("kind") in {"function","class","variable"}][:100]
+
+def hover(root, name, path="", line=0):
+    name=str(name or "").strip()
+    defs=definitions(root,name,path)
+    if not defs:
+        return None
+    item=defs[0]; root=Path(root).resolve(); p=root/item["path"]
+    try: lines=p.read_text(encoding="utf-8").splitlines()
+    except (OSError,UnicodeDecodeError): lines=[]
+    source_line=lines[item.get("line",1)-1].strip() if lines and item.get("line") else name
+    return {"name":name,"kind":item.get("kind","symbol"),"path":item.get("path"),"line":item.get("line",1),"column":item.get("column",1),"signature":source_line[:500],"markdown":"**"+item.get("kind","symbol")+"** "+name+"\n\n"+source_line[:500]+"\n\nDefined in "+item.get("path","")+":"+str(item.get("line",1))}
+
+def completion(root, query="", path=""):
+    q=str(query or "").strip().lower(); seen=set(); out=[]
+    keywords=["const","let","var","function","class","return","import","from","export","async","await","if","else","for","while","try","catch","throw","def","None","True","False","and","or","not","in","is","with","as"]
+    for word in keywords:
+        if not q or word.lower().startswith(q): seen.add(word); out.append({"label":word,"kind":"keyword","detail":"language keyword"})
+    for s in index(root,path=path):
+        n=s.get("name","")
+        if n in seen or (q and not n.lower().startswith(q)): continue
+        seen.add(n); out.append({"label":n,"kind":s.get("kind","variable"),"detail":s.get("kind","symbol")+" · "+s.get("path",""),"line":s.get("line",1)})
+        if len(out)>=200: break
+    return out[:200]
