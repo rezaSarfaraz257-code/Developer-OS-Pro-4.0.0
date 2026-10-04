@@ -72,6 +72,20 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertEqual(preview["new"], "welcome")
         self.assertTrue(preview["changes"])
 
+    def test_symbol_engine_p1_definitions_hover_completion(self):
+        from symbol_engine import definitions, hover, completion
+        root = Path("/tmp/runner-symbol-p1")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("def greet(name):\n    return name\n")
+        defs = definitions(root, "greet")
+        self.assertTrue(defs)
+        self.assertEqual(defs[0]["kind"], "function")
+        info = hover(root, "greet")
+        self.assertEqual(info["path"], "main.py")
+        self.assertIn("greet", info["signature"])
+        items = completion(root, "gre")
+        self.assertTrue(any(x["label"] == "greet" for x in items))
+
     def test_symbol_engine_rejects_invalid_rename(self):
         from symbol_engine import rename_preview
         root = Path("/tmp/runner-symbol-invalid")
