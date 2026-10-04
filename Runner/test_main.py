@@ -58,6 +58,28 @@ class RunnerSecurityTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 run_command(Path("/tmp"), command)
 
+    def test_symbol_engine_static_analysis_and_rename_preview(self):
+        from symbol_engine import index, references, rename_preview
+        root = Path("/tmp/runner-symbol-test")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("def greet(name):\\n    value = name\\n    return value\\nprint(greet('x'))\\n")
+        (root / "app.js").write_text("const greet = () => 1;\\nconsole.log(greet());\\n")
+        symbols = index(root)
+        self.assertTrue(any(s["name"] == "greet" and s["kind"] == "function" for s in symbols))
+        refs = references(root, "greet")
+        self.assertGreaterEqual(len(refs), 2)
+        preview = rename_preview(root, "greet", "welcome")
+        self.assertEqual(preview["new"], "welcome")
+        self.assertTrue(preview["changes"])
+
+    def test_symbol_engine_rejects_invalid_rename(self):
+        from symbol_engine import rename_preview
+        root = Path("/tmp/runner-symbol-invalid")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("value = 1\\n")
+        with self.assertRaises(ValueError):
+            rename_preview(root, "value", "not valid")
+
     def test_debug_capability_requires_live_runtime(self):
         from debug_engine import capability
         cap = capability()
