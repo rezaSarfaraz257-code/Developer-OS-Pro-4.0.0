@@ -63,11 +63,11 @@ AI_API_KEY = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").stri
 AI_API_URL = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
 AI_MODEL = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
 AI_API_PROTOCOL = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
-os.environ["AI_API_KEY"] = AI_API_KEY
-os.environ["AI_API_URL"] = AI_API_URL
-os.environ["AI_MODEL"] = AI_MODEL
-os.environ["AI_API_PROTOCOL"] = AI_API_PROTOCOL
 AI_API_KEY_CONFIGURED = bool(AI_API_KEY)
+
+if IS_PRODUCTION and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
+    raise ImproperlyConfigured("Console email backend is forbidden in production.")
+
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
