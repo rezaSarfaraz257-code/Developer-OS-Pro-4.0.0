@@ -573,7 +573,7 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
         write_snapshot(root, payload.files)
     try:
         return debug_handle(
-            payload.action, session_id=payload.session_id, path=payload.path,
+            payload.action, root=root, session_id=payload.session_id, path=payload.path,
             line=payload.line, column=payload.column, condition=payload.condition,
             expression=payload.expression, breakpoints=payload.breakpoints
         )
