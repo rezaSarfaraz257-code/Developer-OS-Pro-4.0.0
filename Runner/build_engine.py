@@ -1,6 +1,6 @@
 """Project-aware build planner and executor policy for Developer OS."""
 from __future__ import annotations
-import json
+import json, os
 from typing import Any
 
 SAFE_BUILDERS = {
@@ -59,7 +59,6 @@ def plan(files):
     return {"status":"ready","strategy":result,"steps":["detect","dependency-check","build","diagnostics","artifacts","verify"]}
 
 def artifact_manifest(files, root):
-    import os
     artifacts=[]
     for directory in (detect_build(files) or {}).get("artifact_dirs",[]):
         path=os.path.join(root,directory)
