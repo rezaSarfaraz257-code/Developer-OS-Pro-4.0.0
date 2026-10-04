@@ -7,6 +7,7 @@ from package_engine import capabilities as package_capabilities, plan_response a
 from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
+from preview_engine import plan as preview_plan
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -617,6 +618,12 @@ def git_api(payload: ExecRequest, authorization: str = Header(default="")):
     if not args or not isinstance(args, list):
         raise HTTPException(status_code=400, detail="Git arguments required.")
     return _git_run(root, args)
+
+@app.post("/preview/plan")
+def preview_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return preview_plan(payload.files)
 
 @app.post("/preview/start")
 def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
