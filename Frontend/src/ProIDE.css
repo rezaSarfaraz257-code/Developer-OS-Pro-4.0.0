@@ -69,3 +69,167 @@
 
 .dos-file.selected,.dos-folder.selected{background:rgba(60,180,220,.13);outline:1px solid rgba(85,220,255,.12)}
 .dos-file[draggable],.dos-folder[draggable]{cursor:grab}.dos-file[draggable]:active,.dos-folder[draggable]:active{cursor:grabbing}
+
+
+/* Developer OS IDE Structure — safe visual layer (no runtime/API changes) */
+.dos-ide-pro{
+  --ide-border:rgba(126,183,214,.14);
+  --ide-border-strong:rgba(85,220,255,.24);
+  --ide-surface:rgba(10,18,29,.94);
+  --ide-surface-2:rgba(13,23,36,.96);
+  --ide-glow:rgba(85,220,255,.08);
+}
+.dos-ide-pro .dos-topbar{
+  background:linear-gradient(180deg,#0b1420 0%,#09111b 100%);
+  border-bottom:1px solid var(--ide-border);
+  box-shadow:0 1px 0 rgba(255,255,255,.025),0 8px 28px rgba(0,0,0,.16);
+}
+.dos-ide-pro .dos-logo{
+  box-shadow:0 0 0 1px rgba(85,220,255,.05),0 0 22px rgba(85,220,255,.08);
+}
+.dos-ide-pro .dos-commandbar{
+  background:rgba(7,13,21,.96);
+  border-bottom:1px solid var(--ide-border);
+}
+.dos-ide-pro .dos-body{
+  background:#060b12;
+  position:relative;
+}
+.dos-ide-pro .dos-activity{
+  background:linear-gradient(180deg,#08101a,#070d15);
+  border-right:1px solid var(--ide-border);
+}
+.dos-ide-pro .dos-activity button{
+  position:relative;
+  border:1px solid transparent;
+}
+.dos-ide-pro .dos-activity button.selected::before{
+  content:"";
+  position:absolute;
+  left:-1px;
+  top:8px;
+  bottom:8px;
+  width:2px;
+  border-radius:2px;
+  background:var(--accent);
+  box-shadow:0 0 10px var(--accent);
+}
+.dos-ide-pro .dos-explorer{
+  background:linear-gradient(180deg,rgba(10,18,28,.98),rgba(8,15,24,.98));
+  border-right:1px solid var(--ide-border);
+}
+.dos-ide-pro .dos-pane-title{
+  background:rgba(255,255,255,.012);
+  color:#9bb1c4;
+}
+.dos-ide-pro .dos-tree-search{
+  padding:8px;
+  background:rgba(5,11,18,.72);
+}
+.dos-ide-pro .dos-tree-search input{
+  height:29px;
+  background:#070f18;
+  border-color:rgba(92,145,174,.2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+}
+.dos-ide-pro .dos-file-list{
+  padding:7px 6px 10px;
+}
+.dos-ide-pro .dos-file,.dos-ide-pro .dos-folder{
+  min-height:28px;
+  border:1px solid transparent;
+}
+.dos-ide-pro .dos-file.active{
+  background:linear-gradient(90deg,rgba(44,126,158,.26),rgba(18,54,72,.2));
+  border-color:rgba(85,220,255,.08);
+}
+.dos-ide-pro .dos-folder:hover,.dos-ide-pro .dos-file:hover{
+  background:rgba(70,125,157,.11);
+  transform:none;
+}
+.dos-ide-pro .dos-explorer-create{
+  margin:7px;
+  width:auto;
+  background:rgba(14,29,43,.72);
+  border-color:rgba(85,220,255,.1);
+}
+.dos-ide-pro .dos-editor-shell{
+  background:#050a10;
+}
+.dos-ide-pro .dos-tabs{
+  background:#080e16;
+  min-height:39px;
+}
+.dos-ide-pro .dos-tab{
+  border-right:1px solid rgba(126,183,214,.1);
+  background:rgba(8,14,22,.75);
+}
+.dos-ide-pro .dos-tab.active{
+  background:linear-gradient(180deg,rgba(17,31,46,.98),rgba(10,19,29,.98));
+  box-shadow:inset 0 1px 0 rgba(85,220,255,.12);
+}
+.dos-ide-pro .dos-editor-toolbar{
+  background:rgba(9,16,25,.94);
+  border-bottom:1px solid var(--ide-border);
+  min-height:35px;
+}
+.dos-ide-pro .dos-editor-toolbar button{
+  background:rgba(14,26,39,.7);
+  border-color:rgba(92,145,174,.15);
+}
+.dos-ide-pro .dos-editors{
+  position:relative;
+  background:#060b12;
+}
+.dos-ide-pro .dos-editor-pane{
+  position:relative;
+}
+.dos-ide-pro .dos-editor-pane:first-child::before{
+  content:"";
+  position:absolute;
+  inset:0 0 0 auto;
+  width:1px;
+  background:linear-gradient(180deg,transparent,rgba(85,220,255,.08),transparent);
+  pointer-events:none;
+  z-index:2;
+}
+.dos-ide-pro .dos-inspector{
+  background:linear-gradient(180deg,rgba(9,16,25,.98),rgba(7,13,21,.98));
+  border-left:1px solid var(--ide-border);
+}
+.dos-ide-pro .dos-inspector-title{
+  background:rgba(255,255,255,.012);
+}
+.dos-ide-pro .dos-card{
+  background:linear-gradient(180deg,rgba(13,24,36,.9),rgba(9,18,28,.9));
+  border-color:rgba(105,161,190,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.018);
+}
+.dos-ide-pro .dos-statusbar{
+  background:linear-gradient(90deg,#086d85,#087990);
+  border-top:1px solid rgba(117,235,255,.16);
+}
+.dos-ide-pro .dos-terminal{
+  background:#04080d;
+  border-top-color:rgba(85,220,255,.16);
+}
+.dos-ide-pro .dos-terminal-head{
+  background:#07111a;
+}
+.dos-ide-pro .dos-terminal-body{
+  background:radial-gradient(circle at 80% 20%,rgba(36,104,128,.055),transparent 35%),#04080d;
+}
+.dos-ide-pro .monaco-host{
+  background:#060b12;
+}
+.dos-ide-pro ::-webkit-scrollbar{width:9px;height:9px}
+.dos-ide-pro ::-webkit-scrollbar-track{background:rgba(0,0,0,.12)}
+.dos-ide-pro ::-webkit-scrollbar-thumb{background:rgba(92,129,151,.28);border:2px solid transparent;background-clip:padding-box;border-radius:10px}
+.dos-ide-pro ::-webkit-scrollbar-thumb:hover{background:rgba(92,159,184,.45);border:2px solid transparent;background-clip:padding-box}
+@media(max-width:1200px){
+  .dos-ide-pro .dos-body{grid-template-columns:48px 220px minmax(0,1fr)}
+}
+@media(max-width:800px){
+  .dos-ide-pro .dos-body{grid-template-columns:42px 175px minmax(0,1fr)}
+  .dos-ide-pro .dos-explorer{width:175px}
+}
