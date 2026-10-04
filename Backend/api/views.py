@@ -2002,7 +2002,20 @@ def _runner_request(method, path, payload, timeout=30):
         else:
             kwargs["json"] = payload
 
-        response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
+        response = None
+        last_exc = None
+        # Render/free instances can briefly return 502/503 while the Runner
+        # wakes or restarts. Retry only transient upstream failures.
+        for attempt in range(2):
+            try:
+                response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                last_exc = exc
+                if attempt == 0:
+                    continue
+                raise
+            if response.status_code not in {502, 503, 504} or attempt == 1:
+                break
 
         # A proxy, platform error page, or crashed runner may return HTML/text
         # instead of JSON. Never let response.json() escape as a Django 500.
