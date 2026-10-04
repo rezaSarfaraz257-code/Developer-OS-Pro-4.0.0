@@ -79,6 +79,7 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/processes/", views.ide_processes_api, name="ide-processes"),
     path("ide/workspaces/<int:pk>/process/<str:process_id>/", views.ide_process_detail_api, name="ide-process-detail"),
     path("ide/workspaces/<int:pk>/diagnostics/", views.ide_diagnostics_api, name="ide-diagnostics"),
+    path("ide/workspaces/<int:pk>/symbols/", views.ide_symbols_api, name="ide-symbols"),
     path("ide/workspaces/<int:pk>/git/", views.ide_git_api, name="ide-git"),
     path("ide/workspaces/<int:pk>/preview/start/", views.ide_preview_start_api, name="ide-preview-start"),
     path("ide/workspaces/<int:pk>/preview/<path:preview_path>", views.ide_preview_proxy_api, name="ide-preview-proxy"),
