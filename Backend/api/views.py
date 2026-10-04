@@ -13,7 +13,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.conf import settings
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
@@ -26,6 +26,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
+class StaleWorkspaceError(Exception):
+    pass
 import os
 import shlex
 import re
@@ -2091,9 +2093,12 @@ def _workspace_payload(ws):
     }
 
 
-def _persist_workspace_files(ws, files, active_file=None):
-    """Persist the virtual IDE filesystem while the workspace row is locked."""
-    next_revision = int(ws.revision or 0) + 1
+def _persist_workspace_files(ws, files, active_file=None, expected_revision=None):
+    """Atomically persist the virtual filesystem without holding a database row lock."""
+    current_revision = int(ws.revision or 0)
+    expected = current_revision if expected_revision in (None, "") else int(expected_revision)
+    next_revision = expected + 1
+    filters = {"pk": ws.pk, "revision": expected}
     values = {
         "files": dict(files),
         "revision": next_revision,
@@ -2101,9 +2106,9 @@ def _persist_workspace_files(ws, files, active_file=None):
     }
     if active_file is not None:
         values["active_file"] = str(active_file)
-    updated = CodeWorkspace.objects.filter(pk=ws.pk).update(**values)
+    updated = CodeWorkspace.objects.filter(**filters).update(**values)
     if updated != 1:
-        raise DatabaseError("Workspace disappeared while saving IDE files.")
+        raise StaleWorkspaceError()
     ws.files = dict(files)
     if active_file is not None:
         ws.active_file = str(active_file)
@@ -2131,7 +2136,7 @@ def _safe_ide_path(value):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def ide_workspace_files_api(request, pk):
-    ws = _workspace_for_user(pk, request.user, for_update=request.method in {"POST", "DELETE"})
+    ws = _workspace_for_user(pk, request.user, for_update=False)
     if request.method in {"POST", "DELETE"} and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
     expected_revision = request.data.get("revision")
@@ -2163,7 +2168,7 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        ws = _persist_workspace_files(ws, files, ws.active_file)
+        ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
     if action not in {"write", "create", "rename"}:
@@ -2220,7 +2225,9 @@ def ide_workspace_files_api(request, pk):
     # Database is authoritative. Runner execution is intentionally decoupled
     # from Explorer persistence so runner outages can never block file creation.
     try:
-        ws = _persist_workspace_files(ws, projected, path)
+        ws = _persist_workspace_files(ws, projected, path, expected_revision)
+    except StaleWorkspaceError:
+        return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     except (DatabaseError, IntegrityError):
         logger.exception("IDE file persistence failed: workspace=%s path=%s", ws.pk, path)
         return Response({"error": "Could not save the file.", "code": "workspace_persistence_error"}, status=503)
