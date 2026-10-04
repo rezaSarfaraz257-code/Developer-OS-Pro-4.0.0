@@ -31,6 +31,7 @@ services:
     build: ./Backend
     environment:
       DEBUG: "False"
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       RELEASE_VERSION: "3.0.0-global"
       SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-true}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
@@ -134,6 +135,7 @@ services:
     build: ./Backend
     environment:
       DEBUG: "False"
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DATABASE_URL: postgresql://${POSTGRES_USER:-developeros}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-developeros}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
