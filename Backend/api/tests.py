@@ -320,6 +320,43 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["results"][0]["type"], "project")
 
+    def test_ide_workspace_file_crud_and_revision_conflict(self):
+        response = self.client.post("/api/ide/workspaces/", {"name": "CRUD", "files": {"main.py": "print(1)"}, "active_file": "main.py"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workspace_id = response.data["id"]
+        revision = response.data["revision"]
+
+        response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": "src/app.py", "content": "print(2)", "revision": revision}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        revision = response.data["revision"]
+
+        response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "rename", "path": "src/app.py", "to": "src/main.py", "revision": revision}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        revision = response.data["revision"]
+        self.assertIn("src/main.py", response.data["files"])
+        self.assertNotIn("src/app.py", response.data["files"])
+
+        response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("src/main.py", response.data["files"])
+
+        response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": "README.md", "content": "# OS", "revision": revision}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        revision = response.data["revision"]
+
+        response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "write", "path": "README.md", "content": "# Updated", "revision": revision - 1}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "stale_workspace")
+
+    def test_ide_workspace_file_paths_are_safe(self):
+        response = self.client.post("/api/ide/workspaces/", {"name": "Safe", "files": {}}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workspace_id = response.data["id"]
+        revision = response.data["revision"]
+        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", ".git/config", "src//app.py"):
+            response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": path, "content": "x", "revision": revision}, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, path)
+
     def test_ide_workspace_is_persistent(self):
         response = self.client.post("/api/ide/workspaces/", {"name":"Main","files":{"main.py":"print(1)"}, "active_file":"main.py"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
