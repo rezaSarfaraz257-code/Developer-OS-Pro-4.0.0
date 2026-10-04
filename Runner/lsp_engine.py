@@ -48,7 +48,7 @@ class LSPSession:
         self.command=command
         self.proc=None
         self.seq=0
-        self.lock=threading.RLock()
+        self.lock=threading.RLock()\n        self.notifications=[]
 
     def start(self):
         self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False)
