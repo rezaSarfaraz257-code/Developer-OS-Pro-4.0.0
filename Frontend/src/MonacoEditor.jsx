@@ -22,7 +22,8 @@ const lang=p=>({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript
 
 
 const importPathRegex=/((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
-function workspaceSymbols(source){const symbols=[];const re=/\b(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g;let match;while((match=re.exec(source))&&symbols.length<500)symbols.push({name:match[1],offset:match.index});return symbols;}\nfunction resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
+function workspaceSymbols(source){const symbols=[];const re=/\b(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g;let match;while((match=re.exec(source))&&symbols.length<500)symbols.push({name:match[1],offset:match.index});return symbols;}
+function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
 export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols}){
  const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map());
  useEffect(()=>{change.current=onChange;cursor.current=onCursorChange},[onChange,onCursorChange]);
