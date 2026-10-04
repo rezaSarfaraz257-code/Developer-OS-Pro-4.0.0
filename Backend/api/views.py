@@ -2374,7 +2374,7 @@ def ide_symbols_api(request, pk):
     """Static workspace intelligence delegated to the isolated runner."""
     ws = _workspace_for_user(pk, request.user)
     action = str(request.data.get("action") or "symbols").strip().lower()
-    if action not in {"symbols", "references", "rename_preview", "definitions", "hover", "completion"}:
+    if action not in {"symbols", "references", "rename_preview", "definitions", "hover", "completion", "rename_diff", "code_actions"}:
         return Response({"error": "Unsupported symbol action."}, status=400)
     payload = {
         **_workspace_payload(ws),
