@@ -21,12 +21,15 @@ SUPPORTED_ACTIONS = {
 }
 
 def capability():
+    # Importing debugpy does not mean a DAP server is connected to a live
+    # workspace process. Report that limitation instead of claiming support.
     return {
-        "available": bool(DEBUGPY_AVAILABLE),
-        "adapter": "debugpy" if DEBUGPY_AVAILABLE else None,
-        "protocol": "DAP" if DEBUGPY_AVAILABLE else None,
-        "mode": "adapter-ready" if DEBUGPY_AVAILABLE else "unavailable",
-        "reason": None if DEBUGPY_AVAILABLE else "debugpy is not installed in the runner image",
+        "available": False,
+        "adapter": None,
+        "protocol": None,
+        "mode": "control-plane-only",
+        "debugpy_installed": bool(DEBUGPY_AVAILABLE),
+        "reason": "Runtime DAP integration is not implemented; breakpoint/step/inspect are not connected to a live debuggee.",
     }
 
 def _session(sid):
@@ -69,7 +72,7 @@ def handle(action, *, session_id="", path="", line=0, column=1,
             "frame": stack[0] if stack else None, "stack": stack,
             "scopes": [{"name": "Locals", "variables_reference": 1}] if stack else [],
             "variables": [], "breakpoints": item["breakpoints"],
-            "output": "Debugger adapter ready." if DEBUGPY_AVAILABLE else "Debugger control plane ready; runtime adapter is not installed.",
-            "diagnostics": ([] if DEBUGPY_AVAILABLE else [{"severity": "info", "message": capability()["reason"]}]),
+            "output": "Debugger control-plane simulation only; no live debuggee is attached.",
+            "diagnostics": [{"severity": "warning", "message": capability()["reason"]}],
             "result": {"expression": expression, "value": None} if action == "evaluate" else None,
         }
