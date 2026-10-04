@@ -15,6 +15,7 @@ COPY . .
 ENV DJANGO_SECRET_KEY=build-only-temporary-secret \
     DEBUG=False
 
+RUN python -m compileall -q .
 RUN python manage.py collectstatic --noinput
 
 RUN useradd --create-home --uid 10001 appuser \
