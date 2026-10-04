@@ -13,7 +13,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q, F
+from django.db.models import Count, Q
 from django.conf import settings
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
@@ -2092,12 +2092,22 @@ def _workspace_payload(ws):
 
 
 def _persist_workspace_files(ws, files, active_file=None):
-    """Persist Explorer state through the model's revision-aware save()."""
+    """Persist the virtual IDE filesystem while the workspace row is locked."""
+    next_revision = int(ws.revision or 0) + 1
+    values = {
+        "files": dict(files),
+        "revision": next_revision,
+        "updated_at": timezone.now(),
+    }
+    if active_file is not None:
+        values["active_file"] = str(active_file)
+    updated = CodeWorkspace.objects.filter(pk=ws.pk).update(**values)
+    if updated != 1:
+        raise DatabaseError("Workspace disappeared while saving IDE files.")
     ws.files = dict(files)
     if active_file is not None:
         ws.active_file = str(active_file)
-    ws.save(update_fields={"files", "active_file"})
-    ws.refresh_from_db(fields=["files", "active_file", "revision", "updated_at"])
+    ws.revision = next_revision
     return ws
 
 @api_view(["GET"])
