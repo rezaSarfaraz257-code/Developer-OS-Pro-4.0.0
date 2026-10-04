@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 from fastapi import HTTPException
 
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
@@ -18,18 +19,22 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_blocks_dangerous_commands(self):
         for command in ("rm -rf /", "docker ps", "curl https://example.com", "kill 1"):
             with self.assertRaises(HTTPException):
-                run_command(__import__("pathlib").Path("/tmp"), command)
+                run_command(Path("/tmp"), command)
 
+    def test_container_native_execution_policy_is_available_without_nested_sandbox(self):
+        with patch("main.SANDBOX_MODE", "container"), patch("main.shutil.which", return_value=None):
+            command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+            self.assertEqual(command[:2], ["bash", "-lc"])
 
-    def test_untrusted_execution_fails_closed_without_sandbox(self):
-        with patch("main.shutil.which", return_value=None):
+    def test_bubblewrap_mode_fails_closed_when_unavailable(self):
+        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value=None):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(__import__("pathlib").Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
 
-    def test_installer_can_request_network_without_disabling_sandbox(self):
-        with patch("main.shutil.which", return_value="/usr/bin/bwrap"):
-            command = _sandbox_command(__import__("pathlib").Path("/tmp"), "npm install react", allow_network=True)
+    def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
+        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"):
+            command = _sandbox_command(Path("/tmp"), "npm install react", allow_network=True)
             self.assertNotIn("--unshare-net", command)
 
     def test_capability_manifest_is_machine_readable(self):
@@ -50,7 +55,7 @@ class RunnerSecurityTests(unittest.TestCase):
 
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
-            run_command(__import__("pathlib").Path("/tmp"), "x" * (MAX_COMMAND + 1))
+            run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
 
 
 if __name__ == "__main__":
