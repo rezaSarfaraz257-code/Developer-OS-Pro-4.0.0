@@ -232,6 +232,16 @@ def _runtime_info():
         "python": ["python", "python3"],
         "node": ["node"],
         "npm": ["npm"],
+        "go": ["go"],
+        "rust": ["rustc"],
+        "cargo": ["cargo"],
+        "java": ["java"],
+        "javac": ["javac"],
+        "php": ["php"],
+        "ruby": ["ruby"],
+        "perl": ["perl"],
+        "gcc": ["gcc"],
+        "g++": ["g++"],
         "git": ["git"],
         "bash": ["bash"],
     }
@@ -251,6 +261,28 @@ def _runtime_info():
         runtimes[name] = {"available": bool(executable), "version": version}
     return runtimes
 
+LANGUAGE_PROFILES = {
+    "python": {"extensions":["py"],"runtime":"python","run":"python {file}","debug":False},
+    "javascript": {"extensions":["js","mjs","cjs"],"runtime":"node","run":"node {file}","debug":False},
+    "typescript": {"extensions":["ts"],"runtime":"node","run":"npx tsx {file}","debug":False},
+    "tsx": {"extensions":["tsx"],"runtime":"node","run":"npx tsx {file}","debug":False},
+    "jsx": {"extensions":["jsx"],"runtime":"node","run":"node {file}","debug":False},
+    "go": {"extensions":["go"],"runtime":"go","run":"go run {file}","debug":False},
+    "rust": {"extensions":["rs"],"runtime":"rustc","run":"rustc {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
+    "java": {"extensions":["java"],"runtime":"java","run":"javac {file} && java {basename}","debug":False},
+    "c": {"extensions":["c"],"runtime":"gcc","run":"gcc {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
+    "cpp": {"extensions":["cc","cpp","cxx","hpp"],"runtime":"g++","run":"g++ {file} -o /tmp/developer_os_bin && /tmp/developer_os_bin","debug":False},
+    "php": {"extensions":["php"],"runtime":"php","run":"php {file}","debug":False},
+    "ruby": {"extensions":["rb"],"runtime":"ruby","run":"ruby {file}","debug":False},
+    "perl": {"extensions":["pl","pm"],"runtime":"perl","run":"perl {file}","debug":False},
+    "shell": {"extensions":["sh","bash"],"runtime":"bash","run":"bash {file}","debug":False},
+    "html": {"extensions":["html","htm"],"runtime":None,"run":None,"debug":False},
+    "css": {"extensions":["css"],"runtime":None,"run":None,"debug":False},
+    "json": {"extensions":["json"],"runtime":None,"run":None,"debug":False},
+    "yaml": {"extensions":["yml","yaml"],"runtime":None,"run":None,"debug":False},
+    "markdown": {"extensions":["md","markdown"],"runtime":None,"run":None,"debug":False},
+}
+
 def _capability_manifest():
     """Stable control-plane contract consumed by the Django IDE."""
     container_native = SANDBOX_MODE == "container"
@@ -265,6 +297,13 @@ def _capability_manifest():
             "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
         },
         "runtimes": _runtime_info(),
+        "languages": {
+            name: {
+                **profile,
+                "available": bool(profile.get("runtime") is None or _runtime_info().get(profile["runtime"], {}).get("available"))
+            }
+            for name, profile in LANGUAGE_PROFILES.items()
+        },
         "limits": {
             "timeout_seconds": TIMEOUT,
             "max_concurrent": MAX_CONCURRENT,
