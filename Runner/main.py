@@ -7,7 +7,7 @@ from package_engine import capabilities as package_capabilities, plan_response a
 from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
-from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview
+from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview, definitions as symbol_definitions, hover as symbol_hover, completion as symbol_completion
 
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
@@ -589,6 +589,7 @@ class SymbolRequest(Workspace):
     name: str = ""
     old: str = ""
     new: str = ""
+    line: int = 0
 
 @app.post("/symbols")
 def symbols_api(payload: SymbolRequest, authorization: str = Header(default="")):
@@ -603,6 +604,12 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
             return {"references": symbol_references(root, payload.name, payload.path)}
         if payload.action == "rename_preview":
             return {"preview": symbol_rename_preview(root, payload.old, payload.new, payload.path)}
+        if payload.action == "definitions":
+            return {"definitions": symbol_definitions(root, payload.name, payload.path)}
+        if payload.action == "hover":
+            return {"hover": symbol_hover(root, payload.name, payload.path, payload.line)}
+        if payload.action == "completion":
+            return {"completions": symbol_completion(root, payload.query, payload.path)}
         raise HTTPException(status_code=400, detail="Unsupported symbol action.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
