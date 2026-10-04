@@ -407,6 +407,53 @@ class PlatformUpgradeTests(APITestCase):
         self.assertTrue(response.data["key"].startswith("dos_live_"))
         self.assertNotIn("key_hash", response.data["record"])
 
+class IDECollaborationRegressionTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="collab-user", password="long-test-password-123")
+        self.client.force_authenticate(user=self.user)
+        self.workspace = __import__("api.models", fromlist=["CodeWorkspace"]).CodeWorkspace.objects.create(
+            owner=self.user, name="Collab", files={"main.py": "print(1)"}, active_file="main.py"
+        )
+
+    def test_websocket_patch_rejects_stale_revision_without_overwrite(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        ws = self.workspace
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = ws
+        consumer.user = self.user
+        consumer.client_id = "client-a"
+        result = consumer._apply_patch({
+            "path": "main.py", "content": "print(2)", "base_revision": ws.revision, "client_id": "client-a"
+        })
+        self.assertEqual(result["type"], "patch-ack")
+        ws.refresh_from_db()
+        stale = consumer._apply_patch({
+            "path": "main.py", "content": "print(3)", "base_revision": ws.revision - 1, "client_id": "client-b"
+        })
+        self.assertEqual(stale["type"], "conflict")
+        self.assertEqual(stale["reason"], "stale_revision")
+        ws.refresh_from_db()
+        self.assertEqual(ws.files["main.py"], "print(2)")
+
+    def test_crdt_operation_is_idempotent(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        ws = self.workspace
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = ws
+        consumer.user = self.user
+        consumer.client_id = "client-crdt"
+        payload = {
+            "path": "main.py", "operation_id": "op-unique-1", "kind": "insert",
+            "position": 7, "delete_count": 0, "text": " # ok", "lamport": 1, "actor_id": "client-crdt"
+        }
+        first = consumer._apply_crdt_operation(payload)
+        second = consumer._apply_crdt_operation(payload)
+        self.assertEqual(first["type"], "crdt-ack")
+        self.assertFalse(first.get("duplicate", False))
+        self.assertTrue(second.get("duplicate", False))
+        ws.refresh_from_db()
+        self.assertEqual(ws.files["main.py"], "print(1) # ok")
+
 class SaaSMaturityTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="saas-user", email="saas@example.test", password="long-test-password-123")
