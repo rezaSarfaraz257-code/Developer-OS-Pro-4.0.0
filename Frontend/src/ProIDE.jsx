@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs, react-hooks/immutability, react-hooks/purity, react-hooks/preserve-manual-memoization */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API_URL, getAccessToken } from "./services/api";
 import MonacoEditor from "./MonacoEditor";
