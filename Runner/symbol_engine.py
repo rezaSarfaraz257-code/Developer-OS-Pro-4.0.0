@@ -4,7 +4,7 @@ The index is static-analysis only: it never imports or executes workspace code.
 Python uses the stdlib AST; JS/TS uses conservative lexical extraction.
 """
 from __future__ import annotations
-import ast,re
+import ast,re\nimport difflib
 from pathlib import Path
 
 IGNORED={".git","node_modules",".venv","venv","dist","build","__pycache__"}
@@ -119,3 +119,39 @@ def completion(root, query="", path=""):
         seen.add(n); out.append({"label":n,"kind":s.get("kind","variable"),"detail":s.get("kind","symbol")+" · "+s.get("path",""),"line":s.get("line",1)})
         if len(out)>=200: break
     return out[:200]
+
+def rename_diff(root, old, new, path=""):
+    preview=rename_preview(root, old, new, path)
+    root=Path(root).resolve()
+    for change in preview["changes"]:
+        target=root/change["path"]
+        try:
+            before=target.read_text(encoding="utf-8").splitlines(keepends=True)
+        except (OSError,UnicodeDecodeError):
+            before=[]
+        after=change["content"].splitlines(keepends=True)
+        change["diff"]="".join(difflib.unified_diff(before, after, fromfile=change["path"], tofile=change["path"]))
+    return preview
+
+
+def code_actions(root, path="", line=0):
+    root=Path(root).resolve()
+    actions=[]
+    if path:
+        try:
+            text=(root/safe_rel_local(path)).read_text(encoding="utf-8")
+        except Exception:
+            text=""
+        if path.endswith(".py"):
+            try:
+                ast.parse(text, filename=path)
+            except SyntaxError as exc:
+                actions.append({"title":"Review Python syntax error","kind":"quickfix","diagnostic":{"message":exc.msg,"line":exc.lineno or 1,"column":exc.offset or 1}})
+    return actions[:50]
+
+
+def safe_rel_local(path):
+    raw=str(path).replace("\\","/")
+    if not raw or raw.startswith("/") or ".." in raw.split("/"):
+        raise ValueError("unsafe path")
+    return raw
