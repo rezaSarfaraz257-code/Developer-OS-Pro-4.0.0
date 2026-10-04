@@ -41,7 +41,7 @@ def _js_symbols(text,rel):
     out=[]
     for m in JS_DECL.finditer(text):
         line=text.count("\n",0,m.start())+1; col=m.start()-text.rfind("\n",0,m.start())
-        kind="function" if text[m.start():].startswith("function") else "class" if text[m.start():].startswith("class") else "variable"
+        kind="function" if text[m.start():].startswith("function") or (m.group(0).startswith(("const ","let ","var ")) and re.match(r"\s*=>", text[m.end():])) else "class" if text[m.start():].startswith("class") else "variable"
         out.append({"name":m.group(1),"kind":kind,"path":rel,"line":line,"column":col})
     return out
 
