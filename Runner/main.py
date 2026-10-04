@@ -2,7 +2,7 @@ import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field\nfrom package_engine import capabilities as package_capabilities, plan_response as package_plan_response
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -315,7 +315,7 @@ def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     return {"files": snapshot(safe_workspace(payload.workspace_id))}
 
-@app.post("/install")
+@app.get("/packages/capabilities")\ndef package_capabilities_api(authorization: str = Header(default="")):\n    auth(authorization)\n    return package_capabilities()\n\n@app.post("/packages/plan")\ndef package_plan_api(payload: Workspace, authorization: str = Header(default="")):\n    auth(authorization)\n    try:\n        return package_plan_response(payload.files or {}, str(getattr(payload, "action", "") or "install"))\n    except (ValueError, TypeError) as exc:\n        raise HTTPException(status_code=400, detail=str(exc)[:500])\n\n@app.post("/install")
 def install(payload: InstallRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
