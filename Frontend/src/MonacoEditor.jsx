@@ -61,6 +61,20 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  };
  registerP1();
  const p1Diagnostics=ed.createDecorationsCollection([]);
+ const applyLspDiagnostics=(payload)=>{
+   const notes=payload?.notifications||[];
+   for(const n of notes){
+     if(n?.method!=="textDocument/publishDiagnostics")continue;
+     const uri=n.params?.uri||"";
+     const current=ed.getModel();
+     if(!current||current.uri.toString()!==uri)continue;
+     const marks=(n.params?.diagnostics||[]).map(x=>({severity:x.severity===1?monaco.MarkerSeverity.Error:x.severity===2?monaco.MarkerSeverity.Warning:x.severity===3?monaco.MarkerSeverity.Info:monaco.MarkerSeverity.Hint,message:x.message||"Diagnostic",startLineNumber:x.range.start.line+1,startColumn:x.range.start.character+1,endLineNumber:x.range.end.line+1,endColumn:x.range.end.character+1,source:x.source||"LSP",code:x.code||""}));
+     monaco.editor.setModelMarkers(current,"lsp",marks);
+   }
+ };
+ const lspRequestWithDiagnostics=async(method,params={},languageOverride=null)=>{
+   const data=await lspRequest(method,params,languageOverride); applyLspDiagnostics(data); return data;
+ };
  const refreshP1Diagnostics=async()=>{if(!workspaceId)return;const d=await request("diagnostics",{});const markers=(d.diagnostics||[]).filter(x=>x.path===pathRef.current).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));monaco.editor.setModelMarkers(ed.getModel(),"developer-os",markers);p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));};
  refreshP1Diagnostics();
  const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",keybindings:[monaco.KeyCode.F2],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
@@ -68,7 +82,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  let lspVersion=1,lspTimer=null;
  const syncOpen=()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequest("textDocument/didOpen",{textDocument:{uri:m.uri.toString(),languageId:lang(pathRef.current),version:lspVersion,text:m.getValue()}});};
  syncOpen();
- const c=ed.onDidChangeModelContent(()=>{change.current?.(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequest("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
+ const c=ed.onDidChangeModelContent(()=>{change.current?.(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
  const p=ed.onDidChangeCursorPosition(e=>cursor.current?.({line:e.position.lineNumber,column:e.position.column,path:pathRef.current}));
  const format=ed.addAction({id:"developer-os.format-document",label:"Developer OS: Format Document",keybindings:[monaco.KeyMod.Shift|monaco.KeyMod.Alt|monaco.KeyCode.KeyF],run:async e=>{try{await e.getAction("editor.action.formatDocument")?.run()}catch{return}}});
  const explain=ed.addAction({id:"developer-os.explain-selection",label:"Developer OS: Explain Selection",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyE],run:e=>{const s=e.getSelection();const text=s?e.getModel()?.getValueInRange(s):"";window.dispatchEvent(new CustomEvent("developer-os:ai-action",{detail:{action:"explain",path:pathRef.current,code:text||e.getValue()}}));}});
