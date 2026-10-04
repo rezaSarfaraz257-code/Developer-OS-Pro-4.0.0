@@ -24,4 +24,4 @@ RUN useradd --create-home --uid 10001 appuser \
 USER appuser
 
 # Render supplies PORT; Docker Compose keeps the existing 8000 default.
-CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn x.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && exec uvicorn x.asgi:application --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} -"]
