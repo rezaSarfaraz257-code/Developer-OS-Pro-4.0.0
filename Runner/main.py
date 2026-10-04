@@ -2,7 +2,8 @@ import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
-from pydantic import BaseModel, Field\nfrom package_engine import capabilities as package_capabilities, plan_response as package_plan_response
+from pydantic import BaseModel, Field
+from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -43,6 +44,13 @@ class ExecRequest(Workspace):
 
 class InstallRequest(ExecRequest):
     framework: str = ""
+    package_manager: str = ""
+    action: str = "install"
+    package: str = ""
+
+class PackagePlanRequest(Workspace):
+    action: str = "install"
+    package: str = ""
     package_manager: str = ""
 
 def auth(value):
@@ -178,3 +186,388 @@ def run_command(root, command, *, allow_network=False):
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
+        "npm_config_cache": str(root / ".npm-cache"),
+        "PIP_CACHE_DIR": str(root / ".pip-cache"),
+        "PYTHONUNBUFFERED": "1",
+        "BASH_ENV": "/dev/null",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "npm_config_update_notifier": "false",
+    }
+    (root / ".home").mkdir(exist_ok=True)
+    os.umask(0o077)
+    started = time.monotonic()
+    acquired = EXEC_SEMAPHORE.acquire(timeout=5)
+    if not acquired:
+        raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
+    try:
+        with _workspace_lock(root.name):
+            proc = subprocess.run(
+                _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
+                capture_output=True, text=True, timeout=TIMEOUT,
+                start_new_session=True,
+                preexec_fn=_limit_process_resources,
+            )
+            return {
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout[-MAX_OUTPUT:],
+            "stderr": proc.stderr[-MAX_OUTPUT:],
+            "duration_ms": int((time.monotonic()-started)*1000),
+            "files": snapshot(root),
+        }
+    except subprocess.TimeoutExpired as exc:
+        # Kill the entire process group so timed-out dev servers/child processes
+        # cannot survive the request and consume the shared runner.
+        try:
+            if "proc" in locals() and proc.pid:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        return {
+            "exit_code": 124,
+            "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
+            "stderr": f"Execution timed out after {TIMEOUT} seconds.",
+            "duration_ms": int((time.monotonic()-started)*1000),
+            "files": snapshot(root),
+        }
+    finally:
+        EXEC_SEMAPHORE.release()
+
+def _runtime_info():
+    """Expose deterministic runtime capabilities to the IDE without exposing host details."""
+    candidates = {
+        "python": ["python", "python3"],
+        "node": ["node"],
+        "npm": ["npm"],
+        "git": ["git"],
+        "bash": ["bash"],
+    }
+    runtimes = {}
+    for name, commands in candidates.items():
+        executable = next((shutil.which(c) for c in commands if shutil.which(c)), None)
+        version = ""
+        if executable:
+            try:
+                probe = subprocess.run(
+                    [executable, "--version"], capture_output=True, text=True, timeout=2,
+                    env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+                )
+                version = (probe.stdout or probe.stderr).strip().splitlines()[0][:120]
+            except Exception:
+                version = "available"
+        runtimes[name] = {"available": bool(executable), "version": version}
+    return runtimes
+
+def _capability_manifest():
+    """Stable control-plane contract consumed by the Django IDE."""
+    container_native = SANDBOX_MODE == "container"
+    return {
+        "service": "developer-os-runner",
+        "api_version": "1",
+        "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
+        "sandbox": {
+            "backend": SANDBOX_MODE,
+            "mode": "container-native" if container_native else "bubblewrap",
+            "process_boundary": True,
+            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
+        },
+        "runtimes": _runtime_info(),
+        "limits": {
+            "timeout_seconds": TIMEOUT,
+            "max_concurrent": MAX_CONCURRENT,
+            "max_files": MAX_FILES,
+            "max_file_bytes": MAX_FILE,
+            "max_workspace_bytes": MAX_WORKSPACE_BYTES,
+            "max_command_bytes": MAX_COMMAND,
+            "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
+            "max_process_output_bytes": MAX_PROCESS_OUTPUT,
+        },
+        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": False},
+    }
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "developer-os-runner",
+        "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
+        "sandbox_backend": SANDBOX_MODE,
+        "bubblewrap_available": bool(shutil.which("bwrap")),
+        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
+        "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
+        "runtimes": _runtime_info(),
+        "capabilities_version": "1",
+        "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
+    }
+
+@app.get("/capabilities")
+def capabilities(authorization: str = Header(default="")):
+    """IDE capability handshake used before execution/install/preview operations."""
+    auth(authorization)
+    return _capability_manifest()
+
+@app.post("/sync")
+def sync(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    # Keep dependency directories, but replace source tree so the database is the source of truth.
+    for child in root.iterdir():
+        if child.name not in {".npm-cache", ".pip-cache", ".home", "node_modules", ".venv"}:
+            shutil.rmtree(child) if child.is_dir() else child.unlink()
+    write_snapshot(root, payload.files)
+    return {"status": "synced", "files": snapshot(root)}
+
+@app.post("/snapshot")
+def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    return {"files": snapshot(safe_workspace(payload.workspace_id))}
+
+@app.get("/packages/capabilities")
+def package_capabilities_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return package_capabilities()
+
+@app.post("/packages/plan")
+def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return package_plan_response(payload.files or {}, payload.action, payload.package, payload.package_manager)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.post("/install")
+def install(payload: InstallRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    # Package/framework provisioning is the only runner operation allowed to
+    # use egress. Normal user execution remains network-isolated by default.
+    result = run_command(root, payload.command, allow_network=True)
+    return result
+
+@app.post("/exec")
+def execute(payload: ExecRequest, authorization: str = Header(default="")):
+    """Execute one isolated command with API-safe error responses."""
+    auth(authorization)
+    try:
+        root = safe_workspace(payload.workspace_id)
+        files = payload.files or {}
+        if not isinstance(files, dict):
+            raise HTTPException(status_code=400, detail="Workspace files must be an object.")
+        write_snapshot(root, files)
+        return run_command(root, payload.command)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Runner execution timed out.")
+    except Exception as exc:
+        # Never leak stack traces or internal paths to the API consumer.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Runner execution failed: {exc.__class__.__name__}",
+        )
+
+# ---------------------------------------------------------------------------
+# CLOUD IDE RUNTIME: process lifecycle, Git operations and preview services
+# ---------------------------------------------------------------------------
+PROCESS_LOCK = threading.RLock()
+PROCESSES = {}
+PROCESS_SEQ = 0
+PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
+PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
+MAX_PROCESSES_PER_WORKSPACE = 4
+MAX_PROCESS_OUTPUT = 200_000
+
+def _process_output_reader(pid, stream_name, stream):
+    try:
+        for line in iter(stream.readline, ""):
+            if not line:
+                break
+            with PROCESS_LOCK:
+                item = PROCESSES.get(pid)
+                if not item:
+                    break
+                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+def _start_process(root, command, *, allow_network=False, env_extra=None):
+    global PROCESS_SEQ
+    command = str(command or "").strip()
+    if not command or len(command) > MAX_COMMAND or "\x00" in command:
+        raise HTTPException(status_code=400, detail="Invalid process command.")
+    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
+        raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
+    with PROCESS_LOCK:
+        active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
+        if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
+            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
+        PROCESS_SEQ += 1
+        process_id = str(PROCESS_SEQ)
+    env = {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HOME": str(root / ".home"),
+        "npm_config_cache": str(root / ".npm-cache"),
+        "PIP_CACHE_DIR": str(root / ".pip-cache"),
+        "PYTHONUNBUFFERED": "1",
+        "BASH_ENV": "/dev/null",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "npm_config_update_notifier": "false",
+    }
+    if env_extra:
+        for key, value in dict(env_extra).items():
+            if re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", str(key)) and len(str(value)) <= 4000:
+                env[str(key)] = str(value)
+    (root / ".home").mkdir(exist_ok=True)
+    argv = _sandbox_command(root, command, allow_network=allow_network)
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1, start_new_session=True, preexec_fn=_limit_process_resources,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
+    with PROCESS_LOCK:
+        PROCESSES[process_id] = {
+            "id": process_id, "workspace_id": root.name, "command": command,
+            "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
+            "kind": "process",
+        }
+    threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
+    threading.Thread(target=_process_output_reader, args=(process_id, "stderr", proc.stderr), daemon=True).start()
+    return process_id
+
+def _process_state(pid):
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        proc = item["popen"]
+        code = proc.poll()
+        state = "running" if code is None else ("success" if code == 0 else "failed")
+        return {
+            "id": item["id"], "workspace_id": item["workspace_id"], "command": item["command"],
+            "status": state, "exit_code": code,
+            "stdout": item.get("stdout", "")[-MAX_PROCESS_OUTPUT:],
+            "stderr": item.get("stderr", "")[-MAX_PROCESS_OUTPUT:],
+            "duration_ms": int((time.time() - item["started_at"]) * 1000),
+            "started_at": item["started_at"],
+        }
+
+def _stop_process(pid):
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        proc = item["popen"]
+        if proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+        return _process_state(pid)
+
+def _workspace_preview_port(workspace_id):
+    return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
+
+def _git_run(root, args):
+    if not isinstance(args, list) or not args:
+        raise HTTPException(status_code=400, detail="Invalid Git request.")
+    allowed = {"status", "diff", "branch", "log", "add", "reset", "commit", "rev-parse", "init", "checkout"}
+    if args[0] not in allowed:
+        raise HTTPException(status_code=400, detail="Git operation is not allowed.")
+    if any("\x00" in str(x) or len(str(x)) > 500 for x in args):
+        raise HTTPException(status_code=400, detail="Invalid Git argument.")
+    if args[0] == "commit" and "-m" in args:
+        idx = args.index("-m")
+        if idx + 1 >= len(args) or not str(args[idx + 1]).strip():
+            raise HTTPException(status_code=400, detail="Commit message is required.")
+    command = "git " + " ".join(shlex.quote(str(x)) for x in args)
+    result = run_command(root, command, allow_network=False)
+    return result
+
+@app.post("/process/start")
+def process_start(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    pid = _start_process(root, payload.command)
+    return _process_state(pid)
+
+@app.get("/process/{pid}")
+def process_get(pid: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _process_state(pid)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
+    return state
+
+@app.post("/process/{pid}/stop")
+def process_stop(pid: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _process_state(pid)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
+    return _stop_process(pid)
+
+@app.get("/processes")
+def process_list(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        ids = [p["id"] for p in PROCESSES.values() if p["workspace_id"] == str(workspace_id)]
+    return {"processes": [_process_state(pid) for pid in ids]}
+
+@app.post("/git")
+def git_api(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    try:
+        args = json.loads(payload.command)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Git payload command must be a JSON array.")
+    if not args or not isinstance(args, list):
+        raise HTTPException(status_code=400, detail="Git arguments required.")
+    return _git_run(root, args)
+
+@app.post("/preview/start")
+def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    port = _workspace_preview_port(payload.workspace_id)
+    command = str(payload.command or "").strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="Preview command is required.")
+    # The command is supplied by a trusted framework preset on the API side.
+    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
+        raise HTTPException(status_code=400, detail="Preview command blocked.")
+    pid = _start_process(root, command + f" --port {port}" if "--port" not in command and "runserver" not in command else command, allow_network=False, env_extra={"PORT": str(port)})
+    return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
+
+@app.get("/preview/{workspace_id}/{path:path}")
+def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
+    auth(authorization)
+    port = _workspace_preview_port(workspace_id)
+    # This endpoint is intentionally internal; Django owns the public proxy.
+    try:
+        response = requests.get(f"http://127.0.0.1:{port}/{path}", timeout=10)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
+    return Response(content=response.content, status_code=response.status_code, headers={"Content-Type": response.headers.get("content-type", "text/plain")})
+
