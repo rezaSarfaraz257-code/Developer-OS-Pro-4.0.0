@@ -30,7 +30,8 @@ export default function EngineeringControlPlane({workspace,files,onClose,onStatu
       setBuildPlan(d); setOutput(JSON.stringify(d,null,2)); onStatus?.("Build plan ready");
     }catch(e){setOutput(e.message);onStatus?.("Build planning failed")}
     finally{setBusy(false)}
-  }\n  async function executeBuild(){
+  }
+  async function executeBuild(){
     if(!workspace||buildBusy)return;
     setBuildBusy(true); setOutput("Secure Build Engine → syncing workspace → compiling → collecting artifacts…");
     try{
