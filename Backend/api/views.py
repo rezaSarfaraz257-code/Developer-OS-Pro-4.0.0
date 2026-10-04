@@ -2415,6 +2415,20 @@ def ide_lsp_api(request, pk):
     return Response(data)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def ide_format_api(request, pk):
+    ws = _workspace_for_user(pk, request.user)
+    path = str(request.data.get("path") or "").strip()
+    content = request.data.get("content")
+    if not path or not isinstance(content, str):
+        return Response({"error": "path and content are required."}, status=400)
+    payload = {**_workspace_payload(ws), "files": {"__path__": path, "__content__": content}}
+    data, error = _runner_request("POST", "/format", payload, timeout=12)
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def ide_lsp_notifications_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     language = str(request.data.get("language") or "python").strip().lower()
