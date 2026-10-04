@@ -9,6 +9,7 @@ from environment_engine import plan as environment_plan
 from debug_engine import capability as debug_capability, handle as debug_handle
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
+from observability_engine import record as observability_record, snapshot as observability_snapshot
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
@@ -625,6 +626,11 @@ class AIRequest(Workspace):
     goal: str = ""
     active_file: str = ""
     paths: list = Field(default_factory=list)
+
+@app.get("/observability")
+def observability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return observability_snapshot()
 
 @app.post("/ai/engineering/plan")
 def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
