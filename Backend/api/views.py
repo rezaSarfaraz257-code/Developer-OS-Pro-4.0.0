@@ -2174,18 +2174,30 @@ def ide_workspace_files_api(request, pk):
     if path in files and action == "create":
         return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
 
-    # Persist the file first. Runner synchronization is best-effort and must
-    # never turn a successful database write into a generic HTTP 500.
-    files[path] = content
-    serializer = CodeWorkspaceSerializer(
-        ws,
-        data={"files": files, "active_file": path},
-        partial=True,
-        context={"request": request},
-    )
+    # Validate the mutation before touching the database. This endpoint is
+    # deliberately independent from the Runner: a Runner outage must never
+    # make Explorer file creation fail.
+    if len(path) > 500:
+        return Response({"error": "File path is too long.", "code": "invalid_path"}, status=400)
+    content_bytes = len(content.encode("utf-8"))
+    if content_bytes > 1_000_000:
+        return Response({"error": "Each text file must be 1 MB or smaller.", "code": "file_too_large"}, status=413)
+    projected = dict(files)
+    projected[path] = content
+    total_bytes = sum(len(str(value).encode("utf-8")) for value in projected.values())
+    if len(projected) > 2000:
+        return Response({"error": "A workspace can contain at most 2,000 source files.", "code": "file_limit"}, status=413)
+    if total_bytes > 50_000_000:
+        return Response({"error": "Workspace source must be 50 MB or smaller.", "code": "workspace_too_large"}, status=413)
+
+    # Persist directly on the locked workspace. Using the model here avoids
+    # serializer-side mutation surprises and keeps revision handling in the
+    # CodeWorkspace.save() implementation.
     try:
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
+        ws.files = projected
+        ws.active_file = path
+        ws.save(update_fields={"files", "active_file"})
+        ws.refresh_from_db(fields=["files", "active_file", "revision", "updated_at"])
     except (DatabaseError, IntegrityError) as exc:
         logger.exception("IDE file persistence failed: workspace=%s path=%s", ws.pk, path)
         return Response(
@@ -2193,9 +2205,9 @@ def ide_workspace_files_api(request, pk):
             status=503,
         )
     except Exception as exc:
-        logger.exception("Unexpected IDE file creation failure: workspace=%s path=%s", ws.pk, path)
+        logger.exception("Unexpected IDE file persistence failure: workspace=%s path=%s", ws.pk, path)
         return Response(
-            {"error": "File could not be created.", "code": "file_creation_error", "details": str(exc)[:500]},
+            {"error": "File could not be created.", "code": "file_creation_error"},
             status=503,
         )
 
