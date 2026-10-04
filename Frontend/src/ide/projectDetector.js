@@ -48,3 +48,54 @@ export function detectProject(files={}){
 }
 
 export function detectFileContext(path,files={}){const id=detectLanguage(path);return {language:id,profile:LANGUAGE_REGISTRY[id]||LANGUAGE_REGISTRY.plaintext,project:detectProject(files)};}
+
+
+// LSP capability routing. This is intentionally declarative: actual language-server
+// processes are provisioned by the future backend orchestrator, while the IDE can
+// already make deterministic routing decisions without pretending a server exists.
+export const LSP_PROFILES = Object.freeze({
+  javascript:{server:"typescript-language-server",languageId:"javascript",transport:"stdio",priority:"core"},
+  typescript:{server:"typescript-language-server",languageId:"typescript",transport:"stdio",priority:"core"},
+  jsx:{server:"typescript-language-server",languageId:"javascriptreact",transport:"stdio",priority:"core"},
+  tsx:{server:"typescript-language-server",languageId:"typescriptreact",transport:"stdio",priority:"core"},
+  python:{server:"pyright-langserver",languageId:"python",transport:"stdio",priority:"core"},
+  go:{server:"gopls",languageId:"go",transport:"stdio",priority:"core"},
+  rust:{server:"rust-analyzer",languageId:"rust",transport:"stdio",priority:"core"},
+  c:{server:"clangd",languageId:"c",transport:"stdio",priority:"extended"},
+  cpp:{server:"clangd",languageId:"cpp",transport:"stdio",priority:"extended"},
+  java:{server:"jdtls",languageId:"java",transport:"stdio",priority:"extended"},
+  php:{server:"intelephense",languageId:"php",transport:"stdio",priority:"extended"},
+  ruby:{server:"ruby-lsp",languageId:"ruby",transport:"stdio",priority:"extended"},
+  csharp:{server:"OmniSharp",languageId:"csharp",transport:"stdio",priority:"extended"},
+});
+
+export function lspProfileForLanguage(language){
+  return LSP_PROFILES[language] || null;
+}
+
+export function buildLSPPlan(files={}){
+  const project=detectProject(files);
+  const plans=[];
+  for(const entry of project.languages){
+    const profile=lspProfileForLanguage(entry.id);
+    if(!profile) continue;
+    plans.push({
+      language:entry.id,
+      files:entry.files,
+      server:profile.server,
+      languageId:profile.languageId,
+      transport:profile.transport,
+      priority:profile.priority,
+      workspaceRoot:".",
+      state:"planned",
+    });
+  }
+  return {
+    workspaceRoot:".",
+    projectType:project.projectType,
+    framework:project.frameworks[0]?.id||null,
+    servers:plans,
+    strategy:plans.length>1?"multi-server":"single-server",
+    lifecycle:"on-demand",
+  };
+}
