@@ -631,6 +631,32 @@ class SymbolRequest(Workspace):
     new: str = ""
     line: int = 0
 
+def _format_source(path, source):
+    """Safe best-effort formatter using installed toolchains when available."""
+    ext=str(path).rsplit(".",1)[-1].lower() if "." in str(path) else ""
+    if ext=="py":
+        try:
+            import black
+            return black.format_file_contents(source, fast=False, mode=black.Mode())
+        except Exception:
+            return source
+    if ext in {"js","jsx","ts","tsx","json","css","scss","html"}:
+        try:
+            proc=subprocess.run(["npx","--no-install","prettier","--stdin-filepath",str(path)],input=source,text=True,capture_output=True,cwd=str(safe_workspace("format")) if False else None,timeout=8)
+            if proc.returncode==0:return proc.stdout
+        except Exception: pass
+    return source
+
+@app.post("/format")
+def format_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    path=str((payload.files or {}).get("__path__") or "").strip()
+    source=str((payload.files or {}).get("__content__") or "")
+    if not path or len(source)>1_000_000:
+        raise HTTPException(status_code=400,detail="Invalid formatting payload.")
+    return {"path":path,"content":_format_source(path,source),"changed":_format_source(path,source)!=source}
+
 @app.post("/symbols")
 def symbols_api(payload: SymbolRequest, authorization: str = Header(default="")):
     auth(authorization)
