@@ -251,6 +251,33 @@ def _runtime_info():
         runtimes[name] = {"available": bool(executable), "version": version}
     return runtimes
 
+def _capability_manifest():
+    """Stable control-plane contract consumed by the Django IDE."""
+    container_native = SANDBOX_MODE == "container"
+    return {
+        "service": "developer-os-runner",
+        "api_version": "1",
+        "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
+        "sandbox": {
+            "backend": SANDBOX_MODE,
+            "mode": "container-native" if container_native else "bubblewrap",
+            "process_boundary": True,
+            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
+        },
+        "runtimes": _runtime_info(),
+        "limits": {
+            "timeout_seconds": TIMEOUT,
+            "max_concurrent": MAX_CONCURRENT,
+            "max_files": MAX_FILES,
+            "max_file_bytes": MAX_FILE,
+            "max_workspace_bytes": MAX_WORKSPACE_BYTES,
+            "max_command_bytes": MAX_COMMAND,
+            "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
+            "max_process_output_bytes": MAX_PROCESS_OUTPUT,
+        },
+        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": False},
+    }
+
 @app.get("/health")
 def health():
     return {
@@ -259,31 +286,18 @@ def health():
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
-        "network_policy": "isolated-by-default",
+        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
         "runtimes": _runtime_info(),
-        "version": os.environ.get("RELEASE_VERSION", "3.1.0"),
+        "capabilities_version": "1",
+        "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
     }
 
 @app.get("/capabilities")
 def capabilities(authorization: str = Header(default="")):
     """IDE capability handshake used before execution/install/preview operations."""
     auth(authorization)
-    return {
-        "service": "developer-os-runner",
-        "api_version": "1",
-        "sandbox": SANDBOX_MODE,
-        "network": "provisioning-only" if ALLOW_NETWORK else "isolated-by-default",
-        "limits": {
-            "timeout_seconds": TIMEOUT,
-            "max_concurrent": MAX_CONCURRENT,
-            "max_files": MAX_FILES,
-            "max_file_bytes": MAX_FILE,
-            "max_workspace_bytes": MAX_WORKSPACE_BYTES,
-        },
-        "runtimes": _runtime_info(),
-        "operations": ["sync", "snapshot", "execute", "process", "git", "preview", "install"],
-    }
+    return _capability_manifest()
 
 @app.post("/sync")
 def sync(payload: Workspace, authorization: str = Header(default="")):
