@@ -159,6 +159,8 @@ def _limit_process_resources():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 def _sandbox_command(root, command, allow_network=False):
+    if allow_network and not ALLOW_NETWORK:
+        raise HTTPException(status_code=403, detail="Network access is disabled by runner policy.")
     """Return an execution command for the selected isolation backend.
 
     Render already provides the process/container boundary. Trying to create
@@ -190,12 +192,20 @@ def _sandbox_command(root, command, allow_network=False):
     ])
     return args
 
-def run_command(root, command, *, allow_network=False):
+def _validate_execution_policy(command, *, allow_network=False):
     command = str(command or "").strip()
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
         raise HTTPException(status_code=400, detail="Invalid command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
+    # Network access is opt-in and must be explicitly enabled by the runner
+    # deployment. A client cannot override a disabled network policy.
+    if allow_network and not ALLOW_NETWORK:
+        raise HTTPException(status_code=403, detail="Network access is disabled by runner policy.")
+    return command
+
+def run_command(root, command, *, allow_network=False):
+    command = _validate_execution_policy(command, allow_network=allow_network)
     # Keep the IDE contract stable on images that expose only python3.
     if re.match(r"^python(?:\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
         command = re.sub(r"^python(?=\s|$)", "python3", command, count=1)
