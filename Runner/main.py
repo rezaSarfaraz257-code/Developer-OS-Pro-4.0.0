@@ -964,6 +964,15 @@ def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorizatio
         event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
         return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
 
+@app.get("/workspace/{workspace_id}/collaboration/replay")
+def collaboration_replay(workspace_id: str, after_version: int = 0, authorization: str = Header(default="")):
+    auth(authorization)
+    if after_version < 0:
+        raise HTTPException(status_code=400, detail="after_version must be non-negative.")
+    state = _collab_state(workspace_id)
+    operations = [x for x in state["operations"] if int(x.get("version", 0)) > after_version]
+    return {"schema_version":"1","workspace_id":workspace_id,"from_version":after_version,"to_version":state["version"],"operations":operations,"has_more":False}
+
 @app.get("/workspace/{workspace_id}/collaboration")
 def collaboration_state(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
