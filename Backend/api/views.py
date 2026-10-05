@@ -2714,8 +2714,8 @@ PLAN_LIMITS = {
 }
 
 def _subscription_for(user):
-    sub, _ = Subscription.objects.get_or_create(user=user)
-    return sub
+    sub = Subscription.objects.filter(user=user).first()
+    return sub or Subscription(user=user, plan="free", status="active")
 
 def _plan_for(user):
     """Return a valid entitlement plan even if legacy subscription data is malformed."""
