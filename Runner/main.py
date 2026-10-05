@@ -847,6 +847,43 @@ def assert_ide_revision(workspace_id: str, payload: dict, authorization: str = H
         )
     return {"ok": True, "state": current}
 
+@app.get("/workspace/{workspace_id}/history")
+def workspace_history(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    return _read_history(workspace_id)
+
+@app.post("/workspace/{workspace_id}/history/undo")
+def workspace_history_undo(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(workspace_id)
+    with _workspace_lock(workspace_id):
+        history = _read_history(workspace_id)
+        cursor = int(history.get("cursor", -1))
+        nodes = history.get("nodes", [])
+        if cursor <= 0:
+            raise HTTPException(status_code=409, detail="Nothing to undo.")
+        target = nodes[cursor - 1]
+        _restore_snapshot(workspace_id, root, target["snapshot_id"])
+        history["cursor"] = cursor - 1
+        _write_history(workspace_id, history)
+        return {"status":"undone","target":target,"cursor":history["cursor"]}
+
+@app.post("/workspace/{workspace_id}/history/redo")
+def workspace_history_redo(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(workspace_id)
+    with _workspace_lock(workspace_id):
+        history = _read_history(workspace_id)
+        cursor = int(history.get("cursor", -1))
+        nodes = history.get("nodes", [])
+        if cursor + 1 >= len(nodes):
+            raise HTTPException(status_code=409, detail="Nothing to redo.")
+        target = nodes[cursor + 1]
+        _restore_snapshot(workspace_id, root, target["snapshot_id"])
+        history["cursor"] = cursor + 1
+        _write_history(workspace_id, history)
+        return {"status":"redone","target":target,"cursor":history["cursor"]}
+
 @app.get("/workspace/{workspace_id}/snapshots")
 def list_workspace_snapshots(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
