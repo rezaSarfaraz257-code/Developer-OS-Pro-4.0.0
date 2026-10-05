@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
 from build_engine import plan as build_plan, artifact_manifest
 from environment_engine import plan as environment_plan
-from debug_engine import capability as debug_capability, handle as debug_handle
+from debug_engine import capability as debug_capability, handle as debug_handle, SESSIONS as DEBUG_SESSIONS
 from symbol_engine import index as symbol_index, references as symbol_references, rename_preview as symbol_rename_preview, definitions as symbol_definitions, hover as symbol_hover, completion as symbol_completion, rename_diff as symbol_rename_diff, code_actions as symbol_code_actions, diagnostics as symbol_diagnostics
 
 from preview_engine import plan as preview_plan
@@ -614,11 +614,23 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     if payload.files:
         write_snapshot(root, payload.files)
     try:
-        return debug_handle(
+        result = debug_handle(
             payload.action, root=root, session_id=payload.session_id, path=payload.path,
             line=payload.line, column=payload.column, condition=payload.condition,
             expression=payload.expression, breakpoints=payload.breakpoints
         )
+        if payload.action == "start" and isinstance(result, dict) and not result.get("session_id"):
+            # Recover the identity from the live in-memory debugger registry.
+            # Never synthesize a session id: a returned id must map to a real
+            # debugger session that subsequent DAP actions can address.
+            root_resolved = str(Path(root).resolve())
+            candidates = [
+                sid for sid, session in DEBUG_SESSIONS.items()
+                if str(session.root) == root_resolved
+            ]
+            if candidates:
+                result["session_id"] = candidates[-1]
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
