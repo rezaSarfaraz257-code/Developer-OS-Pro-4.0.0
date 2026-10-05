@@ -1,4 +1,5 @@
 import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex
+import uuid
 import requests
 from fastapi.responses import StreamingResponse
 from pathlib import Path
@@ -201,6 +202,8 @@ def _collab_operation(workspace_id, client_id, base_revision, operation, operati
         state["operations"].append(event)
         state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         _append_collab_operation(workspace_id, event)
+        event["event_type"] = "operation"
+        event["channel"] = "workspace"
         return event
 
 def _workspace_lock(workspace_id):
