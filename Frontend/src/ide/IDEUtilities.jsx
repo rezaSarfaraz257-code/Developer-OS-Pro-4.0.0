@@ -79,12 +79,24 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
  function refresh(){await Promise.all([gitAction("status",["status","--short"]),gitAction("diff",["diff"]),gitAction("files",["diff","--name-only"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
  async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  async function nativeCommit(){const msg=commitMessage.trim();if(!msg)return setMessage("Commit message is required.");await gitAction("commit",["add","-A"]);await gitAction("commit",["commit","-m",msg]);await refresh();}
+ async function checkoutBranch(){
+  const b=branch.trim();
+  if(!b||busy)return;
+  if(!/^[A-Za-z0-9._\/-]{1,120}$/.test(b))return setMessage("Invalid branch name.");
+  if(!window.confirm("Switch workspace to branch "+b+"?"))return;
+  setBusy(true);
+  try{
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"checkout",args:["checkout",b]})});
+   const d=await r.json();if(!r.ok)throw Error(d.error||"Branch checkout failed");
+   setMessage("Switched to "+b);setBranch("");await refresh();
+  }catch(e){setMessage(e.message)}finally{setBusy(false)}
+ }
  async function nativeBranch(){const b=branch.trim();if(!b)return setMessage("Branch name is required.");await gitAction("branch",["checkout","-b",b]);setBranch("");await refresh();}
  async function action(type){if(!selected||!workspace||busy)return;setBusy(true);try{const r=await apiFetch(`/repositories/${selected}/${type}/`,{method:"POST",body:JSON.stringify({workspace_id:workspace.id,message:commitMessage||"Workspace update"})});const d=await r.json();if(!r.ok)throw Error(d.error||`${type} failed`);setMessage(type==="push"?"Committed to Developer OS Repository.":"Pulled from Developer OS Repository.");onSync?.(type==="push"?"push":"pull");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  return <section className="dos-source-control"><header><div><strong>SOURCE CONTROL</strong><small>GIT WORKTREE · NATIVE REPOSITORY</small></div><button onClick={onClose}>×</button></header><div className="dos-source-body">
   <div className="dos-source-create"><input value={name} onChange={e=>setName(e.target.value)} placeholder="New repository name"/><button onClick={create} disabled={busy}>＋ Create</button><button onClick={refresh} disabled={busy}>↻ Refresh</button></div>
   <label>Developer OS Repository<select value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Select repository</option>{repos.map(r=><option key={r.id} value={r.id}>{r.name} · {r.branch}</option>)}</select></label>
-  <div className="dos-source-create"><input value={branch} onChange={e=>setBranch(e.target.value)} placeholder="new branch name"/><button onClick={nativeBranch} disabled={busy}>＋ Branch</button></div>
+  <div className="dos-source-create"><input value={branch} onChange={e=>setBranch(e.target.value)} placeholder="new branch name"/><button onClick={nativeBranch} disabled={busy}>＋ Branch</button><button onClick={checkoutBranch} disabled={busy}>⇄ Checkout</button></div>
   <div className="dos-source-create"><input value={commitMessage} onChange={e=>setCommitMessage(e.target.value)} placeholder="Commit message"/><button onClick={nativeCommit} disabled={busy}>✓ Commit</button></div>
   <div className="dos-source-actions"><button onClick={()=>action("push")} disabled={!selected||busy}>↑ Repository Push</button><button onClick={()=>action("pull")} disabled={!selected||busy}>↓ Repository Pull</button></div>
   <div className="dos-source-actions"><button onClick={()=>gitAction("status",["status"])} disabled={busy}>Status</button><button onClick={()=>gitAction("diff",["diff"])} disabled={busy}>Diff</button><button onClick={()=>gitAction("files",["diff","--name-only"])} disabled={busy}>Changed Files</button><button onClick={()=>gitAction("restore",["restore","."])} disabled={busy}>Restore Worktree</button><button onClick={()=>gitAction("branches",["branch","--list"])} disabled={busy}>Branches</button><button onClick={()=>gitAction("log",["log","-20","--oneline"])} disabled={busy}>Log</button></div>
