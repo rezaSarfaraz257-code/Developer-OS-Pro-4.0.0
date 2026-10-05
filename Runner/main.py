@@ -1318,6 +1318,17 @@ async def _broadcast_collab(workspace_id, message, exclude=None):
         except Exception:
             _collab_connections(workspace_id).discard(ws)
 
+@app.get("/workspace/{workspace_id}/collaboration/sync")
+def collaboration_sync(workspace_id: str, after_version: int = 0, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _collab_state(workspace_id)
+    after_version = max(0, int(after_version or 0))
+    current = int(state["version"])
+    replay = [x for x in state["operations"] if int(x.get("version", 0)) > after_version]
+    if len(replay) > MAX_COLLAB_QUEUE:
+        return {"status":"resync_required","version":current,"reason":"replay_window_exceeded","snapshot":{"members":list(state["members"].values()),"locks":list(state["locks"].values()),"cursors":list(state["cursors"].values())}}
+    return {"status":"delta","from_version":after_version,"version":current,"operations":replay,"presence":list(state["members"].values()),"locks":list(state["locks"].values()),"cursors":list(state["cursors"].values())}
+
 @app.websocket("/workspace/{workspace_id}/collaboration/ws")
 async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
     token = websocket.headers.get("authorization", "")
@@ -1358,6 +1369,15 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
             allowed, remaining = _collab_rate_allow(id(websocket), "messages", COLLAB_MAX_MESSAGES_PER_WINDOW)
             if not allowed:
                 await websocket.send_json({"event_type":"error","code":"RATE_LIMITED","retry_after":COLLAB_RATE_WINDOW_SECONDS})
+                continue
+            if message_type == "sync":
+                requested = max(0, int(message.get("after_version") or 0))
+                current = int(state["version"])
+                replay = [x for x in state["operations"] if int(x.get("version", 0)) > requested]
+                if len(replay) > MAX_COLLAB_QUEUE:
+                    await websocket.send_json({"event_type":"resync_required","channel":"workspace","version":current,"reason":"replay_window_exceeded","snapshot":{"members":list(state["members"].values()),"locks":list(state["locks"].values()),"cursors":list(state["cursors"].values())}})
+                else:
+                    await websocket.send_json({"event_type":"sync_delta","channel":"workspace","from_version":requested,"version":current,"operations":replay,"presence":list(state["members"].values()),"locks":list(state["locks"].values()),"cursors":list(state["cursors"].values())})
                 continue
             if message_type == "ping":
                 await websocket.send_json({"event_type":"pong","channel":"workspace","ts":time.time()})
