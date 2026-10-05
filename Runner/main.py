@@ -998,6 +998,34 @@ def collaboration_presence(workspace_id: str, payload: dict, authorization: str 
     _publish_collab_bus(workspace_id, {"event_type":"presence","channel":"workspace","workspace_id":str(workspace_id),"presence":presence_payload})
     return {"status":"updated","client_id":client_id,"presence":member,"cursor":state["cursors"].get(client_id)}
 
+def _redis_cleanup_client(workspace_id, client_id):
+    bus = _collab_bus()
+    if bus is None:
+        return
+    try:
+        bus.delete(_collab_redis_key("presence", workspace_id, client_id))
+    except Exception:
+        pass
+
+@app.post("/workspace/{workspace_id}/collaboration/leave")
+def collaboration_leave(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required.")
+    state = _collab_state(workspace_id)
+    state["members"].pop(client_id, None)
+    state["cursors"].pop(client_id, None)
+    released = []
+    for path, lock in list(state["locks"].items()):
+        if lock.get("client_id") == client_id:
+            state["locks"].pop(path, None)
+            _redis_unlock(workspace_id, path, client_id)
+            released.append(path)
+    _redis_cleanup_client(workspace_id, client_id)
+    _publish_collab_bus(workspace_id, {"event_type":"leave","channel":"workspace","client_id":client_id,"released_locks":released})
+    return {"status":"left","client_id":client_id,"released_locks":released}
+
 @app.get("/workspace/{workspace_id}/collaboration/presence")
 def collaboration_presence_state(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
