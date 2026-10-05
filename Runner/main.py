@@ -206,8 +206,9 @@ def _collab_operation(workspace_id, client_id, base_revision, operation, operati
         state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         _append_collab_operation(workspace_id, event)
         event["event_type"] = "operation"
-        _publish_collab_bus(workspace_id, event)
         event["channel"] = "workspace"
+        event["origin_instance"] = COLLAB_INSTANCE_ID
+        _publish_collab_bus(workspace_id, event)
         return event
 
 def _workspace_lock(workspace_id):
@@ -1078,6 +1079,10 @@ def _start_collab_subscriber():
                 try:
                     event = json.loads(message["data"])
                     workspace_id = str(message["channel"]).removeprefix(COLLAB_BUS_CHANNEL_PREFIX)
+                    if event.get("origin_instance") == COLLAB_INSTANCE_ID:
+                        continue
+                    if _collab_event_seen(str(event.get("id") or "")):
+                        continue
                     asyncio.run(_broadcast_collab(workspace_id, event))
                 except Exception:
                     continue
@@ -1089,6 +1094,23 @@ def _start_collab_subscriber():
 app.add_event_handler("startup", _collab_startup_hook)
 
 
+
+COLLAB_INSTANCE_ID = os.environ.get("COLLAB_INSTANCE_ID", "").strip() or str(uuid.uuid4())
+COLLAB_SEEN_EVENTS = {}
+COLLAB_SEEN_EVENTS_LOCK = threading.Lock()
+MAX_SEEN_EVENTS = 4096
+
+def _collab_event_seen(event_id):
+    if not event_id:
+        return False
+    with COLLAB_SEEN_EVENTS_LOCK:
+        if event_id in COLLAB_SEEN_EVENTS:
+            return True
+        COLLAB_SEEN_EVENTS[event_id] = time.time()
+        if len(COLLAB_SEEN_EVENTS) > MAX_SEEN_EVENTS:
+            oldest = min(COLLAB_SEEN_EVENTS, key=COLLAB_SEEN_EVENTS.get)
+            COLLAB_SEEN_EVENTS.pop(oldest, None)
+        return False
 
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
