@@ -2124,7 +2124,8 @@ def _persist_workspace_files(ws, files, active_file=None, expected_revision=None
     ws.files = dict(files)
     if active_file is not None:
         ws.active_file = str(active_file)
-    ws.revision = expected + 1
+    # CodeWorkspace.save() owns the monotonic revision increment.
+    ws.revision = expected
     ws.save(update_fields={"files", "active_file", "revision", "updated_at"})
     return ws
 
