@@ -108,6 +108,9 @@ class PatchOperation(BaseModel):
     content: str | None = None
     action: str = "write"
 
+class PatchValidationRequest(PatchRequest):
+    strict: bool = False
+
 class PatchRequest(BaseModel):
     workspace_id: str
     expected_revision: int = Field(ge=0)
@@ -576,6 +579,19 @@ def metrics(authorization: str = Header(default="")):
         },
     }
 
+def _validate_staged_files(files, strict=False):
+    diagnostics = []
+    for path, content in files.items():
+        try:
+            if path.endswith(".py"):
+                import ast
+                ast.parse(content, filename=path)
+            elif path.endswith(".json"):
+                json.loads(content)
+        except Exception as exc:
+            diagnostics.append({"severity":"error","path":path,"line":getattr(exc,"lineno",1) or 1,"column":getattr(exc,"offset",1) or 1,"message":str(exc)[:500],"source":"patch-validator"})
+    return {"ok":not diagnostics,"diagnostics":diagnostics,"checked_files":len(files),"strict":bool(strict)}
+
 def _workspace_revision(workspace_id):
     state = _ide_state(workspace_id)
     return int(state["revision"])
@@ -674,6 +690,28 @@ def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorizatio
         event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
         return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
 
+@app.post("/workspace/patch/validate")
+def validate_workspace_patch(payload: PatchValidationRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    current = _workspace_revision(payload.workspace_id)
+    if current != payload.expected_revision:
+        raise HTTPException(status_code=409, detail={"code":"WORKSPACE_REVISION_CONFLICT","expected_revision":payload.expected_revision,"current_revision":current})
+    current_files = snapshot(root)
+    staged = dict(current_files)
+    for op in payload.operations:
+        path = safe_rel(op.path)
+        if op.action in {"write","create"}:
+            if op.content is None:
+                raise HTTPException(status_code=400, detail="Patch content is required.")
+            staged[path] = op.content
+        elif op.action == "delete":
+            staged.pop(path, None)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported patch operation.")
+    result = _validate_staged_files(staged, payload.strict)
+    return {"schema_version":"1","patch_id":payload.patch_id,"workspace_id":payload.workspace_id,"revision":current,"validation":result}
+
 @app.post("/workspace/patch/preview")
 def preview_workspace_patch(payload: PatchRequest, authorization: str = Header(default="")):
     auth(authorization)
@@ -715,6 +753,10 @@ def apply_workspace_patch(payload: PatchRequest, authorization: str = Header(def
                 staged.pop(path, None)
             else:
                 raise HTTPException(status_code=400, detail="Unsupported patch operation.")
+        validation = _validate_staged_files(staged, strict=True)
+        if not validation["ok"]:
+            event_publish("ai.patch.rejected", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, diagnostics=validation["diagnostics"])
+            raise HTTPException(status_code=422, detail={"code":"PATCH_VALIDATION_FAILED","validation":validation})
         _create_snapshot(payload.workspace_id, root, current, "before-ai-patch")
         atomic_write_snapshot(root, staged)
         event = event_publish("ai.patch.applied", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, files_changed=len(payload.operations))
