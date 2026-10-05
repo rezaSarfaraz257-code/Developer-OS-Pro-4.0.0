@@ -99,6 +99,12 @@ class Workspace(BaseModel):
     files: dict[str, str] = Field(default_factory=dict)
     active_file: str = ""
 
+class WorkspaceTransaction(BaseModel):
+    workspace_id: str
+    expected_revision: int = Field(ge=0)
+    operations: list[dict] = Field(default_factory=list, max_length=200)
+    active_file: str | None = None
+
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
 
@@ -504,6 +510,10 @@ def metrics(authorization: str = Header(default="")):
         },
     }
 
+def _workspace_revision(workspace_id):
+    state = _ide_state(workspace_id)
+    return int(state["revision"])
+
 def _state_snapshot(workspace_id):
     with IDE_STATE_LOCK:
         state = _ide_state(workspace_id)
@@ -574,6 +584,58 @@ def assert_ide_revision(workspace_id: str, payload: dict, authorization: str = H
             },
         )
     return {"ok": True, "state": current}
+
+@app.post("/workspace/transaction")
+def workspace_transaction(payload: WorkspaceTransaction, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    lock = _workspace_lock(payload.workspace_id)
+    with lock:
+        current = _workspace_revision(payload.workspace_id)
+        if current != payload.expected_revision:
+            raise HTTPException(status_code=409, detail={
+                "code": "WORKSPACE_REVISION_CONFLICT",
+                "expected_revision": payload.expected_revision,
+                "current_revision": current,
+            })
+        current_files = snapshot(root)
+        staged = dict(current_files)
+        try:
+            for op in payload.operations:
+                action = str(op.get("action", "")).lower()
+                path = safe_rel(op.get("path", ""))
+                if action in {"write", "create"}:
+                    content = op.get("content", "")
+                    if not isinstance(content, str):
+                        raise ValueError("content must be text")
+                    staged[path] = content
+                elif action == "delete":
+                    staged.pop(path, None)
+                elif action == "rename":
+                    target = safe_rel(op.get("target", ""))
+                    if path not in staged:
+                        raise ValueError("source file not found")
+                    staged[target] = staged.pop(path)
+                else:
+                    raise ValueError("unsupported workspace operation")
+            write_snapshot(root, staged)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        new_revision = current + 1
+        event = event_publish(
+            "workspace.transaction",
+            source="workspace",
+            workspace_id=payload.workspace_id,
+            revision=new_revision,
+            operation_count=len(payload.operations),
+        )
+        return {
+            "status": "committed",
+            "workspace_id": payload.workspace_id,
+            "revision": new_revision,
+            "files": snapshot(root),
+            "event": event,
+        }
 
 @app.post("/sync")
 def sync(payload: Workspace, authorization: str = Header(default="")):
