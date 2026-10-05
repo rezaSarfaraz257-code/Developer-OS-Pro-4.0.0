@@ -487,6 +487,27 @@ def lsp_document_close(payload: LSPRequest, authorization: str = Header(default=
     session.did_close(payload.uri)
     return {"status":"closed","uri":payload.uri}
 
+@app.post("/lsp/code-action/preview")
+def lsp_code_action_preview(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.action != "remove-debug-statement":
+        raise HTTPException(status_code=400, detail="Unsupported code action.")
+    path = safe_rel(payload.path)
+    target = root / path
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+    lines = target.read_text(encoding="utf-8").splitlines(True)
+    if payload.line < 1 or payload.line > len(lines):
+        raise HTTPException(status_code=400, detail="Invalid line.")
+    line = lines[payload.line - 1]
+    if not re.search(r"console\.log|debugger", line):
+        raise HTTPException(status_code=409, detail="Code action no longer matches the document.")
+    updated = "".join(lines[:payload.line - 1] + lines[payload.line:])
+    revision = _workspace_revision(payload.workspace_id)
+    patch = {"workspace_id": payload.workspace_id, "expected_revision": revision, "patch_id": "code-action-" + str(int(time.time() * 1000)), "operations": [{"path": path, "action": "write", "content": updated}]}
+    return {"schema_version": "1", "action": payload.action, "patch": patch, "preview": {"path": path, "line": payload.line, "removed": line.rstrip()}}
+
 @app.post("/lsp/action")
 def lsp_action(payload: LSPRequest, authorization: str = Header(default="")):
     auth(authorization)
