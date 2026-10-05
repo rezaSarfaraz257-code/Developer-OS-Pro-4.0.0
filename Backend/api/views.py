@@ -50,7 +50,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, IDEExecution, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession,
 )
 
 from .serializers import (
@@ -3422,7 +3422,19 @@ def ide_process_detail_api(request, pk, process_id):
     method="GET" if request.method=="GET" else "POST"
     path=f"/process/{process_id}" + ("/stop" if method=="POST" else "")
     data,error=_runner_request(method,path,payload,timeout=15)
-    if error:return Response(error,status=503)
+    if error:
+        # Stop is intentionally idempotent: a process may finish between the
+        # process-list call and the stop request. Treat an upstream 404 as an
+        # already-stopped process rather than leaking a false API failure.
+        if method == "POST" and isinstance(error, dict) and error.get("status") == 404:
+            return Response({
+                "id": str(process_id),
+                "workspace_id": str(ws.id),
+                "status": "stopped",
+                "exit_code": None,
+                "already_stopped": True,
+            })
+        return Response(error,status=503)
     return Response(data)
 
 @api_view(["POST"])
