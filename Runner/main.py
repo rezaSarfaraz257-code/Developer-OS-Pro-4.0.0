@@ -196,7 +196,8 @@ def atomic_write_snapshot(root, files):
         try:
             staging.rename(root)
         except Exception:
-            backup.rename(root)
+            if not root.exists() and backup.exists():
+                backup.rename(root)
             raise
         shutil.rmtree(backup, ignore_errors=True)
     finally:
