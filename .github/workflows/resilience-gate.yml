@@ -53,6 +53,10 @@ jobs:
       - name: Resilience tests
         run: python -m pytest -q test_resilience.py
 
+      - name: Supply-chain policy gate
+        working-directory: .
+        run: python scripts/supply_chain_gate.py
+
       - name: Runner security policy tests
         run: python -m pytest -q test_security_policy.py
 
