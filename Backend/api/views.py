@@ -334,7 +334,8 @@ def profile_api(request):
     profile_fields = {"full_name", "avatar_url", "bio", "github", "linkedin", "x", "website"}
     changed_profile_fields = [field for field in profile_fields if field in payload]
     if email_changed:
-        changed_profile_fields.append("email_verified")\n        payload["email_verified"] = profile.email_verified
+        changed_profile_fields.append("email_verified")
+        payload["email_verified"] = profile.email_verified
     for field in changed_profile_fields:
         setattr(profile, field, payload[field])
 
