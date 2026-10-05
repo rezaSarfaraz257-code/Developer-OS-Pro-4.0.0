@@ -50,6 +50,7 @@ jobs:
           DATABASE_URL: postgresql://developeros:test-password@127.0.0.1:5432/developeros_test
           IDE_RUNNER_TOKEN: ci-runner-token
           EMAIL_VERIFICATION_REQUIRED: "false"
+          SECURE_SSL_REDIRECT: "false"
         run: |
           export GITHUB_TOKEN_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           python manage.py check --deploy
