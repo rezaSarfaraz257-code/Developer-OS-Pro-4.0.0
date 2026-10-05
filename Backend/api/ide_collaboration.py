@@ -104,13 +104,13 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             ws=CodeWorkspace.objects.select_for_update().get(pk=self.workspace.id)
             last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
             lamport=max(int(content.get("lamport") or 0),int(last.lamport if last else 0))+1
+            current=str((ws.files or {}).get(path,""))
             pos=max(0,int(content.get("position") or 0))
             if kind=="insert" and pos > 0:
                 pos = min(len(current), pos + 1)
             count=max(0,int(content.get("delete_count") or 0))
             text=str(content.get("text") or "")
-            current=str((ws.files or {}).get(path,""))
-            next_content=current[:pos]+text+current[pos:] if kind=="insert" else current[:pos]+current[min(len(current),pos+count):]
+            next_content=currentent[:pos]+text+current[pos:] if kind=="insert" else current[:pos]+current[min(len(current),pos+count):]
             files=dict(ws.files or {}); files[path]=next_content
             ws.files=files; ws.revision=(ws.revision or 0)+1; ws.save(update_fields={"files","revision"})
             blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
