@@ -1260,12 +1260,20 @@ def _collab_connections(workspace_id):
     with COLLAB_CONNECTIONS_LOCK:
         return COLLAB_CONNECTIONS.setdefault(str(workspace_id), set())
 
+COLLAB_PRIORITY = {"operation": 100, "lock": 90, "unlock": 90, "leave": 80, "sync": 80, "heartbeat": 50, "presence": 20, "cursor": 10}
+
+def _collab_event_priority(message):
+    return COLLAB_PRIORITY.get(str(message.get("event_type") or message.get("type") or "").strip().lower(), 50)
+
 async def _broadcast_collab(workspace_id, message, exclude=None):
     connections = list(_collab_connections(workspace_id))
+    priority = _collab_event_priority(message)
     for ws in connections:
         if ws is exclude:
             continue
         try:
+            if priority <= 20 and len(_collab_connections(workspace_id)) > MAX_COLLAB_CONNECTIONS_PER_WORKSPACE * 0.75:
+                continue
             await ws.send_json(message)
         except Exception:
             _collab_connections(workspace_id).discard(ws)
