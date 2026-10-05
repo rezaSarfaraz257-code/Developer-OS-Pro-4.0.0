@@ -696,6 +696,7 @@ def workspace_transaction(payload: WorkspaceTransaction, authorization: str = He
                     staged[target] = staged.pop(path)
                 else:
                     raise ValueError("unsupported workspace operation")
+            _create_snapshot(payload.workspace_id, root, current, "before-transaction")
             atomic_write_snapshot(root, staged)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
