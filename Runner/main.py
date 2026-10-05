@@ -146,6 +146,30 @@ def auth(value):
     if not TOKEN or not hmac.compare_digest(str(value or ""), expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+COLLAB_STATE = {}
+COLLAB_STATE_LOCK = threading.Lock()
+COLLAB_TTL = 300
+
+def _collab_state(workspace_id):
+    key = str(workspace_id)
+    now = time.time()
+    with COLLAB_STATE_LOCK:
+        state = COLLAB_STATE.setdefault(key, {"version": 0, "members": {}, "operations": []})
+        state["members"] = {k:v for k,v in state["members"].items() if now - v["last_seen"] <= COLLAB_TTL}
+        state["operations"] = state["operations"][-200:]
+        return state
+
+def _collab_operation(workspace_id, client_id, base_revision, operation):
+    with _workspace_lock(workspace_id):
+        current = _workspace_revision(workspace_id)
+        if int(base_revision) != current:
+            raise HTTPException(status_code=409, detail={"code":"COLLAB_REVISION_CONFLICT","base_revision":int(base_revision),"current_revision":current})
+        state = _collab_state(workspace_id)
+        state["version"] += 1
+        event = {"id":str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time()}
+        state["operations"].append(event)
+        return event
+
 def _workspace_lock(workspace_id):
     key = str(workspace_id)
     with WORKSPACE_LOCKS_GUARD:
@@ -906,6 +930,45 @@ def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorizatio
         files = _restore_snapshot(workspace_id, root, snapshot_id)
         event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
         return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
+
+@app.get("/workspace/{workspace_id}/collaboration")
+def collaboration_state(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _collab_state(workspace_id)
+    return {"schema_version":"1","workspace_id":workspace_id,"version":state["version"],"members":list(state["members"].values()),"operations":state["operations"]}
+
+@app.post("/workspace/{workspace_id}/collaboration/join")
+def collaboration_join(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    if not client_id or len(client_id) > 128:
+        raise HTTPException(status_code=400, detail="client_id is required.")
+    state = _collab_state(workspace_id)
+    state["members"][client_id] = {"client_id":client_id,"status":"online","last_seen":time.time()}
+    return {"status":"joined","workspace_id":workspace_id,"client_id":client_id,"version":state["version"]}
+
+@app.post("/workspace/{workspace_id}/collaboration/heartbeat")
+def collaboration_heartbeat(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    state = _collab_state(workspace_id)
+    if client_id not in state["members"]:
+        raise HTTPException(status_code=404, detail="Collaboration member not found.")
+    state["members"][client_id]["last_seen"] = time.time()
+    return {"status":"alive","client_id":client_id,"version":state["version"]}
+
+@app.post("/workspace/{workspace_id}/collaboration/operation")
+def collaboration_operation(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required.")
+    state = _collab_state(workspace_id)
+    if client_id not in state["members"]:
+        raise HTTPException(status_code=403, detail="Client is not joined to collaboration.")
+    event = _collab_operation(workspace_id, client_id, payload.get("base_revision"), payload.get("operation") or {})
+    state["members"][client_id]["last_seen"] = time.time()
+    return {"status":"accepted","event":event}
 
 @app.post("/workspace/diagnostics")
 def workspace_diagnostics(workspace_id: str, authorization: str = Header(default="")):
