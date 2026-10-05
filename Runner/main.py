@@ -13,6 +13,7 @@ from symbol_engine import index as symbol_index, references as symbol_references
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
 from observability_engine import record as observability_record, snapshot as observability_snapshot, trace as observability_trace, finish as observability_finish
+from event_bus import publish as event_publish, since as event_since, snapshot as event_snapshot
 from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
 from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
 from extension_engine import manifest as extension_manifest
@@ -207,6 +208,7 @@ def _validate_execution_policy(command, *, allow_network=False):
 
 def run_command(root, command, *, allow_network=False):
     trace_state = observability_trace("exec", workspace_id=root.name)
+    event_publish("execution.started", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"])
     started = time.monotonic()
     try:
         command = _validate_execution_policy(command, allow_network=allow_network)
@@ -261,7 +263,7 @@ def run_command(root, command, *, allow_network=False):
                 "files": snapshot(root),
                 "trace_id": trace_state["trace_id"],
             }
-            observability_finish(trace_state, "timeout", workspace_id=root.name, exit_code=124)
+            observability_finish(trace_state, "timeout", workspace_id=root.name, exit_code=124)\n            event_publish("execution.timeout", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"], exit_code=124)
             return result
         finally:
             EXEC_SEMAPHORE.release()
@@ -455,6 +457,11 @@ def metrics(authorization: str = Header(default="")):
             "counters": counters,
         },
     }
+
+@app.get("/events")
+def events(since_sequence: int = 0, limit: int = 100, authorization: str = Header(default="")):
+    auth(authorization)
+    return event_snapshot() | {"events": event_since(since_sequence, limit)}
 
 @app.get("/capabilities")
 def capabilities(authorization: str = Header(default="")):
