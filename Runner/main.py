@@ -423,6 +423,38 @@ def ready():
         status_code=200 if status == "ready" else 503,
     )
 
+@app.get("/metrics")
+def metrics(authorization: str = Header(default="")):
+    """Authenticated machine-readable control-plane metrics."""
+    auth(authorization)
+    with PROCESS_LOCK:
+        processes = list(PROCESSES.values())
+        active_processes = sum(1 for item in processes if item["popen"].poll() is None)
+        failed_processes = sum(1 for item in processes if item["popen"].poll() not in (None, 0))
+    obs = observability_snapshot()
+    counters = obs.get("counters", {})
+    return {
+        "schema_version": "1",
+        "service": "developer-os-runner",
+        "execution": {
+            "max_concurrent": MAX_CONCURRENT,
+            "timeout_seconds": TIMEOUT,
+            "active_processes": active_processes,
+            "failed_processes": failed_processes,
+        },
+        "process": {
+            "tracked": len(processes),
+            "active": active_processes,
+            "max_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
+            "max_lifetime_seconds": MAX_PROCESS_LIFETIME,
+        },
+        "events": {
+            "buffer_size": obs.get("event_buffer", {}).get("size", 0),
+            "capacity": obs.get("event_buffer", {}).get("capacity", 0),
+            "counters": counters,
+        },
+    }
+
 @app.get("/capabilities")
 def capabilities(authorization: str = Header(default="")):
     """IDE capability handshake used before execution/install/preview operations."""
