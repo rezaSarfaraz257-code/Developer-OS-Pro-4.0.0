@@ -55,3 +55,11 @@ export async function removeOutbox(id) {
 export async function outboxCount(workspaceId, clientId) {
   return (await listOutbox(workspaceId, clientId)).length;
 }
+
+export async function requestBackgroundSync() {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker) return false;
+  const registration = await navigator.serviceWorker.ready;
+  if (!registration.active) return false;
+  registration.active.postMessage({ type: "REGISTER_OUTBOX_SYNC" });
+  return true;
+}
