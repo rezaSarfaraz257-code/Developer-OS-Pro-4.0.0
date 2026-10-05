@@ -176,7 +176,7 @@ def _collab_state(workspace_id):
     key = str(workspace_id)
     now = time.time()
     with COLLAB_STATE_LOCK:
-        state = COLLAB_STATE.setdefault(key, {"version": 0, "members": {}, "operations": []})
+        state = COLLAB_STATE.setdefault(key, {"version": 0, "members": {}, "operations": _load_collab_operations(workspace_id)})
         state["members"] = {k:v for k,v in state["members"].items() if now - v["last_seen"] <= COLLAB_TTL}
         state["operations"] = state["operations"][-200:]
         return state
@@ -199,6 +199,8 @@ def _collab_operation(workspace_id, client_id, base_revision, operation, operati
         state["version"] += 1
         event = {"id":operation_id or str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time()}
         state["operations"].append(event)
+        state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
+        _append_collab_operation(workspace_id, event)
         return event
 
 def _workspace_lock(workspace_id):
