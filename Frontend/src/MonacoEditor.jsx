@@ -139,7 +139,6 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
  useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&!ed.hasTextFocus())next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;
   if(workspaceId&&["python","javascript","typescript"].includes(lang(normalized))){
     const uriString=next.uri.toString();
-    const token=getAccessToken();
     if(!ed.__dosLspOpened)ed.__dosLspOpened=new Set();
     if(!ed.__dosLspOpened.has(uriString)){
       ed.__dosLspOpened.add(uriString);
