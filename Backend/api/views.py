@@ -3421,6 +3421,11 @@ def ide_process_detail_api(request, pk, process_id):
     payload={"workspace_id":str(ws.id)}
     method="GET" if request.method=="GET" else "POST"
     path=f"/process/{process_id}" + ("/stop" if method=="POST" else "")
+    # Runner process lifecycle keeps workspace_id in the query string for
+    # both authorization and state lookup; GET already uses params, while
+    # stop is POST and therefore needs an explicit query component.
+    if method == "POST":
+        path += "?" + urlencode({"workspace_id": str(ws.id)})
     data,error=_runner_request(method,path,payload,timeout=15)
     if error:
         # Stop is intentionally idempotent: a process may finish between the
