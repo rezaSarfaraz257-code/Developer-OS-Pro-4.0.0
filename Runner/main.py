@@ -554,6 +554,27 @@ def capabilities(authorization: str = Header(default="")):
     auth(authorization)
     return _capability_manifest()
 
+@app.post("/state/{workspace_id}/assert")
+def assert_ide_revision(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+        raise HTTPException(status_code=400, detail="Invalid workspace id.")
+    expected = payload.get("revision")
+    if expected is None:
+        raise HTTPException(status_code=400, detail="revision is required.")
+    current = _state_snapshot(workspace_id)
+    if int(expected) != int(current["revision"]):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "STATE_REVISION_CONFLICT",
+                "expected_revision": int(expected),
+                "current_revision": int(current["revision"]),
+                "last_event_sequence": current["last_event_sequence"],
+            },
+        )
+    return {"ok": True, "state": current}
+
 @app.post("/sync")
 def sync(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
