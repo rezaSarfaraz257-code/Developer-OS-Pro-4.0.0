@@ -11,7 +11,7 @@ from symbol_engine import index as symbol_index, references as symbol_references
 
 from preview_engine import plan as preview_plan
 from ai_engine import plan as ai_plan, validate_patch as validate_ai_patch
-from observability_engine import record as observability_record, snapshot as observability_snapshot
+from observability_engine import record as observability_record, snapshot as observability_snapshot, trace as observability_trace, finish as observability_finish
 from performance_engine import start as profiler_start, finish as profiler_finish, report as profiler_report
 from recovery_engine import checkpoint as recovery_checkpoint, recover as recovery_recover, status as recovery_status, mark_verified as recovery_verified
 from extension_engine import manifest as extension_manifest
@@ -205,68 +205,68 @@ def _validate_execution_policy(command, *, allow_network=False):
     return command
 
 def run_command(root, command, *, allow_network=False):
-    trace_state = observability_record("execution.start", workspace_id=root.name, operation="exec")
+    trace_state = observability_trace("exec", workspace_id=root.name)
     started = time.monotonic()
-    command = _validate_execution_policy(command, allow_network=allow_network)
-    # Keep the IDE contract stable on images that expose only python3.
-    if re.match(r"^python(?:\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
-        command = re.sub(r"^python(?=\s|$)", "python3", command, count=1)
-    env = {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "HOME": str(root / ".home"),
-        "npm_config_cache": str(root / ".npm-cache"),
-        "PIP_CACHE_DIR": str(root / ".pip-cache"),
-        "PYTHONUNBUFFERED": "1",
-        "BASH_ENV": "/dev/null",
-        "LANG": "C.UTF-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-        "npm_config_update_notifier": "false",
-    }
-    (root / ".home").mkdir(exist_ok=True)
-    os.umask(0o077)
-    started = time.monotonic()
-    acquired = EXEC_SEMAPHORE.acquire(timeout=5)
-    if not acquired:
-        raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     try:
-        with _workspace_lock(root.name):
-            proc = subprocess.run(
-                _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=TIMEOUT,
-                start_new_session=True,
-                preexec_fn=_limit_process_resources,
-            )
-            result = {
-            "exit_code": proc.returncode,
-            "stdout": proc.stdout[-MAX_OUTPUT:],
-            "stderr": proc.stderr[-MAX_OUTPUT:],
-            "duration_ms": int((time.monotonic()-started)*1000),
-            "files": snapshot(root),
-            "trace_id": trace_state.get("timestamp"),
+        command = _validate_execution_policy(command, allow_network=allow_network)
+        if re.match(r"^python(?:\\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
+            command = re.sub(r"^python(?=\\s|$)", "python3", command, count=1)
+        env = {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": str(root / ".home"),
+            "npm_config_cache": str(root / ".npm-cache"),
+            "PIP_CACHE_DIR": str(root / ".pip-cache"),
+            "PYTHONUNBUFFERED": "1",
+            "BASH_ENV": "/dev/null",
+            "LANG": "C.UTF-8",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "npm_config_update_notifier": "false",
         }
-            observability_record("execution.finish", workspace_id=root.name, operation="exec", status="ok" if proc.returncode == 0 else "failed", duration_ms=round((time.monotonic()-started)*1000,2), exit_code=proc.returncode)
-            return result
-    except subprocess.TimeoutExpired as exc:
-        # Kill the entire process group so timed-out dev servers/child processes
-        # cannot survive the request and consume the shared runner.
+        (root / ".home").mkdir(exist_ok=True)
+        os.umask(0o077)
+        acquired = EXEC_SEMAPHORE.acquire(timeout=5)
+        if not acquired:
+            raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
         try:
-            if "proc" in locals() and proc.pid:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-        return {
-            "exit_code": 124,
-            "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": f"Execution timed out after {TIMEOUT} seconds.",
-            "duration_ms": int((time.monotonic()-started)*1000),
-            "files": snapshot(root),
-            "trace_id": trace_state.get("timestamp"),
-        }
-        observability_record("execution.finish", workspace_id=root.name, operation="exec", status="timeout", duration_ms=round((time.monotonic()-started)*1000,2), exit_code=124)
-        return result
-    finally:
-        EXEC_SEMAPHORE.release()
+            with _workspace_lock(root.name):
+                proc = subprocess.run(
+                    _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
+                    capture_output=True, text=True, timeout=TIMEOUT,
+                    start_new_session=True, preexec_fn=_limit_process_resources,
+                )
+                result = {
+                    "exit_code": proc.returncode,
+                    "stdout": proc.stdout[-MAX_OUTPUT:],
+                    "stderr": proc.stderr[-MAX_OUTPUT:],
+                    "duration_ms": int((time.monotonic()-started)*1000),
+                    "files": snapshot(root),
+                    "trace_id": trace_state["trace_id"],
+                }
+                observability_finish(trace_state, "ok" if proc.returncode == 0 else "failed",
+                                     workspace_id=root.name, exit_code=proc.returncode)
+                return result
+        except subprocess.TimeoutExpired as exc:
+            try:
+                if "proc" in locals() and proc.pid:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            result = {
+                "exit_code": 124,
+                "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
+                "stderr": f"Execution timed out after {TIMEOUT} seconds.",
+                "duration_ms": int((time.monotonic()-started)*1000),
+                "files": snapshot(root),
+                "trace_id": trace_state["trace_id"],
+            }
+            observability_finish(trace_state, "timeout", workspace_id=root.name, exit_code=124)
+            return result
+        finally:
+            EXEC_SEMAPHORE.release()
+    except Exception as exc:
+        observability_finish(trace_state, "error", workspace_id=root.name, error_type=exc.__class__.__name__)
+        raise
 
 def _runtime_info():
     """Expose deterministic runtime capabilities to the IDE without exposing host details."""
