@@ -737,6 +737,40 @@ def process_stream(pid: str, authorization: str = Header(default="")):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+def _diagnostic_from_process(item):
+    stderr = item.get("stderr", "")
+    stdout = item.get("stdout", "")
+    text = stderr if stderr.strip() else stdout
+    diagnostics = []
+    pattern = re.compile(r"(?P<path>[A-Za-z0-9_./\\-]+)?:(?P<line>\\d+)(?::(?P<column>\\d+))?:?\\s*(?P<message>.+)")
+    for raw in text.splitlines()[-100:]:
+        match = pattern.search(raw)
+        if not match:
+            continue
+        diagnostics.append({
+            "severity": "error" if item["popen"].poll() not in (None, 0) else "info",
+            "path": match.group("path") or "",
+            "line": int(match.group("line")),
+            "column": int(match.group("column") or 1),
+            "message": match.group("message")[:500],
+            "source": "runner",
+        })
+    return diagnostics
+
+@app.get("/process/{pid}/diagnostics")
+def process_diagnostics(pid: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        return {
+            "schema_version": "1",
+            "process_id": str(pid),
+            "status": "running" if item["popen"].poll() is None else ("success" if item["popen"].returncode == 0 else "failed"),
+            "diagnostics": _diagnostic_from_process(item),
+        }
+
 def _process_state(pid):
     with PROCESS_LOCK:
         item = PROCESSES.get(str(pid))
