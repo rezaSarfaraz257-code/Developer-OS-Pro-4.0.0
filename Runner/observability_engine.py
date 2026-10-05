@@ -15,6 +15,15 @@ def _safe_value(key, value):
     if isinstance(value, str):
         return value[:500]
     return value
+_LOCK = threading.RLock()
+_SENSITIVE_KEYS = {"authorization", "token", "secret", "password", "api_key", "apikey", "credential"}
+
+def _safe_value(key, value):
+    if str(key).lower() in _SENSITIVE_KEYS:
+        return "[redacted]"
+    if isinstance(value, str):
+        return value[:500]
+    return value
 
 def record(event, **fields):
     name=str(event or "unknown").strip().lower().replace(" ","_")[:80]
