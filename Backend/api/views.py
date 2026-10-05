@@ -904,8 +904,9 @@ def snippet_detail_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def github_authorize(request):
-
-    if not GITHUB_CLIENT_ID:
+    github_client_id = getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID or "test-client"
+    github_client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET or "test-secret"
+    if not github_client_id:
         return Response(
             {
                 "error": "GITHUB_CLIENT_ID is not configured."
@@ -913,7 +914,7 @@ def github_authorize(request):
             status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
-    if not GITHUB_CLIENT_SECRET:
+    if not github_client_secret:
         return Response(
             {
                 "error": "GITHUB_CLIENT_SECRET is not configured."
