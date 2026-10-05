@@ -1086,6 +1086,8 @@ def _start_collab_subscriber():
     COLLAB_SUBSCRIBER_THREAD = threading.Thread(target=loop, name="collab-redis-subscriber", daemon=True)
     COLLAB_SUBSCRIBER_THREAD.start()
 
+app.add_event_handler("startup", _collab_startup_hook)
+
 
 
 COLLAB_CONNECTIONS = {}
