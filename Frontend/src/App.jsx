@@ -469,7 +469,7 @@ function Explore() {
   const load=async()=>{
     setBusy(true); setError("");
     try{
-      const [t,w,r,f,p,ws]=await Promise.all([
+      const [t,w,r,f,ws]=await Promise.all([
         apiFetch(`/tools/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch(`/workflows/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch(`/resources/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
