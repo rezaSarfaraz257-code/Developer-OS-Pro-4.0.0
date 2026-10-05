@@ -310,7 +310,8 @@ def profile_api(request):
         return profile_response()
 
     serializer = ProfileUpdateSerializer(data=request.data, partial=True)
-    serializer.is_valid(raise_exception=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     payload = serializer.validated_data.copy()
     uploaded_avatar = payload.pop("avatar", None)
     remove_avatar = payload.pop("remove_avatar", False)
