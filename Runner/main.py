@@ -607,6 +607,34 @@ class DebugRequest(Workspace):
     expression: str = ""
     breakpoints: list = Field(default_factory=list)
 
+@app.post("/debug/start")
+def debug_start_api(payload: DebugRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        result = debug_handle(
+            "start", root=root, session_id="", path=payload.path, line=payload.line,
+            column=payload.column, condition=payload.condition,
+            expression=payload.expression, breakpoints=payload.breakpoints
+        )
+        if not isinstance(result, dict) or not result.get("session_id"):
+            root_resolved = str(Path(root).resolve())
+            candidates = [
+                sid for sid, session in DEBUG_SESSIONS.items()
+                if str(session.root) == root_resolved
+            ]
+            if candidates:
+                result = dict(result or {})
+                result["session_id"] = candidates[-1]
+            else:
+                raise RuntimeError("Debugger start produced no live session")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.post("/debug")
 def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     auth(authorization)
