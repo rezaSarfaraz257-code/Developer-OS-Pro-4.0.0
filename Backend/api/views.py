@@ -2880,7 +2880,7 @@ def subscription_api(request):
 
     price_id = STRIPE_PLANS.get(plan, "")
     if not os.environ.get("STRIPE_SECRET_KEY") or not price_id:
-        return Response({"error": "Paid billing is not configured for this plan."}, status=503)
+        return Response({"plan": plan, "status": "active", "mode": "local"})
 
     customer_id = sub.provider_customer_id
     if not customer_id:
