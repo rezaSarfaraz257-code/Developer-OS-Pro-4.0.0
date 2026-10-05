@@ -590,6 +590,7 @@ def _process_output_reader(pid, stream_name, stream):
                 if not item:
                     break
                 item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+                event_publish("process.output", source="process", workspace_id=item["workspace_id"], process_id=pid, stream=stream_name, data=line)
                 item["last_activity_at"] = time.time()
     finally:
         try:
