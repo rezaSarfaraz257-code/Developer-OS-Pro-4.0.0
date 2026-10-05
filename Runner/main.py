@@ -647,6 +647,24 @@ def _format_source(path, source):
         except Exception: pass
     return source
 
+@app.post("/replace/preview")
+def replace_preview_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    files=payload.files or {}
+    path=str(files.get("__path__") or "").strip()
+    old=str(files.get("__old__") or "")
+    new=str(files.get("__new__") or "")
+    content=str(files.get("__content__") or "")
+    if not path or not old or len(content)>2_000_000:
+        raise HTTPException(status_code=400,detail="Invalid replace preview payload.")
+    occurrences=content.count(old)
+    if occurrences>0:
+        updated=content.replace(old,new)
+    else:
+        updated=content
+    return {"path":path,"occurrences":occurrences,"changed":updated!=content,"content":updated}
+
 @app.post("/format")
 def format_api(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
