@@ -121,7 +121,7 @@ class Migration(migrations.Migration):
         ),
         migrations.SeparateDatabaseAndState(
             database_operations=[migrations.RunSQL(
-                sql="""DO $
+                sql="""DO $$
 BEGIN
     IF to_regclass('public.api_usage_metric_period_idx') IS NOT NULL
        AND to_regclass('public.api_usage_metric_period') IS NULL THEN
