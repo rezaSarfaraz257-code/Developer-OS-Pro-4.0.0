@@ -3421,9 +3421,9 @@ def ide_git_file_api(request, pk):
     if not _workspace_write_allowed(ws,request.user): return Response({"error":"Read-only workspace."},status=403)
     operation=str(request.data.get("operation") or "").strip()
     path=str(request.data.get("path") or "").strip()
-    if operation not in {"stage","unstage","discard"} or not path or path.startswith("/") or ".." in path.split("/"):
+    if operation not in {"stage","unstage","discard","diff"} or not path or path.startswith("/") or ".." in path.split("/"):
         return Response({"error":"Invalid Git file operation."},status=400)
-    args={"stage":["add","--",path],"unstage":["reset","HEAD","--",path],"discard":["restore","--",path]}[operation]
+    args={"stage":["add","--",path],"unstage":["reset","HEAD","--",path],"discard":["restore","--",path],"diff":["diff","HEAD","--",path]}[operation]
     payload={**_workspace_payload(ws),"command":json.dumps(args)}
     data,error=_runner_request("POST","/git",payload,timeout=20)
     if error:return Response(error,status=503)
