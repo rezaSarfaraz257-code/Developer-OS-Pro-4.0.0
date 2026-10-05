@@ -75,7 +75,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
    const host=document.createElement("div");host.style.cssText="position:absolute;top:42px;left:0;right:0;bottom:0";container.appendChild(host);
    const editor=monaco.editor.createDiffEditor(host,{readOnly:true,automaticLayout:true,renderSideBySide:true});
    editor.setModel({original:left,modified:right});
-  }catch{}
+  }catch(e){void e}
  }
  async function refresh(){await Promise.all([gitAction("status",["status","--short"],true),gitAction("diff",["diff"],true),gitAction("files",["diff","--name-only"],true),gitAction("branches",["branch","--list"],true),gitAction("log",["log","-20","--oneline"],true)])}
  async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
