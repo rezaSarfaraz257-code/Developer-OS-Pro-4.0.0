@@ -133,7 +133,24 @@ $$;""",
             )],
             state_operations=[migrations.RenameIndex(model_name="usagerecord", old_name="api_usage_metric_period_idx", new_name="api_usage_metric_period")],
         ),
-        migrations.AddField(model_name="codeworkspace", name="revision", field=models.PositiveBigIntegerField(default=1)),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[migrations.RunSQL(
+                sql="""DO $
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'api_codeworkspace'
+          AND column_name = 'revision'
+    ) THEN
+        ALTER TABLE "api_codeworkspace" ADD COLUMN "revision" bigint DEFAULT 1 NOT NULL;
+    END IF;
+END
+$;""",
+                reverse_sql='ALTER TABLE "api_codeworkspace" DROP COLUMN IF EXISTS "revision"',
+            )],
+            state_operations=[migrations.AddField(model_name="codeworkspace", name="revision", field=models.PositiveBigIntegerField(default=1))],
+        ),
         migrations.SeparateDatabaseAndState(
             database_operations=[
                 migrations.RunSQL(
