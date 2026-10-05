@@ -494,6 +494,7 @@ def _run(request, message: str, action: str | None = None):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def ai_health_api(request):
     """Non-secret AI readiness diagnostics; never performs a billable provider call."""
     # Health is intentionally public: it must be usable by load balancers and deployment checks.
