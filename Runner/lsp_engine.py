@@ -50,12 +50,35 @@ class LSPSession:
         self.seq=0
         self.lock=threading.RLock()
         self.notifications=[]
+        self.document_versions={}
         self._closed=False
 
     def start(self):
         self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False)
         self.request("initialize",{"processId":os.getpid(),"rootUri":self.root.as_uri(),"capabilities":{},"workspaceFolders":[{"uri":self.root.as_uri(),"name":"workspace"}]})
         self.notify("initialized",{})
+
+    def did_open(self, uri, text, version=1, language_id=""):
+        with self.lock:
+            if not self.alive(): raise LSPError("LSP process unavailable")
+            self.document_versions[uri] = int(version)
+            self.notify("textDocument/didOpen", {"textDocument":{"uri":uri,"languageId":language_id,"version":int(version),"text":text}})
+
+    def did_change(self, uri, text, version):
+        with self.lock:
+            if not self.alive(): raise LSPError("LSP process unavailable")
+            version = int(version)
+            previous = self.document_versions.get(uri, 0)
+            if version <= previous:
+                raise LSPError("Document version must increase")
+            self.document_versions[uri] = version
+            self.notify("textDocument/didChange", {"textDocument":{"uri":uri,"version":version},"contentChanges":[{"text":text}]})
+
+    def did_close(self, uri):
+        with self.lock:
+            if self.alive():
+                self.notify("textDocument/didClose", {"textDocument":{"uri":uri}})
+            self.document_versions.pop(uri, None)
 
     def alive(self):
         return bool(self.proc and self.proc.poll() is None)
