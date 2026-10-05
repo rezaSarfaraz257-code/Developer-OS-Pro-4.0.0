@@ -77,6 +77,8 @@ def _project_ide_event(event):
             state["execution"].update({"status": data.get("status", "finished"), "exit_code": data.get("exit_code")})
         elif typ == "execution.timeout":
             state["execution"].update({"status": "timeout", "exit_code": 124})
+        elif typ == "workspace.transaction":
+            state["active_file"] = data.get("active_file", state.get("active_file", ""))
         elif typ == "debug.started":
             state["debugger"] = {"status": "running", "session_id": data.get("session_id")}
         elif typ in {"debug.stopped", "debug.finished"}:
@@ -628,6 +630,7 @@ def workspace_transaction(payload: WorkspaceTransaction, authorization: str = He
             workspace_id=payload.workspace_id,
             revision=new_revision,
             operation_count=len(payload.operations),
+            active_file=payload.active_file or "",
         )
         return {
             "status": "committed",
