@@ -159,14 +159,23 @@ def _collab_state(workspace_id):
         state["operations"] = state["operations"][-200:]
         return state
 
-def _collab_operation(workspace_id, client_id, base_revision, operation):
+def _collab_operation(workspace_id, client_id, base_revision, operation, operation_id=""):
     with _workspace_lock(workspace_id):
         current = _workspace_revision(workspace_id)
-        if int(base_revision) != current:
-            raise HTTPException(status_code=409, detail={"code":"COLLAB_REVISION_CONFLICT","base_revision":int(base_revision),"current_revision":current})
         state = _collab_state(workspace_id)
+        if operation_id:
+            for existing in state["operations"]:
+                if existing["id"] == operation_id:
+                    return existing
+        base = int(base_revision)
+        if base > current:
+            raise HTTPException(status_code=409, detail={"code":"COLLAB_REVISION_AHEAD","base_revision":base,"current_revision":current})
+        if base < current:
+            recent = [x for x in state["operations"] if int(x.get("base_revision", -1)) >= base]
+            if any(x.get("operation", {}).get("path") == operation.get("path") for x in recent):
+                raise HTTPException(status_code=409, detail={"code":"COLLAB_OPERATION_CONFLICT","base_revision":base,"current_revision":current,"path":operation.get("path")})
         state["version"] += 1
-        event = {"id":str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time()}
+        event = {"id":operation_id or str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time()}
         state["operations"].append(event)
         return event
 
@@ -966,7 +975,11 @@ def collaboration_operation(workspace_id: str, payload: dict, authorization: str
     state = _collab_state(workspace_id)
     if client_id not in state["members"]:
         raise HTTPException(status_code=403, detail="Client is not joined to collaboration.")
-    event = _collab_operation(workspace_id, client_id, payload.get("base_revision"), payload.get("operation") or {})
+    operation = payload.get("operation") or {}
+    operation_id = str(payload.get("operation_id") or "").strip()
+    if len(operation_id) > 128:
+        raise HTTPException(status_code=400, detail="operation_id is too long.")
+    event = _collab_operation(workspace_id, client_id, payload.get("base_revision"), operation, operation_id)
     state["members"][client_id]["last_seen"] = time.time()
     return {"status":"accepted","event":event}
 
