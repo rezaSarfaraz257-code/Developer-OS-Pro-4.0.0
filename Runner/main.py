@@ -108,14 +108,14 @@ class PatchOperation(BaseModel):
     content: str | None = None
     action: str = "write"
 
-class PatchValidationRequest(PatchRequest):
-    strict: bool = False
-
 class PatchRequest(BaseModel):
     workspace_id: str
     expected_revision: int = Field(ge=0)
     patch_id: str = Field(min_length=1, max_length=120)
     operations: list[PatchOperation] = Field(default_factory=list, max_length=200)
+
+class PatchValidationRequest(PatchRequest):
+    strict: bool = False
 
 class WorkspaceTransaction(BaseModel):
     workspace_id: str
