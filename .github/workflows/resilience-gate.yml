@@ -78,6 +78,34 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+      - name: Build provenance manifest
+        working-directory: .
+        run: |
+          mkdir -p artifacts
+          printf "%s\n" "repository=${{ github.repository }}" "commit=${{ github.sha }}" "ref=${{ github.ref }}" "workflow=${{ github.workflow }}" "run_id=${{ github.run_id }}" "runner_os=${{ runner.os }}" > artifacts/provenance.txt
+
+      - name: Generate source integrity manifest
+        working-directory: .
+        run: |
+          python -c 'import hashlib; from pathlib import Path; r=Path("."); fs=[p for p in r.rglob("*") if p.is_file() and ".git" not in p.parts and "artifacts" not in p.parts and p.stat().st_size <= 20000000]; Path("artifacts/source-sha256.txt").write_text("\n".join(sorted(hashlib.sha256(p.read_bytes()).hexdigest()+"  "+p.as_posix() for p in fs))+"\n")'
+
+      - name: Verify provenance fields
+        working-directory: .
+        run: |
+          test -s artifacts/provenance.txt
+          grep -q "^commit=${{ github.sha }}$" artifacts/provenance.txt
+          test -s artifacts/source-sha256.txt
+
+      - name: Upload integrity artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: developer-os-build-integrity
+          path: |
+            artifacts/provenance.txt
+            artifacts/source-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
+
 
       - name: Runner security policy tests
         run: python -m pytest -q test_security_policy.py
