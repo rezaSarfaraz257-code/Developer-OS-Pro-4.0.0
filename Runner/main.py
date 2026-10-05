@@ -784,6 +784,7 @@ def metrics(authorization: str = Header(default="")):
             "capacity": obs.get("event_buffer", {}).get("capacity", 0),
             "counters": counters,
         },
+        "collaboration": _collab_metrics(),
     }
 
 def _post_apply_verify(files, workspace_id):
@@ -1214,6 +1215,26 @@ def _collab_event_seen(event_id):
 
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
+
+def _collab_metrics():
+    with COLLAB_CONNECTIONS_LOCK:
+        connections_by_workspace = {k: len(v) for k, v in COLLAB_CONNECTIONS.items() if v}
+    redis_ok = False
+    bus = _collab_bus()
+    if bus is not None:
+        try:
+            redis_ok = bool(bus.ping())
+        except Exception:
+            redis_ok = False
+    return {
+        "websocket_connections": sum(connections_by_workspace.values()),
+        "workspaces_with_connections": len(connections_by_workspace),
+        "connections_by_workspace": connections_by_workspace,
+        "redis_configured": bool(COLLAB_BUS_URL),
+        "redis_healthy": redis_ok,
+        "instance_id": COLLAB_INSTANCE_ID,
+        "heartbeat_seconds": COLLAB_HEARTBEAT_SECONDS,
+    }
 
 def _collab_connections(workspace_id):
     with COLLAB_CONNECTIONS_LOCK:
