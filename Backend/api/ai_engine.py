@@ -467,7 +467,7 @@ def _run(request, message: str, action: str | None = None):
             "conversation": {"id": None, "title": "Developer OS Intelligence"},
             "message": {"id": None, "role": "assistant", "content": answer, "context": context},
             "context": context,
-            "mode": "provider" if provider_error is None else "fallback",
+            "mode": "provider" if provider_error is None else "local",
             "persistence": "degraded",
         })
 
