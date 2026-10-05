@@ -2245,7 +2245,21 @@ def performance_api(authorization: str = Header(default="")):
 @app.get("/observability")
 def observability_api(authorization: str = Header(default="")):
     auth(authorization)
-    return observability_snapshot()
+    payload = observability_snapshot()
+    counts = payload.get("counters", {})
+    payload["telemetry"] = {
+        "schema_version": "1",
+        "metrics": {
+            "collaboration_connections": counts.get("collab.connection", 0),
+            "collaboration_reconnects": counts.get("collab.reconnect", 0),
+            "sync_requests": counts.get("collab.sync", 0),
+            "sync_conflicts": counts.get("collab.conflict", 0),
+            "outbox_enqueues": counts.get("collab.outbox.enqueue", 0),
+            "outbox_replays": counts.get("collab.outbox.replay", 0),
+        },
+        "privacy": {"credentials_redacted": True, "raw_code_payloads": False},
+    }
+    return payload
 
 @app.post("/ai/engineering/plan")
 def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
