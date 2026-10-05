@@ -149,6 +149,28 @@ def auth(value):
 COLLAB_STATE = {}
 COLLAB_STATE_LOCK = threading.Lock()
 COLLAB_TTL = 300
+MAX_COLLAB_OPERATIONS = 2000
+
+def _collab_log_file(workspace_id):
+    return _snapshot_dir(workspace_id) / ".collaboration.jsonl"
+
+def _load_collab_operations(workspace_id):
+    path = _collab_log_file(workspace_id)
+    if not path.exists():
+        return []
+    items = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines()[-MAX_COLLAB_OPERATIONS:]:
+            if line.strip():
+                items.append(json.loads(line))
+    except Exception:
+        return []
+    return items
+
+def _append_collab_operation(workspace_id, event):
+    with _collab_log_file(workspace_id).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, separators=(",", ":")) + "\n")
+
 
 def _collab_state(workspace_id):
     key = str(workspace_id)
