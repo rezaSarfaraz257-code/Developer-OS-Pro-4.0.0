@@ -185,6 +185,35 @@ def _collab_state(workspace_id):
         state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         return state
 
+COLLAB_OUTBOX_MAX = 1000
+COLLAB_OUTBOX = {}
+COLLAB_OUTBOX_LOCK = threading.Lock()
+
+def _outbox_key(workspace_id, client_id):
+    return (str(workspace_id), str(client_id))
+
+def _outbox_enqueue(workspace_id, client_id, operation):
+    key = _outbox_key(workspace_id, client_id)
+    with COLLAB_OUTBOX_LOCK:
+        queue = COLLAB_OUTBOX.setdefault(key, [])
+        if any(x.get("operation_id") == operation.get("operation_id") for x in queue):
+            return
+        if len(queue) >= COLLAB_OUTBOX_MAX:
+            raise HTTPException(status_code=429, detail={"code":"COLLAB_OUTBOX_FULL","limit":COLLAB_OUTBOX_MAX})
+        queue.append(dict(operation, queued_at=time.time()))
+
+def _outbox_remove(workspace_id, client_id, operation_id):
+    key = _outbox_key(workspace_id, client_id)
+    with COLLAB_OUTBOX_LOCK:
+        queue = COLLAB_OUTBOX.get(key, [])
+        COLLAB_OUTBOX[key] = [x for x in queue if x.get("operation_id") != operation_id]
+        if not COLLAB_OUTBOX[key]:
+            COLLAB_OUTBOX.pop(key, None)
+
+def _outbox_pending(workspace_id, client_id):
+    with COLLAB_OUTBOX_LOCK:
+        return list(COLLAB_OUTBOX.get(_outbox_key(workspace_id, client_id), []))
+
 def _collab_operation(workspace_id, client_id, base_revision, operation, operation_id=""):
     with _workspace_lock(workspace_id):
         current = _workspace_revision(workspace_id)
@@ -1396,12 +1425,15 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
                     state["members"][client_id] = {"client_id":client_id,"status":"online","last_seen":time.time()}
                 operation_id = str(message.get("operation_id") or "").strip()
                 client_op = message.get("operation") or {}
+                queued = {"operation_id":operation_id or str(uuid.uuid4()),"base_revision":message.get("base_revision"),"operation":client_op}
+                _outbox_enqueue(workspace_id, client_id, queued)
                 try:
                     event = _collab_operation(workspace_id, client_id, message.get("base_revision"), client_op, operation_id)
                 except HTTPException as exc:
                     detail = exc.detail if isinstance(exc.detail, dict) else {"code":"COLLAB_OPERATION_REJECTED","detail":str(exc.detail)}
                     await websocket.send_json({"event_type":"operation_rejected","channel":"workspace","operation_id":operation_id,"client_id":client_id,"current_revision":detail.get("current_revision"),"reason":detail.get("code","COLLAB_OPERATION_REJECTED"),"conflict":detail.get("path")})
                     continue
+                _outbox_remove(workspace_id, client_id, event["id"])
                 await websocket.send_json({"event_type":"operation_ack","channel":"workspace","operation_id":event["id"],"version":event["version"],"base_revision":event["base_revision"]})
                 await _broadcast_collab(workspace_id, event, exclude=websocket)
                 continue
