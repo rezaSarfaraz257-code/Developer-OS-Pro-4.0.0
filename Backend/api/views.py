@@ -2115,25 +2115,17 @@ def _workspace_payload(ws):
 
 
 def _persist_workspace_files(ws, files, active_file=None, expected_revision=None):
-    """Atomically persist the virtual filesystem without holding a database row lock."""
+    """Persist the virtual filesystem on the already locked workspace row."""
     current_revision = int(ws.revision or 0)
     expected = current_revision if expected_revision in (None, "") else int(expected_revision)
-    next_revision = expected + 1
-    filters = {"pk": ws.pk, "revision": expected}
-    values = {
-        "files": dict(files),
-        "revision": next_revision,
-        "updated_at": timezone.now(),
-    }
-    if active_file is not None:
-        values["active_file"] = str(active_file)
-    updated = CodeWorkspace.objects.filter(**filters).update(**values)
-    if updated != 1:
+    if expected != current_revision:
         raise StaleWorkspaceError()
+
     ws.files = dict(files)
     if active_file is not None:
         ws.active_file = str(active_file)
-    ws.revision = next_revision
+    ws.revision = expected + 1
+    ws.save(update_fields={"files", "active_file", "revision", "updated_at"})
     return ws
 
 @api_view(["GET"])
