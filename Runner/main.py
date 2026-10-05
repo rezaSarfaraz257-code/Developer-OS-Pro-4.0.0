@@ -452,6 +452,15 @@ class LSPRequest(Workspace):
     language: str = "python"
     method: str = ""
     uri: str = ""
+    path: str = ""
+    name: str = ""
+    query: str = ""
+    new: str = ""
+    action: str = ""
+    text: str = ""
+    version: int = 1
+    line: int = 0
+    column: int = 0
     params: dict = Field(default_factory=dict)
 
 @app.post("/lsp/document/open")
