@@ -174,7 +174,7 @@ services:
     build: ./Frontend
     environment:
       BACKEND_PROXY_URL: http://backend:8000
-      BACKEND_PROXY_HOST: backend
+      BACKEND_PROXY_HOST: localhost
     ports:
       - "80:80"
     depends_on:
