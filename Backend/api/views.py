@@ -3437,7 +3437,7 @@ def ide_git_api(request, pk):
     operation=str(request.data.get("operation") or "status")
     args=request.data.get("args")
     if args is None:
-        args={"status":["status"],"diff":["diff"],"branches":["branch","--list"],"log":["log","-20","--oneline"],"init":["init"]}.get(operation)
+        args={"status":["status"],"diff":["diff"],"branches":["branch","--list"],"log":["log","-20","--oneline"],"init":["init"],"checkout":["branch","--show-current"]}.get(operation)
     if not isinstance(args,list) or not args:return Response({"error":"Invalid Git operation."},status=400)
     payload={**_workspace_payload(ws),"command":json.dumps([str(x) for x in args])}
     data,error=_runner_request("POST","/git",payload,timeout=30)
