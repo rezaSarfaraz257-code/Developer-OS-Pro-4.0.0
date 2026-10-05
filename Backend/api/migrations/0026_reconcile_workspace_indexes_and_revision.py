@@ -121,7 +121,7 @@ class Migration(migrations.Migration):
         ),
         migrations.SeparateDatabaseAndState(
             database_operations=[migrations.RunSQL(
-                sql="""DO $$
+                sql="""DO $$$
 BEGIN
     IF to_regclass('public.api_usage_metric_period_idx') IS NOT NULL
        AND to_regclass('public.api_usage_metric_period') IS NULL THEN
@@ -135,7 +135,7 @@ $$;""",
         ),
         migrations.SeparateDatabaseAndState(
             database_operations=[migrations.RunSQL(
-                sql="""DO $
+                sql="""DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -146,7 +146,7 @@ BEGIN
         ALTER TABLE "api_codeworkspace" ADD COLUMN "revision" bigint DEFAULT 1 NOT NULL;
     END IF;
 END
-$;""",
+$$;""",
                 reverse_sql='ALTER TABLE "api_codeworkspace" DROP COLUMN IF EXISTS "revision"',
             )],
             state_operations=[migrations.AddField(model_name="codeworkspace", name="revision", field=models.PositiveBigIntegerField(default=1))],
