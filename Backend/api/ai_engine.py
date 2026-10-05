@@ -478,7 +478,7 @@ def _run(request, message: str, action: str | None = None):
             "conversation": AIConversationSerializer(conversation).data,
             "message": AIMessageSerializer(assistant).data,
             "context": context,
-            "mode": "provider" if provider_error is None else "fallback",
+            "mode": "provider" if provider_error is None else "local",
         }
     except DatabaseError:
         payload = {
