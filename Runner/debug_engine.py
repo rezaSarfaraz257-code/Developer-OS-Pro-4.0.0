@@ -1,6 +1,6 @@
 """Live Python debugging over debugpy's Debug Adapter Protocol (DAP)."""
 from __future__ import annotations
-import importlib.util, json, socket, subprocess, threading, time, uuid, os
+import importlib.util, json, socket, subprocess, threading, time, uuid, os, sys
 from pathlib import Path
 
 DEBUGPY_AVAILABLE = importlib.util.find_spec("debugpy") is not None
@@ -64,14 +64,34 @@ class Session:
         if self.root not in target.parents or not target.is_file(): raise RuntimeError("Invalid debug target")
         env={"PATH":"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","HOME":str(self.root/".home"),"PYTHONUNBUFFERED":"1"}
         (self.root/".home").mkdir(exist_ok=True)
-        self.adapter=subprocess.Popen(["python","-m","debugpy.adapter","--host","127.0.0.1","--port",str(self.ap)],cwd=self.root,env=env,start_new_session=True)
-        end=time.monotonic()+5
+        # Use the same virtualenv interpreter as the runner process so
+        # debugpy is imported from /opt/venv rather than system python3.
+        self.adapter=subprocess.Popen(
+            [sys.executable,"-m","debugpy.adapter","--host","127.0.0.1","--port",str(self.ap)],
+            cwd=self.root,env=env,start_new_session=True,
+            stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
+        )
+        end=time.monotonic()+15
+        adapter_error=""
         while time.monotonic()<end:
-            try:self.dap=DAP(self.ap);break
-            except OSError:time.sleep(.05)
-        if not self.dap: raise RuntimeError("DAP adapter failed to start")
+            if self.adapter.poll() is not None:
+                try: adapter_error=(self.adapter.stderr.read() or "").strip()
+                except Exception: adapter_error=""
+                break
+            try:
+                self.dap=DAP(self.ap)
+                break
+            except OSError:
+                time.sleep(.05)
+        if not self.dap:
+            detail=adapter_error[-500:] if adapter_error else "adapter did not open its DAP port"
+            raise RuntimeError("DAP adapter failed to start: "+detail)
         self.dap.call("initialize",{"clientID":"developer-os","adapterID":"debugpy","pathFormat":"path","linesStartAt1":True,"columnsStartAt1":True})
-        self.debuggee=subprocess.Popen(["python","-m","debugpy","--listen",f"127.0.0.1:{self.dp}","--wait-for-client",str(target)],cwd=self.root,env=env,start_new_session=True)
+        self.debuggee=subprocess.Popen(
+            [sys.executable,"-m","debugpy","--listen",f"127.0.0.1:{self.dp}",
+             "--wait-for-client",str(target)],
+            cwd=self.root,env=env,start_new_session=True,
+        )
         self.dap.call("attach",{"name":"Developer OS","type":"python","request":"attach","connect":{"host":"127.0.0.1","port":self.dp},"justMyCode":False},15)
         self.dap.call("setExceptionBreakpoints",{"filters":[]})
         self.set_breakpoint(self.path,self.line)
@@ -127,7 +147,9 @@ class Session:
                     try:p.kill()
                     except OSError:pass
             self.state="stopped"
-        return self.snapshot()
+        # Failed startup can leave DAP unset; cleanup must not call snapshot()
+        # in that state.
+        return {"session_id":self.id,"state":"stopped","breakpoints":self.breakpoints,"stack":[],"live":False}
 
 def capability():
     return {"available":bool(DEBUGPY_AVAILABLE),"adapter":"debugpy" if DEBUGPY_AVAILABLE else None,"protocol":"DAP" if DEBUGPY_AVAILABLE else None,"mode":"live-dap" if DEBUGPY_AVAILABLE else "unavailable","reason":None if DEBUGPY_AVAILABLE else "debugpy is not installed"}
