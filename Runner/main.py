@@ -700,13 +700,27 @@ def _stream_process_events(pid):
                 if len(data) < offset:
                     offset = 0
                 if data[offset:]:
-                    events.append({"type": stream_name, "data": data[offset:]})
+                    events.append({
+                        "type": "output",
+                        "stream": stream_name,
+                        "data": data[offset:],
+                    })
                     offsets[stream_name] = len(data)
             if status != last_status:
-                events.append({"type": "status", "status": status, "exit_code": proc.poll()})
+                events.append({
+                    "type": "status",
+                    "status": status,
+                    "exit_code": proc.poll(),
+                    "duration_ms": int((time.time() - item["started_at"]) * 1000),
+                })
                 last_status = status
         for event in events:
-            yield json.dumps({"process_id": str(pid), **event}, separators=(",", ":")) + "\n"
+            yield json.dumps({
+                "schema_version": "1",
+                "timestamp": time.time(),
+                "process_id": str(pid),
+                **event,
+            }, separators=(",", ":")) + "\n"
         if status != "running":
             return
         time.sleep(STREAM_POLL_INTERVAL)
