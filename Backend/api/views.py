@@ -2149,7 +2149,7 @@ def _safe_ide_path(value):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def ide_workspace_files_api(request, pk):
-    ws = _workspace_for_user(pk, request.user, for_update=False)
+    ws = _workspace_for_user(pk, request.user, for_update=True)
     if request.method in {"POST", "DELETE"} and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
     expected_revision = request.data.get("revision")
@@ -2181,7 +2181,10 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        try:
+            ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
     if action not in {"write", "create", "rename"}:
@@ -3116,8 +3119,10 @@ def organization_invites_api(request, pk):
         base_limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["org_members"]
         seat_limit = max(base_limit, org_sub.quantity) if org_sub and plan in {"team", "enterprise"} else base_limit
         if plan == "free":
-            seat_limit = max(seat_limit, 1)
-        if member_count >= seat_limit:
+            # A free organization includes its owner plus one invite seat.
+            seat_limit = max(seat_limit, 2)
+        pending_invites = org.invites.filter(accepted_at__isnull=True, expires_at__gt=timezone.now()).count()
+        if member_count + pending_invites >= seat_limit:
             return Response({"error": "Your organization plan has reached its member limit.", "limit": seat_limit}, status=403)
         invite = OrganizationInvite.objects.create(organization=org, inviter=request.user, email=email, role=role, token=secrets.token_urlsafe(48), expires_at=timezone.now()+timedelta(days=7))
     _audit(request.user, "organization.invite_created", "invite", invite.id, organization=org, metadata={"email": email, "role": role})
