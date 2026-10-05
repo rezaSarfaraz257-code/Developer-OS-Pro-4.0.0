@@ -308,6 +308,7 @@ def _capability_manifest():
             "max_command_bytes": MAX_COMMAND,
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
+            "max_process_lifetime_seconds": MAX_PROCESS_LIFETIME,
         },
         "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"], "lsp": True},
         "lsp": LSP_MANAGER.capability(),
@@ -498,8 +499,13 @@ PROCESSES = {}
 PROCESS_SEQ = 0
 PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
 PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
-MAX_PROCESSES_PER_WORKSPACE = 4
-MAX_PROCESS_OUTPUT = 200_000
+MAX_PROCESSES_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_PROCESSES_PER_WORKSPACE", "4")))
+MAX_PROCESS_OUTPUT = max(10_000, int(os.environ.get("RUNNER_MAX_PROCESS_OUTPUT_BYTES", "200000")))
+MAX_PROCESS_LIFETIME = min(
+    3600,
+    max(30, int(os.environ.get("RUNNER_MAX_PROCESS_LIFETIME_SECONDS", "1800"))),
+)
+PROCESS_REAPER_INTERVAL = min(60, max(5, int(os.environ.get("RUNNER_PROCESS_REAPER_INTERVAL_SECONDS", "15")))
 
 def _process_output_reader(pid, stream_name, stream):
     try:
@@ -517,14 +523,19 @@ def _process_output_reader(pid, stream_name, stream):
         except Exception:
             pass
 
-def _start_process(root, command, *, allow_network=False, env_extra=None):
+def _start_process(root, command, *, allow_network=False, env_extra=None, kind="process"):
     global PROCESS_SEQ
-    command = str(command or "").strip()
-    if not command or len(command) > MAX_COMMAND or "\x00" in command:
-        raise HTTPException(status_code=400, detail="Invalid process command.")
-    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
-        raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
+    command = _validate_execution_policy(command, allow_network=allow_network)
     with PROCESS_LOCK:
+        # Opportunistically reap exited records before enforcing the quota.
+        _reap_processes_locked()
+        active = [
+            p for p in PROCESSES.values()
+            if p["workspace_id"] == root.name and p["popen"].poll() is None
+        ]
+        if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
+            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
+        PROCESS_SEQ += 1
         active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
         if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
             raise HTTPException(status_code=429, detail="Workspace process limit reached.")
@@ -559,11 +570,53 @@ def _start_process(root, command, *, allow_network=False, env_extra=None):
         PROCESSES[process_id] = {
             "id": process_id, "workspace_id": root.name, "command": command,
             "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
-            "kind": "process",
+            "kind": kind,
+            "last_activity_at": time.time(),
         }
     threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
     threading.Thread(target=_process_output_reader, args=(process_id, "stderr", proc.stderr), daemon=True).start()
     return process_id
+
+def _reap_processes_locked():
+    """Remove completed process records while preserving recent state briefly."""
+    now = time.time()
+    stale = []
+    for pid, item in PROCESSES.items():
+        proc = item["popen"]
+        if proc.poll() is not None and now - float(item.get("started_at", now)) > 300:
+            stale.append(pid)
+    for pid in stale:
+        PROCESSES.pop(pid, None)
+
+def _terminate_process_group(item, *, force=False):
+    proc = item["popen"]
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL if force else signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+def _process_reaper_loop():
+    """Enforce a wall-clock lifetime for long-running IDE processes."""
+    while True:
+        time.sleep(PROCESS_REAPER_INTERVAL)
+        now = time.time()
+        with PROCESS_LOCK:
+            _reap_processes_locked()
+            for item in list(PROCESSES.values()):
+                proc = item["popen"]
+                if proc.poll() is not None:
+                    continue
+                age = now - float(item.get("started_at", now))
+                if age >= MAX_PROCESS_LIFETIME:
+                    _terminate_process_group(item, force=True)
+                    item["stderr"] = (
+                        item.get("stderr", "")[-MAX_PROCESS_OUTPUT:]
+                        + "\n[runner] process terminated: maximum lifetime exceeded."
+                    )[-MAX_PROCESS_OUTPUT:]
+
+threading.Thread(target=_process_reaper_loop, name="process-reaper", daemon=True).start()
 
 def _process_state(pid):
     with PROCESS_LOCK:
@@ -580,6 +633,8 @@ def _process_state(pid):
             "stderr": item.get("stderr", "")[-MAX_PROCESS_OUTPUT:],
             "duration_ms": int((time.time() - item["started_at"]) * 1000),
             "started_at": item["started_at"],
+            "max_lifetime_seconds": MAX_PROCESS_LIFETIME,
+            "kind": item.get("kind", "process"),
         }
 
 def _stop_process(pid):
@@ -768,7 +823,11 @@ def process_list(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
     with PROCESS_LOCK:
         ids = [p["id"] for p in PROCESSES.values() if p["workspace_id"] == str(workspace_id)]
-    return {"processes": [_process_state(pid) for pid in ids]}
+    return {"processes": [_process_state(pid) for pid in ids], "limits": {
+        "max_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
+        "max_lifetime_seconds": MAX_PROCESS_LIFETIME,
+        "max_output_bytes": MAX_PROCESS_OUTPUT,
+    }}
 
 @app.post("/git")
 def git_api(payload: ExecRequest, authorization: str = Header(default="")):
@@ -870,7 +929,13 @@ def preview_start(payload: ExecRequest, authorization: str = Header(default=""))
     # The command is supplied by a trusted framework preset on the API side.
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Preview command blocked.")
-    pid = _start_process(root, command + f" --port {port}" if "--port" not in command and "runserver" not in command else command, allow_network=False, env_extra={"PORT": str(port)})
+    pid = _start_process(
+        root,
+        command + f" --port {port}" if "--port" not in command and "runserver" not in command else command,
+        allow_network=False,
+        env_extra={"PORT": str(port)},
+        kind="preview",
+    )
     return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
 
 @app.get("/preview/{workspace_id}/{path:path}")
@@ -883,4 +948,3 @@ def preview_proxy(workspace_id: str, path: str, authorization: str = Header(defa
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
     return Response(content=response.content, status_code=response.status_code, headers={"Content-Type": response.headers.get("content-type", "text/plain")})
-
