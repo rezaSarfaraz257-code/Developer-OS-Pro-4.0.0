@@ -573,7 +573,7 @@ def _workspace_preview_port(workspace_id):
 def _git_run(root, args):
     if not isinstance(args, list) or not args:
         raise HTTPException(status_code=400, detail="Invalid Git request.")
-    allowed = {"status", "diff", "branch", "log", "add", "reset", "commit", "rev-parse", "init", "checkout"}
+    allowed = {"status", "diff", "branch", "log", "add", "reset", "commit", "rev-parse", "init", "checkout", "restore"}
     if args[0] not in allowed:
         raise HTTPException(status_code=400, detail="Git operation is not allowed.")
     if any("\x00" in str(x) or len(str(x)) > 500 for x in args):
