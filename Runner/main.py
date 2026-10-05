@@ -25,6 +25,8 @@ TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
+SNAPSHOT_ROOT = ROOT / ".ide-snapshots"
+MAX_SNAPSHOTS_PER_WORKSPACE = max(2, int(os.environ.get("RUNNER_MAX_SNAPSHOTS", "20")))
 MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
@@ -183,6 +185,37 @@ def write_snapshot(root, files):
         if target.exists() and target.is_symlink():
             raise ValueError("unsafe path")
         target.write_text(content, encoding="utf-8")
+
+def _snapshot_dir(workspace_id):
+    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+        raise HTTPException(status_code=400, detail="Invalid workspace id.")
+    path = SNAPSHOT_ROOT / str(workspace_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+def _create_snapshot(workspace_id, root, revision, reason="transaction"):
+    folder = _snapshot_dir(workspace_id)
+    snapshot_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:10]}"
+    target = folder / snapshot_id
+    target.mkdir(parents=True, exist_ok=False)
+    write_snapshot(target, snapshot(root))
+    meta = {"schema_version":"1","snapshot_id":snapshot_id,"workspace_id":str(workspace_id),"revision":int(revision),"reason":str(reason)[:120],"created_at":time.time()}
+    (target / ".metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+    snapshots = sorted([p for p in folder.iterdir() if p.is_dir()], key=lambda p:p.stat().st_mtime, reverse=True)
+    for stale in snapshots[MAX_SNAPSHOTS_PER_WORKSPACE:]:
+        shutil.rmtree(stale, ignore_errors=True)
+    return meta
+
+def _restore_snapshot(workspace_id, root, snapshot_id):
+    folder = _snapshot_dir(workspace_id)
+    if not re.fullmatch(r"[0-9]+-[a-f0-9]{10}", str(snapshot_id)):
+        raise HTTPException(status_code=400, detail="Invalid snapshot id.")
+    target = folder / str(snapshot_id)
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail="Snapshot not found.")
+    files = snapshot(target)
+    atomic_write_snapshot(root, files)
+    return files
 
 def atomic_write_snapshot(root, files):
     staging = root.parent / (root.name + ".staging-" + uuid.uuid4().hex)
