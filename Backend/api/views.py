@@ -2481,7 +2481,7 @@ def ide_debug_api(request, pk):
     # A debugger start request is identifiable by its target path even when a
     # thin client omits the action field. Never reinterpret explicit status
     # requests that carry a session id.
-    if not raw_action and request.data.get("path") and not request.data.get("session_id"):
+    if action == "status" and request.data.get("path") and not request.data.get("session_id"):
         action = "start"
     allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
     if action not in allowed_actions:
