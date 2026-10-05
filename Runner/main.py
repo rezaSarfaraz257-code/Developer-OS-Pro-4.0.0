@@ -220,6 +220,34 @@ def _create_snapshot(workspace_id, root, revision, reason="transaction"):
         shutil.rmtree(stale, ignore_errors=True)
     return meta
 
+def _history_file(workspace_id):
+    return _snapshot_dir(workspace_id) / ".history.json"
+
+def _read_history(workspace_id):
+    path = _history_file(workspace_id)
+    if not path.exists():
+        return {"schema_version":"1","cursor":-1,"nodes":[]}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"schema_version":"1","cursor":-1,"nodes":[]}
+
+def _write_history(workspace_id, history):
+    _history_file(workspace_id).write_text(json.dumps(history, separators=(",", ":")), encoding="utf-8")
+
+def _record_history(workspace_id, snapshot_meta, patch_id="", parent=None, action="apply"):
+    history = _read_history(workspace_id)
+    nodes = history.setdefault("nodes", [])
+    cursor = int(history.get("cursor", -1))
+    if cursor + 1 < len(nodes):
+        nodes = nodes[:cursor + 1]
+    node = {"id":snapshot_meta["snapshot_id"],"snapshot_id":snapshot_meta["snapshot_id"],"revision":snapshot_meta["revision"],"patch_id":patch_id,"parent":parent,"action":action,"created_at":snapshot_meta["created_at"]}
+    nodes.append(node)
+    history["nodes"] = nodes[-MAX_SNAPSHOTS_PER_WORKSPACE:]
+    history["cursor"] = len(history["nodes"]) - 1
+    _write_history(workspace_id, history)
+    return node
+
 def _restore_snapshot(workspace_id, root, snapshot_id):
     folder = _snapshot_dir(workspace_id)
     if not re.fullmatch(r"[0-9]+-[a-f0-9]{10}", str(snapshot_id)):
