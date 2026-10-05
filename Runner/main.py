@@ -341,10 +341,9 @@ def lsp_notifications(payload: LSPRequest, authorization: str = Header(default="
     except LSPError as exc:
         raise HTTPException(status_code=503,detail=str(exc)[:300])
 
-@app.get("/health")
-def health():
+def _health_payload(status="ok"):
     return {
-        "status": "ok",
+        "status": status,
         "service": "developer-os-runner",
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
@@ -352,9 +351,35 @@ def health():
         "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
         "runtimes": _runtime_info(),
+        "debugger": debug_capability(),
         "capabilities_version": "1",
         "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
     }
+
+@app.get("/health")
+def health():
+    return _health_payload()
+
+@app.get("/live")
+def live():
+    # Liveness must stay dependency-light: the process is alive if FastAPI
+    # can answer the request. It intentionally does not require a runner token.
+    return {"status": "alive", "service": "developer-os-runner"}
+
+@app.get("/ready")
+def ready():
+    # Readiness is stricter than liveness but exposes no secret configuration.
+    checks = {
+        "workspace_root": ROOT.exists() and os.access(ROOT, os.W_OK),
+        "runner_token": bool(TOKEN),
+        "debugger": bool(debug_capability().get("available")),
+    }
+    status = "ready" if all(checks.values()) else "not_ready"
+    return Response(
+        content=json.dumps({"status": status, "service": "developer-os-runner", "checks": checks}),
+        media_type="application/json",
+        status_code=200 if status == "ready" else 503,
+    )
 
 @app.get("/capabilities")
 def capabilities(authorization: str = Header(default="")):
