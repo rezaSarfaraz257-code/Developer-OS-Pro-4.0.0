@@ -52,7 +52,21 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   setBusy(true);
   try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});const d=await r.json();if(!r.ok)throw Error(d.error||"Git operation failed");setGit(x=>({...x,[operation]:d}));setMessage(operation+" completed.");return d}catch(e){setMessage(e.message)}finally{setBusy(false)}
  }
- async function refresh(){await Promise.all([gitAction("status",["status"]),gitAction("diff",["diff"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
+ async function openDiff(file,original,modified){
+  try{
+   const left=monaco.editor.createModel(original||"");
+   const right=monaco.editor.createModel(modified||"");
+   const container=document.createElement("div");container.style.cssText="position:fixed;inset:8%;z-index:9999;background:#111827;border:1px solid #374151;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)";
+   document.body.appendChild(container);
+   const header=document.createElement("div");header.style.cssText="height:42px;padding:10px 14px;color:#fff;font-weight:600";
+   header.textContent="Diff · "+file+"   ×";header.onclick=()=>{editor.dispose();left.dispose();right.dispose();container.remove()};
+   container.appendChild(header);
+   const host=document.createElement("div");host.style.cssText="position:absolute;top:42px;left:0;right:0;bottom:0";container.appendChild(host);
+   const editor=monaco.editor.createDiffEditor(host,{readOnly:true,automaticLayout:true,renderSideBySide:true});
+   editor.setModel({original:left,modified:right});
+  }catch{}
+ }
+ function refresh(){await Promise.all([gitAction("status",["status"]),gitAction("diff",["diff"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
  async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  async function nativeCommit(){const msg=commitMessage.trim();if(!msg)return setMessage("Commit message is required.");await gitAction("commit",["add","-A"]);await gitAction("commit",["commit","-m",msg]);await refresh();}
  async function nativeBranch(){const b=branch.trim();if(!b)return setMessage("Branch name is required.");await gitAction("branch",["checkout","-b",b]);setBranch("");await refresh();}
