@@ -1021,6 +1021,24 @@ def collaboration_unlock(workspace_id: str, path: str, client_id: str, authoriza
         state["locks"].pop(path, None)
     return {"status":"unlocked","path":path}
 
+@app.get("/workspace/{workspace_id}/collaboration/events")
+def collaboration_events(workspace_id: str, after_version: int = 0, authorization: str = Header(default="")):
+    auth(authorization)
+    if after_version < 0:
+        raise HTTPException(status_code=400, detail="after_version must be non-negative.")
+    state = _collab_state(workspace_id)
+    events = [x for x in state["operations"] if int(x.get("version", 0)) > after_version]
+    def stream():
+        yield ": developer-os collaboration stream\\n\\n"
+        for event in events:
+            payload = json.dumps(event, separators=(",", ":"))
+            yield "id: " + str(event["id"]) + "\\n"
+            yield "event: collaboration\\n"
+            yield "data: " + payload + "\\n\\n"
+        yield "event: sync\\n"
+        yield "data: " + json.dumps({"version":state["version"]}) + "\\n\\n"
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
 @app.get("/workspace/{workspace_id}/collaboration")
 def collaboration_state(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
