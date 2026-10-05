@@ -987,7 +987,10 @@ def apply_workspace_patch(payload: PatchRequest, authorization: str = Header(def
             event_publish("ai.patch.rejected", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, diagnostics=validation["diagnostics"])
             raise HTTPException(status_code=422, detail={"code":"PATCH_VALIDATION_FAILED","validation":validation})
         checkpoint = _create_snapshot(payload.workspace_id, root, current, "before-ai-patch")
+        _record_history(payload.workspace_id, checkpoint, patch_id=payload.patch_id, parent=None, action="checkpoint")
         atomic_write_snapshot(root, staged)
+        applied_snapshot = _create_snapshot(payload.workspace_id, root, current + 1, "after-ai-patch")
+        _record_history(payload.workspace_id, applied_snapshot, patch_id=payload.patch_id, parent=checkpoint["snapshot_id"], action="apply")
         verified = _post_apply_verify(snapshot(root), payload.workspace_id)
         if not verified["ok"]:
             _restore_snapshot(payload.workspace_id, root, _snapshot_id(checkpoint))
