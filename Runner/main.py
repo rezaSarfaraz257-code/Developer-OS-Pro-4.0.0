@@ -478,6 +478,46 @@ def lsp_document_close(payload: LSPRequest, authorization: str = Header(default=
     session.did_close(payload.uri)
     return {"status":"closed","uri":payload.uri}
 
+@app.post("/lsp/action")
+def lsp_action(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    action = str(getattr(payload, "action", "") or "").strip()
+    if action not in {"hover","completion","definition","references","rename","code_actions"}:
+        raise HTTPException(status_code=400, detail="Unsupported LSP action.")
+    args = {
+        "root": root,
+        "name": getattr(payload, "name", "") or "",
+        "query": getattr(payload, "query", "") or "",
+        "path": getattr(payload, "path", "") or "",
+        "line": int(getattr(payload, "line", 0) or 0),
+        "new": getattr(payload, "new", "") or "",
+    }
+    handlers = {
+        "hover": symbol_hover,
+        "completion": symbol_completion,
+        "definition": symbol_definitions,
+        "references": symbol_references,
+        "rename": symbol_rename_diff,
+        "code_actions": symbol_code_actions,
+    }
+    try:
+        if action == "hover":
+            result = handlers[action](root, args["name"], args["path"], args["line"])
+        elif action == "completion":
+            result = handlers[action](root, args["query"], args["path"])
+        elif action == "definition":
+            result = handlers[action](root, args["name"], args["path"])
+        elif action == "references":
+            result = handlers[action](root, args["name"], args["path"])
+        elif action == "rename":
+            result = handlers[action](root, args["name"], args["new"], args["path"])
+        else:
+            result = handlers[action](root, args["path"], args["line"])
+        return {"schema_version":"1","action":action,"workspace_id":payload.workspace_id,"result":result}
+    except (ValueError, LSPError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:300])
+
 @app.get("/lsp/capabilities")
 def lsp_capabilities(authorization: str = Header(default="")):
     auth(authorization)
