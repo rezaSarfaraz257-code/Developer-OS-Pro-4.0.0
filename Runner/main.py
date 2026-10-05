@@ -1,9 +1,9 @@
 import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex
-import uuid
+import uuid, asyncio
 import requests
 from fastapi.responses import StreamingResponse
 from pathlib import Path
-from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from package_engine import capabilities as package_capabilities, plan_response as package_plan_response
 from build_engine import plan as build_plan, artifact_manifest
@@ -1020,6 +1020,69 @@ def collaboration_unlock(workspace_id: str, path: str, client_id: str, authoriza
     if lock and lock["client_id"] == client_id:
         state["locks"].pop(path, None)
     return {"status":"unlocked","path":path}
+
+COLLAB_CONNECTIONS = {}
+COLLAB_CONNECTIONS_LOCK = threading.Lock()
+
+def _collab_connections(workspace_id):
+    with COLLAB_CONNECTIONS_LOCK:
+        return COLLAB_CONNECTIONS.setdefault(str(workspace_id), set())
+
+async def _broadcast_collab(workspace_id, message, exclude=None):
+    connections = list(_collab_connections(workspace_id))
+    for ws in connections:
+        if ws is exclude:
+            continue
+        try:
+            await ws.send_json(message)
+        except Exception:
+            _collab_connections(workspace_id).discard(ws)
+
+@app.websocket("/workspace/{workspace_id}/collaboration/ws")
+async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
+    token = websocket.headers.get("authorization", "")
+    try:
+        auth(token)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    connections = _collab_connections(workspace_id)
+    connections.add(websocket)
+    try:
+        await websocket.send_json({"event_type":"sync","channel":"workspace","version":_collab_state(workspace_id)["version"]})
+        while True:
+            message = await websocket.receive_json()
+            message_type = str(message.get("type") or "").strip()
+            if message_type == "ping":
+                await websocket.send_json({"event_type":"pong","channel":"workspace","ts":time.time()})
+                continue
+            if message_type == "operation":
+                client_id = str(message.get("client_id") or "").strip()
+                if not client_id:
+                    await websocket.send_json({"event_type":"error","code":"CLIENT_ID_REQUIRED"})
+                    continue
+                state = _collab_state(workspace_id)
+                if client_id not in state["members"]:
+                    state["members"][client_id] = {"client_id":client_id,"status":"online","last_seen":time.time()}
+                event = _collab_operation(workspace_id, client_id, message.get("base_revision"), message.get("operation") or {}, str(message.get("operation_id") or ""))
+                await _broadcast_collab(workspace_id, event)
+                continue
+            if message_type == "presence":
+                client_id = str(message.get("client_id") or "").strip()
+                state = _collab_state(workspace_id)
+                if client_id:
+                    state["members"][client_id] = {"client_id":client_id,"status":"online","last_seen":time.time()}
+                    cursor = message.get("cursor")
+                    if isinstance(cursor, dict):
+                        state["cursors"][client_id] = {"path":str(cursor.get("path") or "")[:500],"line":max(0,int(cursor.get("line") or 0)),"column":max(0,int(cursor.get("column") or 0)),"selection":cursor.get("selection") if isinstance(cursor.get("selection"),dict) else None,"updated_at":time.time()}
+                await _broadcast_collab(workspace_id, {"event_type":"presence","channel":"workspace","members":list(state["members"].values()),"cursors":state["cursors"]}, exclude=websocket)
+                continue
+            await websocket.send_json({"event_type":"error","code":"UNSUPPORTED_MESSAGE"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        connections.discard(websocket)
 
 @app.get("/workspace/{workspace_id}/collaboration/events")
 def collaboration_events(workspace_id: str, after_version: int = 0, authorization: str = Header(default="")):
