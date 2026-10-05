@@ -201,7 +201,7 @@ def _collab_operation(workspace_id, client_id, base_revision, operation, operati
             if any(x.get("operation", {}).get("path") == operation.get("path") for x in recent):
                 raise HTTPException(status_code=409, detail={"code":"COLLAB_OPERATION_CONFLICT","base_revision":base,"current_revision":current,"path":operation.get("path")})
         state["version"] += 1
-        event = {"id":operation_id or str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time()}
+        event = {"id":operation_id or str(uuid.uuid4()),"version":state["version"],"client_id":client_id,"base_revision":current,"operation":operation,"created_at":time.time(),"optimistic":True}
         state["operations"].append(event)
         state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         _append_collab_operation(workspace_id, event)
@@ -1394,8 +1394,16 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
                 state = _collab_state(workspace_id)
                 if client_id not in state["members"]:
                     state["members"][client_id] = {"client_id":client_id,"status":"online","last_seen":time.time()}
-                event = _collab_operation(workspace_id, client_id, message.get("base_revision"), message.get("operation") or {}, str(message.get("operation_id") or ""))
-                await _broadcast_collab(workspace_id, event)
+                operation_id = str(message.get("operation_id") or "").strip()
+                client_op = message.get("operation") or {}
+                try:
+                    event = _collab_operation(workspace_id, client_id, message.get("base_revision"), client_op, operation_id)
+                except HTTPException as exc:
+                    detail = exc.detail if isinstance(exc.detail, dict) else {"code":"COLLAB_OPERATION_REJECTED","detail":str(exc.detail)}
+                    await websocket.send_json({"event_type":"operation_rejected","channel":"workspace","operation_id":operation_id,"client_id":client_id,"current_revision":detail.get("current_revision"),"reason":detail.get("code","COLLAB_OPERATION_REJECTED"),"conflict":detail.get("path")})
+                    continue
+                await websocket.send_json({"event_type":"operation_ack","channel":"workspace","operation_id":event["id"],"version":event["version"],"base_revision":event["base_revision"]})
+                await _broadcast_collab(workspace_id, event, exclude=websocket)
                 continue
             if message_type == "presence":
                 allowed, _ = _collab_rate_allow(id(websocket), "presence", COLLAB_MAX_PRESENCE_PER_WINDOW)
