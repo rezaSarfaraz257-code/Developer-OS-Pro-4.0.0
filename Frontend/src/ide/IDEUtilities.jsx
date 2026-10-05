@@ -84,7 +84,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
  async function checkoutBranch(){
   const b=branch.trim();
   if(!b||busy)return;
-  if(!/^[A-Za-z0-9._\/-]{1,120}$/.test(b))return setMessage("Invalid branch name.");
+  if(!/^[A-Za-z0-9._/-]{1,120}$/.test(b))return setMessage("Invalid branch name.");
   if(!window.confirm("Switch workspace to branch "+b+"?"))return;
   setBusy(true);
   try{
