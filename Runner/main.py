@@ -1,5 +1,6 @@
 import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex
 import requests
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -569,6 +570,8 @@ MAX_PROCESS_LIFETIME = min(
     max(30, int(os.environ.get("RUNNER_MAX_PROCESS_LIFETIME_SECONDS", "1800"))),
 )
 PROCESS_REAPER_INTERVAL = min(60, max(5, int(os.environ.get("RUNNER_PROCESS_REAPER_INTERVAL_SECONDS", "15")))
+STREAM_POLL_INTERVAL = min(2.0, max(0.1, float(os.environ.get("RUNNER_STREAM_POLL_INTERVAL_SECONDS", "0.25"))))
+STREAM_MAX_SECONDS = min(3600, max(10, int(os.environ.get("RUNNER_STREAM_MAX_SECONDS", "1800")))
 
 def _process_output_reader(pid, stream_name, stream):
     try:
@@ -579,7 +582,7 @@ def _process_output_reader(pid, stream_name, stream):
                 item = PROCESSES.get(pid)
                 if not item:
                     break
-                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]\n                item["last_activity_at"] = time.time()
     finally:
         try:
             stream.close()
@@ -676,6 +679,48 @@ def _process_reaper_loop():
                     )[-MAX_PROCESS_OUTPUT:]
 
 threading.Thread(target=_process_reaper_loop, name="process-reaper", daemon=True).start()
+
+def _stream_process_events(pid):
+    started = time.monotonic()
+    offsets = {"stdout": 0, "stderr": 0}
+    last_status = None
+    while time.monotonic() - started < STREAM_MAX_SECONDS:
+        with PROCESS_LOCK:
+            item = PROCESSES.get(str(pid))
+            if not item:
+                yield json.dumps({"type": "error", "process_id": str(pid), "detail": "Process not found."}) + "\n"
+                return
+            proc = item["popen"]
+            status = "running" if proc.poll() is None else ("success" if proc.returncode == 0 else "failed")
+            events = []
+            for stream_name in ("stdout", "stderr"):
+                data = item.get(stream_name, "")
+                offset = offsets[stream_name]
+                if len(data) < offset:
+                    offset = 0
+                if data[offset:]:
+                    events.append({"type": stream_name, "data": data[offset:]})
+                    offsets[stream_name] = len(data)
+            if status != last_status:
+                events.append({"type": "status", "status": status, "exit_code": proc.poll()})
+                last_status = status
+        for event in events:
+            yield json.dumps({"process_id": str(pid), **event}, separators=(",", ":")) + "\n"
+        if status != "running":
+            return
+        time.sleep(STREAM_POLL_INTERVAL)
+    yield json.dumps({"type": "timeout", "process_id": str(pid), "max_stream_seconds": STREAM_MAX_SECONDS}, separators=(",", ":")) + "\n"
+
+@app.get("/process/{pid}/stream")
+def process_stream(pid: str, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(pid)):
+        raise HTTPException(status_code=400, detail="Invalid process id.")
+    return StreamingResponse(
+        _stream_process_events(pid),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 def _process_state(pid):
     with PROCESS_LOCK:
