@@ -1278,11 +1278,23 @@ def _drain_cursor_batch(workspace_id):
         bucket = COLLAB_CURSOR_PENDING.pop(str(workspace_id), {})
     return list(bucket.values())[:COLLAB_CURSOR_BATCH_MAX]
 
-async def _broadcast_cursor_batch(workspace_id, exclude=None):
+COLLAB_CURSOR_TASKS = {}
+COLLAB_CURSOR_TASK_LOCK = threading.Lock()
+
+async def _flush_cursor_batch(workspace_id, exclude=None):
+    await asyncio.sleep(COLLAB_CURSOR_BATCH_MS / 1000)
     batch = _drain_cursor_batch(workspace_id)
-    if not batch:
-        return
-    await _broadcast_collab(workspace_id, {"event_type":"cursor_batch","channel":"workspace","items":batch}, exclude=exclude)
+    with COLLAB_CURSOR_TASK_LOCK:
+        COLLAB_CURSOR_TASKS.pop(str(workspace_id), None)
+    if batch:
+        await _broadcast_collab(workspace_id, {"event_type":"cursor_batch","channel":"workspace","items":batch}, exclude=exclude)
+
+def _schedule_cursor_batch(workspace_id, exclude=None):
+    key = str(workspace_id)
+    with COLLAB_CURSOR_TASK_LOCK:
+        if key in COLLAB_CURSOR_TASKS and not COLLAB_CURSOR_TASKS[key].done():
+            return
+        COLLAB_CURSOR_TASKS[key] = asyncio.create_task(_flush_cursor_batch(key, exclude=exclude))
 
 COLLAB_PRIORITY = {"operation": 100, "lock": 90, "unlock": 90, "leave": 80, "sync": 80, "heartbeat": 50, "presence": 20, "cursor": 10}
 
@@ -1294,7 +1306,7 @@ async def _broadcast_collab(workspace_id, message, exclude=None):
     priority = _collab_event_priority(message)
     if str(message.get("event_type") or "").lower() == "cursor":
         _coalesce_cursor(workspace_id, message)
-        await _broadcast_cursor_batch(workspace_id, exclude=exclude)
+        _schedule_cursor_batch(workspace_id, exclude=exclude)
         return
     for ws in connections:
         if ws is exclude:
