@@ -1213,6 +1213,26 @@ def _collab_event_seen(event_id):
             COLLAB_SEEN_EVENTS.pop(oldest, None)
         return False
 
+COLLAB_RATE_WINDOW_SECONDS = 10
+COLLAB_MAX_MESSAGES_PER_WINDOW = 120
+COLLAB_MAX_OPERATIONS_PER_WINDOW = 40
+COLLAB_MAX_PRESENCE_PER_WINDOW = 80
+COLLAB_RATE_STATE = {}
+COLLAB_RATE_LOCK = threading.Lock()
+
+def _collab_rate_allow(connection_key, bucket, limit):
+    now = time.time()
+    key = (str(connection_key), str(bucket))
+    with COLLAB_RATE_LOCK:
+        window = COLLAB_RATE_STATE.get(key)
+        if not window or now - window[0] >= COLLAB_RATE_WINDOW_SECONDS:
+            COLLAB_RATE_STATE[key] = [now, 1]
+            return True, limit - 1
+        window[1] += 1
+        if window[1] > limit:
+            return False, 0
+        return True, limit - window[1]
+
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
 
@@ -1287,10 +1307,18 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
                 await websocket.send_json({"event_type":"error","code":"INVALID_JSON"})
                 continue
             message_type = str(message.get("type") or "").strip()
+            allowed, remaining = _collab_rate_allow(id(websocket), "messages", COLLAB_MAX_MESSAGES_PER_WINDOW)
+            if not allowed:
+                await websocket.send_json({"event_type":"error","code":"RATE_LIMITED","retry_after":COLLAB_RATE_WINDOW_SECONDS})
+                continue
             if message_type == "ping":
                 await websocket.send_json({"event_type":"pong","channel":"workspace","ts":time.time()})
                 continue
             if message_type == "operation":
+                allowed, _ = _collab_rate_allow(id(websocket), "operations", COLLAB_MAX_OPERATIONS_PER_WINDOW)
+                if not allowed:
+                    await websocket.send_json({"event_type":"error","code":"OPERATION_RATE_LIMITED","retry_after":COLLAB_RATE_WINDOW_SECONDS})
+                    continue
                 client_id = str(message.get("client_id") or "").strip()
                 if not client_id:
                     await websocket.send_json({"event_type":"error","code":"CLIENT_ID_REQUIRED"})
@@ -1302,6 +1330,10 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
                 await _broadcast_collab(workspace_id, event)
                 continue
             if message_type == "presence":
+                allowed, _ = _collab_rate_allow(id(websocket), "presence", COLLAB_MAX_PRESENCE_PER_WINDOW)
+                if not allowed:
+                    await websocket.send_json({"event_type":"error","code":"PRESENCE_RATE_LIMITED","retry_after":COLLAB_RATE_WINDOW_SECONDS})
+                    continue
                 client_id = str(message.get("client_id") or "").strip()
                 state = _collab_state(workspace_id)
                 if client_id:
