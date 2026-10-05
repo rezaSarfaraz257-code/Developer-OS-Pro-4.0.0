@@ -361,6 +361,18 @@ def lsp_notifications(payload: LSPRequest, authorization: str = Header(default="
         raise HTTPException(status_code=503,detail=str(exc)[:300])
 
 def _health_payload(status="ok"):
+    with PROCESS_LOCK:
+        active_processes = sum(1 for item in PROCESSES.values() if item["popen"].poll() is None)
+        total_processes = len(PROCESSES)
+    active_slots = MAX_CONCURRENT - getattr(EXEC_SEMAPHORE, "_value", MAX_CONCURRENT)
+    obs = observability_snapshot()
+    pressure = {
+        "active_processes": active_processes,
+        "tracked_processes": total_processes,
+        "execution_slots_in_use": max(0, active_slots),
+        "execution_slots_available": max(0, MAX_CONCURRENT - active_slots),
+        "process_capacity": MAX_PROCESSES_PER_WORKSPACE,
+    }
     return {
         "status": status,
         "service": "developer-os-runner",
@@ -369,9 +381,15 @@ def _health_payload(status="ok"):
         "bubblewrap_available": bool(shutil.which("bwrap")),
         "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
+        "pressure": pressure,
+        "observability": {
+            "status": obs.get("status", "unknown"),
+            "events": obs.get("event_buffer", {}).get("size", 0),
+            "counters": obs.get("counters", {}),
+        },
         "runtimes": _runtime_info(),
         "debugger": debug_capability(),
-        "capabilities_version": "1",
+        "capabilities_version": "2",
         "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
     }
 
@@ -388,10 +406,15 @@ def live():
 @app.get("/ready")
 def ready():
     # Readiness is stricter than liveness but exposes no secret configuration.
+    with PROCESS_LOCK:
+        active_processes = sum(1 for item in PROCESSES.values() if item["popen"].poll() is None)
+    obs = observability_snapshot()
     checks = {
         "workspace_root": ROOT.exists() and os.access(ROOT, os.W_OK),
         "runner_token": bool(TOKEN),
         "debugger": bool(debug_capability().get("available")),
+        "observability": obs.get("status") == "healthy",
+        "execution_capacity": active_processes < MAX_CONCURRENT + MAX_PROCESSES_PER_WORKSPACE,
     }
     status = "ready" if all(checks.values()) else "not_ready"
     return Response(
