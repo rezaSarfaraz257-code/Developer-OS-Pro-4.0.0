@@ -579,6 +579,15 @@ def metrics(authorization: str = Header(default="")):
         },
     }
 
+def _post_apply_verify(files, workspace_id):
+    result = _validate_staged_files(files, strict=True)
+    result["workspace_id"] = str(workspace_id)
+    result["verification"] = "post-apply-gate"
+    return result
+
+def _snapshot_id(meta):
+    return str(meta.get("snapshot_id", ""))
+
 def _validate_staged_files(files, strict=False):
     diagnostics = []
     for path, content in files.items():
@@ -757,8 +766,13 @@ def apply_workspace_patch(payload: PatchRequest, authorization: str = Header(def
         if not validation["ok"]:
             event_publish("ai.patch.rejected", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, diagnostics=validation["diagnostics"])
             raise HTTPException(status_code=422, detail={"code":"PATCH_VALIDATION_FAILED","validation":validation})
-        _create_snapshot(payload.workspace_id, root, current, "before-ai-patch")
+        checkpoint = _create_snapshot(payload.workspace_id, root, current, "before-ai-patch")
         atomic_write_snapshot(root, staged)
+        verified = _post_apply_verify(snapshot(root), payload.workspace_id)
+        if not verified["ok"]:
+            _restore_snapshot(payload.workspace_id, root, _snapshot_id(checkpoint))
+            event_publish("ai.patch.rollback", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, diagnostics=verified["diagnostics"])
+            raise HTTPException(status_code=422, detail={"code":"PATCH_POST_APPLY_FAILED","rolled_back":True,"validation":verified})
         event = event_publish("ai.patch.applied", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, files_changed=len(payload.operations))
         return {"status":"applied","patch_id":payload.patch_id,"workspace_id":payload.workspace_id,"revision":current + 1,"files":snapshot(root),"event":event}
 
