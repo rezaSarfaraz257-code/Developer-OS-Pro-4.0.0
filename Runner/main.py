@@ -571,7 +571,7 @@ MAX_PROCESS_LIFETIME = min(
 )
 PROCESS_REAPER_INTERVAL = min(60, max(5, int(os.environ.get("RUNNER_PROCESS_REAPER_INTERVAL_SECONDS", "15")))
 STREAM_POLL_INTERVAL = min(2.0, max(0.1, float(os.environ.get("RUNNER_STREAM_POLL_INTERVAL_SECONDS", "0.25"))))
-STREAM_MAX_SECONDS = min(3600, max(10, int(os.environ.get("RUNNER_STREAM_MAX_SECONDS", "1800")))))
+STREAM_MAX_SECONDS = min(3600, max(10, int(os.environ.get("RUNNER_STREAM_MAX_SECONDS", "1800"))))
 
 def _process_output_reader(pid, stream_name, stream):
     try:
