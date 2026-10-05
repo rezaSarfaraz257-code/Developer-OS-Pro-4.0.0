@@ -1,6 +1,7 @@
 import time
 
 import observability_engine as obs
+from chaos_scenarios import scenario
 
 
 def test_health_score_is_bounded_and_structured():
@@ -51,3 +52,10 @@ def test_health_telemetry_never_contains_source_payloads():
     assert "authorization" not in text
     assert "password" not in text
     assert "api_key" not in text
+
+
+def test_chaos_scenarios_are_bounded_and_deterministic():
+    assert scenario("network_flap")["expected"] == "outbox_replay"
+    assert scenario("revision_conflict")["expected"] == "conflict_recovery"
+    assert len(scenario("outbox_pressure")["events"]) == 1000
+    assert scenario("runner_degraded")["expected"] == "circuit_open"
