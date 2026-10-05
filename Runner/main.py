@@ -607,6 +607,15 @@ class DebugRequest(Workspace):
     expression: str = ""
     breakpoints: list = Field(default_factory=list)
 
+class SymbolRequest(Workspace):
+    action: str = "symbols"
+    query: str = ""
+    path: str = ""
+    name: str = ""
+    old: str = ""
+    new: str = ""
+    line: int = 0
+
 @app.post("/debug/start")
 def debug_start_api(payload: DebugRequest, authorization: str = Header(default="")):
     auth(authorization)
