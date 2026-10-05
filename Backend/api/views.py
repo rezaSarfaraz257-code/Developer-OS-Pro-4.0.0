@@ -2497,7 +2497,8 @@ def ide_debug_api(request, pk):
         "breakpoints": request.data.get("breakpoints") or [],
         "session_id": str(request.data.get("session_id") or "")[:200],
     }
-    data, error = _runner_request("POST", "/debug", payload, timeout=35)
+    runner_path = "/debug/start" if action == "start" else "/debug"
+    data, error = _runner_request("POST", runner_path, payload, timeout=35)
     if error:
         return Response(error, status=503)
     return Response({
