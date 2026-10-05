@@ -536,10 +536,6 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, kind="
         if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
             raise HTTPException(status_code=429, detail="Workspace process limit reached.")
         PROCESS_SEQ += 1
-        active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
-        if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
-            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
-        PROCESS_SEQ += 1
         process_id = str(PROCESS_SEQ)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
