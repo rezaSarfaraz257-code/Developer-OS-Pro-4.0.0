@@ -274,7 +274,8 @@ def native_branch_api(request, pk):
     source = str(request.data.get("from") or repo.framework or "main")
     source_head = _head(request.user, repo, source)
     if not source_head:
-        return Response({"error": "Source branch has no commits."}, status=404)
+        source_files = _files(repo.files or {})
+        source_head, _, _ = _commit(request.user, repo, source, "Initial repository snapshot", source_files, None, request.user.username)
     if branch not in _branch_heads(request.user, repo):
         files = _commit_files(request.user, repo, source_head)
         _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
