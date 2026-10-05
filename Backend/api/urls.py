@@ -85,6 +85,7 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/format/", views.ide_format_api, name="ide-format"),
     path("ide/workspaces/<int:pk>/replace/preview/", views.ide_replace_preview_api, name="ide-replace-preview"),
     path("ide/workspaces/<int:pk>/git/", views.ide_git_api, name="ide-git"),
+    path("ide/workspaces/<int:pk>/git/file/", views.ide_git_file_api, name="ide-git-file"),
     path("ide/workspaces/<int:pk>/preview/start/", views.ide_preview_start_api, name="ide-preview-start"),
     path("ide/workspaces/<int:pk>/preview/<path:preview_path>", views.ide_preview_proxy_api, name="ide-preview-proxy"),
     path("ide/workspaces/<int:pk>/preview/", views.ide_preview_proxy_api, name="ide-preview-root"),
