@@ -138,7 +138,14 @@ def handle(action,*,root=None,session_id="",path="",line=0,column=1,condition=""
         if not root:raise ValueError("Workspace root is required")
         s=Session(root,path,line)
         with _LOCK:SESSIONS[s.id]=s
-        try:return s.start()
+        try:
+            result=s.start()
+            if not isinstance(result, dict):
+                raise RuntimeError("Debugger returned an invalid session payload")
+            # Keep the session identity authoritative even if a future
+            # snapshot implementation changes its serialization.
+            result["session_id"]=s.id
+            return result
         except Exception:
             s.stop()
             with _LOCK:SESSIONS.pop(s.id,None)
