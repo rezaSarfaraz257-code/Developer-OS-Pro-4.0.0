@@ -57,6 +57,28 @@ jobs:
         working-directory: .
         run: python scripts/supply_chain_gate.py
 
+      - name: Generate SBOM
+        working-directory: .
+        run: python scripts/generate_sbom.py
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: developer-os-sbom
+          path: artifacts/sbom.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Dependency vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: Runner security policy tests
         run: python -m pytest -q test_security_policy.py
 
