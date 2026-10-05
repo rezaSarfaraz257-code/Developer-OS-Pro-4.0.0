@@ -103,6 +103,17 @@ class Workspace(BaseModel):
     files: dict[str, str] = Field(default_factory=dict)
     active_file: str = ""
 
+class PatchOperation(BaseModel):
+    path: str
+    content: str | None = None
+    action: str = "write"
+
+class PatchRequest(BaseModel):
+    workspace_id: str
+    expected_revision: int = Field(ge=0)
+    patch_id: str = Field(min_length=1, max_length=120)
+    operations: list[PatchOperation] = Field(default_factory=list, max_length=200)
+
 class WorkspaceTransaction(BaseModel):
     workspace_id: str
     expected_revision: int = Field(ge=0)
@@ -662,6 +673,52 @@ def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorizatio
         files = _restore_snapshot(workspace_id, root, snapshot_id)
         event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
         return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
+
+@app.post("/workspace/patch/preview")
+def preview_workspace_patch(payload: PatchRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    current = _workspace_revision(payload.workspace_id)
+    if current != payload.expected_revision:
+        raise HTTPException(status_code=409, detail={"code":"WORKSPACE_REVISION_CONFLICT","expected_revision":payload.expected_revision,"current_revision":current})
+    current_files = snapshot(root)
+    diffs = []
+    for op in payload.operations:
+        path = safe_rel(op.path)
+        before = current_files.get(path, "")
+        after = op.content or ""
+        if op.action == "delete":
+            after = ""
+        elif op.action not in {"write", "create"}:
+            raise HTTPException(status_code=400, detail="Unsupported patch operation.")
+        if before != after:
+            import difflib
+            diffs.append({"path":path,"action":op.action,"diff":"".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile=path, tofile=path))})
+    return {"schema_version":"1","patch_id":payload.patch_id,"workspace_id":payload.workspace_id,"revision":current,"files_changed":len(diffs),"diffs":diffs}
+
+@app.post("/workspace/patch/apply")
+def apply_workspace_patch(payload: PatchRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    with _workspace_lock(payload.workspace_id):
+        current = _workspace_revision(payload.workspace_id)
+        if current != payload.expected_revision:
+            raise HTTPException(status_code=409, detail={"code":"WORKSPACE_REVISION_CONFLICT","expected_revision":payload.expected_revision,"current_revision":current})
+        staged = snapshot(root)
+        for op in payload.operations:
+            path = safe_rel(op.path)
+            if op.action in {"write","create"}:
+                if op.content is None:
+                    raise HTTPException(status_code=400, detail="Patch content is required.")
+                staged[path] = op.content
+            elif op.action == "delete":
+                staged.pop(path, None)
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported patch operation.")
+        _create_snapshot(payload.workspace_id, root, current, "before-ai-patch")
+        atomic_write_snapshot(root, staged)
+        event = event_publish("ai.patch.applied", source="ai-patch", workspace_id=payload.workspace_id, patch_id=payload.patch_id, files_changed=len(payload.operations))
+        return {"status":"applied","patch_id":payload.patch_id,"workspace_id":payload.workspace_id,"revision":current + 1,"files":snapshot(root),"event":event}
 
 @app.post("/workspace/transaction")
 def workspace_transaction(payload: WorkspaceTransaction, authorization: str = Header(default="")):
