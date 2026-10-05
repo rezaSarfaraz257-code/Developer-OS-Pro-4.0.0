@@ -38,6 +38,52 @@ if SANDBOX_MODE not in {"container", "bwrap"}:
 EXEC_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT)
 WORKSPACE_LOCKS = {}
 WORKSPACE_LOCKS_GUARD = threading.Lock()
+IDE_STATE_LOCK = threading.RLock()
+IDE_STATES = {}
+MAX_IDE_STATES = 512
+
+def _ide_state(workspace_id):
+    wid = str(workspace_id)
+    with IDE_STATE_LOCK:
+        state = IDE_STATES.get(wid)
+        if state is None:
+            if len(IDE_STATES) >= MAX_IDE_STATES:
+                IDE_STATES.pop(next(iter(IDE_STATES)), None)
+            state = {
+                "schema_version": "1",
+                "workspace_id": wid,
+                "revision": 0,
+                "updated_at": time.time(),
+                "execution": {"status": "idle", "process_id": None, "trace_id": None, "exit_code": None},
+                "diagnostics": {"count": 0},
+                "debugger": {"status": "idle", "session_id": None},
+                "last_event_sequence": 0,
+            }
+            IDE_STATES[wid] = state
+        return state
+
+def _project_ide_event(event):
+    wid = event.get("workspace_id")
+    if wid is None:
+        return
+    state = _ide_state(wid)
+    with IDE_STATE_LOCK:
+        state["last_event_sequence"] = max(state["last_event_sequence"], int(event.get("sequence", 0)))
+        typ = event.get("type", "")
+        data = event.get("data") or {}
+        if typ == "execution.started":
+            state["execution"] = {"status": "running", "process_id": data.get("process_id"), "trace_id": event.get("trace_id"), "exit_code": None}
+        elif typ == "execution.finished":
+            state["execution"].update({"status": data.get("status", "finished"), "exit_code": data.get("exit_code")})
+        elif typ == "execution.timeout":
+            state["execution"].update({"status": "timeout", "exit_code": 124})
+        elif typ == "debug.started":
+            state["debugger"] = {"status": "running", "session_id": data.get("session_id")}
+        elif typ in {"debug.stopped", "debug.finished"}:
+            state["debugger"]["status"] = "stopped"
+        state["revision"] += 1
+        state["updated_at"] = time.time()
+
 MAX_COMMAND = 2_000
 BLOCKED = [
     r"\b(docker|podman|nsenter|unshare|mount|umount|chroot)\b",
@@ -208,7 +254,7 @@ def _validate_execution_policy(command, *, allow_network=False):
 
 def run_command(root, command, *, allow_network=False):
     trace_state = observability_trace("exec", workspace_id=root.name)
-    event_publish("execution.started", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"])
+    _project_ide_event(event_publish("execution.started", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"]))
     started = time.monotonic()
     try:
         command = _validate_execution_policy(command, allow_network=allow_network)
@@ -263,7 +309,7 @@ def run_command(root, command, *, allow_network=False):
                 "files": snapshot(root),
                 "trace_id": trace_state["trace_id"],
             }
-            observability_finish(trace_state, "timeout", workspace_id=root.name, exit_code=124)\n            event_publish("execution.timeout", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"], exit_code=124)
+            observability_finish(trace_state, "timeout", workspace_id=root.name, exit_code=124)\n            _project_ide_event(event_publish("execution.timeout", source="runner", workspace_id=root.name, trace_id=trace_state["trace_id"], exit_code=124))
             return result
         finally:
             EXEC_SEMAPHORE.release()
@@ -457,6 +503,18 @@ def metrics(authorization: str = Header(default="")):
             "counters": counters,
         },
     }
+
+@app.get("/state/{workspace_id}")
+def ide_state(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+        raise HTTPException(status_code=400, detail="Invalid workspace id.")
+    with IDE_STATE_LOCK:
+        state = dict(_ide_state(workspace_id))
+        state["execution"] = dict(state["execution"])
+        state["diagnostics"] = dict(state["diagnostics"])
+        state["debugger"] = dict(state["debugger"])
+    return state
 
 @app.get("/events")
 def events(since_sequence: int = 0, limit: int = 100, authorization: str = Header(default="")):
