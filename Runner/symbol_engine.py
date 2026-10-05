@@ -4,7 +4,8 @@ The index is static-analysis only: it never imports or executes workspace code.
 Python uses the stdlib AST; JS/TS uses conservative lexical extraction.
 """
 from __future__ import annotations
-import ast,re\nimport difflib
+import ast,re
+import difflib
 from pathlib import Path
 
 IGNORED={".git","node_modules",".venv","venv","dist","build","__pycache__"}
