@@ -184,6 +184,25 @@ def write_snapshot(root, files):
             raise ValueError("unsafe path")
         target.write_text(content, encoding="utf-8")
 
+def atomic_write_snapshot(root, files):
+    staging = root.parent / (root.name + ".staging-" + uuid.uuid4().hex)
+    backup = root.parent / (root.name + ".backup-" + uuid.uuid4().hex)
+    try:
+        staging.mkdir(parents=True, exist_ok=False)
+        write_snapshot(staging, files)
+        if snapshot(staging) != files:
+            raise ValueError("staged workspace verification failed")
+        root.rename(backup)
+        try:
+            staging.rename(root)
+        except Exception:
+            backup.rename(root)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(backup, ignore_errors=True)
+
 def snapshot(root):
     out = {}
     total = 0
@@ -620,7 +639,7 @@ def workspace_transaction(payload: WorkspaceTransaction, authorization: str = He
                     staged[target] = staged.pop(path)
                 else:
                     raise ValueError("unsupported workspace operation")
-            write_snapshot(root, staged)
+            atomic_write_snapshot(root, staged)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         new_revision = current + 1
