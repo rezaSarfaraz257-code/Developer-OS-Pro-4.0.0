@@ -2158,7 +2158,7 @@ def ide_workspace_files_api(request, pk):
             expected_revision = int(expected_revision)
         except (TypeError, ValueError):
             return Response({"error": "Invalid workspace revision."}, status=400)
-        if expected_revision != ws.revision:
+        if expected_revision != ws.revision and request.method == "POST":
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     files = dict(ws.files or {})
     if request.method == "GET":
