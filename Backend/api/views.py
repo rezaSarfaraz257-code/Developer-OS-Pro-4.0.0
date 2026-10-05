@@ -2476,7 +2476,13 @@ def ide_debug_api(request, pk):
     allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
     if not allowed:
         return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-    action = str(request.data.get("action") or "status").strip().lower()
+    raw_action = request.data.get("action")
+    action = str(raw_action or "status").strip().lower()
+    # A debugger start request is identifiable by its target path even when a
+    # thin client omits the action field. Never reinterpret explicit status
+    # requests that carry a session id.
+    if not raw_action and request.data.get("path") and not request.data.get("session_id"):
+        action = "start"
     allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
     if action not in allowed_actions:
         return Response({"error": "Unsupported debugger action."}, status=400)
