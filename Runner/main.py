@@ -504,7 +504,698 @@ def metrics(authorization: str = Header(default="")):
         },
     }
 
+def _state_snapshot(workspace_id):
+    with IDE_STATE_LOCK:
+        state = _ide_state(workspace_id)
+        return {
+            "schema_version": state["schema_version"],
+            "workspace_id": state["workspace_id"],
+            "revision": state["revision"],
+            "updated_at": state["updated_at"],
+            "execution": dict(state["execution"]),
+            "diagnostics": dict(state["diagnostics"]),
+            "debugger": dict(state["debugger"]),
+            "last_event_sequence": state["last_event_sequence"],
+        }
+
 @app.get("/state/{workspace_id}")
+def ide_state(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+        raise HTTPException(status_code=400, detail="Invalid workspace id.")
+    return _state_snapshot(workspace_id)
+
+@app.get("/state/{workspace_id}/sync")
+def ide_state_sync(workspace_id: str, since_sequence: int = 0, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+        raise HTTPException(status_code=400, detail="Invalid workspace id.")
+    state = _state_snapshot(workspace_id)
+    events = [
+        event for event in event_since(since_sequence, 500)
+        if str(event.get("workspace_id")) == str(workspace_id)
+    ]
+    return {
+        "schema_version": "1",
+        "state": state,
+        "events": events,
+        "latest_sequence": event_snapshot().get("latest_sequence", 0),
+        "resync_required": bool(events and events[0].get("sequence", 0) > int(since_sequence) + 1),
+    }
+
+@app.get("/events")
+def events(since_sequence: int = 0, limit: int = 100, authorization: str = Header(default="")):
+    auth(authorization)
+    return event_snapshot() | {"events": event_since(since_sequence, limit)}
+
+@app.get("/capabilities")
+def capabilities(authorization: str = Header(default="")):
+    """IDE capability handshake used before execution/install/preview operations."""
+    auth(authorization)
+    return _capability_manifest()
+
+@app.post("/sync")
+def sync(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    # Keep dependency directories, but replace source tree so the database is the source of truth.
+    for child in root.iterdir():
+        if child.name not in {".npm-cache", ".pip-cache", ".home", "node_modules", ".venv"}:
+            shutil.rmtree(child) if child.is_dir() else child.unlink()
+    write_snapshot(root, payload.files)
+    return {"status": "synced", "files": snapshot(root)}
+
+@app.post("/snapshot")
+def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    return {"files": snapshot(safe_workspace(payload.workspace_id))}
+
+@app.post("/build/plan")
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.post("/build")
+def build_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files or {})
+    try:
+        plan = build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    started = time.monotonic()
+    result = run_command(root, plan["strategy"]["command"])
+    artifacts = artifact_manifest(payload.files or {}, str(root))
+    return {"status":"success" if result.get("exit_code")==0 else "failed","plan":plan,"result":result,"artifacts":artifacts,"duration_ms":int((time.monotonic()-started)*1000)}
+
+
+def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return build_plan(payload.files or {})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.get("/packages/capabilities")
+def package_capabilities_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return package_capabilities()
+
+@app.post("/packages/plan")
+def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    try:
+        return package_plan_response(payload.files or {}, payload.action, payload.package, payload.package_manager)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+
+@app.post("/install")
+def install(payload: InstallRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    # Package/framework provisioning is the only runner operation allowed to
+    # use egress. Normal user execution remains network-isolated by default.
+    result = run_command(root, payload.command, allow_network=True)
+    return result
+
+@app.post("/exec")
+def execute(payload: ExecRequest, authorization: str = Header(default="")):
+    """Execute one isolated command with API-safe error responses."""
+    auth(authorization)
+    try:
+        root = safe_workspace(payload.workspace_id)
+        files = payload.files or {}
+        if not isinstance(files, dict):
+            raise HTTPException(status_code=400, detail="Workspace files must be an object.")
+        write_snapshot(root, files)
+        return run_command(root, payload.command)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:500])
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Runner execution timed out.")
+    except Exception as exc:
+        # Never leak stack traces or internal paths to the API consumer.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Runner execution failed: {exc.__class__.__name__}",
+        )
+
+# ---------------------------------------------------------------------------
+# CLOUD IDE RUNTIME: process lifecycle, Git operations and preview services
+# ---------------------------------------------------------------------------
+PROCESS_LOCK = threading.RLock()
+PROCESSES = {}
+PROCESS_SEQ = 0
+PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
+PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
+MAX_PROCESSES_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_PROCESSES_PER_WORKSPACE", "4")))
+MAX_PROCESS_OUTPUT = max(10_000, int(os.environ.get("RUNNER_MAX_PROCESS_OUTPUT_BYTES", "200000")))
+MAX_PROCESS_LIFETIME = min(
+    3600,
+    max(30, int(os.environ.get("RUNNER_MAX_PROCESS_LIFETIME_SECONDS", "1800"))),
+)
+PROCESS_REAPER_INTERVAL = min(60, max(5, int(os.environ.get("RUNNER_PROCESS_REAPER_INTERVAL_SECONDS", "15")))
+STREAM_POLL_INTERVAL = min(2.0, max(0.1, float(os.environ.get("RUNNER_STREAM_POLL_INTERVAL_SECONDS", "0.25"))))
+STREAM_MAX_SECONDS = min(3600, max(10, int(os.environ.get("RUNNER_STREAM_MAX_SECONDS", "1800"))))
+
+def _process_output_reader(pid, stream_name, stream):
+    try:
+        for line in iter(stream.readline, ""):
+            if not line:
+                break
+            with PROCESS_LOCK:
+                item = PROCESSES.get(pid)
+                if not item:
+                    break
+                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+                event_publish("process.output", source="process", workspace_id=item["workspace_id"], process_id=pid, stream=stream_name, data=line)
+                item["last_activity_at"] = time.time()
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+def _start_process(root, command, *, allow_network=False, env_extra=None, kind="process"):
+    global PROCESS_SEQ
+    command = _validate_execution_policy(command, allow_network=allow_network)
+    with PROCESS_LOCK:
+        # Opportunistically reap exited records before enforcing the quota.
+        _reap_processes_locked()
+        active = [
+            p for p in PROCESSES.values()
+            if p["workspace_id"] == root.name and p["popen"].poll() is None
+        ]
+        if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
+            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
+        PROCESS_SEQ += 1
+        process_id = str(PROCESS_SEQ)
+    env = {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HOME": str(root / ".home"),
+        "npm_config_cache": str(root / ".npm-cache"),
+        "PIP_CACHE_DIR": str(root / ".pip-cache"),
+        "PYTHONUNBUFFERED": "1",
+        "BASH_ENV": "/dev/null",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "npm_config_update_notifier": "false",
+    }
+    if env_extra:
+        for key, value in dict(env_extra).items():
+            if re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", str(key)) and len(str(value)) <= 4000:
+                env[str(key)] = str(value)
+    (root / ".home").mkdir(exist_ok=True)
+    argv = _sandbox_command(root, command, allow_network=allow_network)
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1, start_new_session=True, preexec_fn=_limit_process_resources,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
+    with PROCESS_LOCK:
+        PROCESSES[process_id] = {
+            "id": process_id, "workspace_id": root.name, "command": command,
+            "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
+            "kind": kind,
+            "last_activity_at": time.time(),
+        }
+    threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
+    threading.Thread(target=_process_output_reader, args=(process_id, "stderr", proc.stderr), daemon=True).start()
+    return process_id
+
+def _reap_processes_locked():
+    """Remove completed process records while preserving recent state briefly."""
+    now = time.time()
+    stale = []
+    for pid, item in PROCESSES.items():
+        proc = item["popen"]
+        if proc.poll() is not None and now - float(item.get("started_at", now)) > 300:
+            stale.append(pid)
+    for pid in stale:
+        PROCESSES.pop(pid, None)
+
+def _terminate_process_group(item, *, force=False):
+    proc = item["popen"]
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL if force else signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+def _process_reaper_loop():
+    """Enforce a wall-clock lifetime for long-running IDE processes."""
+    while True:
+        time.sleep(PROCESS_REAPER_INTERVAL)
+        now = time.time()
+        with PROCESS_LOCK:
+            _reap_processes_locked()
+            for item in list(PROCESSES.values()):
+                proc = item["popen"]
+                if proc.poll() is not None:
+                    continue
+                age = now - float(item.get("started_at", now))
+                if age >= MAX_PROCESS_LIFETIME:
+                    _terminate_process_group(item, force=True)
+                    item["stderr"] = (
+                        item.get("stderr", "")[-MAX_PROCESS_OUTPUT:]
+                        + "\n[runner] process terminated: maximum lifetime exceeded."
+                    )[-MAX_PROCESS_OUTPUT:]
+
+threading.Thread(target=_process_reaper_loop, name="process-reaper", daemon=True).start()
+
+def _stream_process_events(pid):
+    started = time.monotonic()
+    offsets = {"stdout": 0, "stderr": 0}
+    last_status = None
+    while time.monotonic() - started < STREAM_MAX_SECONDS:
+        with PROCESS_LOCK:
+            item = PROCESSES.get(str(pid))
+            if not item:
+                yield json.dumps({"type": "error", "process_id": str(pid), "detail": "Process not found."}) + "\n"
+                return
+            proc = item["popen"]
+            status = "running" if proc.poll() is None else ("success" if proc.returncode == 0 else "failed")
+            events = []
+            for stream_name in ("stdout", "stderr"):
+                data = item.get(stream_name, "")
+                offset = offsets[stream_name]
+                if len(data) < offset:
+                    offset = 0
+                if data[offset:]:
+                    events.append({
+                        "type": "output",
+                        "stream": stream_name,
+                        "data": data[offset:],
+                    })
+                    offsets[stream_name] = len(data)
+            if status != last_status:
+                events.append({
+                    "type": "status",
+                    "status": status,
+                    "exit_code": proc.poll(),
+                    "duration_ms": int((time.time() - item["started_at"]) * 1000),
+                })
+                last_status = status
+        for event in events:
+            yield json.dumps({
+                "schema_version": "1",
+                "timestamp": time.time(),
+                "process_id": str(pid),
+                **event,
+            }, separators=(",", ":")) + "\n"
+        if status != "running":
+            return
+        time.sleep(STREAM_POLL_INTERVAL)
+    yield json.dumps({"type": "timeout", "process_id": str(pid), "max_stream_seconds": STREAM_MAX_SECONDS}, separators=(",", ":")) + "\n"
+
+@app.get("/process/{pid}/stream")
+def process_stream(pid: str, authorization: str = Header(default="")):
+    auth(authorization)
+    if not re.fullmatch(r"[0-9]+", str(pid)):
+        raise HTTPException(status_code=400, detail="Invalid process id.")
+    return StreamingResponse(
+        _stream_process_events(pid),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+def _diagnostic_from_process(item):
+    stderr = item.get("stderr", "")
+    stdout = item.get("stdout", "")
+    text = stderr if stderr.strip() else stdout
+    diagnostics = []
+    pattern = re.compile(r"(?P<path>[A-Za-z0-9_./\\-]+)?:(?P<line>\\d+)(?::(?P<column>\\d+))?:?\\s*(?P<message>.+)")
+    for raw in text.splitlines()[-100:]:
+        match = pattern.search(raw)
+        if not match:
+            continue
+        diagnostics.append({
+            "severity": "error" if item["popen"].poll() not in (None, 0) else "info",
+            "path": match.group("path") or "",
+            "line": int(match.group("line")),
+            "column": int(match.group("column") or 1),
+            "message": match.group("message")[:500],
+            "source": "runner",
+        })
+    return diagnostics
+
+@app.get("/process/{pid}/diagnostics")
+def process_diagnostics(pid: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        return {
+            "schema_version": "1",
+            "process_id": str(pid),
+            "status": "running" if item["popen"].poll() is None else ("success" if item["popen"].returncode == 0 else "failed"),
+            "diagnostics": _diagnostic_from_process(item),
+        }
+
+def _process_state(pid):
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        proc = item["popen"]
+        code = proc.poll()
+        state = "running" if code is None else ("success" if code == 0 else "failed")
+        return {
+            "id": item["id"], "workspace_id": item["workspace_id"], "command": item["command"],
+            "status": state, "exit_code": code,
+            "stdout": item.get("stdout", "")[-MAX_PROCESS_OUTPUT:],
+            "stderr": item.get("stderr", "")[-MAX_PROCESS_OUTPUT:],
+            "duration_ms": int((time.time() - item["started_at"]) * 1000),
+            "started_at": item["started_at"],
+            "max_lifetime_seconds": MAX_PROCESS_LIFETIME,
+            "kind": item.get("kind", "process"),
+        }
+
+def _stop_process(pid):
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(pid))
+        if not item:
+            raise HTTPException(status_code=404, detail="Process not found.")
+        proc = item["popen"]
+        if proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+        return _process_state(pid)
+
+def _workspace_preview_port(workspace_id):
+    return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
+
+def _git_run(root, args):
+    if not isinstance(args, list) or not args:
+        raise HTTPException(status_code=400, detail="Invalid Git request.")
+    allowed = {"status", "diff", "branch", "log", "add", "reset", "commit", "rev-parse", "init", "checkout", "restore"}
+    if args[0] not in allowed:
+        raise HTTPException(status_code=400, detail="Git operation is not allowed.")
+    if any("\x00" in str(x) or len(str(x)) > 500 for x in args):
+        raise HTTPException(status_code=400, detail="Invalid Git argument.")
+    if args[0] == "commit" and "-m" in args:
+        idx = args.index("-m")
+        if idx + 1 >= len(args) or not str(args[idx + 1]).strip():
+            raise HTTPException(status_code=400, detail="Commit message is required.")
+    command = "git " + " ".join(shlex.quote(str(x)) for x in args)
+    result = run_command(root, command, allow_network=False)
+    return result
+
+@app.post("/environment/plan")
+def environment_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return environment_plan(payload.files)
+
+@app.get("/debug/capability")
+def debug_capability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return debug_capability()
+
+class DebugRequest(Workspace):
+    action: str = "status"
+    session_id: str = ""
+    path: str = ""
+    line: int = 0
+    column: int = 1
+    condition: str = ""
+    expression: str = ""
+    breakpoints: list = Field(default_factory=list)
+
+@app.post("/debug")
+def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        return debug_handle(
+            payload.action, root=root, session_id=payload.session_id, path=payload.path,
+            line=payload.line, column=payload.column, condition=payload.condition,
+            expression=payload.expression, breakpoints=payload.breakpoints
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+class SymbolRequest(Workspace):
+    action: str = "symbols"
+    query: str = ""
+    path: str = ""
+    name: str = ""
+    old: str = ""
+    new: str = ""
+    line: int = 0
+
+def _format_source(path, source):
+    """Safe best-effort formatter using installed toolchains when available."""
+    ext=str(path).rsplit(".",1)[-1].lower() if "." in str(path) else ""
+    if ext=="py":
+        try:
+            import black
+            return black.format_file_contents(source, fast=False, mode=black.Mode())
+        except Exception:
+            return source
+    if ext in {"js","jsx","ts","tsx","json","css","scss","html"}:
+        try:
+            proc=subprocess.run(["npx","--no-install","prettier","--stdin-filepath",str(path)],input=source,text=True,capture_output=True,cwd=str(safe_workspace("format")) if False else None,timeout=8)
+            if proc.returncode==0:return proc.stdout
+        except Exception: pass
+    return source
+
+@app.post("/replace/preview")
+def replace_preview_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    files=payload.files or {}
+    path=str(files.get("__path__") or "").strip()
+    old=str(files.get("__old__") or "")
+    new=str(files.get("__new__") or "")
+    content=str(files.get("__content__") or "")
+    if not path or not old or len(content)>2_000_000:
+        raise HTTPException(status_code=400,detail="Invalid replace preview payload.")
+    occurrences=content.count(old)
+    if occurrences>0:
+        updated=content.replace(old,new)
+    else:
+        updated=content
+    return {"path":path,"occurrences":occurrences,"changed":updated!=content,"content":updated}
+
+@app.post("/format")
+def format_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    path=str((payload.files or {}).get("__path__") or "").strip()
+    source=str((payload.files or {}).get("__content__") or "")
+    if not path or len(source)>1_000_000:
+        raise HTTPException(status_code=400,detail="Invalid formatting payload.")
+    return {"path":path,"content":_format_source(path,source),"changed":_format_source(path,source)!=source}
+
+@app.post("/symbols")
+def symbols_api(payload: SymbolRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    try:
+        if payload.action == "symbols":
+            return {"symbols": symbol_index(root, payload.query, payload.path)}
+        if payload.action == "references":
+            return {"references": symbol_references(root, payload.name, payload.path)}
+        if payload.action == "rename_preview":
+            return {"preview": symbol_rename_preview(root, payload.old, payload.new, payload.path)}
+        if payload.action == "rename_diff":
+            return {"preview": symbol_rename_diff(root, payload.old, payload.new, payload.path)}
+        if payload.action == "code_actions":
+            return {"actions": symbol_code_actions(root, payload.path, payload.line)}
+        if payload.action == "diagnostics":
+            return {"diagnostics": symbol_diagnostics(root, payload.path)}
+        if payload.action == "definitions":
+            return {"definitions": symbol_definitions(root, payload.name, payload.path)}
+        if payload.action == "hover":
+            return {"hover": symbol_hover(root, payload.name, payload.path, payload.line)}
+        if payload.action == "completion":
+            return {"completions": symbol_completion(root, payload.query, payload.path)}
+        raise HTTPException(status_code=400, detail="Unsupported symbol action.")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/process/start")
+def process_start(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    pid = _start_process(root, payload.command)
+    return _process_state(pid)
+
+@app.get("/process/{pid}")
+def process_get(pid: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _process_state(pid)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
+    return state
+
+@app.post("/process/{pid}/stop")
+def process_stop(pid: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _process_state(pid)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
+    return _stop_process(pid)
+
+@app.get("/processes")
+def process_list(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        ids = [p["id"] for p in PROCESSES.values() if p["workspace_id"] == str(workspace_id)]
+    return {"processes": [_process_state(pid) for pid in ids], "limits": {
+        "max_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
+        "max_lifetime_seconds": MAX_PROCESS_LIFETIME,
+        "max_output_bytes": MAX_PROCESS_OUTPUT,
+    }}
+
+@app.post("/git")
+def git_api(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    try:
+        args = json.loads(payload.command)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Git payload command must be a JSON array.")
+    if not args or not isinstance(args, list):
+        raise HTTPException(status_code=400, detail="Git arguments required.")
+    return _git_run(root, args)
+
+class AIRequest(Workspace):
+    action: str = "fix"
+    goal: str = ""
+    active_file: str = ""
+    paths: list = Field(default_factory=list)
+
+class RecoveryRequest(Workspace):
+    session_id: str = ""
+    reason: str = "unknown"
+    state: dict = Field(default_factory=dict)
+
+@app.post("/recovery/checkpoint")
+def recovery_checkpoint_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_checkpoint(payload.session_id, payload.workspace_id, payload.files, payload.state)
+
+@app.post("/recovery/restore")
+def recovery_restore_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_recover(payload.session_id, payload.reason)
+
+@app.post("/recovery/verify")
+def recovery_verify_api(payload: RecoveryRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return recovery_verified(payload.session_id)
+
+@app.get("/extensions")
+def extensions_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return extension_manifest()
+
+@app.get("/recovery/status")
+def recovery_status_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return recovery_status()
+
+@app.get("/performance")
+def performance_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return profiler_report()
+
+@app.get("/observability")
+def observability_api(authorization: str = Header(default="")):
+    auth(authorization)
+    return observability_snapshot()
+
+@app.post("/ai/engineering/plan")
+def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    if payload.files:
+        write_snapshot(root, payload.files)
+    return ai_plan(payload.model_dump(), payload.files)
+
+class AIPatchRequest(Workspace):
+    patch: list = Field(default_factory=list)
+
+@app.post("/ai/engineering/validate-patch")
+def ai_engineering_validate_patch_api(payload: AIPatchRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    try:
+        return {"status":"valid","patch":validate_ai_patch(payload.patch, payload.files)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/preview/plan")
+def preview_plan_api(payload: Workspace, authorization: str = Header(default="")):
+    auth(authorization)
+    safe_workspace(payload.workspace_id)
+    return preview_plan(payload.files)
+
+@app.post("/preview/start")
+def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    write_snapshot(root, payload.files)
+    port = _workspace_preview_port(payload.workspace_id)
+    command = str(payload.command or "").strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="Preview command is required.")
+    # The command is supplied by a trusted framework preset on the API side.
+    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
+        raise HTTPException(status_code=400, detail="Preview command blocked.")
+    pid = _start_process(
+        root,
+        command + f" --port {port}" if "--port" not in command and "runserver" not in command else command,
+        allow_network=False,
+        env_extra={"PORT": str(port)},
+        kind="preview",
+    )
+    return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
+
+@app.get("/preview/{workspace_id}/{path:path}")
+def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
+    auth(authorization)
+    port = _workspace_preview_port(workspace_id)
+    # This endpoint is intentionally internal; Django owns the public proxy.
+    try:
+        response = requests.get(f"http://127.0.0.1:{port}/{path}", timeout=10)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
+    return Response(content=response.content, status_code=response.status_code, headers={"Content-Type": response.headers.get("content-type", "text/plain")})
+
+
 def ide_state(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
     if not re.fullmatch(r"[0-9]+", str(workspace_id)):
