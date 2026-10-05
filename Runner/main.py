@@ -454,6 +454,30 @@ class LSPRequest(Workspace):
     uri: str = ""
     params: dict = Field(default_factory=dict)
 
+@app.post("/lsp/document/open")
+def lsp_document_open(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root=safe_workspace(payload.workspace_id)
+    session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+    session.did_open(payload.uri, payload.text or "", payload.version or 1, payload.language or "")
+    return {"status":"opened","uri":payload.uri,"version":session.document_versions[payload.uri]}
+
+@app.post("/lsp/document/change")
+def lsp_document_change(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root=safe_workspace(payload.workspace_id)
+    session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+    session.did_change(payload.uri, payload.text or "", payload.version)
+    return {"status":"changed","uri":payload.uri,"version":session.document_versions[payload.uri]}
+
+@app.post("/lsp/document/close")
+def lsp_document_close(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root=safe_workspace(payload.workspace_id)
+    session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+    session.did_close(payload.uri)
+    return {"status":"closed","uri":payload.uri}
+
 @app.get("/lsp/capabilities")
 def lsp_capabilities(authorization: str = Header(default="")):
     auth(authorization)
