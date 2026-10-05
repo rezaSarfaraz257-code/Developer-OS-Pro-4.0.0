@@ -318,7 +318,7 @@ def profile_api(request):
     if "email" in payload and payload["email"] and User.objects.exclude(pk=user.pk).filter(
         email__iexact=payload["email"]
     ).exists():
-        return Response({"error": "Unable to use this email address."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": {"code": "invalid", "message": "Validation failed.", "details": {"email": ["Unable to use this email address."]}}}, status=status.HTTP_400_BAD_REQUEST)
 
     email_changed = "email" in payload and payload.get("email", "").lower() != (user.email or "").lower()
     if email_changed and payload.get("email"):
