@@ -1021,6 +1021,9 @@ def collaboration_unlock(workspace_id: str, path: str, client_id: str, authoriza
         state["locks"].pop(path, None)
     return {"status":"unlocked","path":path}
 
+MAX_COLLAB_CONNECTIONS_PER_WORKSPACE = 32
+MAX_COLLAB_MESSAGE_BYTES = 256_000
+MAX_COLLAB_QUEUE = 128
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
 
@@ -1046,13 +1049,34 @@ async def collaboration_websocket(websocket: WebSocket, workspace_id: str):
     except HTTPException:
         await websocket.close(code=4401)
         return
-    await websocket.accept()
     connections = _collab_connections(workspace_id)
+    if len(connections) >= MAX_COLLAB_CONNECTIONS_PER_WORKSPACE:
+        await websocket.close(code=4429)
+        return
+    await websocket.accept()
     connections.add(websocket)
     try:
-        await websocket.send_json({"event_type":"sync","channel":"workspace","version":_collab_state(workspace_id)["version"]})
+        state = _collab_state(workspace_id)
+        after_version = int(websocket.query_params.get("after_version", "0") or 0)
+        if after_version < 0:
+            after_version = 0
+        replay = [x for x in state["operations"] if int(x.get("version", 0)) > after_version]
+        if len(replay) > MAX_COLLAB_QUEUE:
+            await websocket.send_json({"event_type":"resync_required","channel":"workspace","version":state["version"],"reason":"replay_window_exceeded"})
+        else:
+            for event in replay:
+                await websocket.send_json(event)
+            await websocket.send_json({"event_type":"sync","channel":"workspace","version":state["version"]})
         while True:
-            message = await websocket.receive_json()
+            raw = await websocket.receive_text()
+            if len(raw.encode("utf-8")) > MAX_COLLAB_MESSAGE_BYTES:
+                await websocket.send_json({"event_type":"error","code":"MESSAGE_TOO_LARGE"})
+                continue
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"event_type":"error","code":"INVALID_JSON"})
+                continue
             message_type = str(message.get("type") or "").strip()
             if message_type == "ping":
                 await websocket.send_json({"event_type":"pong","channel":"workspace","ts":time.time()})
