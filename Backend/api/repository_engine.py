@@ -132,7 +132,7 @@ def _commits(user, repo_id, branch=None):
 
 
 def _head(user, repo, branch):
-    row = _commits(user, repo.id, branch).first()
+    row = _commits(user, repo.id, branch).order_by("-created_at", "-id").first()
     return (row.metadata or {}).get("oid") if row else None
 
 
@@ -336,7 +336,7 @@ def native_diff_api(request, pk):
     payload = _read_object(request.user, repo.id, "commit", head) or {}
     parent = payload.get("parent")
     if not parent:
-        return Response({"branch": branch, "files": list(_commit_files(request.user, repo, head).keys()), "head": head})
+        return Response({"branch": branch, "files": [{"path": path, "added": True, "deleted": False} for path in _commit_files(request.user, repo, head)], "head": head})
     before, after = _commit_files(request.user, repo, parent), _commit_files(request.user, repo, head)
     changed = []
     for path in sorted(set(before) | set(after)):
