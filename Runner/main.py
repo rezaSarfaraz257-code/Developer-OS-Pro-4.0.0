@@ -205,6 +205,8 @@ def _validate_execution_policy(command, *, allow_network=False):
     return command
 
 def run_command(root, command, *, allow_network=False):
+    trace_state = observability_record("execution.start", workspace_id=root.name, operation="exec")
+    started = time.monotonic()
     command = _validate_execution_policy(command, allow_network=allow_network)
     # Keep the IDE contract stable on images that expose only python3.
     if re.match(r"^python(?:\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
@@ -235,13 +237,16 @@ def run_command(root, command, *, allow_network=False):
                 start_new_session=True,
                 preexec_fn=_limit_process_resources,
             )
-            return {
+            result = {
             "exit_code": proc.returncode,
             "stdout": proc.stdout[-MAX_OUTPUT:],
             "stderr": proc.stderr[-MAX_OUTPUT:],
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
+            "trace_id": trace_state.get("timestamp"),
         }
+            observability_record("execution.finish", workspace_id=root.name, operation="exec", status="ok" if proc.returncode == 0 else "failed", duration_ms=round((time.monotonic()-started)*1000,2), exit_code=proc.returncode)
+            return result
     except subprocess.TimeoutExpired as exc:
         # Kill the entire process group so timed-out dev servers/child processes
         # cannot survive the request and consume the shared runner.
@@ -256,7 +261,10 @@ def run_command(root, command, *, allow_network=False):
             "stderr": f"Execution timed out after {TIMEOUT} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
+            "trace_id": trace_state.get("timestamp"),
         }
+        observability_record("execution.finish", workspace_id=root.name, operation="exec", status="timeout", duration_ms=round((time.monotonic()-started)*1000,2), exit_code=124)
+        return result
     finally:
         EXEC_SEMAPHORE.release()
 
