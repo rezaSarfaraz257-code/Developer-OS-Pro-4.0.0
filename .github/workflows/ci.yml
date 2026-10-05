@@ -124,33 +124,24 @@ jobs:
   docker-stack:
     name: Full Docker/PostgreSQL/Runner/Frontend smoke E2E
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-postgres-password
+      ENVIRONMENT: ci
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+      DJANGO_SECRET_KEY: ci-secret-key-123456789-abcdef
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost
+      CSRF_TRUSTED_ORIGINS: http://localhost
+      IDE_RUNNER_TOKEN: ci-runner-token
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      SECURE_SSL_REDIRECT: "false"
     needs: [backend, frontend, runner]
     steps:
       - uses: actions/checkout@v4
       - name: Build complete stack
         run: docker compose build --pull
-        env:
-          POSTGRES_PASSWORD: ci-postgres-password
-          ENVIRONMENT: ci
-          EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-          DJANGO_SECRET_KEY: ci-secret-key-123456789-abcdef
-          ALLOWED_HOSTS: localhost,127.0.0.1
-          CORS_ALLOWED_ORIGINS: http://localhost
-          CSRF_TRUSTED_ORIGINS: http://localhost
-          IDE_RUNNER_TOKEN: ci-runner-token
-          EMAIL_VERIFICATION_REQUIRED: "false"
       - name: Start complete stack
         run: docker compose up -d
-        env:
-          POSTGRES_PASSWORD: ci-postgres-password
-          ENVIRONMENT: ci
-          EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-          DJANGO_SECRET_KEY: ci-secret-key-123456789
-          ALLOWED_HOSTS: localhost,127.0.0.1
-          CORS_ALLOWED_ORIGINS: http://localhost
-          CSRF_TRUSTED_ORIGINS: http://localhost
-          IDE_RUNNER_TOKEN: ci-runner-token
-          EMAIL_VERIFICATION_REQUIRED: "false"
       - name: Wait for readiness
         run: |
           for i in {1..60}; do
