@@ -588,6 +588,35 @@ def _post_apply_verify(files, workspace_id):
 def _snapshot_id(meta):
     return str(meta.get("snapshot_id", ""))
 
+def _diagnostic(severity, path, message, line=1, column=1, source="runner"):
+    return {"severity": severity, "path": path, "line": int(line or 1), "column": int(column or 1), "message": str(message)[:500], "source": source}
+
+def _collect_diagnostics(files):
+    diagnostics = []
+    for path, content in files.items():
+        try:
+            if path.endswith(".py"):
+                import ast
+                ast.parse(content, filename=path)
+            elif path.endswith((".json", ".jsonc")):
+                json.loads(content)
+            elif path.endswith((".js", ".jsx", ".ts", ".tsx")):
+                stripped = re.sub(r"//.*?$|/\*.*?\*/", "", content, flags=re.M | re.S)
+                if stripped.count("{") != stripped.count("}"):
+                    diagnostics.append(_diagnostic("error", path, "Unbalanced braces.", source="syntax"))
+        except SyntaxError as exc:
+            diagnostics.append(_diagnostic("error", path, exc.msg, exc.lineno, exc.offset, "syntax"))
+        except Exception as exc:
+            diagnostics.append(_diagnostic("error", path, str(exc), source="syntax"))
+    return diagnostics
+
+def _diagnostics_summary(diagnostics):
+    counts = {"error": 0, "warning": 0, "info": 0}
+    for item in diagnostics:
+        level = item.get("severity", "info")
+        counts[level] = counts.get(level, 0) + 1
+    return {"count": len(diagnostics), "errors": counts.get("error", 0), "warnings": counts.get("warning", 0), "infos": counts.get("info", 0)}
+
 def _validate_staged_files(files, strict=False):
     diagnostics = []
     for path, content in files.items():
@@ -698,6 +727,18 @@ def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorizatio
         files = _restore_snapshot(workspace_id, root, snapshot_id)
         event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
         return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
+
+@app.post("/workspace/diagnostics")
+def workspace_diagnostics(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(workspace_id)
+    diagnostics = _collect_diagnostics(snapshot(root))
+    summary = _diagnostics_summary(diagnostics)
+    with IDE_STATE_LOCK:
+        state = _ide_state(workspace_id)
+        state["diagnostics"] = {"count": summary["count"], "items": diagnostics}
+        state["updated_at"] = time.time()
+    return {"schema_version": "1", "workspace_id": workspace_id, "diagnostics": diagnostics, "summary": summary}
 
 @app.post("/workspace/patch/validate")
 def validate_workspace_patch(payload: PatchValidationRequest, authorization: str = Header(default="")):
