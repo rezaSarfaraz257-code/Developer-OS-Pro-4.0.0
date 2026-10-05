@@ -21,6 +21,9 @@ from extension_engine import manifest as extension_manifest
 from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
+def _collab_startup_hook():
+    _start_collab_subscriber()
+
 ROOT = Path("/workspaces")
 TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
@@ -1054,7 +1057,36 @@ def _publish_collab_bus(workspace_id, event):
         bus.publish(COLLAB_BUS_CHANNEL_PREFIX + str(workspace_id), json.dumps(event, separators=(",", ":")))
         return True
     except Exception:
-        return False
+        return FalseCOLLAB_SUBSCRIBER_STOP = threading.Event()
+COLLAB_SUBSCRIBER_THREAD = None
+
+def _start_collab_subscriber():
+    global COLLAB_SUBSCRIBER_THREAD
+    if COLLAB_SUBSCRIBER_THREAD is not None or not COLLAB_BUS_URL or _redis is None:
+        return
+    def loop():
+        client = _collab_bus()
+        if client is None:
+            return
+        try:
+            pubsub = client.pubsub(ignore_subscribe_messages=True)
+            pubsub.psubscribe(COLLAB_BUS_CHANNEL_PREFIX + "*")
+            while not COLLAB_SUBSCRIBER_STOP.is_set():
+                message = pubsub.get_message(timeout=1.0)
+                if not message or message.get("type") != "pmessage":
+                    continue
+                try:
+                    event = json.loads(message["data"])
+                    workspace_id = str(message["channel"]).removeprefix(COLLAB_BUS_CHANNEL_PREFIX)
+                    asyncio.run(_broadcast_collab(workspace_id, event))
+                except Exception:
+                    continue
+        except Exception:
+            return
+    COLLAB_SUBSCRIBER_THREAD = threading.Thread(target=loop, name="collab-redis-subscriber", daemon=True)
+    COLLAB_SUBSCRIBER_THREAD.start()
+
+
 
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
