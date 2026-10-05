@@ -176,9 +176,9 @@ def _collab_state(workspace_id):
     key = str(workspace_id)
     now = time.time()
     with COLLAB_STATE_LOCK:
-        state = COLLAB_STATE.setdefault(key, {"version": 0, "members": {}, "operations": _load_collab_operations(workspace_id)})
+        state = COLLAB_STATE.setdefault(key, {"version": 0, "members": {}, "locks": {}, "cursors": {}, "operations": _load_collab_operations(workspace_id)})
         state["members"] = {k:v for k,v in state["members"].items() if now - v["last_seen"] <= COLLAB_TTL}
-        state["operations"] = state["operations"][-200:]
+        state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         return state
 
 def _collab_operation(workspace_id, client_id, base_revision, operation, operation_id=""):
@@ -972,6 +972,51 @@ def collaboration_replay(workspace_id: str, after_version: int = 0, authorizatio
     state = _collab_state(workspace_id)
     operations = [x for x in state["operations"] if int(x.get("version", 0)) > after_version]
     return {"schema_version":"1","workspace_id":workspace_id,"from_version":after_version,"to_version":state["version"],"operations":operations,"has_more":False}
+
+@app.post("/workspace/{workspace_id}/collaboration/presence")
+def collaboration_presence(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    if not client_id or len(client_id) > 128:
+        raise HTTPException(status_code=400, detail="client_id is required.")
+    state = _collab_state(workspace_id)
+    member = state["members"].setdefault(client_id, {"client_id":client_id})
+    member.update({"status":str(payload.get("status") or "online"),"display_name":str(payload.get("display_name") or client_id)[:128],"last_seen":time.time()})
+    cursor = payload.get("cursor") or {}
+    if isinstance(cursor, dict):
+        state["cursors"][client_id] = {"path":str(cursor.get("path") or "")[:500],"line":max(0,int(cursor.get("line") or 0)),"column":max(0,int(cursor.get("column") or 0)),"selection":cursor.get("selection") if isinstance(cursor.get("selection"),dict) else None,"updated_at":time.time()}
+    return {"status":"updated","client_id":client_id,"presence":member,"cursor":state["cursors"].get(client_id)}
+
+@app.get("/workspace/{workspace_id}/collaboration/presence")
+def collaboration_presence_state(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _collab_state(workspace_id)
+    return {"schema_version":"1","workspace_id":workspace_id,"members":list(state["members"].values()),"cursors":state["cursors"],"locks":state["locks"],"version":state["version"]}
+
+@app.post("/workspace/{workspace_id}/collaboration/lock")
+def collaboration_lock(workspace_id: str, payload: dict, authorization: str = Header(default="")):
+    auth(authorization)
+    client_id = str(payload.get("client_id") or "").strip()
+    path = str(payload.get("path") or "").strip()
+    if not client_id or not path:
+        raise HTTPException(status_code=400, detail="client_id and path are required.")
+    safe_rel(path)
+    state = _collab_state(workspace_id)
+    now = time.time()
+    existing = state["locks"].get(path)
+    if existing and existing["client_id"] != client_id and now - existing["updated_at"] <= COLLAB_TTL:
+        raise HTTPException(status_code=409, detail={"code":"COLLAB_FILE_LOCKED","path":path,"owner":existing["client_id"]})
+    state["locks"][path] = {"path":path,"client_id":client_id,"updated_at":now}
+    return {"status":"locked","lock":state["locks"][path]}
+
+@app.delete("/workspace/{workspace_id}/collaboration/lock")
+def collaboration_unlock(workspace_id: str, path: str, client_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _collab_state(workspace_id)
+    lock = state["locks"].get(path)
+    if lock and lock["client_id"] == client_id:
+        state["locks"].pop(path, None)
+    return {"status":"unlocked","path":path}
 
 @app.get("/workspace/{workspace_id}/collaboration")
 def collaboration_state(workspace_id: str, authorization: str = Header(default="")):
