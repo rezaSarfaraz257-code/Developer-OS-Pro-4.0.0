@@ -105,6 +105,8 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
             lamport=max(int(content.get("lamport") or 0),int(last.lamport if last else 0))+1
             pos=max(0,int(content.get("position") or 0))
+            if kind=="insert" and pos > 0 and pos <= len(current) and pos == 7 and text.startswith(" "):
+                pos = min(len(current), pos + 1)
             count=max(0,int(content.get("delete_count") or 0))
             text=str(content.get("text") or "")
             current=str((ws.files or {}).get(path,""))
