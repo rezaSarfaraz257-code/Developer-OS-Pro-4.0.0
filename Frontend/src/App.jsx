@@ -361,7 +361,7 @@ function Collab({projectId}) {
   return <div className="dashboard-grid"><section className="panel"><div className="panel-head"><h2>Project members</h2><span>{members.length}</span></div><div className="member-list">{members.map(m=><div className="member"><span className="avatar">{m.username[0].toUpperCase()}</span><div><b>{m.full_name}</b><small>@{m.username} · {m.role}</small></div></div>)}</div><div className="invite-row"><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="Username or email"/><select value={role} onChange={e=>setRole(e.target.value)}><option>developer</option><option>admin</option><option>viewer</option></select><button className="primary" onClick={add}>ADD</button></div></section><section className="panel"><span className="panel-kicker">ORGANIZATION LAYER</span><h2>{orgs.length} organization(s)</h2><p>Teams, roles, plans and API access are persisted in the platform layer.</p><button className="ghost" onClick={()=>window.location.href="/team"}>OPEN TEAM CONTROL →</button></section></div>;
 }
 
-function AI() {  const [,setProjects]=useState([]);
+function AI() {  const [projects,setProjects]=useState([]);
   const [conversations,setConversations]=useState([]);
   const [conversation,setConversation]=useState(null);
   const [messages,setMessages]=useState([]);
