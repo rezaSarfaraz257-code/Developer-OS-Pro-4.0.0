@@ -2087,10 +2087,23 @@ def _workspace_access_queryset(user):
     ).distinct()
 
 def _workspace_for_user(pk, user, *, for_update=False):
-    qs = _workspace_access_queryset(user)
-    if for_update:
-        qs = qs.select_for_update()
-    return get_object_or_404(qs, pk=pk)
+    if not for_update:
+        return get_object_or_404(_workspace_access_queryset(user), pk=pk)
+
+    # PostgreSQL rejects SELECT ... FOR UPDATE over DISTINCT queries.
+    # Resolve access first, then lock the workspace row itself.
+    workspace = get_object_or_404(
+        CodeWorkspace.objects.filter(pk=pk).filter(
+            Q(owner=user)
+            | Q(project__owner=user)
+            | Q(project__collaborators=user)
+        ).values_list("pk", flat=True).distinct(),
+        pk=pk,
+    )
+    return get_object_or_404(
+        CodeWorkspace.objects.select_for_update(),
+        pk=workspace,
+    )
 
 def _workspace_write_allowed(ws, user):
     # Project collaborators are first-class IDE users. A workspace without a
