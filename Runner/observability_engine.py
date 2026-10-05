@@ -35,6 +35,10 @@ def finish(trace_state, status="ok", **fields):
     return record("trace.finish",trace_id=trace_state["trace_id"],status=status,
                   duration_ms=duration_ms,**fields)
 
+def metric_duration(operation, duration_ms, status="ok", workspace_id=None):
+    return record("metric.duration", operation=str(operation)[:80], duration_ms=round(float(duration_ms), 2),
+                  status=str(status)[:40], workspace_id=workspace_id)
+
 def snapshot():
     with _LOCK:
         events=list(_EVENTS)[-50:]
