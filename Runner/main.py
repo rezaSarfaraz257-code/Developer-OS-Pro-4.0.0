@@ -630,6 +630,10 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
             ]
             if candidates:
                 result["session_id"] = candidates[-1]
+            else:
+                raise RuntimeError(
+                    f"Debugger start returned no live session for workspace {payload.workspace_id}"
+                )
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
