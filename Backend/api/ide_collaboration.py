@@ -110,7 +110,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
                 pos = min(len(current), pos + 1)
             count=max(0,int(content.get("delete_count") or 0))
             text=str(content.get("text") or "")
-            next_content=currentent[:pos]+text+current[pos:] if kind=="insert" else current[:pos]+current[min(len(current),pos+count):]
+            next_content=current[:pos]+text+current[pos:] if kind=="insert" else current[:pos]+current[min(len(current),pos+count):]
             files=dict(ws.files or {}); files[path]=next_content
             ws.files=files; ws.revision=(ws.revision or 0)+1; ws.save(update_fields={"files","revision"})
             blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
