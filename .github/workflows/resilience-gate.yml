@@ -1,0 +1,57 @@
+name: Resilience Gate
+
+on:
+  pull_request:
+    paths:
+      - "Runner/**"
+      - ".github/workflows/resilience-gate.yml"
+  push:
+    branches:
+      - "p4/**"
+    paths:
+      - "Runner/**"
+      - ".github/workflows/resilience-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resilience-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resilience:
+    name: Runner resilience tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Runner
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: Runner/requirements.txt
+
+      - name: Install runner dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          python -m pip install pytest
+
+      - name: Compile runner
+        run: python -m compileall -q .
+
+      - name: Resilience tests
+        run: python -m pytest -q test_resilience.py
+
+      - name: Fail on unexpected test warnings
+        run: python -m pytest -q test_resilience.py -W error
