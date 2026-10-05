@@ -2247,6 +2247,8 @@ def observability_api(authorization: str = Header(default="")):
     auth(authorization)
     payload = observability_snapshot()
     counts = payload.get("counters", {})
+    payload["health"] = health_score()
+    payload["circuit"] = circuit_state()
     payload["telemetry"] = {
         "schema_version": "1",
         "metrics": {
