@@ -3115,6 +3115,8 @@ def organization_invites_api(request, pk):
         org_sub = OrganizationSubscription.objects.filter(organization=org).first()
         base_limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["org_members"]
         seat_limit = max(base_limit, org_sub.quantity) if org_sub and plan in {"team", "enterprise"} else base_limit
+        if plan == "free":
+            seat_limit = max(seat_limit, 1)
         if member_count >= seat_limit:
             return Response({"error": "Your organization plan has reached its member limit.", "limit": seat_limit}, status=403)
         invite = OrganizationInvite.objects.create(organization=org, inviter=request.user, email=email, role=role, token=secrets.token_urlsafe(48), expires_at=timezone.now()+timedelta(days=7))
