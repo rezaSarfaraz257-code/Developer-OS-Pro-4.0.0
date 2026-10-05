@@ -39,6 +39,57 @@ def metric_duration(operation, duration_ms, status="ok", workspace_id=None):
     return record("metric.duration", operation=str(operation)[:80], duration_ms=round(float(duration_ms), 2),
                   status=str(status)[:40], workspace_id=workspace_id)
 
+HEALTH_WINDOW_SECONDS = 300
+SLO_TARGETS = {"sync_conflict_rate": 0.05, "reconnect_rate": 0.20, "operation_latency_ms": 1500.0}
+_CIRCUIT = {"state": "closed", "opened_at": 0.0, "failures": 0}
+_CIRCUIT_LOCK = threading.RLock()
+
+def health_score():
+    now = time.time()
+    with _LOCK:
+        recent = [e for e in _EVENTS if now - float(e.get("timestamp", now)) <= HEALTH_WINDOW_SECONDS]
+    syncs = sum(e.get("event") == "collab.sync" for e in recent)
+    conflicts = sum(e.get("event") == "collab.conflict" for e in recent)
+    reconnects = sum(e.get("event") == "collab.reconnect" for e in recent)
+    connections = sum(e.get("event") == "collab.connection" for e in recent)
+    durations = [float(e["duration_ms"]) for e in recent if e.get("event") == "metric.duration" and e.get("operation") == "collab.sync" and isinstance(e.get("duration_ms"), (int,float))]
+    conflict_rate = conflicts / max(1, syncs)
+    reconnect_rate = reconnects / max(1, connections)
+    latency = sum(durations) / len(durations) if durations else 0.0
+    penalties = min(100.0, conflict_rate / SLO_TARGETS["sync_conflict_rate"] * 30 + reconnect_rate / SLO_TARGETS["reconnect_rate"] * 30 + latency / SLO_TARGETS["operation_latency_ms"] * 40)
+    score = round(max(0.0, min(100.0, 100.0 - penalties)), 1)
+    status = "healthy" if score >= 90 else "degraded" if score >= 70 else "critical"
+    return {"score": score, "status": status, "window_seconds": HEALTH_WINDOW_SECONDS,
+            "signals": {"sync_conflict_rate": round(conflict_rate,4), "reconnect_rate": round(reconnect_rate,4), "sync_latency_ms": round(latency,2)}}
+
+def circuit_state():
+    with _CIRCUIT_LOCK:
+        return dict(_CIRCUIT)
+
+def circuit_allow(priority="normal"):
+    with _CIRCUIT_LOCK:
+        if _CIRCUIT["state"] != "open":
+            return True
+        if priority in {"critical", "operation", "lock"}:
+            return True
+        if time.time() - _CIRCUIT["opened_at"] >= 30:
+            _CIRCUIT["state"] = "half_open"
+            return True
+        return False
+
+def circuit_record_failure():
+    with _CIRCUIT_LOCK:
+        _CIRCUIT["failures"] += 1
+        if _CIRCUIT["failures"] >= 5:
+            _CIRCUIT["state"] = "open"
+            _CIRCUIT["opened_at"] = time.time()
+            record("collab.circuit_open", failures=_CIRCUIT["failures"])
+
+def circuit_record_success():
+    with _CIRCUIT_LOCK:
+        _CIRCUIT["failures"] = 0
+        _CIRCUIT["state"] = "closed"
+
 def snapshot():
     with _LOCK:
         events=list(_EVENTS)[-50:]
