@@ -203,6 +203,7 @@ def _collab_operation(workspace_id, client_id, base_revision, operation, operati
         state["operations"] = state["operations"][-MAX_COLLAB_OPERATIONS:]
         _append_collab_operation(workspace_id, event)
         event["event_type"] = "operation"
+        _publish_collab_bus(workspace_id, event)
         event["channel"] = "workspace"
         return event
 
@@ -1024,6 +1025,37 @@ def collaboration_unlock(workspace_id: str, path: str, client_id: str, authoriza
 MAX_COLLAB_CONNECTIONS_PER_WORKSPACE = 32
 MAX_COLLAB_MESSAGE_BYTES = 256_000
 MAX_COLLAB_QUEUE = 128
+COLLAB_BUS_URL = os.environ.get("COLLAB_REDIS_URL", "").strip()
+COLLAB_BUS_CHANNEL_PREFIX = os.environ.get("COLLAB_REDIS_CHANNEL_PREFIX", "developer-os:collab:")
+try:
+    import redis as _redis
+except ImportError:
+    _redis = None
+
+_COLLAB_REDIS = None
+
+def _collab_bus():
+    global _COLLAB_REDIS
+    if not COLLAB_BUS_URL or _redis is None:
+        return None
+    if _COLLAB_REDIS is None:
+        try:
+            _COLLAB_REDIS = _redis.Redis.from_url(COLLAB_BUS_URL, decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
+            _COLLAB_REDIS.ping()
+        except Exception:
+            _COLLAB_REDIS = None
+    return _COLLAB_REDIS
+
+def _publish_collab_bus(workspace_id, event):
+    bus = _collab_bus()
+    if bus is None:
+        return False
+    try:
+        bus.publish(COLLAB_BUS_CHANNEL_PREFIX + str(workspace_id), json.dumps(event, separators=(",", ":")))
+        return True
+    except Exception:
+        return False
+
 COLLAB_CONNECTIONS = {}
 COLLAB_CONNECTIONS_LOCK = threading.Lock()
 
