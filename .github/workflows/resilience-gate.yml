@@ -53,5 +53,8 @@ jobs:
       - name: Resilience tests
         run: python -m pytest -q test_resilience.py
 
+      - name: Runner security policy tests
+        run: python -m pytest -q test_security_policy.py
+
       - name: Fail on unexpected test warnings
-        run: python -m pytest -q test_resilience.py -W error
+        run: python -m pytest -q test_resilience.py test_security_policy.py -W error
