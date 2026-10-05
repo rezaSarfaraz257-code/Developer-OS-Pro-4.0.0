@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import * as monaco from "monaco-editor";\nimport { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../services/api";
 
 export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved }) {
