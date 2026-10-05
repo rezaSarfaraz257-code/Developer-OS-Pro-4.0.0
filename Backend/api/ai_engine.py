@@ -1053,4 +1053,6 @@ def ai_actions_api(request):
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
     response.data["usage"] = {"used": used, "limit": limit, "plan": plan}
     response.data["action"] = action
+    # Preserve the stable structured-AI contract used by clients and regression tests.
+    response.data["answer"] = str((response.data.get("message") or {}).get("content") or "").strip()
     return response
