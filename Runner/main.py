@@ -454,6 +454,26 @@ class LSPRequest(Workspace):
     uri: str = ""
     params: dict = Field(default_factory=dict)
 
+@app.get("/lsp/capabilities")
+def lsp_capabilities(authorization: str = Header(default="")):
+    auth(authorization)
+    return {"schema_version":"1","protocol":"LSP/stdio","languages":LSP_MANAGER.capability()["available"],"features":{"diagnostics":True,"hover":True,"completion":True,"definition":True,"references":True,"rename":True,"code_actions":True}}
+
+@app.post("/lsp/document/diagnostics")
+def lsp_document_diagnostics(payload: LSPRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    if not payload.uri:
+        raise HTTPException(status_code=400, detail="uri is required")
+    root=safe_workspace(payload.workspace_id)
+    try:
+        session=LSP_MANAGER.session(payload.workspace_id,root,payload.language)
+        params={"textDocument":{"uri":payload.uri}}
+        result=session.request("textDocument/diagnostic",params,timeout=8)
+        notifications=session.drain_notifications()
+        return {"schema_version":"1","workspace_id":payload.workspace_id,"uri":payload.uri,"result":result,"notifications":notifications}
+    except LSPError as exc:
+        raise HTTPException(status_code=503,detail=str(exc)[:300])
+
 @app.post("/lsp/request")
 def lsp_request(payload: LSPRequest, authorization: str = Header(default="")):
     auth(authorization)
