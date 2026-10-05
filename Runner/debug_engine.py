@@ -147,8 +147,14 @@ class Session:
                     try:p.kill()
                     except OSError:pass
             self.state="stopped"
-        # Failed startup can leave DAP unset; cleanup must not call snapshot()
-        # in that state.
+        # Failed startup can leave DAP unset; only snapshot when a live
+        # DAP channel exists. This keeps normal stop responses rich while
+        # making failed-start cleanup deterministic.
+        if self.dap:
+            try:
+                return self.snapshot()
+            except Exception:
+                pass
         return {"session_id":self.id,"state":"stopped","breakpoints":self.breakpoints,"stack":[],"live":False}
 
 def capability():
