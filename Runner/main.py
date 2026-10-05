@@ -993,6 +993,9 @@ def collaboration_presence(workspace_id: str, payload: dict, authorization: str 
     cursor = payload.get("cursor") or {}
     if isinstance(cursor, dict):
         state["cursors"][client_id] = {"path":str(cursor.get("path") or "")[:500],"line":max(0,int(cursor.get("line") or 0)),"column":max(0,int(cursor.get("column") or 0)),"selection":cursor.get("selection") if isinstance(cursor.get("selection"),dict) else None,"updated_at":time.time()}
+    presence_payload = {"client_id":client_id,"status":member["status"],"display_name":member["display_name"],"last_seen":member["last_seen"],"cursor":state["cursors"].get(client_id)}
+    _redis_presence(workspace_id, client_id, presence_payload)
+    _publish_collab_bus(workspace_id, {"event_type":"presence","channel":"workspace","workspace_id":str(workspace_id),"presence":presence_payload})
     return {"status":"updated","client_id":client_id,"presence":member,"cursor":state["cursors"].get(client_id)}
 
 @app.get("/workspace/{workspace_id}/collaboration/presence")
@@ -1011,10 +1014,11 @@ def collaboration_lock(workspace_id: str, payload: dict, authorization: str = He
     safe_rel(path)
     state = _collab_state(workspace_id)
     now = time.time()
-    existing = state["locks"].get(path)
-    if existing and existing["client_id"] != client_id and now - existing["updated_at"] <= COLLAB_TTL:
+    existing = _redis_lock(workspace_id, path, client_id)
+    if existing and existing["client_id"] != client_id:
         raise HTTPException(status_code=409, detail={"code":"COLLAB_FILE_LOCKED","path":path,"owner":existing["client_id"]})
     state["locks"][path] = {"path":path,"client_id":client_id,"updated_at":now}
+    _publish_collab_bus(workspace_id, {"event_type":"lock","channel":"workspace","lock":state["locks"][path]})
     return {"status":"locked","lock":state["locks"][path]}
 
 @app.delete("/workspace/{workspace_id}/collaboration/lock")
@@ -1024,6 +1028,8 @@ def collaboration_unlock(workspace_id: str, path: str, client_id: str, authoriza
     lock = state["locks"].get(path)
     if lock and lock["client_id"] == client_id:
         state["locks"].pop(path, None)
+    _redis_unlock(workspace_id, path, client_id)
+    _publish_collab_bus(workspace_id, {"event_type":"unlock","channel":"workspace","path":path,"client_id":client_id})
     return {"status":"unlocked","path":path}
 
 MAX_COLLAB_CONNECTIONS_PER_WORKSPACE = 32
@@ -1049,6 +1055,47 @@ def _collab_bus():
         except Exception:
             _COLLAB_REDIS = None
     return _COLLAB_REDIS
+
+def _collab_redis_key(kind, workspace_id, client_id):
+    return COLLAB_BUS_CHANNEL_PREFIX + "state:" + str(kind) + ":" + str(workspace_id) + ":" + str(client_id)
+
+def _redis_presence(workspace_id, client_id, payload):
+    bus = _collab_bus()
+    if bus is None:
+        return False
+    try:
+        bus.setex(_collab_redis_key("presence", workspace_id, client_id), COLLAB_TTL, json.dumps(payload, separators=(",", ":")))
+        return True
+    except Exception:
+        return False
+
+def _redis_lock(workspace_id, path, client_id):
+    bus = _collab_bus()
+    if bus is None:
+        return None
+    key = _collab_redis_key("lock", workspace_id, path)
+    value = json.dumps({"path":path,"client_id":client_id,"updated_at":time.time()}, separators=(",", ":"))
+    try:
+        if bus.set(key, value, nx=True, ex=COLLAB_TTL):
+            return json.loads(value)
+        current = bus.get(key)
+        return json.loads(current) if current else None
+    except Exception:
+        return None
+
+def _redis_unlock(workspace_id, path, client_id):
+    bus = _collab_bus()
+    if bus is None:
+        return False
+    key = _collab_redis_key("lock", workspace_id, path)
+    try:
+        current = bus.get(key)
+        if current and json.loads(current).get("client_id") == client_id:
+            bus.delete(key)
+            return True
+    except Exception:
+        pass
+    return False
 
 def _publish_collab_bus(workspace_id, event):
     bus = _collab_bus()
