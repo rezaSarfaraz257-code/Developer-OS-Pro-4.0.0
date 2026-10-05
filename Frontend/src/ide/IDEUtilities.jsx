@@ -47,6 +47,16 @@ export function PreviewPanel({workspace,onClose}) {
 export function SourceControlPanel({workspace,onClose,onSync}) {
  const [repos,setRepos]=useState([]),[name,setName]=useState(""),[selected,setSelected]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState("Source control ready."),[git,setGit]=useState({}),[commitMessage,setCommitMessage]=useState("Workspace update"),[branch,setBranch]=useState("");
  useEffect(()=>{apiFetch("/repositories/").then(r=>r.json()).then(d=>{if(Array.isArray(d)){setRepos(d);if(d[0])setSelected(String(d[0].id));}}).catch(e=>setMessage(e.message))},[]);
+ async function gitFileAction(operation,path){
+  if(!workspace?.id||busy||!path)return;
+  if(operation==="discard"&&!window.confirm("Discard changes for "+path+"?"))return;
+  setBusy(true);
+  try{
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation,path})});
+   const d=await r.json();if(!r.ok)throw Error(d.error||"Git file operation failed");
+   setMessage(operation+" completed for "+path);await refresh();
+  }catch(e){setMessage(e.message)}finally{setBusy(false)}
+ }
  async function gitAction(operation,args){
   if(!workspace?.id||busy)return;
   setBusy(true);
