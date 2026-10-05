@@ -80,7 +80,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   <div className="dos-source-actions"><button onClick={()=>gitAction("status",["status"])} disabled={busy}>Status</button><button onClick={()=>gitAction("diff",["diff"])} disabled={busy}>Diff</button><button onClick={()=>gitAction("files",["diff","--name-only"])} disabled={busy}>Changed Files</button><button onClick={()=>gitAction("restore",["restore","."])} disabled={busy}>Restore Worktree</button><button onClick={()=>gitAction("branches",["branch","--list"])} disabled={busy}>Branches</button><button onClick={()=>gitAction("log",["log","-20","--oneline"])} disabled={busy}>Log</button></div>
   <p>{message}</p>
   <pre className="dos-source-output">{git.status?.stdout||git.status?.output||"No status loaded."}</pre>
-  <pre className="dos-source-output">{git.diff?.stdout||git.diff?.output||"No diff loaded."}</pre><pre className="dos-source-output">{git.files?.stdout||git.files?.output||"No changed-file list loaded."}</pre>
+  <pre className="dos-source-output">{git.diff?.stdout||git.diff?.output||"No diff loaded."}</pre><button onClick={()=>{const raw=git.diff?.stdout||"";openDiff("workspace diff","",raw)}} disabled={!git.diff}>Open Monaco Diff</button><pre className="dos-source-output">{git.files?.stdout||git.files?.output||"No changed-file list loaded."}</pre>
   <pre className="dos-source-output">{git.branches?.stdout||git.branches?.output||"No branches loaded."}</pre>
   <pre className="dos-source-output">{git.log?.stdout||git.log?.output||"No history loaded."}</pre>
  </div></section>
