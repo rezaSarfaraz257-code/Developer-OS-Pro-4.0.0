@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, GitHubAccount, Project, Subscription, Tag, Tool, Task, UsageRecord
+from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord
 
 
 class ProjectApiSecurityTests(APITestCase):
