@@ -62,8 +62,8 @@ class RunnerSecurityTests(unittest.TestCase):
         from symbol_engine import index, references, rename_preview
         root = Path("/tmp/runner-symbol-test")
         root.mkdir(parents=True, exist_ok=True)
-        (root / "main.py").write_text("def greet(name):\\n    value = name\\n    return value\\nprint(greet('x'))\\n")
-        (root / "app.js").write_text("const greet = () => 1;\\nconsole.log(greet());\\n")
+        (root / "main.py").write_text("def greet(name):\n    value = name\n    return value\nprint(greet('x'))\n")
+        (root / "app.js").write_text("const greet = () => 1;\nconsole.log(greet());\n")
         symbols = index(root)
         self.assertTrue(any(s["name"] == "greet" and s["kind"] == "function" for s in symbols))
         refs = references(root, "greet")
