@@ -76,7 +76,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
    editor.setModel({original:left,modified:right});
   }catch{}
  }
- function refresh(){await Promise.all([gitAction("status",["status"]),gitAction("diff",["diff"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
+ function refresh(){await Promise.all([gitAction("status",["status","--short"]),gitAction("diff",["diff"]),gitAction("files",["diff","--name-only"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
  async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  async function nativeCommit(){const msg=commitMessage.trim();if(!msg)return setMessage("Commit message is required.");await gitAction("commit",["add","-A"]);await gitAction("commit",["commit","-m",msg]);await refresh();}
  async function nativeBranch(){const b=branch.trim();if(!b)return setMessage("Branch name is required.");await gitAction("branch",["checkout","-b",b]);setBranch("");await refresh();}
