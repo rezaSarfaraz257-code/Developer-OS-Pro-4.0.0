@@ -339,6 +339,7 @@ class PlatformUpgradeTests(APITestCase):
         response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn("src/main.py", response.data["files"])
+        revision = response.data["revision"]
 
         response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": "README.md", "content": "# OS", "revision": revision}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
