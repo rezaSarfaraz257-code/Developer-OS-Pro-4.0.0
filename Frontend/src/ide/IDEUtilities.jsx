@@ -57,8 +57,8 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
    setMessage(operation+" completed for "+path);await refresh();
   }catch(e){setMessage(e.message)}finally{setBusy(false)}
  }
- async function gitAction(operation,args){
-  if(!workspace?.id||busy)return;
+ async function gitAction(operation,args,force=false){
+  if(!workspace?.id||(busy&&!force))return;
   setBusy(true);
   try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});const d=await r.json();if(!r.ok)throw Error(d.error||"Git operation failed");setGit(x=>({...x,[operation]:d}));setMessage(operation+" completed.");return d}catch(e){setMessage(e.message)}finally{setBusy(false)}
  }
@@ -76,7 +76,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
    editor.setModel({original:left,modified:right});
   }catch{}
  }
- function refresh(){await Promise.all([gitAction("status",["status","--short"]),gitAction("diff",["diff"]),gitAction("files",["diff","--name-only"]),gitAction("branches",["branch","--list"]),gitAction("log",["log","-20","--oneline"])])}
+ async function refresh(){await Promise.all([gitAction("status",["status","--short"],true),gitAction("diff",["diff"],true),gitAction("files",["diff","--name-only"],true),gitAction("branches",["branch","--list"],true),gitAction("log",["log","-20","--oneline"],true)])}
  async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  async function nativeCommit(){const msg=commitMessage.trim();if(!msg)return setMessage("Commit message is required.");await gitAction("commit",["add","-A"]);await gitAction("commit",["commit","-m",msg]);await refresh();}
  async function checkoutBranch(){
