@@ -1059,6 +1059,31 @@ def _collab_bus():
 def _collab_redis_key(kind, workspace_id, client_id):
     return COLLAB_BUS_CHANNEL_PREFIX + "state:" + str(kind) + ":" + str(workspace_id) + ":" + str(client_id)
 
+COLLAB_HEARTBEAT_SECONDS = max(5, min(COLLAB_TTL // 2, 60))
+
+def _redis_renew_presence(workspace_id, client_id):
+    bus = _collab_bus()
+    if bus is None:
+        return False
+    try:
+        key = _collab_redis_key("presence", workspace_id, client_id)
+        return bool(bus.expire(key, COLLAB_TTL))
+    except Exception:
+        return False
+
+def _redis_renew_lock(workspace_id, path, client_id):
+    bus = _collab_bus()
+    if bus is None:
+        return False
+    key = _collab_redis_key("lock", workspace_id, path)
+    try:
+        current = bus.get(key)
+        if current and json.loads(current).get("client_id") == client_id:
+            return bool(bus.expire(key, COLLAB_TTL))
+    except Exception:
+        pass
+    return False
+
 def _redis_presence(workspace_id, client_id, payload):
     bus = _collab_bus()
     if bus is None:
