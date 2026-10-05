@@ -641,55 +641,35 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     root = safe_workspace(payload.workspace_id)
     if payload.files:
         write_snapshot(root, payload.files)
-    try:
+    action = payload.action or "status"
+    if action == "start":
         result = debug_handle(
-            payload.action, root=root, session_id=payload.session_id, path=payload.path,
-            line=payload.line, column=payload.column, condition=payload.condition,
+            "start", root=root, session_id="", path=payload.path, line=payload.line,
+            column=payload.column, condition=payload.condition,
             expression=payload.expression, breakpoints=payload.breakpoints
         )
-        if payload.action == "start" and isinstance(result, dict) and not result.get("session_id"):
-            # Recover the identity from the live in-memory debugger registry.
-            # Never synthesize a session id: a returned id must map to a real
-            # debugger session that subsequent DAP actions can address.
+        if not isinstance(result, dict) or not result.get("session_id"):
             root_resolved = str(Path(root).resolve())
             candidates = [
                 sid for sid, session in DEBUG_SESSIONS.items()
                 if str(session.root) == root_resolved
             ]
             if candidates:
+                result = dict(result or {})
                 result["session_id"] = candidates[-1]
             else:
-                raise RuntimeError(
-                    f"Debugger start returned no live session for workspace {payload.workspace_id}"
-                )
+                raise HTTPException(status_code=500, detail="Debugger start produced no live session")
         return result
+
+    try:
+        return debug_handle(
+            action, root=root, session_id=payload.session_id, path=payload.path,
+            line=payload.line, column=payload.column, condition=payload.condition,
+            expression=payload.expression, breakpoints=payload.breakpoints
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-class SymbolRequest(Workspace):
-    action: str = "symbols"
-    query: str = ""
-    path: str = ""
-    name: str = ""
-    old: str = ""
-    new: str = ""
-    line: int = 0
-
-def _format_source(path, source):
-    """Safe best-effort formatter using installed toolchains when available."""
-    ext=str(path).rsplit(".",1)[-1].lower() if "." in str(path) else ""
-    if ext=="py":
-        try:
-            import black
-            return black.format_file_contents(source, fast=False, mode=black.Mode())
-        except Exception:
-            return source
-    if ext in {"js","jsx","ts","tsx","json","css","scss","html"}:
-        try:
-            proc=subprocess.run(["npx","--no-install","prettier","--stdin-filepath",str(path)],input=source,text=True,capture_output=True,cwd=str(safe_workspace("format")) if False else None,timeout=8)
-            if proc.returncode==0:return proc.stdout
-        except Exception: pass
-    return source
 
 @app.post("/replace/preview")
 def replace_preview_api(payload: Workspace, authorization: str = Header(default="")):
