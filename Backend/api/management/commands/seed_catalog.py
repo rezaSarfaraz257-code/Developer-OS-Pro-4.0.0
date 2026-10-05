@@ -71,7 +71,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         for item in TOOLS:
-            Tool.objects.update_or_create(name=item["name"], defaults=item)
+            existing = Tool.objects.filter(name__iexact=item["name"]).first()
+            if existing:
+                for key, value in item.items():
+                    setattr(existing, key, value)
+                existing.save()
+            else:
+                Tool.objects.create(**item)
         for item in RESOURCES:
             Resource.objects.update_or_create(title=item["title"], defaults=item)
         for item in WORKFLOWS:
