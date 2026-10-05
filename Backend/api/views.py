@@ -68,7 +68,7 @@ from .serializers import (
     GitHubAccountSerializer, OrganizationSerializer, OrganizationMembershipSerializer, NotificationSerializer, CommentSerializer, TaskDependencySerializer, ProjectInviteSerializer, CodeWorkspaceSerializer, AIConversationSerializer, AIMessageSerializer, SubscriptionSerializer, APIKeySerializer,
 )
 
-from .mature import queue_email, sha256
+from .mature import queue_email, sha256, _org_access
 from .security import can_access_project, can_manage_project, audit_security_event, require_safe_url
 
 logger = logging.getLogger(__name__)
@@ -334,7 +334,7 @@ def profile_api(request):
     profile_fields = {"full_name", "avatar_url", "bio", "github", "linkedin", "x", "website"}
     changed_profile_fields = [field for field in profile_fields if field in payload]
     if email_changed:
-        changed_profile_fields.append("email_verified")
+        changed_profile_fields.append("email_verified")\n        payload["email_verified"] = profile.email_verified
     for field in changed_profile_fields:
         setattr(profile, field, payload[field])
 
@@ -942,7 +942,7 @@ def github_authorize(request):
     )
 
     github_url = "https://github.com/login/oauth/authorize?" + urlencode({
-        "client_id": GITHUB_CLIENT_ID,
+        "client_id": github_client_id,
         "redirect_uri": GITHUB_OAUTH_REDIRECT,
         "scope": GITHUB_OAUTH_SCOPE,
         "state": state,
@@ -1001,7 +1001,7 @@ def github_callback(request):
             "https://github.com/login/oauth/access_token",
             data={
                 "client_id": GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
+                "client_secret": github_client_secret,
                 "code": code,
                 "redirect_uri": GITHUB_OAUTH_REDIRECT,
                 "code_verifier": oauth_state.code_verifier,
@@ -2134,7 +2134,7 @@ def ide_frameworks_api(request):
     ])
 
 def _safe_ide_path(value):
-    path = str(value or "").replace("\\", "/").strip().lstrip("/")
+    path = str(value or "").replace("\\", "/").strip()
     if not path or len(path) > 500 or any(part in {"", ".", ".."} for part in path.split("/")):
         return None
     if path.startswith(".git/") or "/.git/" in path or path == ".git":
@@ -2937,7 +2937,7 @@ def _stripe_signature_valid(payload, signature, secret):
 @permission_classes([AllowAny])
 def billing_webhook_api(request):
     """Verify and apply Stripe events exactly once."""
-    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", os.environ.get("STRIPE_WEBHOOK_SECRET", ""))
     signature = request.headers.get("Stripe-Signature", "")
     if not secret or not _stripe_signature_valid(request.body, signature, secret):
         return Response({"error": "Invalid webhook signature."}, status=400)
