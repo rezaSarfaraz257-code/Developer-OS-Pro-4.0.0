@@ -640,6 +640,29 @@ def assert_ide_revision(workspace_id: str, payload: dict, authorization: str = H
         )
     return {"ok": True, "state": current}
 
+@app.get("/workspace/{workspace_id}/snapshots")
+def list_workspace_snapshots(workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    folder = _snapshot_dir(workspace_id)
+    items = []
+    for p in sorted([p for p in folder.iterdir() if p.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            items.append(json.loads((p / ".metadata.json").read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return {"schema_version":"1","snapshots":items}
+
+@app.post("/workspace/{workspace_id}/snapshots/{snapshot_id}/restore")
+def restore_workspace_snapshot(workspace_id: str, snapshot_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(workspace_id)
+    with _workspace_lock(workspace_id):
+        current = _workspace_revision(workspace_id)
+        _create_snapshot(workspace_id, root, current, "before-restore")
+        files = _restore_snapshot(workspace_id, root, snapshot_id)
+        event = event_publish("workspace.snapshot.restored", source="workspace", workspace_id=workspace_id, snapshot_id=snapshot_id)
+        return {"status":"restored","workspace_id":workspace_id,"snapshot_id":snapshot_id,"files":files,"event":event}
+
 @app.post("/workspace/transaction")
 def workspace_transaction(payload: WorkspaceTransaction, authorization: str = Header(default="")):
     auth(authorization)
