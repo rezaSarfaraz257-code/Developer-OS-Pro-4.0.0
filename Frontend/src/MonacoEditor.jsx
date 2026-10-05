@@ -93,6 +93,22 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
     return response.json().catch(()=>null);
    }catch{return null}
  };
+ const codeActionsRequest=async(model,range)=>{
+   if(!workspaceId)return [];
+   const token=getAccessToken();
+   try{
+    const response=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"code_actions",path:pathRef.current,line:range.startLineNumber})});
+    if(!response.ok)return [];
+    const data=await response.json().catch(()=>({}));
+    return Array.isArray(data.actions)?data.actions:[];
+   }catch{return []}
+ };
+ const codeActionProviders=["python","javascript","typescript"].map(language=>monaco.languages.registerCodeActionProvider(language,{
+   provideCodeActions:async(model,range)=>{
+     const actions=await codeActionsRequest(model,range);
+     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?.changes?{edits:Object.entries(a.edit.changes).flatMap(([uri,items])=>(items||[]).map(x=>({resource:monaco.Uri.parse(uri),textEdit:{range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1},text:x.newText}})))}:undefined,command:a.command}))};
+   }
+ }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
    const r=await formatRequest(pathRef.current,model.getValue());
    return r?.changed?[{range:model.getFullModelRange(),text:r.content}]:[];
@@ -117,7 +133,7 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
  const references=ed.addAction({id:"developer-os.find-references",label:"Developer OS: Find References",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{e.getAction("editor.action.referenceSearch.trigger")?.run();}});
  const openImport=ed.addAction({id:"developer-os.open-import",label:"Developer OS: Open Workspace Import",run:e=>{const m=e.getModel(),p=e.getPosition();if(!m||!p)return;const line=m.getLineContent(p.lineNumber),before=line.slice(0,p.column-1);let hit=null;for(const match of before.matchAll(importPathRegex)){hit=match}if(!hit)return;const target=resolveWorkspaceImport(pathRef.current,hit[2]);if(target)window.dispatchEvent(new CustomEvent("developer-os:open-file",{detail:{path:target}}));e.focus();}});
  const workspaceSymbolsAction=ed.addAction({id:"developer-os.workspace-symbols",label:"Developer OS: Workspace Symbols",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO],run:e=>{const m=e.getModel();if(!m)return;const symbols=workspaceSymbols(m.getValue());onWorkspaceSymbols?.(symbols.map((s,index)=>({name:s.name,line:m.getPositionAt(s.offset).lineNumber,column:m.getPositionAt(s.offset).column,index})));window.dispatchEvent(new CustomEvent("developer-os:workspace-symbols",{detail:{path:pathRef.current,symbols}}));e.focus();}});
-  return()=>{clearTimeout(lspTimer);if(lspPollTimer)clearInterval(lspPollTimer);if(workspaceId)for(const uri of openedUris)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
+  return()=>{clearTimeout(lspTimer);if(lspPollTimer)clearInterval(lspPollTimer);if(workspaceId)for(const uri of openedUris)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());codeActionProviders.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&!ed.hasTextFocus())next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;
   if(workspaceId&&["python","javascript","typescript"].includes(lang(normalized))){
     const uriString=next.uri.toString();
