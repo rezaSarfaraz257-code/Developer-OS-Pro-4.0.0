@@ -651,6 +651,8 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     if payload.files:
         write_snapshot(root, payload.files)
     action = payload.action or "status"
+    if action == "status" and payload.path and not payload.session_id:
+        action = "start"
     if action == "start":
         result = debug_handle(
             "start", root=root, session_id="", path=payload.path, line=payload.line,
