@@ -1260,6 +1260,30 @@ def _collab_connections(workspace_id):
     with COLLAB_CONNECTIONS_LOCK:
         return COLLAB_CONNECTIONS.setdefault(str(workspace_id), set())
 
+COLLAB_CURSOR_BATCH_MS = max(25, min(int(os.environ.get("COLLAB_CURSOR_BATCH_MS", "75")), 250))
+COLLAB_CURSOR_BATCH_MAX = 64
+COLLAB_CURSOR_PENDING = {}
+COLLAB_CURSOR_LOCK = threading.Lock()
+
+def _coalesce_cursor(workspace_id, message):
+    client_id = str(message.get("client_id") or "")
+    if not client_id:
+        return
+    with COLLAB_CURSOR_LOCK:
+        bucket = COLLAB_CURSOR_PENDING.setdefault(str(workspace_id), {})
+        bucket[client_id] = message
+
+def _drain_cursor_batch(workspace_id):
+    with COLLAB_CURSOR_LOCK:
+        bucket = COLLAB_CURSOR_PENDING.pop(str(workspace_id), {})
+    return list(bucket.values())[:COLLAB_CURSOR_BATCH_MAX]
+
+async def _broadcast_cursor_batch(workspace_id, exclude=None):
+    batch = _drain_cursor_batch(workspace_id)
+    if not batch:
+        return
+    await _broadcast_collab(workspace_id, {"event_type":"cursor_batch","channel":"workspace","items":batch}, exclude=exclude)
+
 COLLAB_PRIORITY = {"operation": 100, "lock": 90, "unlock": 90, "leave": 80, "sync": 80, "heartbeat": 50, "presence": 20, "cursor": 10}
 
 def _collab_event_priority(message):
@@ -1268,6 +1292,10 @@ def _collab_event_priority(message):
 async def _broadcast_collab(workspace_id, message, exclude=None):
     connections = list(_collab_connections(workspace_id))
     priority = _collab_event_priority(message)
+    if str(message.get("event_type") or "").lower() == "cursor":
+        _coalesce_cursor(workspace_id, message)
+        await _broadcast_cursor_batch(workspace_id, exclude=exclude)
+        return
     for ws in connections:
         if ws is exclude:
             continue
