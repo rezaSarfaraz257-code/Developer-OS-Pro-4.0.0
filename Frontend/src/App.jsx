@@ -459,6 +459,7 @@ function Explore() {
   const [workflows,setWorkflows]=useState([]);
   const [resources,setResources]=useState([]);
   const [favorites,setFavorites]=useState([]);
+  const [projects,setProjects]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
