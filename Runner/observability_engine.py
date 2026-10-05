@@ -1,20 +1,11 @@
 """Developer OS IDE observability primitives."""
 from __future__ import annotations
-import time, threading, uuid, hashlib
+import time, threading, uuid
 from collections import Counter, deque
 
 MAX_EVENTS = 2000
 _EVENTS = deque(maxlen=MAX_EVENTS)
 _COUNTS = Counter()
-_LOCK = threading.RLock()
-_SENSITIVE_KEYS = {"authorization", "token", "secret", "password", "api_key", "apikey", "credential"}
-
-def _safe_value(key, value):
-    if str(key).lower() in _SENSITIVE_KEYS:
-        return "[redacted]"
-    if isinstance(value, str):
-        return value[:500]
-    return value
 _LOCK = threading.RLock()
 _SENSITIVE_KEYS = {"authorization", "token", "secret", "password", "api_key", "apikey", "credential"}
 
