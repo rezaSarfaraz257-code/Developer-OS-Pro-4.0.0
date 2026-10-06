@@ -130,6 +130,7 @@ jobs:
         working-directory: Runner
         env:
           IDE_RUNNER_TOKEN: ci-runner-token
+          RUNNER_ROOT: /tmp/developer-os-runner-workspaces
         run: pytest -q
 
   release-gate:
