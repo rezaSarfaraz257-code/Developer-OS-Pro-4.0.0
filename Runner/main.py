@@ -92,13 +92,14 @@ class FairScheduler:
 
 FAIR_SCHEDULER = FairScheduler(SCHEDULER_MAX_PER_WORKSPACE)
 SCHEDULER_METRICS = {"queued": 0, "active": 0, "rejected": 0, "completed": 0, "total_wait_ms": 0}
-SCHEDULER_WAITING = {}
+SCHEDULER_WAITING = {}  # job_id -> {workspace_id, queued_at}
 
-def _scheduler_queue_position(workspace_id):
-    key = str(workspace_id)
+def _scheduler_queue_position(job_id):
+    key = str(job_id)
     with SCHEDULER_LOCK:
-        waiting = [k for k, v in SCHEDULER_WAITING.items() if v <= SCHEDULER_WAITING.get(key, v)]
-        return waiting.index(key) + 1 if key in waiting else 0
+        if key not in SCHEDULER_WAITING:
+            return 0
+        return list(SCHEDULER_WAITING).index(key) + 1
 
 
 def _scheduler_metric(key, value=1):
@@ -231,17 +232,18 @@ def _scheduler_snapshot():
         }
 
 
-def _scheduler_acquire(workspace_id, timeout=5):
+def _scheduler_acquire(workspace_id, job_id, timeout=5):
     started = time.monotonic()
     key = str(workspace_id)
+    job_key = str(job_id)
     with SCHEDULER_LOCK:
-        SCHEDULER_WAITING[key] = time.monotonic()
+        SCHEDULER_WAITING[job_key] = {"workspace_id": key, "queued_at": time.monotonic()}
     _scheduler_metric("queued")
     deadline = started + timeout
     while time.monotonic() < deadline:
         if FAIR_SCHEDULER.acquire(workspace_id):
             with SCHEDULER_LOCK:
-                SCHEDULER_WAITING.pop(key, None)
+                SCHEDULER_WAITING.pop(job_key, None)
             _scheduler_metric("active")
             _scheduler_metric("total_wait_ms", int((time.monotonic() - started) * 1000))
             return True
@@ -448,11 +450,11 @@ def run_command(root, command, *, allow_network=False):
     if not acquired:
         _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
-    if not _scheduler_acquire(root.name, timeout=5):
+    if not _scheduler_acquire(root.name, job_id, timeout=5):
         EXEC_SEMAPHORE.release()
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=_scheduler_queue_position(root.name))
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=_scheduler_queue_position(job_id))
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
