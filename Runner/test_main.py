@@ -339,3 +339,25 @@ def test_fair_scheduler_keeps_turn_order_deterministic():
     assert scheduler.acquire("b") is True
     scheduler.release("b")
     assert scheduler.acquire("a") is True
+
+
+def test_scheduler_queue_position_tracks_waiters():
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+        now = time.monotonic()
+        main.SCHEDULER_WAITING.update({"a": now, "b": now + 0.01, "c": now + 0.02})
+    assert main._scheduler_queue_position("a") == 1
+    assert main._scheduler_queue_position("b") == 2
+    assert main._scheduler_queue_position("c") == 3
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+
+
+def test_scheduler_queue_position_disappears_after_release():
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+        main.SCHEDULER_WAITING["busy"] = time.monotonic()
+    assert main._scheduler_queue_position("busy") == 1
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.pop("busy", None)
+    assert main._scheduler_queue_position("busy") == 0
