@@ -28,5 +28,9 @@
     "globals": "^17.7.0",
     "vite": "^8.2.0"
   },
-  "description": "Developer OS — production developer workspace"
+  "description": "Developer OS — production developer workspace",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
 }
