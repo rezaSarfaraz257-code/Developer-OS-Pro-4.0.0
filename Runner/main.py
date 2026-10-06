@@ -472,8 +472,11 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
         files = payload.files or {}
         if not isinstance(files, dict):
             raise HTTPException(status_code=400, detail="Workspace files must be an object.")
-        write_snapshot(root, files)
-        return run_command(root, payload.command)
+        # Serialize file materialization + execution per workspace. This prevents
+        # an older execute request from overwriting a newer editor save.
+        with _workspace_lock(payload.workspace_id):
+            write_snapshot(root, files)
+            return run_command(root, payload.command)
     except HTTPException:
         raise
     except ValueError as exc:
@@ -760,7 +763,7 @@ def process_start(payload: ProcessStartRequest, authorization: str = Header(defa
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         write_snapshot(root, payload.files)
-    pid = _start_process(root, payload.command)
+    pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env)
     return _process_state(pid)
 
 @app.get("/process/{pid}")
