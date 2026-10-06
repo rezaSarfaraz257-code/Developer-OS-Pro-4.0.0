@@ -118,7 +118,7 @@ JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS
 JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
 JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
-STREAM_WAIT_SECONDS = max(0.1, min(5.0, float(os.environ.get("RUNNER_STREAM_WAIT_SECONDS", "0.5")))
+STREAM_WAIT_SECONDS = max(0.1, min(5.0, float(os.environ.get("RUNNER_STREAM_WAIT_SECONDS", "0.5"))))
 
 
 
