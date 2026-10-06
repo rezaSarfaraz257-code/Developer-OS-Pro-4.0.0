@@ -184,6 +184,11 @@ def _job_snapshot(job_id):
         job = JOBS.get(job_id)
         return dict(job) if job else None
 
+def _job_is_cancelled(job_id):
+    with JOB_LOCK:
+        return bool(JOBS.get(job_id, {}).get("status") == "cancelled")
+
+
 def _cancel_job(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
@@ -241,6 +246,10 @@ def _scheduler_acquire(workspace_id, job_id, timeout=5):
     _scheduler_metric("queued")
     deadline = started + timeout
     while time.monotonic() < deadline:
+        if _job_is_cancelled(job_key):
+            with SCHEDULER_LOCK:
+                SCHEDULER_WAITING.pop(job_key, None)
+            return False
         if FAIR_SCHEDULER.acquire(workspace_id):
             with SCHEDULER_LOCK:
                 SCHEDULER_WAITING.pop(job_key, None)
@@ -249,7 +258,7 @@ def _scheduler_acquire(workspace_id, job_id, timeout=5):
             return True
         time.sleep(0.025)
     with SCHEDULER_LOCK:
-        SCHEDULER_WAITING.pop(key, None)
+        SCHEDULER_WAITING.pop(job_key, None)
     _scheduler_metric("rejected")
     return False
 
@@ -450,11 +459,21 @@ def run_command(root, command, *, allow_network=False):
     if not acquired:
         _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
+    if _job_is_cancelled(job_id):
+        EXEC_SEMAPHORE.release()
+        return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
     if not _scheduler_acquire(root.name, job_id, timeout=5):
         EXEC_SEMAPHORE.release()
+        if _job_is_cancelled(job_id):
+            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=_scheduler_queue_position(job_id))
+    if _job_is_cancelled(job_id):
+        FAIR_SCHEDULER.release(root.name)
+        _scheduler_metric("active", -1)
+        EXEC_SEMAPHORE.release()
+        return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
