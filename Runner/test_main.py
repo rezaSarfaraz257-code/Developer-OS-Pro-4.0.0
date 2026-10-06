@@ -228,3 +228,24 @@ def test_retry_delay_is_bounded():
 
 def test_stream_terminal_status_is_supported():
     assert {"completed", "failed", "cancelled"}.issuperset({"completed", "failed", "cancelled"})
+
+
+def test_concurrent_workspace_limits():
+    assert main.MAX_CONCURRENT_EXECUTIONS >= 1
+    assert main.MAX_CONCURRENT_PROCESSES >= 1
+    assert main.MAX_WORKSPACE_CONCURRENT >= 1
+
+
+def test_resource_limits_are_bounded():
+    assert 128 <= main.RUNNER_MEMORY_MB <= 2048
+    assert main.MAX_OUTPUT_BYTES > 0
+    assert main.MAX_PROCESS_DURATION > 0
+
+
+def test_multiple_jobs_have_isolated_output():
+    first = main._new_job("pressure-a")
+    second = main._new_job("pressure-b")
+    main._append_job_output(first, "A")
+    main._append_job_output(second, "B")
+    assert main._job_output_snapshot(first) == "A"
+    assert main._job_output_snapshot(second) == "B"
