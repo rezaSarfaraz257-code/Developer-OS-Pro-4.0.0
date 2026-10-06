@@ -475,8 +475,14 @@ def run_command(root, command, *, allow_network=False):
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     if not _scheduler_acquire(root.name, job_id, timeout=5):
         EXEC_SEMAPHORE.release()
+        if _job_is_cancelled(job_id):
+            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
+    if _job_is_cancelled(job_id):
+        _scheduler_release(root.name)
+        EXEC_SEMAPHORE.release()
+        return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
     _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
