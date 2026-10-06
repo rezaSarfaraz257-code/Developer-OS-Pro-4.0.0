@@ -71,12 +71,12 @@ class FairScheduler:
             active = self._active.get(key, 0)
             if active >= self.max_per_workspace:
                 return False
-            if any(self._active.get(other, 0) == 0 for other in self._turn if other != key):
-                idle = [other for other in self._turn if self._active.get(other, 0) == 0]
-                if idle and key != idle[0]:
-                    return False
+            other_active = any(workspace != key and count > 0 for workspace, count in self._active.items())
+            if other_active:
+                return False
+            if self._turn and self._turn[0] != key:
+                return False
             self._active[key] = active + 1
-            self._turn = [x for x in self._turn if x != key] + [key]
             return True
 
     def release(self, workspace_id):
@@ -187,7 +187,7 @@ def _is_retryable_error(exc):
 
 TERMINAL_JOB_STATES = {"completed", "failed", "cancelled"}
 VALID_JOB_TRANSITIONS = {
-    "queued": {"queued", "running", "failed", "cancelled"},
+    "queued": {"queued", "running", "completed", "failed", "cancelled"},
     "running": {"running", "completed", "failed", "cancelled"},
     "completed": {"completed"},
     "failed": {"failed"},
