@@ -646,7 +646,7 @@ def queue_status(authorization: str = Header(default="")):
 @app.get("/metrics")
 def metrics(authorization: str = Header(default="")):
     auth(authorization)
-    return {"status":"ok","metrics":_metrics_snapshot()}
+    return {"status":"ok","metrics":_metrics_snapshot(),"scheduler":_scheduler_snapshot()}
 
 @app.post("/process/{process_id}/cancel")
 def process_cancel(process_id: str, workspace_id: str, authorization: str = Header(default="")):
@@ -683,7 +683,7 @@ def diagnostics(authorization: str = Header(default="")):
         warnings.append("runner_concurrency_limit_reached")
     if m["exec_total"] and (m["exec_failed"] / m["exec_total"]) > 0.25:
         warnings.append("high_execution_failure_rate")
-    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m}
+    sm = _scheduler_snapshot()\n    if sm["rejected"] > 0:\n        warnings.append("scheduler_rejections_detected")\n    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m,"scheduler":sm}
 
 @app.get("/health")
 def health():
