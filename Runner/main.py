@@ -50,6 +50,13 @@ CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", 
 JOB_LOCK = threading.RLock()
 JOBS = {}
 JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
+JOB_MAX_RETRIES = max(0, min(3, int(os.environ.get("RUNNER_JOB_MAX_RETRIES", "2"))))
+JOB_RETRY_BASE_SECONDS = max(0.1, float(os.environ.get("RUNNER_JOB_RETRY_BASE_SECONDS", "0.5")))
+
+def _retry_delay(attempt):
+    return min(10.0, JOB_RETRY_BASE_SECONDS * (2 ** max(0, attempt - 1)))
+
+
 
 def _new_job(workspace_id):
     job_id = uuid.uuid4().hex
@@ -57,8 +64,11 @@ def _new_job(workspace_id):
     with JOB_LOCK:
         JOBS[job_id] = {"id": job_id, "workspace_id": str(workspace_id), "status": "queued",
                         "created_at": now, "started_at": None, "finished_at": None,
-                        "process_id": None, "exit_code": None, "error": None}
+                        "process_id": None, "exit_code": None, "error": None, "attempt": 0, "max_retries": JOB_MAX_RETRIES, "retryable": False}
     return job_id
+
+def _is_retryable_error(exc):
+    return isinstance(exc, (ConnectionError, TimeoutError, OSError)) or "temporarily" in str(exc).lower()
 
 def _set_job(job_id, **updates):
     with JOB_LOCK:
@@ -422,6 +432,8 @@ def _capability_manifest():
             "max_concurrent": MAX_CONCURRENT,
             "max_workspace_concurrent": SCHEDULER_MAX_PER_WORKSPACE,
             "cancel_grace_seconds": CANCEL_GRACE_SECONDS,
+            "job_max_retries": JOB_MAX_RETRIES,
+            "job_retry_base_seconds": JOB_RETRY_BASE_SECONDS,
             "max_files": MAX_FILES,
             "max_file_bytes": MAX_FILE,
             "max_workspace_bytes": MAX_WORKSPACE_BYTES,
