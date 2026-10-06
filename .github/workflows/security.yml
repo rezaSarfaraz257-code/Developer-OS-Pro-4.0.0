@@ -28,14 +28,22 @@ jobs:
       - uses: github/codeql-action/autobuild@v3
       - uses: github/codeql-action/analyze@v3
 
-  dependency-review:
-    if: github.event_name == 'pull_request'
+  dependency-audit:
+    name: Dependency audit
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
+
+      - name: Node dependency audit
+        working-directory: Frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Python dependency audit
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r Backend/requirements.txt
