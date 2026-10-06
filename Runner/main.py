@@ -500,6 +500,8 @@ PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
 PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
 MAX_PROCESSES_PER_WORKSPACE = 4
 MAX_PROCESS_OUTPUT = 200_000
+PROCESS_TAIL_BYTES = 16_384
+PROCESS_RETENTION_SECONDS = max(300, int(os.environ.get("RUNNER_PROCESS_RETENTION_SECONDS", "1800")))
 
 def _process_output_reader(pid, stream_name, stream):
     try:
@@ -591,13 +593,17 @@ def _process_state(pid):
         proc = item["popen"]
         code = proc.poll()
         state = "running" if code is None else ("success" if code == 0 else "failed")
+        if code is not None and item.get("finished_at") is None:
+            item["finished_at"] = time.time()
         return {
             "id": item["id"], "workspace_id": item["workspace_id"], "command": item["command"],
             "status": state, "exit_code": code,
             "stdout": item.get("stdout", "")[-MAX_PROCESS_OUTPUT:],
             "stderr": item.get("stderr", "")[-MAX_PROCESS_OUTPUT:],
-            "duration_ms": int((time.time() - item["started_at"]) * 1000),
+            "duration_ms": int(((item.get("finished_at") or time.time()) - item["started_at"]) * 1000),
             "started_at": item["started_at"],
+            "finished_at": item.get("finished_at"),
+            "output_tail_bytes": PROCESS_TAIL_BYTES,
         }
 
 def _stop_process(pid):
