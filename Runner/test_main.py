@@ -144,6 +144,11 @@ class RunnerSecurityTests(unittest.TestCase):
         import main
         self.assertTrue(hasattr(main, "_workspace_lock"))
 
+    def test_process_state_exposes_completion_metadata(self):
+        import main
+        self.assertGreater(main.PROCESS_RETENTION_SECONDS, 0)
+        self.assertGreater(main.PROCESS_TAIL_BYTES, 0)
+
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
             run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
