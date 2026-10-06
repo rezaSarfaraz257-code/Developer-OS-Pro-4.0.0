@@ -2088,10 +2088,12 @@ def _workspace_access_queryset(user):
     ).distinct()
 
 def _workspace_for_user(pk, user, *, for_update=False):
-    qs = _workspace_access_queryset(user)
     if for_update:
-        qs = qs.select_for_update()
-    return get_object_or_404(qs, pk=pk)
+        qs = CodeWorkspace.objects.select_related("project").select_for_update().filter(pk=pk).filter(
+            Q(owner=user) | Q(project__owner=user) | Q(project__collaborators=user)
+        )
+        return get_object_or_404(qs)
+    return get_object_or_404(_workspace_access_queryset(user), pk=pk)
 
 def _workspace_write_allowed(ws, user):
     # Project collaborators are first-class IDE users. A workspace without a
