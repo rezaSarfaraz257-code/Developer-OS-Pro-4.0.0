@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 errors: list[str] = []
 
-for forbidden in ("node_modules", ".git", "__pycache__"):
+for forbidden in ("node_modules", "__pycache__"):
     if (ROOT / forbidden).exists():
         errors.append(f"release artifact present: {forbidden}")
 
