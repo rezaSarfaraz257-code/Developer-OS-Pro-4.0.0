@@ -12,10 +12,7 @@ services:
         fromDatabase:
           name: developer-os-db
           property: connectionString
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-      - key: IDE_RUNNER_TOKEN
-        generateValue: true
+      - fromGroup: developer-os-runtime-secrets
       - key: IDE_RUNNER_URL
         value: http://developer-os-runner:10000
       - key: RELEASE_VERSION
@@ -55,8 +52,7 @@ services:
     dockerContext: ./Runner
     healthCheckPath: /health
     envVars:
-      - key: IDE_RUNNER_TOKEN
-        sync: false
+      - fromGroup: developer-os-runtime-secrets
       - key: RUNNER_TIMEOUT_SECONDS
         value: "120"
       - key: RUNNER_MAX_CONCURRENT
@@ -128,3 +124,11 @@ databases:
     user: developeros
     postgresMajorVersion: "17"
     ipAllowList: []
+
+envVarGroups:
+  - name: developer-os-runtime-secrets
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: IDE_RUNNER_TOKEN
+        generateValue: true
