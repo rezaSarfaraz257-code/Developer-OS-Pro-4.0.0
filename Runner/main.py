@@ -27,6 +27,12 @@ MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+MAX_CONCURRENT_EXECUTIONS = MAX_CONCURRENT
+MAX_CONCURRENT_PROCESSES = MAX_CONCURRENT
+MAX_WORKSPACE_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+RUNNER_MEMORY_MB = max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768"))))
+MAX_OUTPUT_BYTES = MAX_OUTPUT
+MAX_PROCESS_DURATION = TIMEOUT
 PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
@@ -44,7 +50,7 @@ MAX_COMMAND = 2_000
 # semaphore so a single workspace cannot monopolize the runner.
 SCHEDULER_LOCK = threading.RLock()
 SCHEDULER_ACTIVE = {}
-SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+SCHEDULER_MAX_PER_WORKSPACE = MAX_WORKSPACE_CONCURRENT
 CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
 
 class FairScheduler:
@@ -81,6 +87,7 @@ class FairScheduler:
                 self._active[key] = active
             else:
                 self._active.pop(key, None)
+                self._turn = [x for x in self._turn if x != key]
 
     def active(self, workspace_id):
         with self._lock:
