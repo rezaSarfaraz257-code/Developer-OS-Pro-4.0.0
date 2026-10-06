@@ -631,6 +631,42 @@ def _workspace_preview_port(workspace_id):
 
 PREVIEW_LOCK = threading.RLock()
 PREVIEWS = {}
+WATCHDOG_INTERVAL = max(2, int(os.environ.get("RUNNER_WATCHDOG_INTERVAL_SECONDS", "5")))
+WATCHDOG_MAX_RESTARTS = max(0, int(os.environ.get("RUNNER_MAX_PREVIEW_RESTARTS", "2")))
+
+def _watchdog():
+    while True:
+        try:
+            time.sleep(WATCHDOG_INTERVAL)
+            with PREVIEW_LOCK:
+                items=list(PREVIEWS.values())
+            for item in items:
+                proc=item.get("popen")
+                if not proc or proc.poll() is None or item.get("stopping"):
+                    continue
+                if item.get("restart_count", 0) >= WATCHDOG_MAX_RESTARTS:
+                    continue
+                root=ROOT / str(item["workspace_id"])
+                try:
+                    pid=_start_process(root, item["command"], allow_network=item.get("allow_network", False), env_extra=item.get("env", {}))
+                    with PROCESS_LOCK:
+                        new_proc=PROCESSES[str(pid)]["popen"]
+                    with PREVIEW_LOCK:
+                        current=PREVIEWS.get(str(item["id"]))
+                        if current:
+                            current["popen"]=new_proc
+                            current["restart_count"]=current.get("restart_count",0)+1
+                            current["recovered_at"]=time.time()
+                except Exception:
+                    with PREVIEW_LOCK:
+                        current=PREVIEWS.get(str(item["id"]))
+                        if current:
+                            current["last_recovery_error"]="restart_failed"
+        except Exception:
+            continue
+
+threading.Thread(target=_watchdog, daemon=True, name="preview-watchdog").start()
+
 
 class PreviewRequest(Workspace):
     command: str = ""
@@ -682,7 +718,7 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
     with PREVIEW_LOCK:
         PREVIEWS[str(pid)] = {"id": str(pid), "workspace_id": str(payload.workspace_id), "port": port,
                               "command": command, "popen": proc, "started_at": time.time(),
-                              "url": f"/api/ide/previews/{payload.workspace_id}/"}
+                              "url": f"/api/ide/previews/{payload.workspace_id}/", "allow_network": payload.allow_network, "env": dict(payload.env), "restart_count": 0}
     time.sleep(0.15)
     state = _preview_state(pid)
     state["health"] = _preview_health(PREVIEWS[str(pid)])
