@@ -45,6 +45,12 @@ MAX_COMMAND = 2_000
 SCHEDULER_LOCK = threading.RLock()
 SCHEDULER_ACTIVE = {}
 SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
+
+def _scheduler_snapshot():
+    with SCHEDULER_LOCK:
+        return {key: int(value) for key, value in SCHEDULER_ACTIVE.items()}
+
 
 def _scheduler_acquire(workspace_id, timeout=5):
     key = str(workspace_id)
@@ -349,6 +355,7 @@ def _capability_manifest():
             "memory_mb": max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768")))),
             "max_concurrent": MAX_CONCURRENT,
             "max_workspace_concurrent": SCHEDULER_MAX_PER_WORKSPACE,
+            "cancel_grace_seconds": CANCEL_GRACE_SECONDS,
             "max_files": MAX_FILES,
             "max_file_bytes": MAX_FILE,
             "max_workspace_bytes": MAX_WORKSPACE_BYTES,
@@ -414,10 +421,38 @@ def ready(authorization: str = Header(default="")):
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
 
+@app.get("/queue")
+def queue_status(authorization: str = Header(default="")):
+    auth(authorization)
+    return {
+        "status": "ok",
+        "active_by_workspace": _scheduler_snapshot(),
+        "max_per_workspace": SCHEDULER_MAX_PER_WORKSPACE,
+        "global_limit": MAX_CONCURRENT,
+    }
+
 @app.get("/metrics")
 def metrics(authorization: str = Header(default="")):
     auth(authorization)
     return {"status":"ok","metrics":_metrics_snapshot()}
+
+@app.post("/process/{process_id}/cancel")
+def process_cancel(process_id: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        item=PROCESSES.get(str(process_id))
+    if not item or str(item["workspace_id"]) != str(workspace_id):
+        raise HTTPException(status_code=404, detail="Process not found.")
+    proc=item["popen"]
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=CANCEL_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=1)
+    _metric("process_stopped")
+    return _process_state(process_id)
 
 @app.get("/diagnostics")
 def diagnostics(authorization: str = Header(default="")):
