@@ -373,6 +373,22 @@ def ready(authorization: str = Header(default="")):
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
 
+@app.get("/metrics")
+def metrics(authorization: str = Header(default="")):
+    auth(authorization)
+    return {"status":"ok","metrics":_metrics_snapshot()}
+
+@app.get("/diagnostics")
+def diagnostics(authorization: str = Header(default="")):
+    auth(authorization)
+    m=_metrics_snapshot()
+    warnings=[]
+    if m["active_processes"] >= MAX_CONCURRENT:
+        warnings.append("runner_concurrency_limit_reached")
+    if m["exec_total"] and (m["exec_failed"] / m["exec_total"]) > 0.25:
+        warnings.append("high_execution_failure_rate")
+    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m}
+
 @app.get("/health")
 def health():
     return {
@@ -474,9 +490,15 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
             raise HTTPException(status_code=400, detail="Workspace files must be an object.")
         # Serialize file materialization + execution per workspace. This prevents
         # an older execute request from overwriting a newer editor save.
+        started=time.time()
         with _workspace_lock(payload.workspace_id):
             write_snapshot(root, files)
-            return run_command(root, payload.command)
+            result=run_command(root, payload.command)
+        _metric("exec_total")
+        _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
+        with METRICS_LOCK:
+            METRICS["last_exec_ms"]=int((time.time()-started)*1000)
+        return result
     except HTTPException:
         raise
     except ValueError as exc:
@@ -502,6 +524,27 @@ MAX_PROCESSES_PER_WORKSPACE = 4
 MAX_PROCESS_OUTPUT = 200_000
 PROCESS_TAIL_BYTES = 16_384
 PROCESS_RETENTION_SECONDS = max(300, int(os.environ.get("RUNNER_PROCESS_RETENTION_SECONDS", "1800")))
+METRICS_LOCK = threading.RLock()
+METRICS = {
+    "exec_total": 0, "exec_success": 0, "exec_failed": 0,
+    "process_started": 0, "process_stopped": 0,
+    "preview_restarts": 0, "last_exec_ms": 0,
+    "started_at": time.time(),
+}
+
+def _metric(name, amount=1):
+    with METRICS_LOCK:
+        METRICS[name] = METRICS.get(name, 0) + amount
+
+def _metrics_snapshot():
+    with METRICS_LOCK:
+        data=dict(METRICS)
+    uptime=max(0.0, time.time()-data["started_at"])
+    data["uptime_seconds"]=round(uptime, 3)
+    data["active_processes"]=sum(1 for item in PROCESSES.values() if item["popen"].poll() is None)
+    data["active_previews"]=sum(1 for item in PREVIEWS.values() if item["popen"].poll() is None)
+    return data
+
 
 def _process_output_reader(pid, stream_name, stream):
     try:
@@ -742,6 +785,7 @@ def preview_stop(preview_id: str, workspace_id: str, authorization: str = Header
     if state["workspace_id"] != str(workspace_id):
         raise HTTPException(status_code=403, detail="Preview/workspace mismatch.")
     result = _stop_process(preview_id)
+    _metric("process_stopped")
     with PREVIEW_LOCK:
         PREVIEWS.pop(str(preview_id), None)
     return result
@@ -888,6 +932,7 @@ def process_start(payload: ProcessStartRequest, authorization: str = Header(defa
     with _workspace_lock(payload.workspace_id):
         write_snapshot(root, payload.files)
     pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env)
+    _metric("process_started")
     return _process_state(pid)
 
 @app.get("/process/{pid}")
