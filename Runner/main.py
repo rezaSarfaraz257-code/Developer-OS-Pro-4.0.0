@@ -629,6 +629,88 @@ def _stop_process(pid):
 def _workspace_preview_port(workspace_id):
     return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
 
+PREVIEW_LOCK = threading.RLock()
+PREVIEWS = {}
+
+class PreviewRequest(Workspace):
+    command: str = ""
+    port: int = 0
+    allow_network: bool = False
+    env: dict[str, str] = Field(default_factory=dict)
+
+def _preview_state(preview_id):
+    with PREVIEW_LOCK:
+        item = PREVIEWS.get(str(preview_id))
+        if not item:
+            raise HTTPException(status_code=404, detail="Preview not found.")
+        proc = item["popen"]
+        code = proc.poll()
+        status = "running" if code is None else ("ready" if code == 0 else "failed")
+        return {
+            "id": item["id"], "workspace_id": item["workspace_id"], "port": item["port"],
+            "status": status, "exit_code": code, "command": item["command"],
+            "started_at": item["started_at"], "url": item.get("url"),
+        }
+
+def _preview_health(item):
+    import socket
+    port = int(item["port"])
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.5):
+            return True
+    except OSError:
+        return False
+
+@app.post("/preview/start")
+def preview_start(payload: PreviewRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    root = safe_workspace(payload.workspace_id)
+    with _workspace_lock(payload.workspace_id):
+        if payload.files:
+            write_snapshot(root, payload.files)
+    port = int(payload.port or _workspace_preview_port(payload.workspace_id))
+    if not (1024 <= port <= 65535):
+        raise HTTPException(status_code=400, detail="Invalid preview port.")
+    command = payload.command.strip() or f"python3 -m http.server {port}"
+    # Bind preview servers to localhost inside the runner; the deployment proxy
+    # is responsible for exposing an authenticated preview route.
+    if "127.0.0.1" not in command and "localhost" not in command:
+        command = command
+    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=payload.env)
+    with PROCESS_LOCK:
+        proc = PROCESSES[str(pid)]["popen"]
+    with PREVIEW_LOCK:
+        PREVIEWS[str(pid)] = {"id": str(pid), "workspace_id": str(payload.workspace_id), "port": port,
+                              "command": command, "popen": proc, "started_at": time.time(),
+                              "url": f"/api/ide/previews/{payload.workspace_id}/"}
+    time.sleep(0.15)
+    state = _preview_state(pid)
+    state["health"] = _preview_health(PREVIEWS[str(pid)])
+    return state
+
+@app.get("/preview/{preview_id}")
+def preview_get(preview_id: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _preview_state(preview_id)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Preview/workspace mismatch.")
+    with PREVIEW_LOCK:
+        item = PREVIEWS.get(str(preview_id))
+        state["health"] = _preview_health(item) if item and item["popen"].poll() is None else False
+    return state
+
+@app.post("/preview/{preview_id}/stop")
+def preview_stop(preview_id: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    state = _preview_state(preview_id)
+    if state["workspace_id"] != str(workspace_id):
+        raise HTTPException(status_code=403, detail="Preview/workspace mismatch.")
+    result = _stop_process(preview_id)
+    with PREVIEW_LOCK:
+        PREVIEWS.pop(str(preview_id), None)
+    return result
+
+
 def _git_run(root, args):
     if not isinstance(args, list) or not args:
         raise HTTPException(status_code=400, detail="Invalid Git request.")
