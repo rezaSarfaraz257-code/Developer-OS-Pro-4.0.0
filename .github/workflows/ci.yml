@@ -214,6 +214,7 @@ PY
         env:
           POSTGRES_PASSWORD: ci-postgres-password
           ENVIRONMENT: ci
+          SECURE_SSL_REDIRECT: "false"
           EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
           DJANGO_SECRET_KEY: ci-secret-key-123456789-abcdef
           ALLOWED_HOSTS: localhost,127.0.0.1
@@ -226,6 +227,7 @@ PY
         env:
           POSTGRES_PASSWORD: ci-postgres-password
           ENVIRONMENT: ci
+          SECURE_SSL_REDIRECT: "false"
           EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
           DJANGO_SECRET_KEY: ci-secret-key-123456789
           ALLOWED_HOSTS: localhost,127.0.0.1
