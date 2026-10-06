@@ -110,6 +110,8 @@ jobs:
       - name: Runner integration
         run: |
           curl -fsS http://127.0.0.1:18080/health
+          curl -fsS http://127.0.0.1:18080/ready -H 'Authorization: Bearer ci-runner-token' | tee runner-ready.json
+          grep -q '"status":"ready"' runner-ready.json
           curl -fsS -X POST http://127.0.0.1:18080/exec \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
@@ -117,6 +119,12 @@ jobs:
             | tee runner-result.json
           grep -q '"exit_code":0' runner-result.json
           grep -q '42' runner-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/process/start \
+            -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"999","files":{"main.py":"import time; print(42); time.sleep(2)"},"command":"python main.py"}' \
+            | tee runner-process.json
+          grep -q '"workspace_id":"999"' runner-process.json
       - name: Runner cleanup
         if: always()
         run: docker rm -f developer-os-runner-ci || true
