@@ -80,6 +80,7 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/debug/", views.ide_debug_api, name="ide-debug"),
     path("ide/workspaces/<int:pk>/process/start/", views.ide_process_start_api, name="ide-process-start"),
     path("ide/workspaces/<int:pk>/processes/", views.ide_processes_api, name="ide-processes"),
+    path("ide/workspaces/<int:pk>/process/<str:process_id>/stop/", views.ide_process_stop_api, name="ide-process-stop"),
     path("ide/workspaces/<int:pk>/process/<str:process_id>/", views.ide_process_detail_api, name="ide-process-detail"),
     path("ide/workspaces/<int:pk>/diagnostics/", views.ide_diagnostics_api, name="ide-diagnostics"),
     path("ide/workspaces/<int:pk>/symbols/", views.ide_symbols_api, name="ide-symbols"),
