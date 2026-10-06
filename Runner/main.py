@@ -463,11 +463,13 @@ def run_command(root, command, *, allow_network=False):
                 preexec_fn=_limit_process_resources,
             )
         finished = time.time()
-        status = "completed" if proc.returncode == 0 else "failed"
-        _set_job(job_id, status=status, finished_at=finished, exit_code=proc.returncode,
+        final_status = _job_snapshot(job_id) or {}
+        cancelled = final_status.get("status") == "cancelled"
+        status = "cancelled" if cancelled else ("completed" if proc.returncode == 0 else "failed")
+        _set_job(job_id, status=status, finished_at=finished, exit_code=None if cancelled else proc.returncode,
                  duration_ms=int((time.monotonic()-started)*1000))
         return {
-            "job_id": job_id, "status": status, "exit_code": proc.returncode,
+            "job_id": job_id, "status": status, "exit_code": None if cancelled else proc.returncode,
             "stdout": proc.stdout[-MAX_OUTPUT:], "stderr": proc.stderr[-MAX_OUTPUT:],
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
