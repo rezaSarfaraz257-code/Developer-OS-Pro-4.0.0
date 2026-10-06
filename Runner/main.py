@@ -178,10 +178,28 @@ def _new_job(workspace_id):
 def _is_retryable_error(exc):
     return isinstance(exc, (ConnectionError, TimeoutError, OSError)) or "temporarily" in str(exc).lower()
 
+TERMINAL_JOB_STATES = {"completed", "failed", "cancelled"}
+VALID_JOB_TRANSITIONS = {
+    "queued": {"queued", "running", "failed", "cancelled"},
+    "running": {"running", "completed", "failed", "cancelled"},
+    "completed": {"completed"},
+    "failed": {"failed"},
+    "cancelled": {"cancelled"},
+}
+
 def _set_job(job_id, **updates):
     with JOB_LOCK:
-        if job_id in JOBS:
-            JOBS[job_id].update(updates)
+        job = JOBS.get(job_id)
+        if not job:
+            return False
+        requested = updates.get("status")
+        if requested is not None:
+            current = job.get("status", "queued")
+            allowed = VALID_JOB_TRANSITIONS.get(current, {current})
+            if requested not in allowed:
+                return False
+        job.update(updates)
+        return True
 
 def _job_snapshot(job_id):
     with JOB_LOCK:
@@ -222,11 +240,18 @@ def _cancel_job(job_id):
         job = JOBS.get(job_id)
         if not job:
             return None
-        if job["status"] == "queued":
-            job["status"] = "cancelled"
-            job["finished_at"] = time.time()
-            return dict(job)
-        if job["status"] not in ("running",):
+        status = job.get("status")
+        if status == "queued":
+            now = time.time()
+            # Remove a queued scheduler entry immediately so queue metrics and
+            # position cannot retain a job that the user already cancelled.
+            with SCHEDULER_LOCK:
+                removed = SCHEDULER_WAITING.pop(str(job_id), None)
+            if removed:
+                _scheduler_metric("queued", -1)
+            _set_job(job_id, status="cancelled", finished_at=now, queue_position=0)
+            return _job_snapshot(job_id)
+        if status not in ("running",):
             return dict(job)
         process_id = job.get("process_id")
     if process_id:
@@ -235,10 +260,7 @@ def _cancel_job(job_id):
         if item:
             proc = item["popen"]
             _terminate_process_group(proc)
-        with JOB_LOCK:
-            if job_id in JOBS:
-                JOBS[job_id]["status"] = "cancelled"
-                JOBS[job_id]["finished_at"] = time.time()
+        _set_job(job_id, status="cancelled", finished_at=time.time(), process_id=None, exit_code=None)
         return _job_snapshot(job_id)
     return _job_snapshot(job_id)
 
@@ -263,11 +285,20 @@ def _scheduler_acquire(workspace_id, job_id, timeout=5):
     started = time.monotonic()
     key = str(workspace_id)
     job_key = str(job_id)
+    if _job_snapshot(job_key) and _job_snapshot(job_key).get("status") == "cancelled":
+        return False
     with SCHEDULER_LOCK:
         SCHEDULER_WAITING[job_key] = {"workspace_id": key, "queued_at": time.monotonic()}
     _scheduler_metric("queued")
     deadline = started + timeout
     while time.monotonic() < deadline:
+        job = _job_snapshot(job_key)
+        if job and job.get("status") == "cancelled":
+            with SCHEDULER_LOCK:
+                removed = SCHEDULER_WAITING.pop(job_key, None)
+            if removed:
+                _scheduler_metric("queued", -1)
+            return False
         if FAIR_SCHEDULER.acquire(workspace_id):
             with SCHEDULER_LOCK:
                 removed = SCHEDULER_WAITING.pop(job_key, None)
