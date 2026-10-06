@@ -480,6 +480,9 @@ class SaaSMaturityTests(APITestCase):
         org_id = response.data["id"]
         from .models import OrganizationSubscription
         OrganizationSubscription.objects.create(organization_id=org_id, plan="team", status="active", quantity=5)
+        org = Organization.objects.get(pk=org_id)
+        org.plan = "team"
+        org.save(update_fields=["plan"])
         response = self.client.post(f"/api/organizations/{org_id}/invites/", {"email": "someone@example.test", "role": "developer"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         token = response.data["token"]
