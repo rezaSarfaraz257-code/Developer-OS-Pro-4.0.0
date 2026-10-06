@@ -119,6 +119,19 @@ jobs:
             | tee runner-result.json
           grep -q '"exit_code":0' runner-result.json
           grep -q '42' runner-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/exec \
+            -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"999","files":{"main.py":"import time; print(42); time.sleep(1)"},"active_file":"main.py","command":"python main.py"}' \
+            | tee runner-job.json
+          grep -q '"job_id"' runner-job.json
+          JOB_ID=$(python -c 'import json; print(json.load(open("runner-job.json"))["job_id"])')
+          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID/output?cursor=0" -H 'Authorization: Bearer ci-runner-token' | tee runner-output.json
+          grep -q '42' runner-output.json
+          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID/stream?cursor=0" -H 'Authorization: Bearer ci-runner-token' | tee runner-stream.json
+          grep -q '"job_id"' runner-stream.json
+          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-job-status.json
+          grep -q '"status"' runner-job-status.json
           curl -fsS -X POST http://127.0.0.1:18080/process/start \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
