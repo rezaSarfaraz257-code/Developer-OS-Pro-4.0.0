@@ -1,8 +1,8 @@
-# Release Status — Developer OS 3.0.0-FINAL
+# Release Status — Developer OS 4.0.0
 
 ## Engineering state
 
-The 3.0.0-FINAL artifact is hardened and prepared for external production validation.
+The 4.0.0 artifact is hardened and prepared for external production validation.
 
 ### Implemented
 
