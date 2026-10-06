@@ -55,13 +55,16 @@ required_release_files = (
     "Runner/requirements.txt",
     "Runner/test_main.py",
     ".github/workflows/ci.yml",
+    ".github/workflows/security.yml",
+    "scripts/production_preflight.py",
+    "PRODUCTION_OPERATIONS.md",
     "e2e/smoke.mjs",
 )
 for rel in required_release_files:
     if not (ROOT / rel).exists():
         errors.append(f"required release file missing: {rel}")
 
-for rel in ("README.md", "FINAL_RELEASE.md", "DEPLOYMENT.md"):
+for rel in ("README.md", "FINAL_RELEASE.md", "DEPLOYMENT.md", "PRODUCTION_OPERATIONS.md"):
     text = (ROOT / rel).read_text(encoding="utf-8", errors="replace").lower()
     if "prototype / mvp" in text or "professional mvp" in text:
         errors.append(f"obsolete MVP release language remains in {rel}")
