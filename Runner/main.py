@@ -39,6 +39,33 @@ EXEC_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT)
 WORKSPACE_LOCKS = {}
 WORKSPACE_LOCKS_GUARD = threading.Lock()
 MAX_COMMAND = 2_000
+
+# Lightweight per-workspace fairness guard. Kept separate from the global
+# semaphore so a single workspace cannot monopolize the runner.
+SCHEDULER_LOCK = threading.RLock()
+SCHEDULER_ACTIVE = {}
+SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+
+def _scheduler_acquire(workspace_id, timeout=5):
+    key = str(workspace_id)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with SCHEDULER_LOCK:
+            if SCHEDULER_ACTIVE.get(key, 0) < SCHEDULER_MAX_PER_WORKSPACE:
+                SCHEDULER_ACTIVE[key] = SCHEDULER_ACTIVE.get(key, 0) + 1
+                return True
+        time.sleep(0.025)
+    return False
+
+def _scheduler_release(workspace_id):
+    key = str(workspace_id)
+    with SCHEDULER_LOCK:
+        current = SCHEDULER_ACTIVE.get(key, 0)
+        if current <= 1:
+            SCHEDULER_ACTIVE.pop(key, None)
+        else:
+            SCHEDULER_ACTIVE[key] = current - 1
+
 BLOCKED = [
     r"\b(docker|podman|nsenter|unshare|mount|umount|chroot)\b",
     r"(^|\s)rm\s+-rf\s+/$",
@@ -241,6 +268,9 @@ def run_command(root, command, *, allow_network=False):
     acquired = EXEC_SEMAPHORE.acquire(timeout=5)
     if not acquired:
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
+    if not _scheduler_acquire(root.name, timeout=5):
+        EXEC_SEMAPHORE.release()
+        raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
@@ -272,6 +302,7 @@ def run_command(root, command, *, allow_network=False):
             "files": snapshot(root),
         }
     finally:
+        _scheduler_release(root.name)
         EXEC_SEMAPHORE.release()
 
 def _runtime_info():
@@ -317,6 +348,7 @@ def _capability_manifest():
             "timeout_seconds": TIMEOUT,
             "memory_mb": max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768")))),
             "max_concurrent": MAX_CONCURRENT,
+            "max_workspace_concurrent": SCHEDULER_MAX_PER_WORKSPACE,
             "max_files": MAX_FILES,
             "max_file_bytes": MAX_FILE,
             "max_workspace_bytes": MAX_WORKSPACE_BYTES,
