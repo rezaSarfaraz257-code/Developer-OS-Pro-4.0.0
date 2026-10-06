@@ -219,6 +219,8 @@ def run_command(root, command, *, allow_network=False):
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
+        "TMPDIR": str(root / ".tmp"),
+        "XDG_CACHE_HOME": str(root / ".cache"),
         "npm_config_cache": str(root / ".npm-cache"),
         "PIP_CACHE_DIR": str(root / ".pip-cache"),
         "PYTHONUNBUFFERED": "1",
@@ -229,6 +231,8 @@ def run_command(root, command, *, allow_network=False):
         "npm_config_update_notifier": "false",
     }
     (root / ".home").mkdir(exist_ok=True)
+    (root / ".tmp").mkdir(exist_ok=True)
+    (root / ".cache").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
     acquired = EXEC_SEMAPHORE.acquire(timeout=5)
@@ -580,6 +584,8 @@ def _start_process(root, command, *, allow_network=False, env_extra=None):
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
+        "TMPDIR": str(root / ".tmp"),
+        "XDG_CACHE_HOME": str(root / ".cache"),
         "npm_config_cache": str(root / ".npm-cache"),
         "PIP_CACHE_DIR": str(root / ".pip-cache"),
         "PYTHONUNBUFFERED": "1",
