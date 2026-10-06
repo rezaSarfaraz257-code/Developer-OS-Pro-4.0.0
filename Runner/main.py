@@ -47,6 +47,43 @@ SCHEDULER_ACTIVE = {}
 SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
 CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
 
+class FairScheduler:
+    """Small deterministic per-workspace FIFO scheduler."""
+    def __init__(self, max_per_workspace=1):
+        self.max_per_workspace = max(1, int(max_per_workspace))
+        self._lock = threading.RLock()
+        self._active = {}
+        self._queues = {}
+        self._sequence = 0
+
+    def acquire(self, workspace_id):
+        key = str(workspace_id)
+        with self._lock:
+            active = self._active.get(key, 0)
+            if active >= self.max_per_workspace:
+                return False
+            self._active[key] = active + 1
+            return True
+
+    def release(self, workspace_id):
+        key = str(workspace_id)
+        with self._lock:
+            active = max(0, self._active.get(key, 0) - 1)
+            if active:
+                self._active[key] = active
+            else:
+                self._active.pop(key, None)
+
+    def active(self, workspace_id):
+        with self._lock:
+            return self._active.get(str(workspace_id), 0)
+
+    def snapshot(self):
+        with self._lock:
+            return {"max_per_workspace": self.max_per_workspace, "active": dict(self._active)}
+
+FAIR_SCHEDULER = FairScheduler(SCHEDULER_MAX_PER_WORKSPACE)
+
 JOB_LOCK = threading.RLock()
 JOBS = {}
 JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
