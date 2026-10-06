@@ -53,6 +53,9 @@ JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS
 JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
 JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
+STREAM_WAIT_SECONDS = max(0.1, min(5.0, float(os.environ.get("RUNNER_STREAM_WAIT_SECONDS", "0.5")))
+
+
 
 def _capture_process_output(job_id, proc):
     def reader(stream):
@@ -549,6 +552,24 @@ def cancel_job(job_id: str, authorization: str = Header(default="")):
     if not result:
         raise HTTPException(status_code=404, detail="Job not found.")
     return result
+
+@app.get("/jobs/{job_id}/stream")
+def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
+    auth(authorization)
+    if not _job_snapshot(job_id):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    start = time.monotonic()
+    current = max(0, int(cursor or 0))
+    while time.monotonic() - start < STREAM_WAIT_SECONDS:
+        chunk, next_cursor = _job_output_slice(job_id, current)
+        if chunk:
+            return {"job_id": job_id, "output": chunk, "cursor": next_cursor, "done": False}
+        job = _job_snapshot(job_id)
+        if job and job["status"] in ("completed", "failed", "cancelled"):
+            return {"job_id": job_id, "output": "", "cursor": current, "done": True, "status": job["status"]}
+        time.sleep(0.05)
+    job = _job_snapshot(job_id)
+    return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in ("completed","failed","cancelled")), "status": job["status"] if job else "unknown"}
 
 @app.get("/jobs/{job_id}/output")
 def job_output(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
