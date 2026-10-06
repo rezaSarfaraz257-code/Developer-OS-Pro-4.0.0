@@ -3411,6 +3411,21 @@ def ide_processes_api(request, pk):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def ide_job_stream_api(request, pk, job_id):
+    ws = _workspace_for_user(pk, request.user)
+    cursor = request.query_params.get("cursor", "0")
+    data, error = _runner_request(
+        "GET",
+        f"/jobs/{job_id}/stream?cursor={cursor}",
+        {"workspace_id": str(ws.id)},
+        timeout=10,
+    )
+    if error:
+        return Response(error, status=503)
+    return Response(data)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def ide_job_status_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
     data, error = _runner_request("GET", f"/jobs/{job_id}", {"workspace_id": str(ws.id)}, timeout=15)
