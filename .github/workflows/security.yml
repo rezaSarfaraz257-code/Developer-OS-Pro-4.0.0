@@ -41,7 +41,20 @@ jobs:
         working-directory: Frontend
         run: |
           npm ci
-          npm audit --audit-level=high
+          set +e
+          npm audit --audit-level=high --json > npm-audit.json
+          code=$?
+          set -e
+          cat npm-audit.json
+          exit $code
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: Frontend/npm-audit.json
+          if-no-files-found: ignore
 
       - name: Python dependency audit
         working-directory: Backend
