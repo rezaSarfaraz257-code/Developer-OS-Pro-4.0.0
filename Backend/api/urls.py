@@ -73,6 +73,7 @@ urlpatterns = [
     path("ide/workspaces/<int:pk>/install/", views.ide_install_framework_api, name="ide-install-framework"),
     path("ide/workspaces/<int:pk>/execute/", views.ide_execute_api, name="ide-execute"),
     path("ide/workspaces/<int:pk>/jobs/<str:job_id>/", views.ide_job_status_api, name="ide-job-status"),
+    path("ide/workspaces/<int:pk>/jobs/<str:job_id>/stream/", views.ide_job_stream_api, name="ide-job-stream"),
     path("ide/workspaces/<int:pk>/jobs/<str:job_id>/cancel/", views.ide_job_cancel_api, name="ide-job-cancel"),
     path("ide/workspaces/<int:pk>/build/plan/", views.ide_build_plan_api, name="ide-build-plan"),
     path("ide/workspaces/<int:pk>/build/", views.ide_build_api, name="ide-build"),
