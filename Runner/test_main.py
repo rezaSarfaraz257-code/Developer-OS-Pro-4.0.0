@@ -1,3 +1,4 @@
+import main
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -162,6 +163,44 @@ class RunnerSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_job_state_machine_rejects_invalid_terminal_transitions():
+    job_id = main._new_job("state-machine")
+    assert main._set_job(job_id, status="running") is True
+    assert main._set_job(job_id, status="completed", finished_at=time.time()) is True
+    assert main._set_job(job_id, status="cancelled") is False
+    assert main._job_snapshot(job_id)["status"] == "completed"
+
+
+def test_job_state_machine_rejects_cancelled_to_running():
+    job_id = main._new_job("state-machine-cancelled")
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    assert main._set_job(job_id, status="running") is False
+    assert main._job_snapshot(job_id)["status"] == "cancelled"
+
+
+def test_queued_cancel_clears_scheduler_waiter():
+    job_id = main._new_job("queued-cancel")
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING[job_id] = {
+            "workspace_id": "queued-cancel",
+            "queued_at": time.monotonic(),
+        }
+    main._scheduler_metric("queued")
+    result = main._cancel_job(job_id)
+    assert result["status"] == "cancelled"
+    with main.SCHEDULER_LOCK:
+        assert job_id not in main.SCHEDULER_WAITING
+        assert main.SCHEDULER_METRICS["queued"] >= 0
+
+
+def test_terminal_job_cancel_is_idempotent():
+    job_id = main._new_job("terminal-cancel")
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    result = main._cancel_job(job_id)
+    assert result["status"] == "cancelled"
+    assert main._set_job(job_id, status="completed") is False
 
 
 def test_job_lifecycle_helpers():
