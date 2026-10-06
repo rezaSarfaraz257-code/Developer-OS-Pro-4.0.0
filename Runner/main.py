@@ -50,6 +50,23 @@ CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", 
 JOB_LOCK = threading.RLock()
 JOBS = {}
 JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
+JOB_OUTPUT_LOCK = threading.RLock()
+JOB_OUTPUT = {}
+JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
+
+def _append_job_output(job_id, chunk):
+    if not chunk:
+        return
+    data = str(chunk)
+    with JOB_OUTPUT_LOCK:
+        current = JOB_OUTPUT.get(job_id, "")
+        JOB_OUTPUT[job_id] = (current + data)[-JOB_OUTPUT_MAX_BYTES:]
+
+def _job_output_snapshot(job_id):
+    with JOB_OUTPUT_LOCK:
+        return JOB_OUTPUT.get(job_id, "")
+
+
 JOB_MAX_RETRIES = max(0, min(3, int(os.environ.get("RUNNER_JOB_MAX_RETRIES", "2"))))
 JOB_RETRY_BASE_SECONDS = max(0.1, float(os.environ.get("RUNNER_JOB_RETRY_BASE_SECONDS", "0.5")))
 
@@ -509,6 +526,13 @@ def cancel_job(job_id: str, authorization: str = Header(default="")):
     if not result:
         raise HTTPException(status_code=404, detail="Job not found.")
     return result
+
+@app.get("/jobs/{job_id}/output")
+def job_output(job_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    if not _job_snapshot(job_id):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"job_id": job_id, "output": _job_output_snapshot(job_id)}
 
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str, authorization: str = Header(default="")):
