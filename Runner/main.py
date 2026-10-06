@@ -18,7 +18,7 @@ from extension_engine import manifest as extension_manifest
 from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
-ROOT = Path("/workspaces")
+ROOT = Path(os.environ.get("RUNNER_ROOT", "/workspaces"))
 ROOT.mkdir(parents=True, exist_ok=True)
 TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
