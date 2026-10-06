@@ -261,3 +261,5 @@ PY
       - uses: actions/checkout@v4
       - name: Run static release gate
         run: python scripts/release_gate.py
+
+# Release validation workflow.
