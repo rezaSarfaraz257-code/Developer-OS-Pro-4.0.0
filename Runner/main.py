@@ -415,29 +415,16 @@ def run_command(root, command, *, allow_network=False):
         raise HTTPException(status_code=400, detail="Invalid command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
-    # Keep the IDE contract stable on images that expose only python3.
-    if re.match(r"^python(?:\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
-        command = re.sub(r"^python(?=\s|$)", "python3", command, count=1)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "HOME": str(root / ".home"),
-        "TMPDIR": str(root / ".tmp"),
-        "XDG_CACHE_HOME": str(root / ".cache"),
-        "npm_config_cache": str(root / ".npm-cache"),
-        "PIP_CACHE_DIR": str(root / ".pip-cache"),
-        "PYTHONUNBUFFERED": "1",
-        "BASH_ENV": "/dev/null",
-        "LANG": "C.UTF-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-        "npm_config_update_notifier": "false",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_TERMINAL_PROMPT": "0",
-        "PYTHONHASHSEED": "random",
+        "HOME": str(root / ".home"), "TMPDIR": str(root / ".tmp"),
+        "XDG_CACHE_HOME": str(root / ".cache"), "npm_config_cache": str(root / ".npm-cache"),
+        "PIP_CACHE_DIR": str(root / ".pip-cache"), "PYTHONUNBUFFERED": "1",
+        "BASH_ENV": "/dev/null", "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1", "npm_config_update_notifier": "false",
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0", "PYTHONHASHSEED": "random",
     }
-    (root / ".home").mkdir(exist_ok=True)
-    (root / ".tmp").mkdir(exist_ok=True)
-    (root / ".cache").mkdir(exist_ok=True)
+    (root / ".home").mkdir(exist_ok=True); (root / ".tmp").mkdir(exist_ok=True); (root / ".cache").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
     job_id = _new_job(root.name)
@@ -450,36 +437,41 @@ def run_command(root, command, *, allow_network=False):
         EXEC_SEMAPHORE.release()
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000))
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
                 _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=TIMEOUT,
-                start_new_session=True,
+                capture_output=True, text=True, timeout=TIMEOUT, start_new_session=True,
                 preexec_fn=_limit_process_resources,
             )
-            return {
-            "exit_code": proc.returncode,
-            "stdout": proc.stdout[-MAX_OUTPUT:],
-            "stderr": proc.stderr[-MAX_OUTPUT:],
-            "duration_ms": int((time.monotonic()-started)*1000),
-            "files": snapshot(root),
+        finished = time.time()
+        status = "completed" if proc.returncode == 0 else "failed"
+        _set_job(job_id, status=status, finished_at=finished, exit_code=proc.returncode,
+                 duration_ms=int((time.monotonic()-started)*1000))
+        return {
+            "job_id": job_id, "status": status, "exit_code": proc.returncode,
+            "stdout": proc.stdout[-MAX_OUTPUT:], "stderr": proc.stderr[-MAX_OUTPUT:],
+            "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
-        # Kill the entire process group so timed-out dev servers/child processes
-        # cannot survive the request and consume the shared runner.
         try:
             if "proc" in locals() and proc.pid:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
             pass
+        finished = time.time()
+        _set_job(job_id, status="failed", finished_at=finished, exit_code=124,
+                 error=f"Execution timed out after {TIMEOUT} seconds.")
         return {
-            "exit_code": 124,
+            "job_id": job_id, "status": "failed", "exit_code": 124,
             "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
             "stderr": f"Execution timed out after {TIMEOUT} seconds.",
-            "duration_ms": int((time.monotonic()-started)*1000),
-            "files": snapshot(root),
+            "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
+    except Exception as exc:
+        _set_job(job_id, status="failed", finished_at=time.time(), error=exc.__class__.__name__)
+        raise
     finally:
         _scheduler_release(root.name)
         EXEC_SEMAPHORE.release()
