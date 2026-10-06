@@ -767,7 +767,9 @@ def diagnostics(authorization: str = Header(default="")):
         warnings.append("runner_concurrency_limit_reached")
     if m["exec_total"] and (m["exec_failed"] / m["exec_total"]) > 0.25:
         warnings.append("high_execution_failure_rate")
-    sm = _scheduler_snapshot()\n    if sm["rejected"] > 0:\n        warnings.append("scheduler_rejections_detected")\n    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m,"scheduler":sm}
+    sm = _scheduler_snapshot()
+    if sm["rejected"] > 0:
+        warnings.append("scheduler_rejections_detected")\n    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m,"scheduler":sm}
 
 @app.get("/health")
 def health():
