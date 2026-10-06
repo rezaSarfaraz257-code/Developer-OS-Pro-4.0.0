@@ -1,4 +1,4 @@
-# Developer OS 3.0.0 — Mature SaaS Hardening Report
+# Developer OS 4.0.0 — Mature SaaS Hardening Report
 
 ## Scope
 This release pass targets the gaps found during the mature-SaaS review: runner path traversal, API-key authentication wiring, workspace isolation, database connection resilience, and release validation.
