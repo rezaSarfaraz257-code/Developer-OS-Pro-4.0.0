@@ -2,7 +2,7 @@ name: Production Validation
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, production-complete-2026-10-06]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -115,8 +115,13 @@ jobs:
           grep -q '"scheduler"' runner-metrics.json
           grep -q '"queued"' runner-metrics.json
           curl -fsS http://127.0.0.1:18080/diagnostics -H 'Authorization: Bearer ci-runner-token' | tee runner-diagnostics.json
-          grep -q '"scheduler"' runner-diagnostics.json | tee runner-ready.json
-          grep -q '"status":"ready"' runner-ready.json
+          grep -q '"scheduler"' runner-diagnostics.json
+          python - <<'PY'
+import json
+d=json.load(open("runner-diagnostics.json"))
+assert d.get("status") == "ready", d
+assert isinstance(d.get("scheduler"), dict), d
+PY
           curl -fsS -X POST http://127.0.0.1:18080/exec \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
