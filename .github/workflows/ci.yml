@@ -143,6 +143,25 @@ jobs:
           grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-result.json
           curl -fsS "http://127.0.0.1:18080/jobs/$CANCEL_JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-cancel-status.json
           grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-status.json
+          python - <<'PY'
+import json, subprocess, time
+base="http://127.0.0.1:18080"
+headers=["-H","Authorization: Bearer ci-runner-token","-H","Content-Type: application/json"]
+jobs=[]
+for i in range(3):
+    payload=json.dumps({"workspace_id":f"stress-{i}","files":{"main.py":f"print({i})"},"active_file":"main.py","command":"python main.py"})
+    out=subprocess.check_output(["curl","-fsS","-X","POST",f"{base}/exec",*headers,"--data",payload], text=True)
+    jobs.append(json.loads(out)["job_id"])
+assert len(set(jobs)) == 3
+for job_id in jobs:
+    for _ in range(40):
+        out=subprocess.check_output(["curl","-fsS",f"{base}/jobs/{job_id}",*headers[:2]], text=True)
+        status=json.loads(out)["status"]
+        if status in {"completed","failed","cancelled"}:
+            break
+        time.sleep(.1)
+    assert status == "completed", (job_id, status)
+PY
           curl -fsS -X POST http://127.0.0.1:18080/process/start \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
