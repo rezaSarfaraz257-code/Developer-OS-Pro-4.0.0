@@ -200,3 +200,6 @@ Payment providers are also intentionally provider-agnostic: subscription state a
 This repository is the consolidated production product surface. It includes the Developer OS command center, Explore catalog, projects/workspaces, AI intelligence, GitHub integration, collaboration, notifications, API keys, billing integration, Web IDE/runner, PostgreSQL deployment and security controls.
 
 Paid billing requires real Stripe credentials and price IDs. AI and GitHub are similarly configured through environment variables; the application fails closed for paid billing instead of fabricating successful purchases.
+
+
+<!-- Final CI validation marker. -->
