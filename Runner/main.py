@@ -229,6 +229,9 @@ def run_command(root, command, *, allow_network=False):
         "PYTHONDONTWRITEBYTECODE": "1",
         "PIP_DISABLE_PIP_VERSION_CHECK": "1",
         "npm_config_update_notifier": "false",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "PYTHONHASHSEED": "random",
     }
     (root / ".home").mkdir(exist_ok=True)
     (root / ".tmp").mkdir(exist_ok=True)
