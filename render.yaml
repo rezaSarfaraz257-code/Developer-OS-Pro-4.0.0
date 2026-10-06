@@ -36,8 +36,9 @@ services:
           name: developer-os-cache
           type: keyvalue
           property: connectionString
+      # Render test environment: use console mail until SMTP credentials are configured.
       - key: EMAIL_VERIFICATION_REQUIRED
-        value: "true"
+        value: "false"
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.console.EmailBackend
       - key: DEFAULT_FROM_EMAIL
