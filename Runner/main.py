@@ -205,24 +205,15 @@ def _scheduler_snapshot():
 
 
 def _scheduler_acquire(workspace_id, timeout=5):
-    key = str(workspace_id)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        with SCHEDULER_LOCK:
-            if SCHEDULER_ACTIVE.get(key, 0) < SCHEDULER_MAX_PER_WORKSPACE:
-                SCHEDULER_ACTIVE[key] = SCHEDULER_ACTIVE.get(key, 0) + 1
-                return True
+        if FAIR_SCHEDULER.acquire(workspace_id):
+            return True
         time.sleep(0.025)
     return False
 
 def _scheduler_release(workspace_id):
-    key = str(workspace_id)
-    with SCHEDULER_LOCK:
-        current = SCHEDULER_ACTIVE.get(key, 0)
-        if current <= 1:
-            SCHEDULER_ACTIVE.pop(key, None)
-        else:
-            SCHEDULER_ACTIVE[key] = current - 1
+    FAIR_SCHEDULER.release(workspace_id)
 
 BLOCKED = [
     r"\b(docker|podman|nsenter|unshare|mount|umount|chroot)\b",
