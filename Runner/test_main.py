@@ -149,6 +149,12 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertGreater(main.PROCESS_RETENTION_SECONDS, 0)
         self.assertGreater(main.PROCESS_TAIL_BYTES, 0)
 
+    def test_preview_port_is_within_safe_range(self):
+        import main
+        port = main._workspace_preview_port(42)
+        self.assertGreaterEqual(port, 1024)
+        self.assertLessEqual(port, 65535)
+
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
             run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
