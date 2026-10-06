@@ -71,12 +71,11 @@ class FairScheduler:
             active = self._active.get(key, 0)
             if active >= self.max_per_workspace:
                 return False
-            other_active = any(workspace != key and count > 0 for workspace, count in self._active.items())
-            if other_active:
-                return False
-            if self._turn and self._turn[0] != key:
+            idle = [other for other in self._turn if self._active.get(other, 0) == 0 and other != key]
+            if idle and key != idle[0]:
                 return False
             self._active[key] = active + 1
+            self._turn = [x for x in self._turn if x != key] + [key]
             return True
 
     def release(self, workspace_id):
