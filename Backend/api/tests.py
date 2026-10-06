@@ -478,7 +478,7 @@ class SaaSMaturityTests(APITestCase):
         response = self.client.post("/api/organizations/", {"name": "Maturity Labs"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]
-        from .models import Subscription
+        from .models import OrganizationSubscription
         OrganizationSubscription.objects.create(organization_id=org_id, plan="team", status="active", quantity=5)
         response = self.client.post(f"/api/organizations/{org_id}/invites/", {"email": "someone@example.test", "role": "developer"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
