@@ -132,6 +132,17 @@ jobs:
           grep -q '"job_id"' runner-stream.json
           curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-job-status.json
           grep -q '"status"' runner-job-status.json
+          curl -fsS -X POST http://127.0.0.1:18080/exec \
+            -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"cancel-ci","files":{"main.py":"import time; print(99); time.sleep(30)"},"active_file":"main.py","command":"python main.py"}' \
+            | tee runner-cancel-job.json
+          CANCEL_JOB_ID=$(python -c 'import json; print(json.load(open("runner-cancel-job.json"))["job_id"])')
+          curl -fsS -X POST "http://127.0.0.1:18080/jobs/$CANCEL_JOB_ID/cancel" \
+            -H 'Authorization: Bearer ci-runner-token' | tee runner-cancel-result.json
+          grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-result.json
+          curl -fsS "http://127.0.0.1:18080/jobs/$CANCEL_JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-cancel-status.json
+          grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-status.json
           curl -fsS -X POST http://127.0.0.1:18080/process/start \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
