@@ -452,7 +452,7 @@ def run_command(root, command, *, allow_network=False):
         EXEC_SEMAPHORE.release()
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=_scheduler_queue_position(root.name))
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
