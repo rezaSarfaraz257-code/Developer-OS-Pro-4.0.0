@@ -162,3 +162,24 @@ class RunnerSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_job_lifecycle_helpers():
+    job_id = main._new_job("test-workspace")
+    snapshot = main._job_snapshot(job_id)
+    assert snapshot["status"] == "queued"
+    assert snapshot["workspace_id"] == "test-workspace"
+    assert snapshot["attempt"] == 0
+    main._set_job(job_id, status="running", attempt=1)
+    snapshot = main._job_snapshot(job_id)
+    assert snapshot["status"] == "running"
+    assert snapshot["attempt"] == 1
+    cancelled = main._cancel_job(job_id)
+    assert cancelled["status"] in ("running", "cancelled")
+
+
+def test_retry_policy_is_bounded():
+    assert main.JOB_MAX_RETRIES >= 0
+    assert main.JOB_MAX_RETRIES <= 3
+    assert main._retry_delay(1) <= 10
+    assert main._retry_delay(2) >= main._retry_delay(1)
