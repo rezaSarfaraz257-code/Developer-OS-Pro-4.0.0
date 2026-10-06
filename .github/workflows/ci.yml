@@ -1,4 +1,5 @@
 name: Production Validation
+# Release branch is validated continuously before merge.
 
 on:
   push:
