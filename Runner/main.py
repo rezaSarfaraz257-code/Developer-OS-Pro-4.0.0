@@ -54,6 +54,21 @@ JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
 JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
 
+def _capture_process_output(job_id, proc):
+    def reader(stream):
+        try:
+            for line in iter(stream.readline, ""):
+                if line:
+                    _append_job_output(job_id, line)
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+    for stream in (proc.stdout, proc.stderr):
+        if stream is not None:
+            threading.Thread(target=reader, args=(stream,), daemon=True).start()
+
 def _append_job_output(job_id, chunk):
     if not chunk:
         return
