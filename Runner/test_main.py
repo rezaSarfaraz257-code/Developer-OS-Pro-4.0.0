@@ -183,3 +183,29 @@ def test_retry_policy_is_bounded():
     assert main.JOB_MAX_RETRIES <= 3
     assert main._retry_delay(1) <= 10
     assert main._retry_delay(2) >= main._retry_delay(1)
+
+
+def test_incremental_job_output_cursor():
+    job_id = main._new_job("stream-workspace")
+    main._append_job_output(job_id, "hello\\n")
+    chunk, cursor = main._job_output_slice(job_id, 0)
+    assert chunk == "hello\\n"
+    assert cursor == len("hello\\n")
+    chunk2, cursor2 = main._job_output_slice(job_id, cursor)
+    assert chunk2 == ""
+    assert cursor2 == cursor
+    main._append_job_output(job_id, "world\\n")
+    chunk3, cursor3 = main._job_output_slice(job_id, cursor)
+    assert chunk3 == "world\\n"
+    assert cursor3 == len("hello\\nworld\\n")
+
+
+def test_stream_wait_is_bounded():
+    assert 0.1 <= main.STREAM_WAIT_SECONDS <= 5.0
+
+
+def test_job_output_is_bounded():
+    job_id = main._new_job("bounded-output")
+    main._append_job_output(job_id, "x" * (main.JOB_OUTPUT_MAX_BYTES + 1024))
+    output = main._job_output_snapshot(job_id)
+    assert len(output) <= main.JOB_OUTPUT_MAX_BYTES
