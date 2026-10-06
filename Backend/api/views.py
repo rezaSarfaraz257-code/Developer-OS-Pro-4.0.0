@@ -32,6 +32,7 @@ import os
 import shlex
 import re
 import requests
+import time
 
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -2008,19 +2009,19 @@ def _runner_request(method, path, payload, timeout=30):
             kwargs["json"] = payload
 
         response = None
-        last_exc = None
-        # Render/free instances can briefly return 502/503 while the Runner
-        # wakes or restarts. Retry only transient upstream failures.
-        for attempt in range(2):
+        # Render/free instances can briefly wake, restart or cold-start.
+        # Retry only transient transport/upstream failures with bounded backoff.
+        for attempt in range(3):
             try:
                 response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
-            except (requests.Timeout, requests.ConnectionError) as exc:
-                last_exc = exc
-                if attempt == 0:
-                    continue
-                raise
-            if response.status_code not in {502, 503, 504} or attempt == 1:
+            except (requests.Timeout, requests.ConnectionError):
+                if attempt == 2:
+                    raise
+                time.sleep(0.25 * (2 ** attempt))
+                continue
+            if response.status_code not in {502, 503, 504} or attempt == 2:
                 break
+            time.sleep(0.25 * (2 ** attempt))
 
         # A proxy, platform error page, or crashed runner may return HTML/text
         # instead of JSON. Never let response.json() escape as a Django 500.
