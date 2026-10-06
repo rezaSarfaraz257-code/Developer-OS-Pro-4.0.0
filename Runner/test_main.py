@@ -276,3 +276,29 @@ def test_fair_scheduler_snapshot_is_safe():
     snapshot = scheduler.snapshot()
     assert snapshot["max_per_workspace"] == 2
     assert snapshot["active"]["workspace-a"] == 1
+
+
+def test_scheduler_runtime_bridge():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("runtime-a") is True
+    assert scheduler.acquire("runtime-a") is False
+    assert scheduler.acquire("runtime-b") is True
+    scheduler.release("runtime-a")
+    assert scheduler.acquire("runtime-a") is True
+    scheduler.release("runtime-a")
+    scheduler.release("runtime-b")
+    assert scheduler.snapshot()["active"] == {}
+
+
+def test_scheduler_runtime_timeout_is_bounded():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("busy") is True
+    started = time.monotonic()
+    acquired = False
+    while time.monotonic() - started < 0.15:
+        if scheduler.acquire("busy"):
+            acquired = True
+            break
+        time.sleep(0.01)
+    assert acquired is False
+    scheduler.release("busy")
