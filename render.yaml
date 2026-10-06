@@ -1,9 +1,52 @@
-# Developer OS production Runner for Render.
-# Deploy this as a Private Service in the same Render workspace and region as the Django API.
-# Then set the backend IDE_RUNNER_URL to the Runner's internal address
-# (for example: http://<runner-internal-host>:8080) and use the same IDE_RUNNER_TOKEN.
 services:
   - type: web
+    name: developer-os-api
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./Backend/Dockerfile
+    dockerContext: ./Backend
+    healthCheckPath: /api/health/ready/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: developer-os-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: IDE_RUNNER_TOKEN
+        generateValue: true
+      - key: IDE_RUNNER_URL
+        value: http://developer-os-runner:10000
+      - key: RELEASE_VERSION
+        value: 4.0.0-production
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: SECURE_SSL_REDIRECT
+        value: "true"
+      - key: ALLOWED_HOSTS
+        value: developer-os-api.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://developer-os-frontend.onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://developer-os-frontend.onrender.com
+      - key: FRONTEND_URL
+        value: https://developer-os-frontend.onrender.com
+      - key: CACHE_URL
+        fromService:
+          name: developer-os-cache
+          type: keyvalue
+          property: connectionString
+      - key: EMAIL_VERIFICATION_REQUIRED
+        value: "true"
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.console.EmailBackend
+      - key: DEFAULT_FROM_EMAIL
+        value: Developer OS <no-reply@localhost>
+
+  - type: pserv
     name: developer-os-runner
     runtime: docker
     region: oregon
@@ -13,10 +56,75 @@ services:
     healthCheckPath: /health
     envVars:
       - key: IDE_RUNNER_TOKEN
-        generateValue: true
+        sync: false
       - key: RUNNER_TIMEOUT_SECONDS
         value: "120"
       - key: RUNNER_MAX_CONCURRENT
         value: "4"
+      - key: RUNNER_MAX_WORKSPACE_CONCURRENT
+        value: "1"
       - key: RUNNER_ALLOW_NETWORK
         value: "false"
+      - key: RUNNER_SANDBOX_MODE
+        value: container
+      - key: RUNNER_NETWORK_ISOLATION_CONFIRMED
+        value: "false"
+      - key: PORT
+        value: "10000"
+
+  - type: web
+    name: developer-os-frontend
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./Frontend/Dockerfile
+    dockerContext: ./Frontend
+    healthCheckPath: /
+    envVars:
+      - key: BACKEND_ORIGIN
+        value: http://developer-os-api:10000
+
+  - type: worker
+    name: developer-os-worker
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./Backend/Dockerfile
+    dockerContext: ./Backend
+    dockerCommand: python manage.py worker --sleep 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: developer-os-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        fromService:
+          name: developer-os-api
+          type: web
+          envVarKey: DJANGO_SECRET_KEY
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: developer-os-api.onrender.com
+      - key: CACHE_URL
+        fromService:
+          name: developer-os-cache
+          type: keyvalue
+          property: connectionString
+
+  - type: keyvalue
+    name: developer-os-cache
+    region: oregon
+    plan: free
+    ipAllowList: []
+
+databases:
+  - name: developer-os-db
+    region: oregon
+    plan: free
+    databaseName: developeros
+    user: developeros
+    postgresMajorVersion: "17"
+    ipAllowList: []
