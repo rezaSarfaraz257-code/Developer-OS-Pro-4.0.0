@@ -104,7 +104,11 @@ def _scheduler_queue_position(job_id):
 
 def _scheduler_metric(key, value=1):
     with SCHEDULER_LOCK:
-        SCHEDULER_METRICS[key] = SCHEDULER_METRICS.get(key, 0) + value
+        current = SCHEDULER_METRICS.get(key, 0)
+        if key in {"active", "queued", "rejected", "completed", "total_wait_ms"}:
+            SCHEDULER_METRICS[key] = max(0, current + value)
+        else:
+            SCHEDULER_METRICS[key] = current + value
 
 
 
@@ -266,13 +270,17 @@ def _scheduler_acquire(workspace_id, job_id, timeout=5):
     while time.monotonic() < deadline:
         if FAIR_SCHEDULER.acquire(workspace_id):
             with SCHEDULER_LOCK:
-                SCHEDULER_WAITING.pop(job_key, None)
+                removed = SCHEDULER_WAITING.pop(job_key, None)
+            if removed:
+                _scheduler_metric("queued", -1)
             _scheduler_metric("active")
             _scheduler_metric("total_wait_ms", int((time.monotonic() - started) * 1000))
             return True
         time.sleep(0.025)
     with SCHEDULER_LOCK:
-        SCHEDULER_WAITING.pop(job_key, None)
+        removed = SCHEDULER_WAITING.pop(job_key, None)
+    if removed:
+        _scheduler_metric("queued", -1)
     _scheduler_metric("rejected")
     return False
 
