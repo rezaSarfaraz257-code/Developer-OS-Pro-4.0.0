@@ -92,6 +92,14 @@ class FairScheduler:
 
 FAIR_SCHEDULER = FairScheduler(SCHEDULER_MAX_PER_WORKSPACE)
 SCHEDULER_METRICS = {"queued": 0, "active": 0, "rejected": 0, "completed": 0, "total_wait_ms": 0}
+SCHEDULER_WAITING = {}
+
+def _scheduler_queue_position(workspace_id):
+    key = str(workspace_id)
+    with SCHEDULER_LOCK:
+        waiting = [k for k, v in SCHEDULER_WAITING.items() if v <= SCHEDULER_WAITING.get(key, v)]
+        return waiting.index(key) + 1 if key in waiting else 0
+
 
 def _scheduler_metric(key, value=1):
     with SCHEDULER_LOCK:
@@ -225,14 +233,21 @@ def _scheduler_snapshot():
 
 def _scheduler_acquire(workspace_id, timeout=5):
     started = time.monotonic()
+    key = str(workspace_id)
+    with SCHEDULER_LOCK:
+        SCHEDULER_WAITING[key] = time.monotonic()
     _scheduler_metric("queued")
     deadline = started + timeout
     while time.monotonic() < deadline:
         if FAIR_SCHEDULER.acquire(workspace_id):
+            with SCHEDULER_LOCK:
+                SCHEDULER_WAITING.pop(key, None)
             _scheduler_metric("active")
             _scheduler_metric("total_wait_ms", int((time.monotonic() - started) * 1000))
             return True
         time.sleep(0.025)
+    with SCHEDULER_LOCK:
+        SCHEDULER_WAITING.pop(key, None)
     _scheduler_metric("rejected")
     return False
 
@@ -437,7 +452,7 @@ def run_command(root, command, *, allow_network=False):
         EXEC_SEMAPHORE.release()
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000))
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
