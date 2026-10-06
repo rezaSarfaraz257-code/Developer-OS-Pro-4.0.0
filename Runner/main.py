@@ -70,6 +70,37 @@ def _job_snapshot(job_id):
         job = JOBS.get(job_id)
         return dict(job) if job else None
 
+def _cancel_job(job_id):
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return None
+        if job["status"] == "queued":
+            job["status"] = "cancelled"
+            job["finished_at"] = time.time()
+            return dict(job)
+        if job["status"] not in ("running",):
+            return dict(job)
+        process_id = job.get("process_id")
+    if process_id:
+        with PROCESS_LOCK:
+            item = PROCESSES.get(str(process_id))
+        if item:
+            proc = item["popen"]
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=CANCEL_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=1)
+        with JOB_LOCK:
+            if job_id in JOBS:
+                JOBS[job_id]["status"] = "cancelled"
+                JOBS[job_id]["finished_at"] = time.time()
+        return _job_snapshot(job_id)
+    return _job_snapshot(job_id)
+
 def _cleanup_jobs():
     cutoff = time.time() - JOB_RETENTION_SECONDS
     with JOB_LOCK:
@@ -455,6 +486,17 @@ def ready(authorization: str = Header(default="")):
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    job = _job_snapshot(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    result = _cancel_job(job_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return result
 
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str, authorization: str = Header(default="")):
