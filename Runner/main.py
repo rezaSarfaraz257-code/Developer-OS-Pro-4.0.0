@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -249,7 +249,7 @@ def _scheduler_acquire(workspace_id, job_id, timeout=5):
             return True
         time.sleep(0.025)
     with SCHEDULER_LOCK:
-        SCHEDULER_WAITING.pop(key, None)
+        SCHEDULER_WAITING.pop(job_key, None)
     _scheduler_metric("rejected")
     return False
 
@@ -454,7 +454,7 @@ def run_command(root, command, *, allow_network=False):
         EXEC_SEMAPHORE.release()
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=_scheduler_queue_position(job_id))
+    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
             proc = subprocess.run(
