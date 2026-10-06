@@ -125,11 +125,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runner test dependencies
-        run: python -m pip install fastapi uvicorn pydantic psutil pytest
+        run: python -m pip install fastapi uvicorn pydantic psutil requests pytest
       - name: Runner tests
         working-directory: Runner
         env:
           IDE_RUNNER_TOKEN: ci-runner-token
+          RUNNER_ROOT: /tmp/developer-os-runner-workspaces
         run: pytest -q
 
   release-gate:

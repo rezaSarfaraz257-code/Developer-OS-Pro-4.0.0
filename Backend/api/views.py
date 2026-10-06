@@ -2088,10 +2088,15 @@ def _workspace_access_queryset(user):
     ).distinct()
 
 def _workspace_for_user(pk, user, *, for_update=False):
-    qs = _workspace_access_queryset(user)
-    if for_update:
-        qs = qs.select_for_update()
-    return get_object_or_404(qs, pk=pk)
+    if not for_update:
+        return get_object_or_404(_workspace_access_queryset(user), pk=pk)
+    owner_match = CodeWorkspace.objects.filter(pk=pk, owner=user).first()
+    if owner_match is not None:
+        return CodeWorkspace.objects.select_for_update().get(pk=pk)
+    accessible = _workspace_access_queryset(user).filter(pk=pk).exists()
+    if not accessible:
+        raise Http404
+    return CodeWorkspace.objects.select_for_update().get(pk=pk)
 
 def _workspace_write_allowed(ws, user):
     # Project collaborators are first-class IDE users. A workspace without a
@@ -2150,7 +2155,7 @@ def _safe_ide_path(value):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def ide_workspace_files_api(request, pk):
-    ws = _workspace_for_user(pk, request.user, for_update=False)
+    ws = _workspace_for_user(pk, request.user, for_update=request.method in {"POST", "DELETE"})
     if request.method in {"POST", "DELETE"} and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
     expected_revision = request.data.get("revision")
@@ -2159,7 +2164,7 @@ def ide_workspace_files_api(request, pk):
             expected_revision = int(expected_revision)
         except (TypeError, ValueError):
             return Response({"error": "Invalid workspace revision."}, status=400)
-        if expected_revision != ws.revision and request.method == "POST":
+        if expected_revision != ws.revision and request.method == "POST" and str(request.data.get("action") or "write").strip().lower() != "create":
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     files = dict(ws.files or {})
     if request.method == "GET":
@@ -2185,6 +2190,12 @@ def ide_workspace_files_api(request, pk):
         ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
+    if action == "create":
+        # File creation is additive. The row is locked for this request, so use
+        # the latest authoritative revision/files and never reject a valid new
+        # file merely because the client held an older workspace snapshot.
+        files = dict(ws.files or {})
+        expected_revision = ws.revision
     if action not in {"write", "create", "rename"}:
         return Response({"error": "Unsupported file action.", "code": "invalid_file_action"}, status=400)
     path = _safe_ide_path(request.data.get("path"))
@@ -2886,7 +2897,7 @@ def subscription_api(request):
         # Never grant a paid entitlement merely because the billing provider is
         # absent. Local/test mode must be explicit and persisted so entitlement
         # state remains server-side and auditable.
-        if getattr(settings, "DEBUG", False) and os.environ.get("ALLOW_LOCAL_BILLING", "").lower() == "true":
+        if getattr(settings, "DEBUG", False) and getattr(settings, "ALLOW_LOCAL_BILLING", False):
             sub.plan = plan
             sub.status = "active"
             sub.cancel_at_period_end = False

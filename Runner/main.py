@@ -18,7 +18,7 @@ from extension_engine import manifest as extension_manifest
 from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
-ROOT = Path("/workspaces")
+ROOT = Path(os.environ.get("RUNNER_ROOT", "/workspaces"))
 ROOT.mkdir(parents=True, exist_ok=True)
 TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
@@ -27,6 +27,12 @@ MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+MAX_CONCURRENT_EXECUTIONS = MAX_CONCURRENT
+MAX_CONCURRENT_PROCESSES = MAX_CONCURRENT
+MAX_WORKSPACE_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+RUNNER_MEMORY_MB = max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768"))))
+MAX_OUTPUT_BYTES = MAX_OUTPUT
+MAX_PROCESS_DURATION = TIMEOUT
 PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
@@ -44,7 +50,7 @@ MAX_COMMAND = 2_000
 # semaphore so a single workspace cannot monopolize the runner.
 SCHEDULER_LOCK = threading.RLock()
 SCHEDULER_ACTIVE = {}
-SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
+SCHEDULER_MAX_PER_WORKSPACE = MAX_WORKSPACE_CONCURRENT
 CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
 
 class FairScheduler:
@@ -65,10 +71,9 @@ class FairScheduler:
             active = self._active.get(key, 0)
             if active >= self.max_per_workspace:
                 return False
-            if any(self._active.get(other, 0) == 0 for other in self._turn if other != key):
-                idle = [other for other in self._turn if self._active.get(other, 0) == 0]
-                if idle and key != idle[0]:
-                    return False
+            idle = [other for other in self._turn if self._active.get(other, 0) == 0 and other != key]
+            if idle and key != idle[0]:
+                return False
             self._active[key] = active + 1
             self._turn = [x for x in self._turn if x != key] + [key]
             return True
@@ -81,6 +86,7 @@ class FairScheduler:
                 self._active[key] = active
             else:
                 self._active.pop(key, None)
+                self._turn = [x for x in self._turn if x != key]
 
     def active(self, workspace_id):
         with self._lock:
@@ -180,7 +186,7 @@ def _is_retryable_error(exc):
 
 TERMINAL_JOB_STATES = {"completed", "failed", "cancelled"}
 VALID_JOB_TRANSITIONS = {
-    "queued": {"queued", "running", "failed", "cancelled"},
+    "queued": {"queued", "running", "completed", "failed", "cancelled"},
     "running": {"running", "completed", "failed", "cancelled"},
     "completed": {"completed"},
     "failed": {"failed"},
@@ -767,7 +773,10 @@ def diagnostics(authorization: str = Header(default="")):
         warnings.append("runner_concurrency_limit_reached")
     if m["exec_total"] and (m["exec_failed"] / m["exec_total"]) > 0.25:
         warnings.append("high_execution_failure_rate")
-    sm = _scheduler_snapshot()\n    if sm["rejected"] > 0:\n        warnings.append("scheduler_rejections_detected")\n    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m,"scheduler":sm}
+    sm = _scheduler_snapshot()
+    if sm["rejected"] > 0:
+        warnings.append("scheduler_rejections_detected")
+    return {"status":"degraded" if warnings else "healthy","warnings":warnings,"metrics":m,"scheduler":sm}
 
 @app.get("/health")
 def health():
