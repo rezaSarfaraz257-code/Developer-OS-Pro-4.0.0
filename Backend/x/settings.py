@@ -65,8 +65,8 @@ AI_MODEL = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
 AI_API_PROTOCOL = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
 AI_API_KEY_CONFIGURED = bool(AI_API_KEY)
 
-if IS_PRODUCTION and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
-    raise ImproperlyConfigured("Console email backend is forbidden in production.")
+if IS_PRODUCTION and EMAIL_VERIFICATION_REQUIRED and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
+    raise ImproperlyConfigured("Console email backend is forbidden when production email verification is enabled.")
 
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
