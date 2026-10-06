@@ -36,6 +36,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
 
       - name: Node dependency audit
         working-directory: Frontend
@@ -56,6 +61,10 @@ jobs:
           path: Frontend/npm-audit.json
           if-no-files-found: ignore
 
+      - name: Python dependency audit
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Python dependency audit
         working-directory: Backend
         run: |
