@@ -47,6 +47,37 @@ SCHEDULER_ACTIVE = {}
 SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
 CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
 
+JOB_LOCK = threading.RLock()
+JOBS = {}
+JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
+
+def _new_job(workspace_id):
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with JOB_LOCK:
+        JOBS[job_id] = {"id": job_id, "workspace_id": str(workspace_id), "status": "queued",
+                        "created_at": now, "started_at": None, "finished_at": None,
+                        "process_id": None, "exit_code": None, "error": None}
+    return job_id
+
+def _set_job(job_id, **updates):
+    with JOB_LOCK:
+        if job_id in JOBS:
+            JOBS[job_id].update(updates)
+
+def _job_snapshot(job_id):
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        return dict(job) if job else None
+
+def _cleanup_jobs():
+    cutoff = time.time() - JOB_RETENTION_SECONDS
+    with JOB_LOCK:
+        for job_id, job in list(JOBS.items()):
+            if job["finished_at"] and job["finished_at"] < cutoff:
+                JOBS.pop(job_id, None)
+
+
 def _scheduler_snapshot():
     with SCHEDULER_LOCK:
         return {key: int(value) for key, value in SCHEDULER_ACTIVE.items()}
@@ -271,11 +302,15 @@ def run_command(root, command, *, allow_network=False):
     (root / ".cache").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
+    job_id = _new_job(root.name)
+    _cleanup_jobs()
     acquired = EXEC_SEMAPHORE.acquire(timeout=5)
     if not acquired:
+        _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     if not _scheduler_acquire(root.name, timeout=5):
         EXEC_SEMAPHORE.release()
+        _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
     try:
         with _workspace_lock(root.name):
@@ -420,6 +455,14 @@ def ready(authorization: str = Header(default="")):
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
+
+@app.get("/jobs/{job_id}")
+def job_status(job_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    job = _job_snapshot(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
 
 @app.get("/queue")
 def queue_status(authorization: str = Header(default="")):
