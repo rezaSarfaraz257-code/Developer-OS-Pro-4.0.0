@@ -1,7 +1,6 @@
 # Developer OS production Runner for Render.
-# Deploy this as a Private Service in the same Render workspace and region as the Django API.
-# Then set the backend IDE_RUNNER_URL to the Runner's internal address
-# (for example: http://<runner-internal-host>:8080) and use the same IDE_RUNNER_TOKEN.
+# Render free uses a public Web Service for the runner. Keep RUNNER_ALLOW_NETWORK=false and require the shared IDE_RUNNER_TOKEN on every runner request.
+# For a true private runner, move this service to a Render Private Service or equivalent isolated compute and use its internal address.
 services:
   - type: web
     name: developer-os-runner
