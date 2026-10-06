@@ -167,6 +167,27 @@ for job_id in jobs:
         time.sleep(.1)
     assert status == "completed", (job_id, status)
 PY
+          python - <<'PY'
+import json, subprocess, time
+base="http://127.0.0.1:18080"
+headers=["-H","Authorization: Bearer ci-runner-token","-H","Content-Type: application/json"]
+def submit(workspace, value):
+    payload=json.dumps({"workspace_id":workspace,"files":{"main.py":f"import time; print({value}); time.sleep(.3)"},"active_file":"main.py","command":"python main.py"})
+    return json.loads(subprocess.check_output(["curl","-fsS","-X","POST",f"{base}/exec",*headers,"--data",payload], text=True))["job_id"]
+first=submit("fair-a",1)
+second=submit("fair-b",2)
+seen=[]
+for _ in range(30):
+    for job_id in (first, second):
+        out=subprocess.check_output(["curl","-fsS",f"{base}/jobs/{job_id}",*headers[:2]], text=True)
+        status=json.loads(out)["status"]
+        if status not in seen and status in {"completed","failed","cancelled"}:
+            seen.append(status)
+    if len(seen) >= 2:
+        break
+    time.sleep(.1)
+assert seen and all(s == "completed" for s in seen), seen
+PY
           curl -fsS -X POST http://127.0.0.1:18080/process/start \
             -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
