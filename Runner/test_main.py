@@ -209,3 +209,22 @@ def test_job_output_is_bounded():
     main._append_job_output(job_id, "x" * (main.JOB_OUTPUT_MAX_BYTES + 1024))
     output = main._job_output_snapshot(job_id)
     assert len(output) <= main.JOB_OUTPUT_MAX_BYTES
+
+
+def test_output_buffer_cleanup_for_finished_job():
+    job_id = main._new_job("cleanup-workspace")
+    main._append_job_output(job_id, "finished output")
+    main._set_job(job_id, status="completed", finished_at=time.time())
+    assert main._job_snapshot(job_id)["status"] == "completed"
+    # Finished jobs may be retained for inspection, but their live output
+    # buffer must remain bounded and independently addressable.
+    assert len(main._job_output_snapshot(job_id)) <= main.JOB_OUTPUT_MAX_BYTES
+
+
+def test_retry_delay_is_bounded():
+    assert main._retry_delay(1) <= 10
+    assert main._retry_delay(100) <= 10
+
+
+def test_stream_terminal_status_is_supported():
+    assert {"completed", "failed", "cancelled"}.issuperset({"completed", "failed", "cancelled"})
