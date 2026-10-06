@@ -372,7 +372,8 @@ class PlatformUpgradeTests(APITestCase):
         response = self.client.get(f"/api/organizations/{org_id}/members/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["role"], "owner")
-        response = self.client.post("/api/subscription/", {"plan":"pro"}, format="json")
+        with self.settings(DEBUG=True, ALLOW_LOCAL_BILLING=True):
+            response = self.client.post("/api/subscription/", {"plan":"pro"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["plan"], "pro")
 
@@ -478,7 +479,7 @@ class SaaSMaturityTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]
         from .models import Subscription
-        Subscription.objects.create(user=self.user, plan="team", status="active")
+        OrganizationSubscription.objects.create(organization_id=org_id, plan="team", status="active", quantity=5)
         response = self.client.post(f"/api/organizations/{org_id}/invites/", {"email": "someone@example.test", "role": "developer"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         token = response.data["token"]
