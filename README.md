@@ -1,4 +1,4 @@
-# Developer OS 3.0.0 — Unified Production Edition
+# Developer OS 4.0.0 — Unified Production Edition
 
 Developer OS is a developer operating environment: one workspace for projects, tasks, knowledge, tools, workflows, GitHub context, AI assistance, collaboration, activity and delivery intelligence.
 
