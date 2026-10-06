@@ -83,6 +83,17 @@ class FairScheduler:
             return {"max_per_workspace": self.max_per_workspace, "active": dict(self._active)}
 
 FAIR_SCHEDULER = FairScheduler(SCHEDULER_MAX_PER_WORKSPACE)
+SCHEDULER_METRICS = {"queued": 0, "active": 0, "rejected": 0, "completed": 0, "total_wait_ms": 0}
+
+def _scheduler_metric(key, value=1):
+    with SCHEDULER_LOCK:
+        SCHEDULER_METRICS[key] = SCHEDULER_METRICS.get(key, 0) + value
+
+def _scheduler_snapshot():
+    with SCHEDULER_LOCK:
+        return dict(SCHEDULER_METRICS, **{"active": sum(FAIR_SCHEDULER._active.values())})
+
+
 
 JOB_LOCK = threading.RLock()
 JOBS = {}
@@ -205,15 +216,22 @@ def _scheduler_snapshot():
 
 
 def _scheduler_acquire(workspace_id, timeout=5):
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    _scheduler_metric("queued")
+    deadline = started + timeout
     while time.monotonic() < deadline:
         if FAIR_SCHEDULER.acquire(workspace_id):
+            _scheduler_metric("active")
+            _scheduler_metric("total_wait_ms", int((time.monotonic() - started) * 1000))
             return True
         time.sleep(0.025)
+    _scheduler_metric("rejected")
     return False
 
 def _scheduler_release(workspace_id):
     FAIR_SCHEDULER.release(workspace_id)
+    _scheduler_metric("active", -1)
+    _scheduler_metric("completed")
 
 BLOCKED = [
     r"\b(docker|podman|nsenter|unshare|mount|umount|chroot)\b",
@@ -647,6 +665,14 @@ def process_cancel(process_id: str, workspace_id: str, authorization: str = Head
             proc.wait(timeout=1)
     _metric("process_stopped")
     return _process_state(process_id)
+
+@app.get("/scheduler/metrics")
+def scheduler_metrics(authorization: str = Header(default="")):
+    auth(authorization)
+    snapshot = _scheduler_snapshot()
+    attempts = snapshot["queued"]
+    snapshot["avg_wait_ms"] = round(snapshot["total_wait_ms"] / attempts, 2) if attempts else 0
+    return snapshot
 
 @app.get("/diagnostics")
 def diagnostics(authorization: str = Header(default="")):
