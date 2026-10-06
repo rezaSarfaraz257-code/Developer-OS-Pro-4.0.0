@@ -302,3 +302,20 @@ def test_scheduler_runtime_timeout_is_bounded():
         time.sleep(0.01)
     assert acquired is False
     scheduler.release("busy")
+
+
+def test_scheduler_metrics_snapshot_contract():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    scheduler.acquire("metrics-a")
+    snapshot = scheduler.snapshot()
+    assert snapshot["max_per_workspace"] == 1
+    assert snapshot["active"]["metrics-a"] == 1
+    scheduler.release("metrics-a")
+    assert scheduler.snapshot()["active"] == {}
+
+
+def test_scheduler_metrics_fields_are_numeric():
+    snapshot = main._scheduler_snapshot()
+    for key in ("queued", "active", "rejected", "completed", "total_wait_ms"):
+        assert isinstance(snapshot[key], int)
+        assert snapshot[key] >= 0
