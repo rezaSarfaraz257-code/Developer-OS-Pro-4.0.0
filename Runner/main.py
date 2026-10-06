@@ -184,6 +184,35 @@ def _job_snapshot(job_id):
         job = JOBS.get(job_id)
         return dict(job) if job else None
 
+def _terminate_process_group(proc, *, grace_seconds=None):
+    if proc is None or proc.poll() is not None:
+        return
+    grace = CANCEL_GRACE_SECONDS if grace_seconds is None else max(0.1, float(grace_seconds))
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.terminate()
+        except (ProcessLookupError, OSError):
+            return
+    try:
+        proc.wait(timeout=grace)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            return
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def _cancel_job(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
@@ -201,13 +230,7 @@ def _cancel_job(job_id):
             item = PROCESSES.get(str(process_id))
         if item:
             proc = item["popen"]
-            if proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=CANCEL_GRACE_SECONDS)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=1)
+            _terminate_process_group(proc)
         with JOB_LOCK:
             if job_id in JOBS:
                 JOBS[job_id]["status"] = "cancelled"
@@ -474,11 +497,8 @@ def run_command(root, command, *, allow_network=False):
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
-        try:
-            if "proc" in locals() and proc.pid:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
+        if "proc" in locals():
+            _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         _set_job(job_id, status="failed", finished_at=finished, exit_code=124,
                  error=f"Execution timed out after {TIMEOUT} seconds.")
