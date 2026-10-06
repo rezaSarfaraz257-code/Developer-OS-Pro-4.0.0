@@ -29,6 +29,10 @@ TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
 PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
+# Container-native mode cannot itself enforce network namespaces. Deployments that
+# handle hostile multi-tenant code can require an attested network-isolated runtime.
+NETWORK_ISOLATION_CONFIRMED = os.environ.get("RUNNER_NETWORK_ISOLATION_CONFIRMED", "false").lower() in {"1", "true", "yes", "on"}
+REQUIRE_NETWORK_ISOLATION = os.environ.get("RUNNER_REQUIRE_NETWORK_ISOLATION", "false").lower() in {"1", "true", "yes", "on"}
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
 # bubblewrap requires. Container-native mode is the production default.
 # bwrap remains opt-in for infrastructure that explicitly supports it.
@@ -357,10 +361,15 @@ class TestPlanRequest(Workspace):
     framework: str = ""
 
 
+def _network_isolation_ready():
+    return SANDBOX_MODE == "bwrap" or NETWORK_ISOLATION_CONFIRMED
+
 def auth(value):
     expected = f"Bearer {TOKEN}" if TOKEN else ""
     if not TOKEN or not hmac.compare_digest(str(value or ""), expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
+    if REQUIRE_NETWORK_ISOLATION and not _network_isolation_ready():
+        raise HTTPException(status_code=503, detail="Runner network isolation is not attested for this deployment.")
 
 def _workspace_lock(workspace_id):
     key = str(workspace_id)
@@ -596,7 +605,7 @@ def _capability_manifest():
             "backend": SANDBOX_MODE,
             "mode": "container-native" if container_native else "bubblewrap",
             "process_boundary": True,
-            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
+            "network_enforcement": ("attested" if _network_isolation_ready() else "not-guaranteed"),
         },
         "runtimes": _runtime_info(),
         "limits": {
@@ -777,7 +786,8 @@ def health():
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
-        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
+        "network_isolation": {"confirmed": NETWORK_ISOLATION_CONFIRMED, "required": REQUIRE_NETWORK_ISOLATION, "ready": _network_isolation_ready()},
+        "network_policy": ("attested-isolated" if _network_isolation_ready() else "not-guaranteed"),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
         "runtimes": _runtime_info(),
         "capabilities_version": "1",
