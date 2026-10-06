@@ -249,3 +249,30 @@ def test_multiple_jobs_have_isolated_output():
     main._append_job_output(second, "B")
     assert main._job_output_snapshot(first) == "A"
     assert main._job_output_snapshot(second) == "B"
+
+
+def test_fair_scheduler_isolates_workspaces():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("workspace-a") is True
+    assert scheduler.acquire("workspace-a") is False
+    assert scheduler.acquire("workspace-b") is True
+    assert scheduler.active("workspace-a") == 1
+    assert scheduler.active("workspace-b") == 1
+    scheduler.release("workspace-a")
+    assert scheduler.acquire("workspace-a") is True
+
+
+def test_fair_scheduler_release_is_idempotent():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    scheduler.acquire("workspace-a")
+    scheduler.release("workspace-a")
+    scheduler.release("workspace-a")
+    assert scheduler.active("workspace-a") == 0
+
+
+def test_fair_scheduler_snapshot_is_safe():
+    scheduler = main.FairScheduler(max_per_workspace=2)
+    scheduler.acquire("workspace-a")
+    snapshot = scheduler.snapshot()
+    assert snapshot["max_per_workspace"] == 2
+    assert snapshot["active"]["workspace-a"] == 1
