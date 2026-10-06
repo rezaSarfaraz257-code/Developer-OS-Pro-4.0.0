@@ -626,3 +626,27 @@ class ProductionValidationContractTests(APITestCase):
         )
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertTrue(second.data["duplicate"])
+
+
+class BillingEntitlementSafetyTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="billing-user",
+            email="billing@example.test",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_unconfigured_paid_plan_does_not_grant_entitlement(self):
+        response = self.client.post("/api/subscription/", {"plan": "pro"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(Subscription.objects.filter(user=self.user, plan="pro").exists())
+
+    @override_settings(DEBUG=True)
+    def test_explicit_local_billing_mode_is_opt_in(self):
+        with override_settings(DEBUG=True):
+            with self.settings(ALLOW_LOCAL_BILLING="true"):
+                response = self.client.post("/api/subscription/", {"plan": "pro"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["plan"], "pro")
+        self.assertEqual(Subscription.objects.get(user=self.user).plan, "pro")

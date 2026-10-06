@@ -1,4 +1,4 @@
-# Developer OS 3.0.0-FINAL — Production Validation Contract
+# Developer OS 4.0.0 — Production Validation Contract
 
 This release is engineered as a production SaaS candidate. The repository now contains a single CI contract that validates the application in layers instead of treating static inspection as production proof.
 

@@ -2883,7 +2883,16 @@ def subscription_api(request):
 
     price_id = STRIPE_PLANS.get(plan, "")
     if not os.environ.get("STRIPE_SECRET_KEY") or not price_id:
-        return Response({"plan": plan, "status": "active", "mode": "local"})
+        # Never grant a paid entitlement merely because the billing provider is
+        # absent. Local/test mode must be explicit and persisted so entitlement
+        # state remains server-side and auditable.
+        if getattr(settings, "DEBUG", False) and os.environ.get("ALLOW_LOCAL_BILLING", "").lower() == "true":
+            sub.plan = plan
+            sub.status = "active"
+            sub.cancel_at_period_end = False
+            sub.save(update_fields=["plan", "status", "cancel_at_period_end", "updated_at"])
+            return Response({"plan": plan, "status": "active", "mode": "local"})
+        return Response({"error": "Billing provider is not configured for this plan."}, status=503)
 
     customer_id = sub.provider_customer_id
     if not customer_id:

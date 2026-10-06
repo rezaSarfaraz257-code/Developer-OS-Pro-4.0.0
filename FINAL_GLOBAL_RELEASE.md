@@ -1,6 +1,6 @@
 # Developer OS — Global SaaS Release
 
-**Release:** 3.0.0-global  
+**Release:** 4.0.0  
 **Status:** Production release package — not an MVP/demo branch
 
 This package is the final hardening pass over the Web IDE release.
@@ -58,7 +58,7 @@ The authenticated product now exposes an Explore surface for tools, workflows, r
 The runner is separated from Django and now applies POSIX execution limits. For hostile multi-tenant arbitrary-code workloads at global scale, deploy the runner on dedicated isolated workers with a kernel-level sandbox (Firecracker, gVisor, Kata, or equivalent) and egress policy. The application boundary already isolates runner traffic from the web/API process.
 
 
-## 3.0 Global SaaS Maturity Layer
+## 4.0 Global SaaS Maturity Layer
 
 This release hardens the product around real SaaS lifecycle requirements:
 
