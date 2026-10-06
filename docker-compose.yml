@@ -32,7 +32,7 @@ services:
     environment:
       DEBUG: "False"
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      RELEASE_VERSION: "3.0.0-global"
+      RELEASE_VERSION: "4.0.0"
       SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-true}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DATABASE_URL: postgresql://${POSTGRES_USER:-developeros}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-developeros}
