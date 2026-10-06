@@ -319,3 +319,23 @@ def test_scheduler_metrics_fields_are_numeric():
     for key in ("queued", "active", "rejected", "completed", "total_wait_ms"):
         assert isinstance(snapshot[key], int)
         assert snapshot[key] >= 0
+
+
+def test_fair_scheduler_round_robin_prevents_idle_workspace_starvation():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("a") is True
+    assert scheduler.acquire("b") is False
+    scheduler.release("a")
+    assert scheduler.acquire("b") is True
+    assert scheduler.acquire("a") is False
+    scheduler.release("b")
+    assert scheduler.acquire("a") is True
+
+
+def test_fair_scheduler_keeps_turn_order_deterministic():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("a") is True
+    scheduler.release("a")
+    assert scheduler.acquire("b") is True
+    scheduler.release("b")
+    assert scheduler.acquire("a") is True
