@@ -63,7 +63,8 @@ AI_API_KEY = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").stri
 AI_API_URL = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
 AI_MODEL = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
 AI_API_PROTOCOL = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
-AI_API_KEY_CONFIGURED = bool(AI_API_KEY)\nALLOW_LOCAL_BILLING = os.getenv("ALLOW_LOCAL_BILLING", "").strip().lower() == "true"
+AI_API_KEY_CONFIGURED = bool(AI_API_KEY)
+ALLOW_LOCAL_BILLING = os.getenv("ALLOW_LOCAL_BILLING", "").strip().lower() == "true"
 
 if IS_PRODUCTION and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
     raise ImproperlyConfigured("Console email backend is forbidden in production.")
