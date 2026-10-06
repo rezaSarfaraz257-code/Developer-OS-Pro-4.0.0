@@ -48,21 +48,29 @@ SCHEDULER_MAX_PER_WORKSPACE = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CO
 CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
 
 class FairScheduler:
-    """Small deterministic per-workspace FIFO scheduler."""
+    """Deterministic round-robin scheduler with per-workspace concurrency."""
     def __init__(self, max_per_workspace=1):
         self.max_per_workspace = max(1, int(max_per_workspace))
         self._lock = threading.RLock()
         self._active = {}
         self._queues = {}
         self._sequence = 0
+        self._turn = []
 
     def acquire(self, workspace_id):
         key = str(workspace_id)
         with self._lock:
+            if key not in self._turn:
+                self._turn.append(key)
             active = self._active.get(key, 0)
             if active >= self.max_per_workspace:
                 return False
+            if any(self._active.get(other, 0) == 0 for other in self._turn if other != key):
+                idle = [other for other in self._turn if self._active.get(other, 0) == 0]
+                if idle and key != idle[0]:
+                    return False
             self._active[key] = active + 1
+            self._turn = [x for x in self._turn if x != key] + [key]
             return True
 
     def release(self, workspace_id):
