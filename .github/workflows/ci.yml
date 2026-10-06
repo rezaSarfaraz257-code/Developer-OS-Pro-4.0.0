@@ -56,6 +56,7 @@ jobs:
           python manage.py check --deploy
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
+          python manage.py migrate --check
           python manage.py test --verbosity 2
 
   frontend:
@@ -247,6 +248,39 @@ PY
       - name: Shutdown
         if: always()
         run: docker compose down -v
+
+  render-config:
+    name: Render topology sanity checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate Render YAML and deployment invariants
+        run: |
+          python -m pip install pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          data=yaml.safe_load(Path("render.yaml").read_text())
+          assert data.get("services"), "render.yaml has no services"
+          assert data.get("databases"), "render.yaml has no database"
+          names={x["name"] for x in data["services"]}
+          required={"developer-os-api","developer-os-runner","developer-os-frontend","developer-os-worker","developer-os-cache"}
+          assert required <= names, (required-names)
+          groups={x["name"] for x in data.get("envVarGroups",[])}
+          assert "developer-os-runtime-secrets" in groups
+          api=next(x for x in data["services"] if x["name"]=="developer-os-api")
+          runner=next(x for x in data["services"] if x["name"]=="developer-os-runner")
+          frontend=next(x for x in data["services"] if x["name"]=="developer-os-frontend")
+          assert any("fromGroup" in e for e in api["envVars"])
+          assert any("fromGroup" in e for e in runner["envVars"])
+          origin=next(e["value"] for e in frontend["envVars"] if e.get("key")=="BACKEND_ORIGIN")
+          assert origin.startswith("http://developer-os-api:"), origin
+          assert "dos-o91y.onrender.com" not in Path("Frontend/nginx.conf").read_text()
+          print("Render topology checks: PASS")
+          PY
 
   release-gate:
     name: Release artifact gate
