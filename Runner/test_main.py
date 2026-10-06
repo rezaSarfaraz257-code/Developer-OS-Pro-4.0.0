@@ -401,3 +401,17 @@ def test_scheduler_queue_position_disappears_after_release():
     with main.SCHEDULER_LOCK:
         main.SCHEDULER_WAITING.pop("busy", None)
     assert main._scheduler_queue_position("busy") == 0
+
+
+class NetworkIsolationContractTests(unittest.TestCase):
+    def test_container_mode_reports_network_isolation_truthfully(self):
+        import main
+        with patch.object(main, "SANDBOX_MODE", "container"), patch.object(main, "NETWORK_ISOLATION_CONFIRMED", False):
+            self.assertFalse(main._network_isolation_ready())
+
+    def test_required_network_isolation_fails_closed(self):
+        import main
+        with patch.object(main, "REQUIRE_NETWORK_ISOLATION", True), patch.object(main, "NETWORK_ISOLATION_CONFIRMED", False), patch.object(main, "TOKEN", "test-token"):
+            with self.assertRaises(HTTPException) as ctx:
+                main.auth("Bearer test-token")
+            self.assertEqual(ctx.exception.status_code, 503)
