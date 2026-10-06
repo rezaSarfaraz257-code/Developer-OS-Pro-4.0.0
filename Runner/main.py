@@ -19,6 +19,7 @@ from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path("/workspaces")
+ROOT.mkdir(parents=True, exist_ok=True)
 TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
@@ -26,6 +27,7 @@ MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
 # bubblewrap requires. Container-native mode is the production default.
@@ -190,8 +192,17 @@ def _sandbox_command(root, command, allow_network=False):
     ])
     return args
 
-def run_command(root, command, *, allow_network=False):
+def _normalize_command(command):
+    """Normalize common runtime aliases across Linux runner images."""
     command = str(command or "").strip()
+    if re.match(r"^python(?=\s|$)", command) and not shutil.which("python") and shutil.which("python3"):
+        command = re.sub(r"^python(?=\s|$)", "python3", command, count=1)
+    if re.match(r"^pip(?=\s|$)", command) and not shutil.which("pip") and shutil.which("pip3"):
+        command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
+    return command
+
+def run_command(root, command, *, allow_network=False):
+    command = _normalize_command(command)
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
         raise HTTPException(status_code=400, detail="Invalid command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -341,6 +352,22 @@ def lsp_notifications(payload: LSPRequest, authorization: str = Header(default="
     except LSPError as exc:
         raise HTTPException(status_code=503,detail=str(exc)[:300])
 
+@app.get("/ready")
+def ready(authorization: str = Header(default="")):
+    """Truthful readiness probe for the IDE control plane."""
+    auth(authorization)
+    try:
+        probe_root = ROOT / ".health"
+        probe_root.mkdir(parents=True, exist_ok=True)
+        probe = run_command(probe_root, "python -c \"print(42)\"")
+        if probe.get("exit_code") != 0 or "42" not in probe.get("stdout", ""):
+            raise RuntimeError("runtime probe failed")
+        return {"status": "ready", "service": "developer-os-runner", "version": os.environ.get("RELEASE_VERSION", "3.2.0"), "runtimes": _runtime_info()}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
+
 @app.get("/health")
 def health():
     return {
@@ -484,7 +511,7 @@ def _process_output_reader(pid, stream_name, stream):
 
 def _start_process(root, command, *, allow_network=False, env_extra=None):
     global PROCESS_SEQ
-    command = str(command or "").strip()
+    command = _normalize_command(command)
     if not command or len(command) > MAX_COMMAND or "\x00" in command:
         raise HTTPException(status_code=400, detail="Invalid process command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -529,6 +556,24 @@ def _start_process(root, command, *, allow_network=False, env_extra=None):
     threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
     threading.Thread(target=_process_output_reader, args=(process_id, "stderr", proc.stderr), daemon=True).start()
     return process_id
+
+def _reap_processes():
+    cutoff = time.time() - PROCESS_TTL
+    stale = []
+    with PROCESS_LOCK:
+        for pid, item in list(PROCESSES.items()):
+            if item["popen"].poll() is not None and item.get("started_at", time.time()) < cutoff:
+                stale.append(pid)
+    for pid in stale:
+        with PROCESS_LOCK:
+            item = PROCESSES.pop(pid, None)
+        if item:
+            for stream in (item.get("stdout"), item.get("stderr")):
+                try:
+                    if hasattr(stream, "close"):
+                        stream.close()
+                except Exception:
+                    pass
 
 def _process_state(pid):
     with PROCESS_LOCK:
@@ -708,7 +753,8 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
 def process_start(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
+    with _workspace_lock(payload.workspace_id):
+        write_snapshot(root, payload.files)
     pid = _start_process(root, payload.command)
     return _process_state(pid)
 
@@ -731,6 +777,7 @@ def process_stop(pid: str, workspace_id: str, authorization: str = Header(defaul
 @app.get("/processes")
 def process_list(workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
+    _reap_processes()
     with PROCESS_LOCK:
         ids = [p["id"] for p in PROCESSES.values() if p["workspace_id"] == str(workspace_id)]
     return {"processes": [_process_state(pid) for pid in ids]}
