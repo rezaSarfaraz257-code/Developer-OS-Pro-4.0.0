@@ -248,6 +248,59 @@ PY
         if: always()
         run: docker compose down -v
 
+
+  backup-restore:
+    name: PostgreSQL backup + destructive restore verification
+    runs-on: ubuntu-latest
+    needs: [backend]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: developeros_recovery
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: recovery-password
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U developeros -d developeros_recovery"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-17
+      - name: Create representative data and schema
+        env:
+          PGPASSWORD: recovery-password
+        run: |
+          psql -h 127.0.0.1 -p 5433 -U developeros -d developeros_recovery -v ON_ERROR_STOP=1 -c "CREATE TABLE recovery_probe(id integer PRIMARY KEY, marker text NOT NULL); INSERT INTO recovery_probe VALUES (1, 'developer-os-recovery-ok');"
+      - name: Backup
+        env:
+          POSTGRES_DB: developeros_recovery
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: recovery-password
+          BACKUP_DIR: /tmp/developer-os-backups
+          PGHOST: 127.0.0.1
+          PGPORT: "5433"
+        run: |
+          mkdir -p "$BACKUP_DIR"
+          pg_dump --format=custom --no-owner --no-acl --file="$BACKUP_DIR/recovery.dump" "$POSTGRES_DB"
+          test -s "$BACKUP_DIR/recovery.dump"
+      - name: Destroy data
+        env:
+          PGPASSWORD: recovery-password
+        run: psql -h 127.0.0.1 -p 5433 -U developeros -d developeros_recovery -v ON_ERROR_STOP=1 -c "DROP TABLE recovery_probe;"
+      - name: Restore
+        env:
+          PGPASSWORD: recovery-password
+        run: pg_restore --clean --if-exists --no-owner --no-acl --dbname=postgresql://developeros:recovery-password@127.0.0.1:5433/developeros_recovery /tmp/developer-os-backups/recovery.dump
+      - name: Verify restored data
+        env:
+          PGPASSWORD: recovery-password
+        run: |
+          marker="$(psql -h 127.0.0.1 -p 5433 -U developeros -d developeros_recovery -Atc "SELECT marker FROM recovery_probe WHERE id=1;")"
+          test "$marker" = "developer-os-recovery-ok"
+          echo "BACKUP_RESTORE: PASS"
+
   release-gate:
     name: Release artifact gate
     runs-on: ubuntu-latest
