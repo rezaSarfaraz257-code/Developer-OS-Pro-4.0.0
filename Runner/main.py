@@ -56,6 +56,11 @@ class Workspace(BaseModel):
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
 
+class ProcessStartRequest(Workspace):
+    command: str = Field(min_length=1, max_length=2000)
+    allow_network: bool = False
+    env: dict[str, str] = Field(default_factory=dict)
+
 class InstallRequest(ExecRequest):
     framework: str = ""
     package_manager: str = ""
@@ -750,7 +755,7 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
         raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/process/start")
-def process_start(payload: ExecRequest, authorization: str = Header(default="")):
+def process_start(payload: ProcessStartRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
