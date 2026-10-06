@@ -105,10 +105,6 @@ def _scheduler_metric(key, value=1):
     with SCHEDULER_LOCK:
         SCHEDULER_METRICS[key] = SCHEDULER_METRICS.get(key, 0) + value
 
-def _scheduler_snapshot():
-    with SCHEDULER_LOCK:
-        return dict(SCHEDULER_METRICS, **{"active": sum(FAIR_SCHEDULER._active.values())})
-
 
 
 JOB_LOCK = threading.RLock()
@@ -228,7 +224,11 @@ def _cleanup_jobs():
 
 def _scheduler_snapshot():
     with SCHEDULER_LOCK:
-        return {key: int(value) for key, value in SCHEDULER_ACTIVE.items()}
+        return {
+            **SCHEDULER_METRICS,
+            "active": sum(FAIR_SCHEDULER._active.values()),
+            "workspaces": dict(FAIR_SCHEDULER._active),
+        }
 
 
 def _scheduler_acquire(workspace_id, timeout=5):
