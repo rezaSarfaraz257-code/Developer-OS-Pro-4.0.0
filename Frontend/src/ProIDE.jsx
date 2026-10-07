@@ -71,6 +71,17 @@ return()=>{try{socket?.close()}catch{}if(terminalRetry.current)clearTimeout(term
 };}catch{setCollabState("offline")}
 return()=>{try{socket?.close()}catch{}if(collabRetry.current)clearTimeout(collabRetry.current);collab.current=null}},[ws?.id]);
  const open=useCallback(async(p,line=1,column=1)=>{if(typeof p!=="string"||!p)return;if(refs.dirty.current&&p!==refs.active.current)await save(true);setActive(p);setTabs(t=>t.includes(p)?t:[...t,p]);setRecent(t=>[p,...t.filter(x=>x!==p)].slice(0,12));setDirty(false);refs.dirty.current=false;setDiagnostics([]);setStatus("Ready");setCursor({line,column});setQuickOpen(false)},[save]);
+ const syncWorkspaceState=useCallback((data)=>{
+   const nextFiles=data?.files&&typeof data.files==="object"?data.files:refs.files.current;
+   const nextRevision=data?.revision??refs.ws.current?.revision;
+   const nextActive=data?.active_file??refs.active.current;
+   refs.files.current=nextFiles;
+   refs.ws.current=refs.ws.current?({...refs.ws.current,files:nextFiles,revision:nextRevision,active_file:nextActive}):refs.ws.current;
+   if(data?.files)setFiles(nextFiles);
+   if(data?.revision!==undefined)setWs(x=>x?({...x,files:nextFiles,revision:nextRevision,active_file:nextActive}):x);
+   if(data?.active_file)setActive(nextActive);
+   return {files:nextFiles,revision:nextRevision,active:nextActive};
+ },[]);
  const edit=v=>{if(typeof v!=="string"||!active)return;setFiles(f=>({...f,[active]:v}));setDirty(true);refs.dirty.current=true;setStatus("Unsaved changes");clearTimeout(refs.timer.current);refs.timer.current=setTimeout(()=>{const w=refs.ws.current,p=refs.active.current;if(!w||!p)return;const msg={type:"patch",path:p,content:refs.files.current[p]||"",base_revision:Number(w.revision||0),client_id:clientId.current};if(collab.current?.readyState===1){collab.current.send(JSON.stringify(msg))}else{const q=JSON.parse(localStorage.getItem("dos-offline-queue")||"[]");const next=[...q.filter(x=>x?.path!==p),msg].slice(-100);localStorage.setItem("dos-offline-queue",JSON.stringify(next));setOfflineQueue(next);setStatus("Saved locally — waiting for connection")}},1200);clearTimeout(refs.diag.current);refs.diag.current=setTimeout(()=>diagnose(active),1800)};
  async function diagnose(p=active){if(!ws||!p)return;try{const e=p.split(".").pop()?.toLowerCase(),language=e==="py"?"python":["ts","tsx"].includes(e)?"typescript":["js","jsx"].includes(e)?"javascript":e,r=await apiFetch(`/ide/workspaces/${ws.id}/diagnostics/`,{method:"POST",body:JSON.stringify({path:p,language})}),d=await r.json();if(!r.ok)throw Error(d.error||"Diagnostics failed");setDiagnostics(d.diagnostics||[]);setStatus(d.diagnostics?.length?`${d.diagnostics.length} diagnostic(s)`:"No diagnostics")}catch(e){setStatus(`Diagnostics: ${e.message}`)}}
  function togglePin(p=active){if(!p)return;setPinned(x=>x.includes(p)?x.filter(v=>v!==p):[...x,p])}
