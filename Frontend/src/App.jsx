@@ -627,9 +627,9 @@ function Audit() {
 
 function Billing() {
   const [sub,setSub]=useState(null); const [usage,setUsage]=useState(null); const [keys,setKeys]=useState([]);
-  const [pricing,setPricing]=useState(null); const [newKey,setNewKey]=useState(""); const [error,setError]=useState("");
-  const load=()=>Promise.all([apiFetch("/subscription/"),apiFetch("/usage/"),apiFetch("/api-keys/"),apiFetch("/pricing/")]).then(async rs=>{
-    const ds=await Promise.all(rs.map(r=>r.json()));setSub(ds[0]);setUsage(ds[1]);setKeys(ds[2]);setPricing(ds[3]);
+  const [newKey,setNewKey]=useState(""); const [error,setError]=useState("");
+  const load=()=>Promise.all([apiFetch("/subscription/"),apiFetch("/usage/"),apiFetch("/api-keys/")]).then(async rs=>{
+    const ds=await Promise.all(rs.map(r=>r.json()));setSub(ds[0]);setUsage(ds[1]);setKeys(ds[2]);
   }).catch(e=>setError(e.message));
   useEffect(load,[]);
   const upgrade=async plan=>{
