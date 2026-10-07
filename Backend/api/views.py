@@ -2081,7 +2081,17 @@ def ide_capabilities_api(request):
         return Response({"status": "degraded", "runner": None, "error": error}, status=503)
     plan, _ = _plan_for(request.user)
     limits = PLAN_LIMITS[plan]
-    return Response({"status": "ready", "plan": plan, "limits": {"ide_runs_month": limits["ide_runs_month"], "workspaces": limits["workspaces"], "projects": limits["projects"]}, "runner": data})
+    return Response({
+        "status": "ready",
+        "plan": plan,
+        "limits": {
+            "ide_runs_month": limits["ide_runs_month"],
+            "workspaces": limits["workspaces"],
+            "projects": limits["projects"],
+        },
+        "features": PLAN_FEATURES[plan],
+        "runner": data,
+    })
 
 
 def _workspace_access_queryset(user):
@@ -2729,28 +2739,53 @@ def api_keys_api(request):
 
 
 PLAN_LIMITS = {
-    "free": {"ai_messages_month": 50, "ide_runs_month": 30, "api_keys": 2, "org_members": 1, "workspaces": 3, "projects": 5},
-    "pro": {"ai_messages_month": 1000, "ide_runs_month": 500, "api_keys": 10, "org_members": 5, "workspaces": 25, "projects": 50},
+    "free": {"ai_messages_month": 50, "ide_runs_month": 30, "api_keys": 2, "org_members": 0, "workspaces": 3, "projects": 5},
+    "pro": {"ai_messages_month": 1000, "ide_runs_month": 500, "api_keys": 10, "org_members": 0, "workspaces": 25, "projects": 50},
     "team": {"ai_messages_month": 5000, "ide_runs_month": 2500, "api_keys": 50, "org_members": 50, "workspaces": 100, "projects": 250},
     "enterprise": {"ai_messages_month": 50000, "ide_runs_month": 20000, "api_keys": 200, "org_members": 500, "workspaces": 1000, "projects": 1000},
+}
+
+# Product capabilities are deliberately centralized. UI may hide unavailable
+# controls, but the backend remains the source of truth for access decisions.
+PLAN_FEATURES = {
+    "free": {
+        "web_ide": True, "ai_assistant": True, "api_keys": True,
+        "organizations": False, "collaboration": False, "governance": False,
+        "audit_log": False, "seat_billing": False, "enterprise_controls": False,
+    },
+    "pro": {
+        "web_ide": True, "ai_assistant": True, "api_keys": True,
+        "organizations": False, "collaboration": False, "governance": False,
+        "audit_log": False, "seat_billing": False, "enterprise_controls": False,
+    },
+    "team": {
+        "web_ide": True, "ai_assistant": True, "api_keys": True,
+        "organizations": True, "collaboration": True, "governance": True,
+        "audit_log": True, "seat_billing": True, "enterprise_controls": False,
+    },
+    "enterprise": {
+        "web_ide": True, "ai_assistant": True, "api_keys": True,
+        "organizations": True, "collaboration": True, "governance": True,
+        "audit_log": True, "seat_billing": True, "enterprise_controls": True,
+    },
 }
 
 PLAN_CATALOG = {
     "free": {
         "monthly_usd": 0, "billing_model": "free", "label": "Free",
-        "features": ["Core workspace", "30 IDE runs/month", "50 AI messages/month"],
+        "features": ["Core workspace", "30 IDE runs/month", "50 AI messages/month", "3 workspaces", "5 projects"],
     },
     "pro": {
         "monthly_usd": 29, "billing_model": "per_user", "label": "Pro",
-        "features": ["Advanced Web IDE", "500 IDE runs/month", "1,000 AI messages/month", "25 workspaces"],
+        "features": ["Advanced Web IDE", "500 IDE runs/month", "1,000 AI messages/month", "25 workspaces", "50 projects", "10 API keys"],
     },
     "team": {
         "monthly_usd": 15, "billing_model": "per_seat", "minimum_seats": 1, "label": "Team",
-        "features": ["Shared workspaces", "2,500 IDE runs/month per member", "5,000 AI messages/month per member", "Governance"],
+        "features": ["Everything in Pro", "Shared workspaces", "2,500 IDE runs/month per member", "5,000 AI messages/month per member", "50 members/seat capacity", "Governance & audit log"],
     },
     "enterprise": {
         "monthly_usd": 299, "billing_model": "custom", "starting_at": True, "label": "Enterprise",
-        "features": ["Enterprise governance", "20,000 IDE runs/month per member", "50,000 AI messages/month per member", "Custom security and support"],
+        "features": ["Everything in Team", "20,000 IDE runs/month per member", "50,000 AI messages/month per member", "500 members/seat capacity", "Advanced governance", "Custom security & support"],
     },
 }
 
@@ -2831,6 +2866,8 @@ def _entitlement(user, feature):
     if feature in {"ai", "ide"}:
         metric = "ai_messages_month" if feature == "ai" else "ide_runs_month"
         return limits[metric] > 0, plan, limits[metric]
+    if feature in PLAN_FEATURES:
+        return bool(PLAN_FEATURES[feature].get(plan, False)), plan, None
     return True, plan, limits.get(feature)
 
 STRIPE_API = "https://api.stripe.com/v1"
@@ -2849,6 +2886,7 @@ def pricing_api(request):
     return Response({
         "currency": "USD",
         "plans": PRODUCT_PRICING,
+        "feature_matrix": PLAN_FEATURES,
         "stripe_configured": {plan: bool(STRIPE_PLANS.get(plan)) for plan in ("pro", "team", "enterprise")},
         "entitlements": PLAN_LIMITS,
     })
@@ -3128,6 +3166,13 @@ def organizations_api(request):
         with transaction.atomic():
             locked_user = User.objects.select_for_update().get(pk=request.user.pk)
             owner_plan, _ = _plan_for(locked_user)
+            if not PLAN_FEATURES.get(owner_plan, {}).get("organizations", False):
+                return Response({
+                    "error": "Organization workspaces require the Team or Enterprise plan.",
+                    "code": "plan_upgrade_required",
+                    "plan": owner_plan,
+                    "required_plan": "team",
+                }, status=403)
             while Organization.objects.filter(slug=slug).exists():
                 slug = f"{base}-{n}"; n += 1
             org = Organization.objects.create(owner=locked_user, name=name, slug=slug, plan=owner_plan)
