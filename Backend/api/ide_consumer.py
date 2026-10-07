@@ -36,7 +36,12 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
         await self.send_json({"type":"ready","workspace_id":self.workspace_id})
 
-    def _workspace_plan(self):\n        from .views import _plan_for\n        plan, _ = _plan_for(self.user)\n        return plan\n\n    def _runner(self, method, path, payload=None, timeout=20, workspace_id=None):
+    def _workspace_plan(self):
+        from .views import _plan_for
+        plan, _ = _plan_for(self.user)
+        return plan
+
+    def _runner(self, method, path, payload=None, timeout=20, workspace_id=None):
         headers={"Authorization":f"Bearer {RUNNER_TOKEN}"}
         kwargs={"headers":headers,"timeout":timeout}
         if method=="GET": kwargs["params"]={"workspace_id":str(workspace_id or self.workspace_id)}
@@ -50,7 +55,8 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
             if not command or len(command)>2000:
                 await self.send_json({"type":"error","message":"Invalid command."}); return
             files=content.get("files") or {}
-            plan = await sync_to_async(self._workspace_plan)()\n            response=await sync_to_async(self._runner)("POST","/process/start",{"workspace_id":str(self.workspace_id),"files":files,"command":command,"entitlement":{"plan":plan}},60)
+            plan = await sync_to_async(self._workspace_plan)()
+            response=await sync_to_async(self._runner)("POST","/process/start",{"workspace_id":str(self.workspace_id),"files":files,"command":command,"entitlement":{"plan":plan}},60)
             data=response.json() if response.content else {}
             if response.status_code>=400:
                 await self.send_json({"type":"error","message":data.get("detail") or data.get("error") or "Process start failed."}); return
