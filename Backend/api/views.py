@@ -87,6 +87,10 @@ class ReferralRateThrottle(AnonRateThrottle):
     scope = "referral"
 
 
+class RunnerRateThrottle(UserRateThrottle):
+    scope = "runner"
+
+
 def github_headers(access_token):
     return {
         "Authorization": f"Bearer {access_token}",
@@ -2553,6 +2557,7 @@ def ide_lsp_notifications_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_debug_api(request, pk):
     """Debugger orchestration contract for the isolated runner.
 
@@ -2602,6 +2607,7 @@ def ide_debug_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_execute_api(request, pk):
     """Execute a workspace command through the isolated runner."""
     stage = "workspace_lookup"
@@ -3735,6 +3741,7 @@ def ide_build_plan_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_build_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -3765,6 +3772,7 @@ def ide_debug_api(request, pk):
 # ---------------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_process_start_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user): return Response({"error":"Read-only workspace."}, status=403)
