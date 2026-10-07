@@ -1,5 +1,6 @@
 from io import BytesIO
 import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import IntegrityError, connection
