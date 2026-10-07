@@ -354,6 +354,9 @@ class Workspace(BaseModel):
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
 
+class ProcessInputRequest(Workspace):
+    data: str = ""
+
 class ProcessStartRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
     allow_network: bool = False
@@ -749,6 +752,29 @@ def metrics(authorization: str = Header(default="")):
     auth(authorization)
     return {"status":"ok","metrics":_metrics_snapshot(),"scheduler":_scheduler_snapshot()}
 
+@app.post("/process/{process_id}/stop")
+def process_stop(process_id: str, workspace_id: str, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(process_id))
+    if not item or str(item["workspace_id"]) != str(workspace_id):
+        raise HTTPException(status_code=404, detail="Process not found.")
+    proc = item["popen"]
+    if proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        try:
+            proc.wait(timeout=CANCEL_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+    _metric("process_stopped")
+    return _process_state(process_id)
+
 @app.post("/process/{process_id}/cancel")
 def process_cancel(process_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
@@ -997,7 +1023,7 @@ def _start_process(root, command, *, allow_network=False, env_extra=None):
     argv = _sandbox_command(root, command, allow_network=allow_network)
     try:
         proc = subprocess.Popen(
-            argv, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            argv, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, start_new_session=True, preexec_fn=_limit_process_resources,
         )
     except Exception as exc:
@@ -1326,6 +1352,28 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
         raise HTTPException(status_code=400, detail="Unsupported symbol action.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/process/{process_id}/input")
+def process_input(process_id: str, payload: ProcessInputRequest, authorization: str = Header(default="")):
+    auth(authorization)
+    with PROCESS_LOCK:
+        item = PROCESSES.get(str(process_id))
+    if not item or str(item["workspace_id"]) != str(payload.workspace_id):
+        raise HTTPException(status_code=404, detail="Process not found.")
+    data = str(payload.data or "")
+    if len(data) > 4000 or "\x00" in data:
+        raise HTTPException(status_code=400, detail="Invalid terminal input.")
+    proc = item["popen"]
+    if proc.poll() is not None:
+        return _process_state(process_id)
+    try:
+        if proc.stdin is None:
+            raise RuntimeError("Process stdin is unavailable.")
+        proc.stdin.write(data)
+        proc.stdin.flush()
+    except (BrokenPipeError, OSError) as exc:
+        raise HTTPException(status_code=409, detail=f"Process input unavailable: {exc.__class__.__name__}")
+    return _process_state(process_id)
 
 @app.post("/process/start")
 def process_start(payload: ProcessStartRequest, authorization: str = Header(default="")):
