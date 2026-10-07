@@ -496,6 +496,58 @@ class Subscription(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class ReferralCode(models.Model):
+    """Stable, user-owned referral identity used by the growth program."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="referral_code")
+    code = models.CharField(max_length=32, unique=True, db_index=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} · {self.code}"
+
+
+class Referral(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("rewarded", "Rewarded"),
+        ("rejected", "Rejected"),
+    ]
+    referrer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="referrals_sent")
+    referred = models.OneToOneField(User, on_delete=models.CASCADE, related_name="referral_received")
+    code = models.ForeignKey(ReferralCode, on_delete=models.PROTECT, related_name="referrals")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    qualified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["referrer", "status"], name="api_referral_referrer_status"),
+            models.Index(fields=["code", "status"], name="api_referral_code_status"),
+        ]
+
+
+class ReferralReward(models.Model):
+    """Immutable reward ledger; entitlement is derived from active rewards."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="referral_rewards")
+    referral = models.ForeignKey(Referral, on_delete=models.PROTECT, related_name="rewards")
+    milestone = models.PositiveIntegerField()
+    plan = models.CharField(max_length=20, default="pro")
+    duration_days = models.PositiveIntegerField(default=30)
+    starts_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "milestone"], name="unique_referral_reward_milestone"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-expires_at"], name="api_ref_reward_user_expiry"),
+        ]
+
+
+
 class BillingEvent(models.Model):
     """Idempotency ledger for provider webhooks. A Stripe event is applied once."""
     event_id = models.CharField(max_length=255, unique=True)
