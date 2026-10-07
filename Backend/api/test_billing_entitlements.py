@@ -80,3 +80,13 @@ class BillingEntitlementTests(TestCase):
             response = self.client.post("/api/subscription/", {"plan": plan}, format="json")
             self.assertEqual(response.status_code, 400)
             self.assertEqual(response.json()["code"], code)
+
+
+    def test_pricing_packaging_contract(self):
+        from .views import PLAN_CATALOG
+        self.assertTrue(PLAN_CATALOG["pro"]["recommended"])
+        self.assertEqual(PLAN_CATALOG["pro"]["annual_usd"], 290)
+        self.assertEqual(PLAN_CATALOG["team"]["annual_usd"], 150)
+        self.assertEqual(PLAN_CATALOG["team"]["billing_model"], "per_seat")
+        self.assertEqual(PLAN_CATALOG["enterprise"]["billing_model"], "custom")
+        self.assertTrue(PLAN_CATALOG["enterprise"]["starting_at"])
