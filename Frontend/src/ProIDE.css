@@ -307,3 +307,76 @@
 .dos-shortcuts span{white-space:nowrap}
 .dos-shortcuts kbd{cursor:default}
 @media (max-width:900px){.dos-editor-toolbar button:nth-of-type(n+7){display:none}.dos-shortcuts span:nth-of-type(n+5){display:none}}
+
+
+/* Premium cockpit layer — modern interaction polish, no API/runner behavior changes */
+.dos-ide-pro{
+  --cockpit-glow:rgba(74,211,255,.18);
+  --cockpit-surface:rgba(9,18,29,.82);
+  position:relative; isolation:isolate;
+  background:radial-gradient(900px 420px at 58% -12%,rgba(35,126,160,.10),transparent 62%),#050a10;
+}
+.dos-ide-pro::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;background:linear-gradient(rgba(100,180,210,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(100,180,210,.018) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.65),transparent 92%)}
+.dos-ide-pro .dos-topbar{min-height:54px;background:linear-gradient(180deg,rgba(11,22,34,.96),rgba(7,14,23,.93));border-bottom:1px solid rgba(100,191,220,.12);box-shadow:0 8px 28px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.025);backdrop-filter:blur(18px)}
+.dos-ide-pro .dos-logo{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;color:#b9f3ff;background:linear-gradient(145deg,#0e3547,#09202e);border:1px solid rgba(91,220,255,.24);box-shadow:0 0 22px rgba(57,205,244,.12),inset 0 1px rgba(255,255,255,.08)}
+.dos-ide-pro .dos-brand strong{letter-spacing:.16em;text-shadow:0 0 18px rgba(100,220,255,.14)}
+.dos-ide-pro .dos-workspace-select{padding:4px 6px;border:1px solid rgba(100,191,220,.10);border-radius:10px;background:rgba(255,255,255,.018)}
+.dos-ide-pro .dos-workspace-select select{min-width:180px;background:transparent;border:0;color:#b8d4df;outline:none}
+.dos-ide-pro .dos-top-actions button{border:1px solid transparent;border-radius:7px;transition:transform .16s ease,border-color .16s ease,background .16s ease,color .16s ease,box-shadow .16s ease}
+.dos-ide-pro .dos-top-actions button:hover{transform:translateY(-1px);color:#d9f8ff;border-color:rgba(90,210,245,.18);background:rgba(77,195,231,.07)}
+.dos-ide-pro .dos-top-actions .dos-primary{background:linear-gradient(135deg,#1595b3,#08758d);border-color:rgba(110,232,255,.28);box-shadow:0 0 18px rgba(20,157,190,.18),inset 0 1px rgba(255,255,255,.14)}
+.dos-ide-pro .dos-state{padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.045)}
+.dos-ide-pro .dos-state i{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:5px;background:#55e4a1;box-shadow:0 0 9px rgba(85,228,161,.65)}
+.dos-ide-pro .dos-state.dirty i{background:#f4c86a;box-shadow:0 0 9px rgba(244,200,106,.5)}
+.dos-ide-pro .dos-commandbar{background:rgba(6,13,21,.88);border-bottom:1px solid rgba(100,191,220,.07)}
+.dos-ide-pro .dos-activity{background:linear-gradient(180deg,rgba(8,17,27,.96),rgba(5,12,19,.96));border-right:1px solid rgba(100,191,220,.08)}
+.dos-ide-pro .dos-activity button{position:relative;width:34px;height:34px;margin:3px auto;border:1px solid transparent;border-radius:9px;transition:transform .15s ease,background .15s ease,color .15s ease,border-color .15s ease}
+.dos-ide-pro .dos-activity button:hover{transform:translateX(2px);color:#d9f8ff;background:rgba(77,195,231,.07);border-color:rgba(77,195,231,.12)}
+.dos-ide-pro .dos-activity button.selected{color:#baf4ff;background:linear-gradient(145deg,rgba(43,151,181,.20),rgba(12,45,60,.18));border-color:rgba(91,220,255,.18);box-shadow:0 0 18px rgba(55,197,232,.08),inset 0 1px rgba(255,255,255,.04)}
+.dos-ide-pro .dos-activity button.selected::before{content:"";position:absolute;left:-1px;top:9px;width:2px;height:16px;border-radius:2px;background:#61ddfa;box-shadow:0 0 9px #61ddfa}
+.dos-ide-pro .dos-explorer{background:linear-gradient(180deg,rgba(8,17,27,.91),rgba(6,13,21,.95));border-right:1px solid rgba(100,191,220,.08)}
+.dos-ide-pro .dos-tree-search{margin:7px;border:1px solid rgba(91,177,208,.11);border-radius:8px;background:rgba(3,10,16,.58);transition:border-color .16s ease,box-shadow .16s ease}
+.dos-ide-pro .dos-tree-search:focus-within{border-color:rgba(91,220,255,.28);box-shadow:0 0 0 3px rgba(74,211,255,.045)}
+.dos-ide-pro .dos-file,.dos-ide-pro .dos-folder{border-radius:6px;transition:background .12s ease,color .12s ease}
+.dos-ide-pro .dos-file.active{box-shadow:inset 2px 0 #55dfff,0 0 16px rgba(62,195,229,.05)}
+.dos-ide-pro .dos-file.active .dos-file-icon{color:#79e7ff}
+.dos-ide-pro .dos-tabs{background:linear-gradient(180deg,#09121c,#070f17)}
+.dos-ide-pro .dos-tab{position:relative;transition:background .15s ease,color .15s ease}
+.dos-ide-pro .dos-tab.active::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px 2px 0 0;background:#58ddff;box-shadow:0 0 12px rgba(88,221,255,.45)}
+.dos-ide-pro .dos-editor-toolbar{box-shadow:0 1px 0 rgba(255,255,255,.015)}
+.dos-ide-pro .dos-editor-toolbar button{transition:transform .12s ease,background .12s ease,border-color .12s ease,color .12s ease}
+.dos-ide-pro .dos-editor-toolbar button:hover{transform:translateY(-1px);background:rgba(75,190,225,.08);box-shadow:0 4px 16px rgba(0,0,0,.14)}
+.dos-ide-pro .dos-editors{box-shadow:inset 0 0 80px rgba(0,0,0,.10)}
+.dos-ide-pro .dos-inspector{box-shadow:inset 8px 0 24px rgba(0,0,0,.08)}
+.dos-ide-pro .dos-card{position:relative;overflow:hidden;border-radius:10px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.dos-ide-pro .dos-card::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(97,225,255,.045),transparent 42%);pointer-events:none}
+.dos-ide-pro .dos-card:hover{transform:translateY(-1px);border-color:rgba(91,220,255,.20);box-shadow:0 10px 24px rgba(0,0,0,.16),0 0 18px rgba(67,197,231,.04)}
+.dos-ide-pro .dos-card input:focus,.dos-ide-pro .dos-card select:focus{border-color:rgba(91,220,255,.34);box-shadow:0 0 0 3px rgba(74,211,255,.05);outline:none}
+.dos-ide-pro .dos-statusbar{box-shadow:0 -1px 0 rgba(255,255,255,.08),0 -8px 24px rgba(0,0,0,.10)}
+.dos-ide-pro .dos-terminal{border:1px solid rgba(91,220,255,.10);border-radius:10px 10px 0 0;box-shadow:0 -22px 55px rgba(0,0,0,.38);overflow:hidden}
+.dos-ide-pro .dos-terminal-head{border-bottom:1px solid rgba(91,220,255,.09)}
+.dos-ide-pro .dos-terminal-head strong{color:#b8efff;letter-spacing:.14em}
+.dos-ide-pro .dos-terminal form{background:linear-gradient(180deg,#07111a,#050c13);border-top:1px solid rgba(91,220,255,.08)}
+.dos-ide-pro .dos-terminal form input{color:#d6f5ff;caret-color:#63e4ff}
+.dos-ide-pro .dos-ai-panel{border-left:1px solid rgba(91,220,255,.18);background:radial-gradient(500px 220px at 10% 0%,rgba(47,173,211,.09),transparent 65%),linear-gradient(180deg,rgba(8,18,29,.98),rgba(5,12,20,.98));box-shadow:-24px 0 70px rgba(0,0,0,.30);backdrop-filter:blur(20px)}
+.dos-ide-pro .dos-ai-panel header{background:rgba(255,255,255,.018);border-bottom:1px solid rgba(91,220,255,.09)}
+.dos-ide-pro .dos-ai-context span{border:1px solid rgba(91,220,255,.09);background:rgba(91,220,255,.035);border-radius:999px;padding:4px 7px}
+.dos-ide-pro .dos-ai-panel textarea{min-height:110px;border:1px solid rgba(91,220,255,.12);background:rgba(2,8,14,.65);border-radius:10px;transition:border-color .15s ease,box-shadow .15s ease}
+.dos-ide-pro .dos-ai-panel textarea:focus{outline:none;border-color:rgba(91,220,255,.30);box-shadow:0 0 0 3px rgba(74,211,255,.05),0 10px 28px rgba(0,0,0,.16)}
+.dos-ide-pro .dos-ai-actions button{border-radius:7px;transition:transform .12s ease,background .12s ease,border-color .12s ease}
+.dos-ide-pro .dos-ai-actions button:hover:not(:disabled){transform:translateY(-1px);background:rgba(74,211,255,.10);border-color:rgba(74,211,255,.25)}
+.dos-ide-pro .dos-ai-diff-modal{backdrop-filter:blur(12px);background:rgba(0,4,8,.72)!important}
+.dos-ide-pro .dos-ai-diff-shell{border:1px solid rgba(91,220,255,.20);border-radius:14px;box-shadow:0 30px 100px rgba(0,0,0,.55),0 0 50px rgba(43,176,211,.07);overflow:hidden}
+.dos-ide-pro .dos-context-menu{border:1px solid rgba(91,220,255,.18);border-radius:9px;background:rgba(8,17,27,.97);box-shadow:0 20px 55px rgba(0,0,0,.48),0 0 24px rgba(50,170,205,.06);backdrop-filter:blur(16px);overflow:hidden}
+.dos-ide-pro .dos-context-menu strong{display:block;padding:8px 10px;color:#bdeefe;background:rgba(91,220,255,.035);border-bottom:1px solid rgba(91,220,255,.08);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dos-ide-pro .dos-context-menu button:hover{background:rgba(74,211,255,.08);color:#e0f9ff}
+.dos-ide-pro .dos-modal-backdrop{background:rgba(1,5,9,.68);backdrop-filter:blur(10px)}
+.dos-ide-pro .dos-palette{border:1px solid rgba(91,220,255,.20);border-radius:14px;background:linear-gradient(180deg,rgba(10,20,31,.98),rgba(6,13,21,.98));box-shadow:0 30px 100px rgba(0,0,0,.60),0 0 45px rgba(46,182,219,.08);overflow:hidden}
+.dos-ide-pro .dos-palette-title{letter-spacing:.13em;color:#8edff3}
+.dos-ide-pro .dos-palette input{background:#06101a;border:1px solid rgba(91,220,255,.11);border-radius:8px;margin:8px;width:calc(100% - 16px);box-sizing:border-box}
+.dos-ide-pro .dos-palette>button{border-top:1px solid rgba(255,255,255,.025);transition:background .12s ease,padding-left .12s ease}
+.dos-ide-pro .dos-palette>button:hover{background:rgba(74,211,255,.07);padding-left:16px}
+.dos-ide-pro button:focus-visible,.dos-ide-pro input:focus-visible,.dos-ide-pro select:focus-visible,.dos-ide-pro textarea:focus-visible{outline:1px solid rgba(94,222,255,.65);outline-offset:2px}
+@media(max-width:900px){.dos-ide-pro::before{background-size:28px 28px}.dos-ide-pro .dos-workspace-select select{min-width:120px}.dos-ide-pro .dos-top-actions .dos-state{display:none}}
+@media(max-width:640px){.dos-ide-pro .dos-topbar{min-height:48px}.dos-ide-pro .dos-brand div:not(.dos-logo){display:none}.dos-ide-pro .dos-workspace-select{max-width:150px}.dos-ide-pro .dos-workspace-select select{min-width:90px;max-width:110px}.dos-ide-pro .dos-top-actions button:nth-child(n+5){display:none}.dos-ide-pro .dos-commandbar>span:not(.dos-collab-status):not(.dos-spacer){display:none}}
+@media(prefers-reduced-motion:reduce){.dos-ide-pro *,.dos-ide-pro *::before,.dos-ide-pro *::after{transition-duration:.01ms!important;animation-duration:.01ms!important;scroll-behavior:auto!important}}
