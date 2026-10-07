@@ -2735,18 +2735,46 @@ PLAN_LIMITS = {
     "enterprise": {"ai_messages_month": 50000, "ide_runs_month": 20000, "api_keys": 200, "org_members": 500, "workspaces": 1000, "projects": 1000},
 }
 
+PLAN_CATALOG = {
+    "free": {
+        "monthly_usd": 0, "billing_model": "free", "label": "Free",
+        "features": ["Core workspace", "30 IDE runs/month", "50 AI messages/month"],
+    },
+    "pro": {
+        "monthly_usd": 29, "billing_model": "per_user", "label": "Pro",
+        "features": ["Advanced Web IDE", "500 IDE runs/month", "1,000 AI messages/month", "25 workspaces"],
+    },
+    "team": {
+        "monthly_usd": 15, "billing_model": "per_seat", "minimum_seats": 1, "label": "Team",
+        "features": ["Shared workspaces", "2,500 IDE runs/month per member", "5,000 AI messages/month per member", "Governance"],
+    },
+    "enterprise": {
+        "monthly_usd": 299, "billing_model": "custom", "starting_at": True, "label": "Enterprise",
+        "features": ["Enterprise governance", "20,000 IDE runs/month per member", "50,000 AI messages/month per member", "Custom security and support"],
+    },
+}
+
 def _subscription_for(user):
     sub = Subscription.objects.filter(user=user).first()
     return sub or Subscription(user=user, plan="free", status="active")
 
 def _plan_for(user):
-    """Return a valid entitlement plan even if legacy subscription data is malformed."""
+    """Resolve the strongest active entitlement across personal and organization billing."""
     sub = _subscription_for(user)
-    plan = str(getattr(sub, "plan", "") or "free").lower()
-    if plan not in PLAN_LIMITS:
-        plan = "free"
-    if getattr(sub, "status", "") == "canceled" and plan != "free":
-        plan = "free"
+    personal_plan = str(getattr(sub, "plan", "") or "free").lower()
+    if personal_plan not in PLAN_LIMITS or getattr(sub, "status", "") == "canceled":
+        personal_plan = "free"
+
+    # Organization-paid seats grant Team/Enterprise entitlements to their members.
+    org_plans = list(
+        OrganizationSubscription.objects.filter(
+            organization__memberships__user=user,
+            status__in={"active", "trialing", "past_due"},
+        ).values_list("plan", flat=True)
+    )
+    candidates = [personal_plan, *[str(p).lower() for p in org_plans if str(p).lower() in PLAN_LIMITS]]
+    rank = {"free": 0, "pro": 1, "team": 2, "enterprise": 3}
+    plan = max(candidates, key=lambda value: rank.get(value, 0), default="free")
     return plan, sub
 
 def _usage_period():
