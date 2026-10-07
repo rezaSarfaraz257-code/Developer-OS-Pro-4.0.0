@@ -111,6 +111,7 @@ urlpatterns = [
     path("repositories/<int:pk>/native/members/", repository_engine.native_members_api, name="repository-native-members"),
     path("api-keys/", views.api_keys_api, name="api-keys"),
     path("subscription/", views.subscription_api, name="subscription"),
+    path("pricing/", views.pricing_api, name="pricing"),
     path("billing/portal/", views.billing_portal_api, name="billing-portal"),
     path("usage/", views.usage_api, name="usage"),
     path("organizations/", views.organizations_api, name="organizations"),
