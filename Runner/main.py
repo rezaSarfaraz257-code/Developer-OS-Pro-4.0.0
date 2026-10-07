@@ -247,6 +247,11 @@ def _job_is_cancelled(job_id):
     return bool(job and job.get("status") == "cancelled")
 
 
+def _job_is_cancelled(job_id):
+    job = _job_snapshot(job_id)
+    return bool(job and job.get("status") == "cancelled")
+
+
 def _cancel_job(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
