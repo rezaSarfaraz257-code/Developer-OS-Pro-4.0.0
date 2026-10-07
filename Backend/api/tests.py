@@ -313,7 +313,6 @@ class PlatformUpgradeTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="platform-user", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)
-        Subscription.objects.create(user=self.user, plan="team", status="active")
         self.project = Project.objects.create(owner=self.user, title="Quantum IDE", description="Build a web IDE")
         Task.objects.create(project=self.project, title="Ship editor", priority="urgent")
 
@@ -408,6 +407,7 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.data["files"]["main.py"], "print(2)")
 
     def test_organization_membership_and_subscription(self):
+        Subscription.objects.create(user=self.user, plan="team", status="active")
         response = self.client.post("/api/organizations/", {"name":"Quantum Labs"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]
