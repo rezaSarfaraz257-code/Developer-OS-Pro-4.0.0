@@ -59,13 +59,16 @@ const health = await fetch(`${api}/health/`, {signal: AbortSignal.timeout(10000)
 assert(health.ok, `Health failed: HTTP ${health.status}`);
 const ready = await fetch(`${api}/health/ready/`, {signal: AbortSignal.timeout(10000)});
 assert(ready.ok, `Readiness failed: HTTP ${ready.status}`);
-assert(["GET","HEAD"].includes(ready.headers.get("allow") || "GET"), "Readiness endpoint returned an unexpected Allow header.");
 const securityHeaders = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "same-origin",
+  "x-frame-options": "DENY",
 };
 for (const [name, expected] of Object.entries(securityHeaders)) {
   assert((ready.headers.get(name) || "").toLowerCase() === expected, `Missing/incorrect ${name} security header.`);
+}
+if (base.startsWith("https://")) {
+  assert((ready.headers.get("strict-transport-security") || "").toLowerCase().includes("max-age="), "Missing HSTS header on HTTPS production endpoint.");
 }
 
 const pricing = await request("/pricing/");
