@@ -424,3 +424,7 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .plan-features{margin:12px 0 16px;padding-left:18px}
 .plan-features li{margin:5px 0}
 .project-card small{display:block;margin-top:8px;opacity:.65;font-size:11px}
+
+
+.rail-item.locked{opacity:.55}
+.rail-item.locked em::after{content:"  ◇";font-size:9px;opacity:.8}
