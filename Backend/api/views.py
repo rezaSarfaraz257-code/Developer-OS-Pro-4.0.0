@@ -2932,14 +2932,18 @@ def _qualify_referral(user):
             return None
 
         # Prevent the cheapest farming loop: create -> verify -> activate -> reward.
-        if user.date_joined > now - timedelta(hours=24):
+        if user.date_joined > now - timedelta(hours=72):
             return None
 
         # Require genuine product activation after attribution.
         project = Project.objects.filter(owner=user, created_at__gte=referral.attributed_at).order_by("created_at").first()
         if not project:
             return None
-        if not Task.objects.filter(project=project).exists() and not Note.objects.filter(project=project).exists():
+        if Task.objects.filter(project=project).count() < 2 and Note.objects.filter(project=project).count() < 2:
+            return None
+
+        active_days = Activity.objects.filter(actor=user, created_at__gte=referral.attributed_at).dates("created_at", "day").count()
+        if active_days < 3:
             return None
 
         # Enforce an attribution-cluster ceiling only when trusted proxy identity
@@ -2949,7 +2953,7 @@ def _qualify_referral(user):
                 attribution_ip_hash=referral.attribution_ip_hash,
                 attributed_at__gte=now - timedelta(days=30),
             ).exclude(pk=referral.pk).count()
-            if recent_same_ip >= 5:
+            if recent_same_ip >= 3:
                 referral.status = "rejected"
                 referral.qualified_at = now
                 referral.save(update_fields=["status", "qualified_at"])
