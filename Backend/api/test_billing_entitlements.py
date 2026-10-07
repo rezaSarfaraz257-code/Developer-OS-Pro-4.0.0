@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import Organization, OrganizationMembership, OrganizationSubscription
-from .views import PLAN_LIMITS, _plan_for
+from .views import PLAN_FEATURES, PLAN_LIMITS, _plan_for
 
 User = get_user_model()
 
@@ -27,6 +27,7 @@ class BillingEntitlementTests(TestCase):
         self.assertEqual(data["plans"]["team"]["billing_model"], "per_seat")
         self.assertEqual(data["plans"]["enterprise"]["monthly_usd"], 299)
         self.assertEqual(set(data["entitlements"]), set(PLAN_LIMITS))
+        self.assertEqual(data["feature_matrix"], PLAN_FEATURES)
 
     def test_free_is_default(self):
         plan, _ = _plan_for(self.user)
@@ -54,3 +55,21 @@ class BillingEntitlementTests(TestCase):
         )
         plan, _ = _plan_for(self.user)
         self.assertEqual(plan, "enterprise")
+
+
+    def test_free_and_pro_cannot_create_organizations(self):
+        for plan in ("free", "pro"):
+            self.user.subscription.plan = plan
+            self.user.subscription.status = "active"
+            self.user.subscription.save(update_fields=["plan", "status", "updated_at"])
+            response = self.client.post("/api/organizations/", {"name": f"{plan}-org"}, format="json")
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.json()["code"], "plan_upgrade_required")
+
+    def test_team_can_create_organization(self):
+        self.user.subscription.plan = "team"
+        self.user.subscription.status = "active"
+        self.user.subscription.save(update_fields=["plan", "status", "updated_at"])
+        response = self.client.post("/api/organizations/", {"name": "Team Org"}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["plan"], "team")
