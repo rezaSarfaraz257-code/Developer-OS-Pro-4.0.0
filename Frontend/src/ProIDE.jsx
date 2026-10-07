@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars, no-empty, no-dupe-else-if, react-hooks/refs, react-hooks/immutability, react-hooks/purity, react-hooks/preserve-manual-memoization */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API_URL, getAccessToken } from "./services/api";
-import MonacoEditor from "./MonacoEditor";
+import MonacoEditor from "./ResilientMonacoEditor";
 import MonacoDiffViewer from "./MonacoDiffViewer";
 import EngineeringControlPlane from "./ide/EngineeringControlPlane";
 import { GlobalSearch, ProblemsPanel, RunCenter, DebuggerPanel, PreviewPanel, SourceControlPanel } from "./ide/IDEUtilities";
