@@ -554,11 +554,20 @@ def run_command(root, command, *, allow_network=False):
         final_status = _job_snapshot(job_id) or {}
         cancelled = final_status.get("status") == "cancelled"
         status = "cancelled" if cancelled else ("completed" if proc.returncode == 0 else "failed")
+        stdout = proc.stdout[-MAX_OUTPUT:] if isinstance(proc.stdout, str) else ""
+        stderr = proc.stderr[-MAX_OUTPUT:] if isinstance(proc.stderr, str) else ""
+        # /exec is synchronous, but the Web IDE consumes the same job through
+        # the streaming API. Persist the final output into the job stream so a
+        # completed request can never appear to have "no output".
+        if stdout:
+            _append_job_output(job_id, stdout)
+        if stderr:
+            _append_job_output(job_id, stderr)
         _set_job(job_id, status=status, finished_at=finished, exit_code=None if cancelled else proc.returncode,
                  duration_ms=int((time.monotonic()-started)*1000))
         return {
             "job_id": job_id, "status": status, "exit_code": None if cancelled else proc.returncode,
-            "stdout": proc.stdout[-MAX_OUTPUT:], "stderr": proc.stderr[-MAX_OUTPUT:],
+            "stdout": stdout, "stderr": stderr,
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
