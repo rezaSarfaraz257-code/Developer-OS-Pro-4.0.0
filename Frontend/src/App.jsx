@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
+import Referral from "./Referral";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
@@ -11,6 +12,7 @@ const nav = [
   ["ai", "✦", "Intelligence"],
   ["search", "⌕", "Universal Search"],
   ["team", "◎", "Team & Collab"],
+  ["referrals", "↗", "Invite & Earn"],
   ["billing", "◇", "SaaS / Billing"],
   ["settings", "⚙", "Settings"],
   ["audit", "≡", "Audit Log"],
@@ -690,6 +692,16 @@ export default function App() {
   const [path,go]=useRoute();
 
   useEffect(()=>{if(authenticated)apiFetch("/profile/").then(r=>r.json()).then(p=>setUser(p.user||p)).catch(()=>setAuthenticated(false));},[authenticated]);
+  useEffect(()=>{
+    if(!authenticated) return;
+    const referralCode = new URLSearchParams(window.location.search).get("ref");
+    if(!referralCode) return;
+    apiFetch("/referrals/",{method:"POST",body:JSON.stringify({code:referralCode})}).catch(()=>{}).finally(()=>{
+      const url = new URL(window.location.href);
+      url.searchParams.delete("ref");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    });
+  },[authenticated]);
   useEffect(()=>{const f=()=>setAuthenticated(false);window.addEventListener("auth:expired",f);const k=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();document.querySelector(".global-search input")?.focus();}};window.addEventListener("keydown",k);return()=>{window.removeEventListener("auth:expired",f);window.removeEventListener("keydown",k)};},[]);
 
   if(!authenticated)return <Auth onReady={()=>setAuthenticated(true)}/>;
@@ -706,6 +718,7 @@ export default function App() {
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;
   else if(current==="team") content=<Team/>;
+  else if(current==="referrals") content=<Referral go={go}/>;
   else if(current==="billing") content=<Billing/>;
   else if(current==="settings") content=<Settings/>;
   else if(current==="audit") content=<Audit/>;
