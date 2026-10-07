@@ -146,6 +146,15 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_execute_and_process_payloads_use_workspace_lock(self):
         import main
         self.assertTrue(hasattr(main, "_workspace_lock"))
+\n    def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
+        root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
+        (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
+        result = run_command(root, "python3 main.py")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"].strip(), "runner-source-ok")
+        self.assertNotIn("Hello, Developer OS", result["stdout"])
+
 
     def test_process_state_exposes_completion_metadata(self):
         import main
