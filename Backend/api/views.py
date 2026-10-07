@@ -2482,10 +2482,11 @@ def ide_debug_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
-    if not allowed:
-        return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
     action = str(request.data.get("action") or "status").strip().lower()
+    if action == "start":
+        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        if not allowed:
+            return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
     allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
     if action not in allowed_actions:
         return Response({"error": "Unsupported debugger action."}, status=400)
