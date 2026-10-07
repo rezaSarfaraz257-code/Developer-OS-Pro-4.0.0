@@ -13,7 +13,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord
+from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession
 
 
 class ProjectApiSecurityTests(APITestCase):
@@ -89,6 +89,28 @@ class ProjectApiSecurityTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         with self.assertRaises(TokenError):
             refresh.check_blacklist()
+
+    def test_refresh_requires_an_active_security_session_and_rotates_session_jti(self):
+        refresh = RefreshToken.for_user(self.owner)
+        session = SecuritySession.objects.create(
+            user=self.owner,
+            jti=str(refresh["jti"]),
+            device_name="test",
+            ip_address="127.0.0.1",
+        )
+
+        first = self.client.post("/api/token/refresh/", {"refresh": str(refresh)}, format="json")
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertIn("refresh", first.data)
+
+        rotated = RefreshToken(first.data["refresh"])
+        session.refresh_from_db()
+        self.assertEqual(session.jti, str(rotated["jti"]))
+
+        session.revoked_at = __import__("django.utils.timezone", fromlist=["now"]).now()
+        session.save(update_fields=["revoked_at"])
+        blocked = self.client.post("/api/token/refresh/", {"refresh": str(rotated)}, format="json")
+        self.assertEqual(blocked.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_staff_created_tags_receive_a_unique_slug(self):
         self.owner.is_staff = True
