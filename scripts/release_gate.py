@@ -85,6 +85,7 @@ required_release_files = (
     "Runner/test_main.py",
     ".github/workflows/ci.yml",
     "e2e/smoke.mjs",
+    "scripts/production_validate.mjs",
 )
 for rel in required_release_files:
     if not (ROOT / rel).exists():
