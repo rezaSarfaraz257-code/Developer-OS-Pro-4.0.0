@@ -2909,6 +2909,10 @@ STRIPE_PLANS = {
     "team": os.environ.get("STRIPE_PRICE_TEAM", ""),
     "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE", ""),
 }
+STRIPE_ANNUAL_PLANS = {
+    "pro": os.environ.get("STRIPE_PRICE_PRO_ANNUAL", ""),
+    "team": os.environ.get("STRIPE_PRICE_TEAM_ANNUAL", ""),
+}
 
 PRODUCT_PRICING = PLAN_CATALOG
 
@@ -2996,6 +3000,9 @@ def subscription_api(request):
         return Response(SubscriptionSerializer(sub).data)
 
     plan = str(request.data.get("plan") or "free").lower()
+    billing_cycle = str(request.data.get("billing_cycle") or "monthly").lower()
+    if billing_cycle not in {"monthly", "annual"}:
+        return Response({"error": "billing_cycle must be monthly or annual."}, status=400)
     if plan not in dict(Subscription.PLAN_CHOICES):
         return Response({"error": "Unsupported plan"}, status=400)
     # Personal billing is intentionally limited to Free/Pro. Team is seat-metered
@@ -3027,7 +3034,7 @@ def subscription_api(request):
         sub.save(update_fields=["plan", "status", "provider_subscription_id", "cancel_at_period_end", "updated_at"])
         return Response(SubscriptionSerializer(sub).data)
 
-    price_id = STRIPE_PLANS.get(plan, "")
+    price_id = (STRIPE_ANNUAL_PLANS if billing_cycle == "annual" else STRIPE_PLANS).get(plan, "")
     if not os.environ.get("STRIPE_SECRET_KEY") or not price_id:
         # Never grant a paid entitlement merely because the billing provider is
         # absent. Local/test mode must be explicit and persisted so entitlement
@@ -3062,12 +3069,14 @@ def subscription_api(request):
         "client_reference_id": str(request.user.id),
         "metadata[user_id]": str(request.user.id),
         "metadata[plan]": plan,
+        "metadata[billing_cycle]": billing_cycle,
         "subscription_data[metadata][user_id]": str(request.user.id),
         "subscription_data[metadata][plan]": plan,
+        "subscription_data[metadata][billing_cycle]": billing_cycle,
     })
     if error:
         return Response({"error": error}, status=502)
-    return Response({"checkout_url": checkout.get("url"), "plan": plan})
+    return Response({"checkout_url": checkout.get("url"), "plan": plan, "billing_cycle": billing_cycle})
 
 def _stripe_signature_valid(payload, signature, secret):
     if not signature or not secret:
@@ -3125,7 +3134,7 @@ def billing_webhook_api(request):
             if org:
                 org_sub, _ = OrganizationSubscription.objects.select_for_update().get_or_create(organization=org, defaults={"plan": org.plan})
                 price_id = (((obj.get("items") or {}).get("data") or [{}])[0].get("price") or {}).get("id")
-                reverse_prices = {v: k for k, v in STRIPE_PLANS.items() if v}
+                reverse_prices = {v: k for k, v in {**STRIPE_PLANS, **STRIPE_ANNUAL_PLANS}.items() if v}
                 org_plan = metadata.get("plan") or reverse_prices.get(price_id) or org_sub.plan
                 if event_type in {"checkout.session.completed", "customer.subscription.created", "customer.subscription.updated"}:
                     org_sub.provider_customer_id = obj.get("customer") or org_sub.provider_customer_id
