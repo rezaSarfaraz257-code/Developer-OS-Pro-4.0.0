@@ -1581,3 +1581,19 @@
 .dos-welcome-actions button{height:34px;padding:0 14px;border:1px solid rgba(0,229,255,.20);border-radius:7px;background:#07141d;color:#bcecf3;cursor:pointer}
 .dos-welcome-actions button:hover{border-color:#00e5ff;background:rgba(0,229,255,.08);box-shadow:0 0 18px rgba(0,229,255,.08)}
 .dos-welcome small{color:#526f7d;font-size:10px}
+
+/* TAB MICRO-INTERACTIONS v4 */
+.dos-ide-pro .dos-tab{position:relative;min-width:0}
+.dos-ide-pro .dos-tab>button{
+  width:20px;height:20px;display:grid;place-items:center;flex:0 0 20px;
+  margin-left:4px;border:1px solid transparent;border-radius:4px;
+  background:transparent;color:#496773;opacity:0;cursor:pointer;transition:.14s ease;
+}
+.dos-ide-pro .dos-tab:hover>button,.dos-ide-pro .dos-tab.active>button{opacity:1}
+.dos-ide-pro .dos-tab>button:hover{
+  color:#e7fdff;border-color:rgba(0,229,255,.22);background:rgba(0,229,255,.09);
+}
+.dos-ide-pro .dos-tab.pinned>button{opacity:.7}
+.dos-ide-pro .dos-tab em{font-style:normal;font-size:8px;color:#6dffb0;text-shadow:0 0 7px rgba(109,255,176,.5)}
+.dos-ide-pro .dos-tab.active em{color:#00e5ff}
+.dos-ide-pro .dos-tab-action{margin-left:auto;flex:0 0 34px}
