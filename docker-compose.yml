@@ -85,6 +85,16 @@ services:
       redis:
         condition: service_healthy
       runner:
+        condition: service_healthy
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_catalog && gunicorn x.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60"
+    volumes:
+      - media_data:/app/media
+    networks:
+      - default
+      - runner_internal
+
+
+  runner:
     restart: unless-stopped
     build: ./Runner
     environment:
