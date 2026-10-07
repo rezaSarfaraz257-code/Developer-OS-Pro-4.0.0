@@ -1,0 +1,13 @@
+.referral-page{max-width:1180px}
+.referral-hero{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:28px;align-items:center;border-color:rgba(67,232,255,.18);background:radial-gradient(circle at 85% 40%,rgba(67,232,255,.08),transparent 32%),linear-gradient(145deg,rgba(9,18,28,.96),rgba(5,10,17,.98))}
+.referral-link{display:block;margin:12px 0 16px;padding:14px 16px;overflow:auto;border:1px solid rgba(67,232,255,.14);border-radius:10px;background:#04090e;color:#9cefff;font:700 11px "JetBrains Mono";white-space:nowrap}
+.referral-actions{display:flex;gap:8px}
+.referral-progress{padding:18px;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.02)}
+.referral-progress span{display:block;font-size:28px;font-weight:900}
+.referral-progress strong{display:block;margin:5px 0 13px;color:#70e7ff;font-size:11px}
+.referral-bar{height:8px;overflow:hidden;border-radius:99px;background:#101b25}
+.referral-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#39c8e8,#9a8cff)}
+.referral-progress small{display:block;margin-top:10px;color:#6e8497}
+.referral-stats{margin:16px 0}
+.referral-stats .project-card small{display:block}
+@media(max-width:760px){.referral-hero{grid-template-columns:1fr}.referral-actions{flex-wrap:wrap}}
