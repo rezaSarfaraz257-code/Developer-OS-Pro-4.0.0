@@ -114,7 +114,7 @@ if (execute.command !== "python3 main.py" || execute.active_file !== "main.py" |
 const processStarted = await request(`/ide/workspaces/${workspace.id}/process/start/`, {
   method: "POST",
   headers: auth,
-  body: JSON.stringify({command: "python -c \"import time; print('PROCESS_READY', flush=True); time.sleep(30)\""}),
+  body: JSON.stringify({command: "python3 -c \"import time; print('PROCESS_READY', flush=True); time.sleep(30)\""}),
 });
 if (!processStarted.id) throw new Error("IDE process start failed.");
 
