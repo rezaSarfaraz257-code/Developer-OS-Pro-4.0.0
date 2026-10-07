@@ -53,6 +53,18 @@ useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch(
    }
    return d;
  }
+ async function explorerDelete(path,retry=true){
+   const w=refs.ws.current;if(!w)throw Error("No workspace selected.");
+   let r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"DELETE",body:JSON.stringify({path,revision:w.revision})});
+   let d=await r.json().catch(()=>({}));
+   if(!r.ok&&r.status===409&&retry){
+     await load(w);const latest=refs.ws.current;if(!latest)throw Error("Workspace is no longer available.");
+     r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"DELETE",body:JSON.stringify({path,revision:latest.revision})});
+     d=await r.json().catch(()=>({}));
+   }
+   if(!r.ok)throw Error(d.error||d.detail||`Delete failed (HTTP ${r.status})`);
+   return d;
+ }
  async function newFolder(){
    const w=refs.ws.current;if(!w)return;
    const folder=prompt("New folder path","src/components")?.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");
@@ -118,8 +130,7 @@ useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch(
  async function removeFile(){
    const currentWs=refs.ws.current,p=refs.active.current;if(!currentWs||!p||!confirm(`Delete ${p}?`))return;
    try{if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file first.");}
-     const r=await apiFetch(`/ide/workspaces/${currentWs.id}/files/`,{method:"DELETE",body:JSON.stringify({path:p,revision:refs.ws.current?.revision})});
-     const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"Delete failed");
+     const d=await explorerDelete(p);
      await applyExplorerState(d,{removed:p});setStatus("Deleted");
    }catch(e){setStatus(e.message||"Delete failed")}
  }
