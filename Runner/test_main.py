@@ -1,6 +1,7 @@
 import main
 import unittest
 import time
+import tempfile
 from unittest.mock import patch
 from pathlib import Path
 from fastapi import HTTPException
@@ -160,6 +161,25 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
             run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
+
+    def test_interactive_process_input_and_stop_contract(self):
+        import main
+        root = Path(tempfile.mkdtemp(prefix="developer-os-process-"))
+        process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
+        try:
+            with main.PROCESS_LOCK:
+                proc = main.PROCESSES[process_id]["popen"]
+            proc.stdin.write("hello\n")
+            proc.stdin.flush()
+            proc.wait(timeout=5)
+            state = main._process_state(process_id)
+            self.assertEqual(state["status"], "success")
+            self.assertIn("hello", state["stdout"])
+        finally:
+            try:
+                main._stop_process(process_id)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
