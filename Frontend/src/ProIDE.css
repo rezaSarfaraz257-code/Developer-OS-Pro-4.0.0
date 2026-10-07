@@ -1526,3 +1526,47 @@
     min-width:132px !important;
   }
 }
+
+/* CODING WORKBENCH UX v3 */
+.dos-workbench-strip{
+  height:38px; flex:0 0 38px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 10px 0 14px; border-bottom:1px solid rgba(0,229,255,.10);
+  background:linear-gradient(90deg,rgba(4,13,21,.96),rgba(5,17,26,.82));
+  box-shadow:inset 0 -1px rgba(255,255,255,.025);
+}
+.dos-workbench-title{display:flex;align-items:center;gap:9px;min-width:0;color:#d9f7ff;font-size:12px}
+.dos-workbench-title strong{font-weight:800;letter-spacing:.02em}
+.dos-workbench-path{color:#6f8b99;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34vw}
+.dos-live-dot{width:6px;height:6px;border-radius:50%;background:#6dffb0;box-shadow:0 0 9px rgba(109,255,176,.7)}
+.dos-workbench-actions{display:flex;align-items:center;gap:5px}
+.dos-workbench-actions button{
+  height:27px;padding:0 9px;border:1px solid rgba(117,170,190,.15);border-radius:6px;
+  background:rgba(10,25,35,.72);color:#91aebb;font-size:11px;cursor:pointer;transition:.16s ease;
+}
+.dos-workbench-actions button:hover{color:#dffbff;border-color:rgba(0,229,255,.38);background:rgba(0,229,255,.08)}
+.dos-workbench-actions .dos-exit-workbench{
+  color:#bffaff;border-color:rgba(0,229,255,.35);background:rgba(0,229,255,.07);font-weight:800;
+}
+.dos-ide-pro:fullscreen .dos-workbench-strip,.dos-ide-pro.dos-native-fullscreen .dos-workbench-strip{
+  height:40px;flex-basis:40px;background:rgba(3,12,19,.94);
+}
+.dos-ide-pro:fullscreen .dos-workbench-actions .dos-exit-workbench,
+.dos-ide-pro.dos-native-fullscreen .dos-workbench-actions .dos-exit-workbench{
+  background:linear-gradient(180deg,#8ffaff,#00bfd8);color:#00151b;border-color:#9cfbff;
+  box-shadow:0 0 18px rgba(0,229,255,.18);
+}
+.dos-editor-shell{background:radial-gradient(circle at 50% 0,rgba(0,229,255,.025),transparent 35%),#03080d}
+.dos-tabs{background:rgba(3,10,16,.94)!important}
+.dos-tab.active{box-shadow:inset 0 -2px #00e5ff,0 -1px 18px rgba(0,229,255,.06)}
+.dos-editor-toolbar{background:rgba(6,16,24,.78)!important;border-bottom-color:rgba(0,229,255,.10)!important}
+.dos-explorer{background:linear-gradient(180deg,rgba(5,14,21,.98),rgba(3,10,15,.98))!important}
+.dos-explorer .dos-pane-title{height:38px}
+.dos-file-list{scrollbar-width:thin}
+.dos-file:hover{background:rgba(0,229,255,.055)!important}
+.dos-file.active{background:linear-gradient(90deg,rgba(0,229,255,.13),rgba(0,229,255,.025))!important;border-left:2px solid #00e5ff}
+.dos-inspector{background:#040c12!important}
+.dos-statusbar{font-size:10px!important;letter-spacing:.025em}
+@media(max-width:760px){
+ .dos-workbench-strip{padding-left:9px}.dos-workbench-path{display:none}.dos-workbench-actions button{padding:0 7px}
+ .dos-workbench-actions button:nth-child(2),.dos-workbench-actions button:nth-child(3){display:none}
+}
