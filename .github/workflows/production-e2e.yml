@@ -2,17 +2,26 @@ name: Production Black-Box Validation
 
 on:
   workflow_dispatch:
-  workflow_dispatch:
+    inputs:
+      target:
+        description: "Production target label"
+        required: false
+        default: "render-production"
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: production-black-box-validation
+  cancel-in-progress: false
 
 jobs:
   production-e2e:
     name: Deployed SaaS + IDE + Runner + Billing E2E
     if: ${{ secrets.PRODUCTION_BASE_URL != '' && secrets.PRODUCTION_BILLING_WEBHOOK_SECRET != '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +31,7 @@ jobs:
         env:
           PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
           PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
+          PRODUCTION_TARGET: ${{ inputs.target }}
         run: node scripts/production_validate.mjs
 
   configuration-warning:
@@ -29,7 +39,8 @@ jobs:
     if: ${{ secrets.PRODUCTION_BASE_URL == '' || secrets.PRODUCTION_BILLING_WEBHOOK_SECRET == '' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Explain configuration requirement
+      - name: Fail closed when production secrets are missing
         run: |
-          echo "Production black-box validation is not executed until PRODUCTION_BASE_URL and PRODUCTION_BILLING_WEBHOOK_SECRET are configured."
-          echo "Configure both repository secrets, then run this workflow manually."
+          echo "::error::Production validation is blocked because PRODUCTION_BASE_URL and PRODUCTION_BILLING_WEBHOOK_SECRET must both be configured."
+          echo "Configure the real deployment secrets and run this workflow again."
+          exit 1
