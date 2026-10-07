@@ -37,7 +37,7 @@ export function RunCenter({workspace,files,activeFile,onClose}) {
   setJobId(null);setQueueWait(null);setQueuePosition(null);setRunning(true);setExitCode(null);setOutput("");setTab("terminal");
   const started=performance.now();let cursor=0;let failures=0;let stopped=false;
   try{
-   const r=await apiFetch(`/ide/workspaces/${workspace.id}/execute/`,{method:"POST",body:JSON.stringify({command:command.trim(),files:files||workspace.files||{}})});
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/execute/`,{method:"POST",body:JSON.stringify({command:command.trim(),active_file:activeFile||"",files:files||workspace.files||{}})});
    const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Secure runner unavailable");
    if(d.job_id){
     setJobId(d.job_id);setQueueWait(d.queue_wait_ms??null);setQueuePosition(d.queue_position??null);setOutput(`Job ${d.job_id.slice(0,8)} · ${d.status||"queued"}`);
