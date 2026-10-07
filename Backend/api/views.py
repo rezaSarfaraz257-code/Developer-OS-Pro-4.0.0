@@ -2079,7 +2079,9 @@ def ide_capabilities_api(request):
     data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
     if error:
         return Response({"status": "degraded", "runner": None, "error": error}, status=503)
-    return Response({"status": "ready", "runner": data})
+    plan, _ = _plan_for(request.user)
+    limits = PLAN_LIMITS[plan]
+    return Response({"status": "ready", "plan": plan, "limits": {"ide_runs_month": limits["ide_runs_month"], "workspaces": limits["workspaces"], "projects": limits["projects"]}, "runner": data})
 
 
 def _workspace_access_queryset(user):
@@ -2391,8 +2393,10 @@ def ide_symbols_api(request, pk):
     action = str(request.data.get("action") or "symbols").strip().lower()
     if action not in {"symbols", "references", "rename_preview", "definitions", "hover", "completion", "rename_diff", "code_actions", "diagnostics"}:
         return Response({"error": "Unsupported symbol action."}, status=400)
+    plan, _ = _plan_for(request.user)
     payload = {
         **_workspace_payload(ws),
+        "entitlement": {"plan": plan},
         "action": action,
         "query": str(request.data.get("query") or "")[:200],
         "path": str(request.data.get("path") or "")[:500],
@@ -2570,7 +2574,8 @@ def ide_execute_api(request, pk):
         submitted_files = request.data.get("files")
         if submitted_files is not None and not isinstance(submitted_files, dict):
             return Response({"error": "Workspace files must be an object."}, status=400)
-        payload = {**_workspace_payload(ws), "command": command}
+        plan, _ = _plan_for(request.user)
+        payload = {**_workspace_payload(ws), "command": command, "entitlement": {"plan": plan}}
         if isinstance(submitted_files, dict):
             payload["files"] = submitted_files
 
