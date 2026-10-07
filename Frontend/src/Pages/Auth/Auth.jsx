@@ -33,12 +33,14 @@ export default function AuthPage({
         const [firstName, ...lastNameParts] = (form.fullName || "")
           .trim()
           .split(/\s+/);
+        const referralCode = new URLSearchParams(window.location.search).get("ref") || "";
         const payload = {
           username: form.username,
           email: form.email,
           password: form.password,
           first_name: firstName || "",
           last_name: lastNameParts.join(" ") || "",
+          ...(referralCode ? { referral_code: referralCode } : {}),
         };
 
         await registerWithBackend(payload);
