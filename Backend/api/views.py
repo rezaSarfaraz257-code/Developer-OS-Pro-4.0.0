@@ -2927,7 +2927,7 @@ def _qualify_referral(user):
     now = timezone.now()
     with transaction.atomic():
         referral = (Referral.objects.select_for_update().select_related("referrer")
-                    .filter(referred=user, status="pending").first())
+                    .filter(referred=user, status__in=["pending", "review"]).first())
         if not referral:
             return None
 
@@ -2962,6 +2962,13 @@ def _qualify_referral(user):
             if same_ua >= 5:
                 risk += 30
                 reasons.append("device_cluster")
+        referrer_velocity = Referral.objects.filter(
+            referrer=referral.referrer,
+            attributed_at__gte=now - timedelta(hours=24),
+        ).exclude(pk=referral.pk).count()
+        if referrer_velocity >= 5:
+            risk += 25
+            reasons.append("referral_velocity")
         product_depth = ProductEvent.objects.filter(user=user, created_at__gte=referral.attributed_at).exclude(name__in={"account_created", "referral_attributed"}).count()
         if product_depth < 3:
             risk += 15
