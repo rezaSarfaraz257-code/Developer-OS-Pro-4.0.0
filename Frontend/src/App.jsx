@@ -44,6 +44,8 @@ async function register(payload) {
 
 function Shell({ user, onLogout, children, go, current }) {
   const [search, setSearch] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const searchRef = useRef(null);
   const [notifications, setNotifications] = useState({ unread: 0, items: [] });
   const [openNotif, setOpenNotif] = useState(false);
   const [plan, setPlan] = useState("free");
@@ -57,6 +59,23 @@ function Shell({ user, onLogout, children, go, current }) {
     apiFetch("/notifications/").then(r => r.json()).then(d => active && setNotifications(d)).catch(() => {});
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault(); setPaletteOpen(true);
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }
+      if (event.key === "Escape") { setPaletteOpen(false); setOpenNotif(false); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  const commands = useMemo(() => [
+    ["Command Center", "/", "⌂"], ["Web IDE", "/ide", "⌘"], ["Projects", "/projects", "◈"],
+    ["Intelligence", "/ai", "✦"], ["Universal Search", "/search", "⌕"], ["Team & Collaboration", "/team", "◎"],
+    ["Invite & Earn", "/referrals", "↗"], ["Billing & Plans", "/billing", "◇"], ["Settings", "/settings", "⚙"],
+  ], []);
 
   const runSearch = (e) => {
     if (e.key === "Enter" && search.trim()) {
@@ -98,13 +117,20 @@ function Shell({ user, onLogout, children, go, current }) {
         <header className="topbar">
           <div className="crumb"><span>DEVELOPER OS</span><b>/</b><strong>{current === "dashboard" ? "COMMAND CENTER" : current.toUpperCase()}</strong></div>
           <div className="top-actions">
-            <div className="global-search">
-              <span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={runSearch} placeholder="Search everything  /  Ctrl K" />
+            <div className={`global-search ${paletteOpen ? "is-command-active" : ""}`}>
+              
+              <span>⌕</span><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={runSearch} placeholder="Search everything  /  Ctrl K" />
             </div>
             <button className="icon-btn" onClick={() => setOpenNotif(v => !v)}>◌<sup>{notifications.unread || ""}</sup></button>
             <button className="icon-btn" onClick={() => go("/ide")}>⌘</button>
             <button className="logout-btn" onClick={() => { revokeRefreshToken(); clearAuth(); onLogout(); }}>EXIT</button>
           </div>
+          {paletteOpen && <div className="command-palette" role="dialog" aria-label="Command palette">
+            <div className="command-palette-head"><span>COMMAND CENTER</span><kbd>ESC</kbd></div>
+            <div className="command-list">
+              {commands.map(([label, path, icon]) => <button key={path} onClick={() => { setPaletteOpen(false); go(path); }}><span>{icon}</span><b>{label}</b><small>{path}</small></button>)}
+            </div>
+          </div>}
           {openNotif && <div className="notif-pop">
             <div className="pop-head"><b>Notifications</b><button onClick={() => apiFetch("/notifications/", {method:"PATCH",body:JSON.stringify({})}).then(() => setNotifications(n => ({...n, unread:0})))}>Mark read</button></div>
             {(notifications.items || []).slice(0, 8).map(n => <div className="notif" key={n.id}><b>{n.title}</b><span>{n.body}</span></div>)}
