@@ -31,7 +31,7 @@ function defaultRunCommand(path, files) {
 export function RunCenter({workspace,files,activeFile,onClose}) {
  const [command,setCommand]=useState(()=>defaultRunCommand(activeFile,files)),[running,setRunning]=useState(false),[output,setOutput]=useState(""),[exitCode,setExitCode]=useState(null),[duration,setDuration]=useState(0),[tab,setTab]=useState("terminal"),[processes,setProcesses]=useState([]),[busy,setBusy]=useState(false),[jobId,setJobId]=useState(null),[queueWait,setQueueWait]=useState(null),[queuePosition,setQueuePosition]=useState(null);
  const streamTimerRef=useRef(null);
- const presets=[["Build","npm run build"],["Test","npm test"],["Lint","npm run lint"],["Python","python main.py"],["Django","python manage.py check"]];
+ const presets=[["Build","npm run build"],["Test","npm test"],["Lint","npm run lint"],["Python","python3 main.py"],["Django","python3 manage.py check"]];
  async function execute(){
   if(!workspace||running||!command.trim())return;
   setJobId(null);setQueueWait(null);setQueuePosition(null);setRunning(true);setExitCode(null);setOutput("");setTab("terminal");
