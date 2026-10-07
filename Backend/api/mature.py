@@ -310,7 +310,7 @@ def password_reset_request_api(request):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         url = absolute_frontend(f"reset-password?uid={uid}&token={token}")
-        queue_email("password_reset", user.email, "Reset your Developer OS password", f"Reset your password: {url}", f"<p>A password reset was requested.</p><p><a href=\"{url}\">Reset password</a></p>", idempotency_key=f"password-reset:{user.pk}:{sha256(raw)}")
+        queue_email("password_reset", user.email, "Reset your Developer OS password", f"Reset your password: {url}", f"<p>A password reset was requested.</p><p><a href=\"{url}\">Reset password</a></p>", idempotency_key=f"password-reset:{user.pk}:{sha256(token)}")
     return Response({"detail": "If that address is registered, a password reset email has been queued."}, status=202)
 
 
