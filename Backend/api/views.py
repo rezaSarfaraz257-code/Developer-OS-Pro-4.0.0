@@ -83,6 +83,10 @@ class AssistantRateThrottle(AnonRateThrottle):
     scope = "assistant"
 
 
+class ReferralRateThrottle(AnonRateThrottle):
+    scope = "referral"
+
+
 def github_headers(access_token):
     return {
         "Authorization": f"Bearer {access_token}",
@@ -486,6 +490,7 @@ def register_api(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ReferralRateThrottle])
 def referrals_api(request):
     code_obj = _referral_code_for(request.user)
     if request.method == "POST":
@@ -508,6 +513,7 @@ def referrals_api(request):
                 return Response({"status": referral.status, "attributed": True})
             return Response({"error": "Unable to record referral attribution."}, status=409)
         ProductEvent.objects.create(user=source.user, name="referral_attributed", properties={"referred_user_id": request.user.id})
+        audit_security_event(source.user, "referral.attributed", target_type="user", target_id=request.user.id, metadata={"source": "referral"})
         return Response({"status": referral.status, "attributed": True}, status=201)
 
     qualified = Referral.objects.filter(referrer=request.user, status="rewarded").count()
@@ -2901,6 +2907,8 @@ def _qualify_referral(user):
     profile = UserProfile.objects.filter(user=user).first()
     if not profile or not profile.email_verified:
         return None
+    if not Project.objects.filter(owner=user).exists():
+        return None
     with transaction.atomic():
         referral = (Referral.objects.select_for_update().select_related("referrer")
                     .filter(referred=user, status="pending").first())
@@ -2927,6 +2935,7 @@ def _qualify_referral(user):
         ReferralReward.objects.create(user=referral.referrer, referral=referral, milestone=milestone, plan="pro", duration_days=30, starts_at=starts_at, expires_at=expires_at)
         Notification.objects.create(user=referral.referrer, kind="referral_reward", title="30 days of Pro unlocked", body=f"You reached {milestone} qualified developer referrals. Your 30-day Pro reward is ready.", link="/referrals")
         ProductEvent.objects.create(user=referral.referrer, name="referral_reward_granted", properties={"milestone": milestone, "duration_days": 30})
+        audit_security_event(referral.referrer, "referral.reward_granted", target_type="referral_reward", target_id=milestone, metadata={"milestone": milestone, "duration_days": 30})
         return referral
 
 
