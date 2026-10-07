@@ -57,7 +57,8 @@ const task = await request("/tasks/", {
 if (!task.id) throw new Error("Task creation failed.");
 
 const capabilities = await request("/ide/capabilities/", {headers: auth});
-if (!capabilities.runner || !capabilities.runner.runtimes || !capabilities.plan || !capabilities.limits) throw new Error("IDE capability/entitlement contract failed.");
+if (!capabilities.runner || !capabilities.runner.runtimes || !capabilities.plan || !capabilities.limits || !capabilities.features) throw new Error("IDE capability/entitlement contract failed.");
+if (capabilities.plan === "free" && capabilities.features.organizations) throw new Error("Free plan incorrectly exposes organization capability.");
 if (!["free","pro","team","enterprise","admin"].includes(capabilities.plan)) throw new Error("Unknown IDE entitlement plan.");
 
 const workspace = await request("/ide/workspaces/", {
@@ -102,11 +103,11 @@ const execute = await request(`/ide/workspaces/${workspace.id}/execute/`, {
   method: "POST",
   headers: auth,
   body: JSON.stringify({
-    command: "python main.py",
+    command: "python3 main.py",
     active_file: "main.py",
   }),
 });
-if (execute.command !== "python main.py" || execute.active_file !== "main.py" || execute.status !== "success" || execute.exit_code !== 0 || String(execute.stdout || "").trim() !== "hello") {
+if (execute.command !== "python3 main.py" || execute.active_file !== "main.py" || execute.status !== "success" || execute.exit_code !== 0 || String(execute.stdout || "").trim() !== "hello") {
   throw new Error("IDE execute E2E failed.");
 }
 
