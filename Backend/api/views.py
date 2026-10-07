@@ -2946,20 +2946,41 @@ def _qualify_referral(user):
         if active_days < 3:
             return None
 
-        # Enforce an attribution-cluster ceiling only when trusted proxy identity
-        # is configured. Never penalize shared NATs by default.
+        # Multi-signal, privacy-preserving risk engine.
+        risk = 0
+        reasons = []
+        if referral.referrer_id == referral.referred_id:
+            risk += 100
+            reasons.append("self_referral")
         if referral.attribution_ip_hash:
-            recent_same_ip = Referral.objects.filter(
-                attribution_ip_hash=referral.attribution_ip_hash,
-                attributed_at__gte=now - timedelta(days=30),
-            ).exclude(pk=referral.pk).count()
-            if recent_same_ip >= 3:
-                referral.status = "rejected"
-                referral.qualified_at = now
-                referral.save(update_fields=["status", "qualified_at"])
-                audit_security_event(referral.referrer, "referral.rejected", target_type="referral", target_id=referral.id, metadata={"reason": "attribution_cluster_limit"})
-                return referral
-
+            same_ip = Referral.objects.filter(attribution_ip_hash=referral.attribution_ip_hash, attributed_at__gte=now - timedelta(days=30)).exclude(pk=referral.pk).count()
+            if same_ip >= 3:
+                risk += 55
+                reasons.append("ip_cluster")
+        if referral.attribution_ua_hash:
+            same_ua = Referral.objects.filter(attribution_ua_hash=referral.attribution_ua_hash, attributed_at__gte=now - timedelta(days=30)).exclude(pk=referral.pk).count()
+            if same_ua >= 5:
+                risk += 30
+                reasons.append("device_cluster")
+        product_depth = ProductEvent.objects.filter(user=user, created_at__gte=referral.attributed_at).exclude(name__in={"account_created", "referral_attributed"}).count()
+        if product_depth < 3:
+            risk += 15
+            reasons.append("low_product_depth")
+        risk = min(risk, 100)
+        referral.risk_score = risk
+        referral.risk_reason = ",".join(reasons)[:120]
+        referral.last_checked_at = now
+        if risk >= 70:
+            referral.status = "rejected"
+            referral.qualified_at = now
+            referral.save(update_fields=["status", "risk_score", "risk_reason", "last_checked_at", "qualified_at"])
+            audit_security_event(referral.referrer, "referral.rejected", target_type="referral", target_id=referral.id, metadata={"reason": referral.risk_reason, "risk_score": risk})
+            return referral
+        if risk >= 40:
+            referral.status = "review"
+            referral.save(update_fields=["status", "risk_score", "risk_reason", "last_checked_at"])
+            audit_security_event(referral.referrer, "referral.review", target_type="referral", target_id=referral.id, metadata={"reason": referral.risk_reason, "risk_score": risk})
+            return referral
         referral.status = "rewarded"
         referral.qualified_at = now
         referral.save(update_fields=["status", "qualified_at"])
