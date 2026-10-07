@@ -44,6 +44,11 @@ function Shell({ user, onLogout, children, go, current }) {
   const [search, setSearch] = useState("");
   const [notifications, setNotifications] = useState({ unread: 0, items: [] });
   const [openNotif, setOpenNotif] = useState(false);
+  const [plan, setPlan] = useState("free");
+
+  useEffect(() => {
+    apiFetch("/usage/").then(r => r.json()).then(d => setPlan(d.plan || "free")).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -71,11 +76,14 @@ function Shell({ user, onLogout, children, go, current }) {
           </button>
         ))}
         <div className="rail-section">SYSTEM</div>
-        {nav.slice(6).map(([id, icon, label]) => (
-          <button key={id} title={label} aria-label={label} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(`/${id}`)}>
-            <span>{icon}</span><em>{label}</em>
-          </button>
-        ))}
+        {nav.slice(6).map(([id, icon, label]) => {
+          const teamLocked = id === "team" && !["team","enterprise"].includes(plan);
+          const auditLocked = id === "audit" && !["team","enterprise"].includes(plan);
+          const locked = teamLocked || auditLocked;
+          return <button key={id} title={locked ? `${label} — Team or Enterprise` : label} aria-label={label} className={`rail-item ${current === id ? "active" : ""} ${locked ? "locked" : ""}`} onClick={() => go(`/${id}`)}>
+            <span>{icon}</span><em>{label}{locked ? " · PRO" : ""}</em>
+          </button>;
+        })}
         <div className="rail-spacer" />
         <div className="status-chip"><i /> SYSTEM ONLINE</div>
         <button className="profile-mini" onClick={() => go("/settings")}>
