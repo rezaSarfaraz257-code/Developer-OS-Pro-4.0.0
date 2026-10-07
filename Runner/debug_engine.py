@@ -12,7 +12,7 @@ def _port():
 class DAP:
     def __init__(self,port):
         self.s=socket.create_connection(("127.0.0.1",port),timeout=10); self.s.settimeout(.5)
-        self.seq=0; self.buf=b""; self.pending={}; self.events=[]; self.closed=False
+        self.seq=0; self.buf=b""; self.pending={}; self.events=[]; self.closed=False; self.lock=threading.RLock()
         threading.Thread(target=self._read,daemon=True).start()
     def _read(self):
         while not self.closed:
@@ -31,7 +31,8 @@ class DAP:
             except socket.timeout: continue
             except Exception: return
     def call(self,command,args=None,timeout=10):
-        self.seq+=1; q=[]; seq=self.seq; self.pending[seq]=q
+        with self.lock:
+            self.seq+=1; q=[]; seq=self.seq; self.pending[seq]=q
         m={"seq":seq,"type":"request","command":command}
         if args is not None:m["arguments"]=args
         raw=json.dumps(m,separators=(",",":")).encode()
@@ -76,8 +77,12 @@ class Session:
         self.dap.call("setExceptionBreakpoints",{"filters":[]})
         self.set_breakpoint(self.path,self.line)
         self.dap.call("configurationDone")
-        self.dap.call("continue",{"threadId":1})
-        self.state="running"; return self.snapshot()
+        threads=self.dap.call("threads").get("threads",[])
+        if not threads:
+            raise RuntimeError("Debuggee did not expose a thread.")
+        self.stop_event={"threadId":threads[0].get("id")}
+        self.dap.call("continue",{"threadId":threads[0]["id"]})
+        self.state="running"; self.last_touch=time.monotonic(); return self.snapshot()
     def _events(self):
         for e in self.dap.drain():
             if e.get("event")=="stopped": self.state="paused"; self.stop_event=e.get("body") or {}
@@ -92,11 +97,20 @@ class Session:
         self.breakpoints=[b for b in self.breakpoints if not(b["path"]==path and b["line"]==int(line))]
         return self.snapshot()
     def _thread(self):
-        self._events(); return int((self.stop_event or {}).get("threadId") or 1)
+        self._events()
+        tid=(self.stop_event or {}).get("threadId")
+        if tid is not None:return int(tid)
+        try:
+            threads=self.dap.call("threads").get("threads",[])
+            if threads:return int(threads[0]["id"])
+        except Exception: pass
+        raise RuntimeError("No debugger thread is available.")
     def stack(self):
         self._events(); return self.dap.call("stackTrace",{"threadId":self._thread(),"startFrame":0,"levels":50}).get("stackFrames",[])
     def action(self,a,expression=""):
-        self._events()
+        with self.lock:
+            self.last_touch=time.monotonic()
+            self._events()
         if a=="continue":self.dap.call("continue",{"threadId":self._thread()})
         elif a=="pause":self.dap.call("pause",{"threadId":self._thread()})
         elif a=="step_over":self.dap.call("next",{"threadId":self._thread()})
@@ -113,8 +127,19 @@ class Session:
             return {"variables":self.dap.call("variables",{"variablesReference":int(expression or 0)}).get("variables",[]),"live":True}
         self._events(); return self.snapshot()
     def snapshot(self):
-        self._events(); st=self.stack() if self.state=="paused" else []
-        return {"session_id":self.id,"state":self.state,"thread_id":(self.stop_event or {}).get("threadId"),"frame":st[0] if st else None,"stack":st,"breakpoints":self.breakpoints,"scopes":[],"variables":[],"diagnostics":[],"live":True}
+        with self.lock:
+            self.last_touch=time.monotonic()
+            self._events(); st=self.stack() if self.state=="paused" else []
+            scopes=[]; variables=[]
+            if st:
+                try: scopes=self.dap.call("scopes",{"frameId":st[0]["id"]}).get("scopes",[])
+                except Exception: scopes=[]
+                refs=[int(x.get("variablesReference") or 0) for x in scopes if x.get("variablesReference")]
+                for ref in refs[:8]:
+                    try:
+                        variables.extend(self.dap.call("variables",{"variablesReference":ref}).get("variables",[]))
+                    except Exception: pass
+            return {"session_id":self.id,"state":self.state,"thread_id":(self.stop_event or {}).get("threadId"),"frame":st[0] if st else None,"stack":st,"breakpoints":self.breakpoints,"scopes":scopes,"variables":variables[:200],"diagnostics":[],"live":True}
     def stop(self):
         try:
             if self.dap:
@@ -132,10 +157,24 @@ class Session:
 def capability():
     return {"available":bool(DEBUGPY_AVAILABLE),"adapter":"debugpy" if DEBUGPY_AVAILABLE else None,"protocol":"DAP" if DEBUGPY_AVAILABLE else None,"mode":"live-dap" if DEBUGPY_AVAILABLE else "unavailable","reason":None if DEBUGPY_AVAILABLE else "debugpy is not installed"}
 
+SESSION_TTL=30*60
+
+def _reap_sessions():
+    now=time.monotonic()
+    stale=[]
+    with _LOCK:
+        stale=[s for s in SESSIONS.values() if now-s.last_touch>SESSION_TTL or s.state=="stopped"]
+    for s in stale:
+        try:s.stop()
+        except Exception:pass
+        with _LOCK:SESSIONS.pop(s.id,None)
+
 def handle(action,*,root=None,session_id="",path="",line=0,column=1,condition="",expression="",breakpoints=None):
+    _reap_sessions()
     action=str(action or "status").lower()
     if action=="start":
         if not root:raise ValueError("Workspace root is required")
+        if not path:raise ValueError("Debug target path is required")
         s=Session(root,path,line)
         with _LOCK:SESSIONS[s.id]=s
         try:return s.start()
