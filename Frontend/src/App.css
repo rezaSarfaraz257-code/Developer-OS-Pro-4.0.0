@@ -428,3 +428,15 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 
 .rail-item.locked{opacity:.55}
 .rail-item.locked em::after{content:"  ◇";font-size:9px;opacity:.8}
+
+.command-palette{position:absolute;z-index:80;top:72px;right:150px;width:min(620px,calc(100vw - 48px));padding:10px;border:1px solid rgba(120,150,255,.22);border-radius:16px;background:rgba(8,12,24,.96);backdrop-filter:blur(24px);box-shadow:0 24px 80px rgba(0,0,0,.45)}
+.command-palette-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;color:#9da9c8;font-size:11px;letter-spacing:.16em}
+.command-palette-head kbd{border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:3px 7px;font-size:10px}
+.command-list{display:grid;gap:4px}
+.command-list button{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:10px;border:0;border-radius:10px;padding:11px 12px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.command-list button:hover{background:rgba(110,130,255,.12)}
+.command-list button>span{font-size:18px;text-align:center}
+.command-list button b{font-size:13px}
+.command-list button small{color:#6f7b9a;font-family:monospace}
+.global-search.is-command-active{border-color:rgba(120,150,255,.65);box-shadow:0 0 0 3px rgba(120,150,255,.08)}
+@media(max-width:800px){.command-palette{right:12px;top:64px;width:calc(100vw - 24px)}}
