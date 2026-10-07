@@ -2906,11 +2906,11 @@ def _referral_code_for(user):
 
 def _referral_fingerprint(request):
     """Return privacy-preserving attribution fingerprints, never raw client data."""
+    # Do not persist proxy/container addresses unless the deployment explicitly
+    # declares its forwarded-client-IP chain trustworthy.
     ip = ""
     if getattr(settings, "TRUST_PROXY_HEADERS", False):
         ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-    if not ip:
-        ip = request.META.get("REMOTE_ADDR", "")
     ua = request.META.get("HTTP_USER_AGENT", "")
     secret = str(settings.SECRET_KEY).encode()
     return (
