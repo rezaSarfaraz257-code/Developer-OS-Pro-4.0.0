@@ -12,11 +12,10 @@ RUN python -m pip install --upgrade pip \
 
 COPY . .
 
-ENV DJANGO_SECRET_KEY=build-only-temporary-secret \
-    DEBUG=False
+ENV DEBUG=False ENVIRONMENT=production
 
 RUN python -m compileall -q .
-RUN python manage.py collectstatic --noinput
+RUN DJANGO_SECRET_KEY=build-only-ephemeral-secret python manage.py collectstatic --noinput
 
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/media \
