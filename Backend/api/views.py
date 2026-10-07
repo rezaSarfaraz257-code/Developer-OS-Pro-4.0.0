@@ -458,7 +458,8 @@ def register_api(request):
             NotificationPreference.objects.get_or_create(user=user)
             Subscription.objects.get_or_create(user=user, defaults={"plan": "free", "status": "active"})
             if referral_source:
-                Referral.objects.create(referrer=referral_source.user, referred=user, code=referral_source, status="pending")
+                ip_hash, ua_hash = _referral_fingerprint(request)
+                Referral.objects.create(referrer=referral_source.user, referred=user, code=referral_source, status="pending", attribution_ip_hash=ip_hash, attribution_ua_hash=ua_hash)
                 ProductEvent.objects.create(user=referral_source.user, name="referral_attributed", properties={"referred_user_id": user.id})
             ProductEvent.objects.create(user=user, name="account_created", properties={"source": "web", "referral": bool(referral_source)})
             raw = secrets.token_urlsafe(48)
@@ -506,7 +507,8 @@ def referrals_api(request):
         if existing:
             return Response({"error": "This account already has a referral attribution.", "status": existing.status}, status=409)
         try:
-            referral = Referral.objects.create(referrer=source.user, referred=request.user, code=source, status="pending")
+            ip_hash, ua_hash = _referral_fingerprint(request)
+            referral = Referral.objects.create(referrer=source.user, referred=request.user, code=source, status="pending", attribution_ip_hash=ip_hash, attribution_ua_hash=ua_hash)
         except IntegrityError:
             referral = Referral.objects.filter(referred=request.user).first()
             if referral:
@@ -2902,23 +2904,61 @@ def _referral_code_for(user):
     raise IntegrityError("Unable to allocate a unique referral code.")
 
 
+def _referral_fingerprint(request):
+    """Return privacy-preserving attribution fingerprints, never raw client data."""
+    ip = ""
+    if getattr(settings, "TRUST_PROXY_HEADERS", False):
+        ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+    if not ip:
+        ip = request.META.get("REMOTE_ADDR", "")
+    ua = request.META.get("HTTP_USER_AGENT", "")
+    secret = str(settings.SECRET_KEY).encode()
+    return (
+        hmac.new(secret, ip.encode(), hashlib.sha256).hexdigest() if ip else "",
+        hmac.new(secret, ua.encode(), hashlib.sha256).hexdigest() if ua else "",
+    )
+
+
 def _qualify_referral(user):
-    """Qualify a verified referred account and grant every tenth milestone."""
+    """Apply server-side anti-abuse gates before counting a referral milestone."""
     profile = UserProfile.objects.filter(user=user).first()
     if not profile or not profile.email_verified:
         return None
-    if not Project.objects.filter(owner=user).exists():
-        return None
+    now = timezone.now()
     with transaction.atomic():
         referral = (Referral.objects.select_for_update().select_related("referrer")
                     .filter(referred=user, status="pending").first())
         if not referral:
             return None
+
+        # Prevent the cheapest farming loop: create -> verify -> activate -> reward.
+        if user.date_joined > now - timedelta(hours=24):
+            return None
+
+        # Require genuine product activation after attribution.
+        project = Project.objects.filter(owner=user, created_at__gte=referral.attributed_at).order_by("created_at").first()
+        if not project:
+            return None
+        if not Task.objects.filter(project=project).exists() and not Note.objects.filter(project=project).exists():
+            return None
+
+        # Enforce an attribution-cluster ceiling only when trusted proxy identity
+        # is configured. Never penalize shared NATs by default.
+        if referral.attribution_ip_hash:
+            recent_same_ip = Referral.objects.filter(
+                attribution_ip_hash=referral.attribution_ip_hash,
+                attributed_at__gte=now - timedelta(days=30),
+            ).exclude(pk=referral.pk).count()
+            if recent_same_ip >= 5:
+                referral.status = "rejected"
+                referral.qualified_at = now
+                referral.save(update_fields=["status", "qualified_at"])
+                audit_security_event(referral.referrer, "referral.rejected", target_type="referral", target_id=referral.id, metadata={"reason": "attribution_cluster_limit"})
+                return referral
+
         referral.status = "rewarded"
-        referral.qualified_at = timezone.now()
+        referral.qualified_at = now
         referral.save(update_fields=["status", "qualified_at"])
-        # Serialize milestone calculation per referrer so concurrent referrals
-        # cannot race into duplicate reward creation.
         ReferralCode.objects.select_for_update().filter(user=referral.referrer).first()
         qualified_count = Referral.objects.filter(referrer=referral.referrer, status="rewarded").count()
         if qualified_count < 10 or qualified_count % 10:
@@ -2926,7 +2966,6 @@ def _qualify_referral(user):
         milestone = (qualified_count // 10) * 10
         if ReferralReward.objects.filter(user=referral.referrer, milestone=milestone).exists():
             return referral
-        now = timezone.now()
         last_reward = ReferralReward.objects.filter(user=referral.referrer, expires_at__gt=now).order_by("-expires_at").first()
         sub = Subscription.objects.filter(user=referral.referrer).first()
         starts_at = now
@@ -2940,7 +2979,6 @@ def _qualify_referral(user):
         ProductEvent.objects.create(user=referral.referrer, name="referral_reward_granted", properties={"milestone": milestone, "duration_days": 30})
         audit_security_event(referral.referrer, "referral.reward_granted", target_type="referral_reward", target_id=milestone, metadata={"milestone": milestone, "duration_days": 30})
         return referral
-
 
 def _usage_period():
     now = timezone.now()
