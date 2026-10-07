@@ -20,6 +20,9 @@ jobs:
   production-e2e:
     name: Deployed SaaS + IDE + Runner + Billing E2E
     if: ${{ secrets.PRODUCTION_BASE_URL != '' && secrets.PRODUCTION_BILLING_WEBHOOK_SECRET != '' }}
+    environment:
+      name: production
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
