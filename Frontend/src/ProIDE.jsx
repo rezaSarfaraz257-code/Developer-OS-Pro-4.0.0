@@ -22,7 +22,7 @@ function commandForFile(path, files) {
 export default function ProIDE({projectId,message}){
  const [workspaces,setWorkspaces]=useState([]),[ws,setWs]=useState(null),[files,setFiles]=useState({}),[active,setActive]=useState(""),[tabs,setTabs]=useState([]),[frameworks,setFrameworks]=useState([]),[framework,setFramework]=useState("react-vite"),[packages,setPackages]=useState(""); const [treeFilter,setTreeFilter]=useState(""),[expanded,setExpanded]=useState(new Set()),[selected,setSelected]=useState(new Set()),[symbols,setSymbols]=useState([]),[symbolQuery,setSymbolQuery]=useState(""),[commandOpen,setCommandOpen]=useState(false),[commandQuery,setCommandQuery]=useState(""),[pinned,setPinned]=useState([]),[contextMenu,setContextMenu]=useState(null);
  const [terminal,setTerminal]=useState("Developer OS Sandbox ready.\n"),[sourceControl,setSourceControl]=useState(false),[command,setCommand]=useState(""),[history,setHistory]=useState([]),[hi,setHi]=useState(-1),[dirty,setDirty]=useState(false),[saving,setSaving]=useState(false),[status,setStatus]=useState("Ready"),[showTerminal,setShowTerminal]=useState(false),[zen,setZen]=useState(false),[palette,setPalette]=useState(false),[quickOpen,setQuickOpen]=useState(false),[quick,setQuick]=useState(""),[split,setSplit]=useState(false),[secondary,setSecondary]=useState(""),[diagnostics,setDiagnostics]=useState([]),[panel,setPanel]=useState(null),[recent,setRecent]=useState([]),[activityFeed,setActivityFeed]=useState([]),[cursor,setCursor]=useState({line:1,column:1}),[presence,setPresence]=useState([]),[collabState,setCollabState]=useState("offline"),[offlineQueue,setOfflineQueue]=useState([]),[focusMode,setFocusMode]=useState(false),[layoutMode,setLayoutMode]=useState("comfortable"),[dockOpen,setDockOpen]=useState(true),[dockTab,setDockTab]=useState("terminal"),[ideCaps,setIdeCaps]=useState(null),[plan,setPlan]=useState("free");
- const filesRef=useRef(files),wsRef=useRef(ws),activeRef=useRef(active),dirtyRef=useRef(dirty),timerRef=useRef(),diagRef=useRef(); useEffect(()=>{let cancelled=false;Promise.all([apiFetch("/ide/capabilities/"),apiFetch("/usage/")]).then(async([a,b])=>{const caps=await a.json().catch(()=>null);const usage=await b.json().catch(()=>null);if(!cancelled){setIdeCaps(caps);setPlan(usage?.plan||caps?.plan||"free")}}).catch(()=>{});return()=>{cancelled=true}},[]); const [aiPanel,setAiPanel]=useState(false),[aiBusy,setAiBusy]=useState(false),[aiInput,setAiInput]=useState(""),[aiMode,setAiMode]=useState("explain"),[aiError,setAiError]=useState(""),[aiProposal,setAiProposal]=useState(null),[aiApproval,setAiApproval]=useState(null),[aiPreview,setAiPreview]=useState(false),[aiSnapshot,setAiSnapshot]=useState(null),[aiUndoBusy,setAiUndoBusy]=useState(false); const collab=useRef(null),terminalSocket=useRef(null),terminalProcess=useRef(null),collabRetry=useRef(null),terminalRetry=useRef(null),clientId=useRef(globalThis.crypto?.randomUUID?.()||Math.random().toString(36).slice(2)); const refs={files:filesRef,ws:wsRef,active:activeRef,dirty:dirtyRef,timer:timerRef,diag:diagRef};refs.files.current=files;refs.ws.current=ws;refs.active.current=active;refs.dirty.current=dirty;
+ const filesRef=useRef(files),wsRef=useRef(ws),activeRef=useRef(active),dirtyRef=useRef(dirty),timerRef=useRef(),diagRef=useRef(),executionTimerRef=useRef(null),executionRunRef=useRef(0); useEffect(()=>{let cancelled=false;Promise.all([apiFetch("/ide/capabilities/"),apiFetch("/usage/")]).then(async([a,b])=>{const caps=await a.json().catch(()=>null);const usage=await b.json().catch(()=>null);if(!cancelled){setIdeCaps(caps);setPlan(usage?.plan||caps?.plan||"free")}}).catch(()=>{});return()=>{cancelled=true}},[]); const [aiPanel,setAiPanel]=useState(false),[aiBusy,setAiBusy]=useState(false),[aiInput,setAiInput]=useState(""),[aiMode,setAiMode]=useState("explain"),[aiError,setAiError]=useState(""),[aiProposal,setAiProposal]=useState(null),[aiApproval,setAiApproval]=useState(null),[aiPreview,setAiPreview]=useState(false),[aiSnapshot,setAiSnapshot]=useState(null),[aiUndoBusy,setAiUndoBusy]=useState(false); const collab=useRef(null),terminalSocket=useRef(null),terminalProcess=useRef(null),collabRetry=useRef(null),terminalRetry=useRef(null),clientId=useRef(globalThis.crypto?.randomUUID?.()||Math.random().toString(36).slice(2)); const refs={files:filesRef,ws:wsRef,active:activeRef,dirty:dirtyRef,timer:timerRef,diag:diagRef};refs.files.current=files;refs.ws.current=ws;refs.active.current=active;refs.dirty.current=dirty;
  const save=useCallback(async(silent=false)=>{
    const w=refs.ws.current,p=refs.active.current,f=refs.files.current;
    if(!w||!p||!refs.dirty.current||saving)return true;
@@ -187,7 +187,58 @@ return()=>{try{socket?.close()}catch{}if(collabRetry.current)clearTimeout(collab
      await applyExplorerState(d,{removed:p});setStatus("Deleted");
    }catch(e){setStatus(e.message||"Delete failed")}
  }
- async function run(e){e?.preventDefault();let c=command.trim();if(!c&&active)c=commandForFile(active,refs.files.current);if(!ws||!c)return;if(refs.dirty.current)await save(true);setStatus("Running in sandbox…");setTerminal(t=>`${t}${t.endsWith("\n")?"":"\n"}$ ${c}\n`);setHistory(h=>[c,...h.filter(x=>x!==c)].slice(0,30));setHi(-1);setCommand("");try{const r=await apiFetch(`/ide/workspaces/${ws.id}/execute/`,{method:"POST",body:JSON.stringify({command:c,active_file:active,files:refs.files.current||{}})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`Execution failed (HTTP ${r.status})`);setTerminal(t=>`${t}${d.stdout||""}${d.stderr?`\n${d.stderr}`:""}\n[exit ${d.exit_code??0}] · ${d.duration_ms||0}ms\n`);if(d.files){refs.files.current=d.files;setFiles(d.files);setWs(w=>w?({...w,files:d.files}):w)}setStatus(d.status==="success"?"Command completed":"Command failed")}catch(e){setStatus(e.message||"Terminal execution failed");setTerminal(t=>`${t}${e.message||"Terminal execution failed"}\n`)}}
+ async function run(e){
+  e?.preventDefault();
+  let c=command.trim();
+  if(!c&&active)c=commandForFile(active,refs.files.current);
+  if(!ws||!c)return;
+  if(refs.dirty.current){const saved=await save(true);if(!saved)return;}
+  executionRunRef.current+=1;const runId=executionRunRef.current;
+  if(executionTimerRef.current){clearTimeout(executionTimerRef.current);executionTimerRef.current=null;}
+  setStatus("Running in sandbox…");
+  setTerminal(t=>`${t}${t.endsWith("\n")?"":"\n"}$ ${c}\n`);
+  setHistory(h=>[c,...h.filter(x=>x!==c)].slice(0,30));setHi(-1);setCommand("");
+  const started=performance.now();let cursor=0;let failures=0;
+  try{
+    const r=await apiFetch(`/ide/workspaces/${ws.id}/execute/`,{method:"POST",body:JSON.stringify({command:c,active_file:active,files:refs.files.current||{}})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(d.error||d.detail||`Execution failed (HTTP ${r.status})`);
+    if(d.files){refs.files.current=d.files;setFiles(d.files);setWs(w=>w?({...w,files:d.files}):w);}
+    const initial=[d.stdout,d.stderr].filter(Boolean).join("\n");    const terminalStatuses=["success","completed","failed","timeout","cancelled"];\n    if(d.job_id && terminalStatuses.includes(d.status)){\n      if(initial)setTerminal(t=>t+initial+"\\n");\n      const code=d.exit_code??(["success","completed"].includes(d.status)?0:-1);\n      setTerminal(t=>t+`[exit ${code}] · ${d.duration_ms??0}ms\\n`);\n      setStatus(["success","completed"].includes(d.status)?"Command completed":`Command ${d.status}`);\n      return;\n    }\n
+    if(initial)setTerminal(t=>t+initial+"\n");
+    if(d.job_id){
+      setStatus(`Job ${d.job_id.slice(0,8)} queued…`);
+      const poll=async()=>{
+        if(runId!==executionRunRef.current)return;
+        try{
+          const s=await apiFetch(`/ide/workspaces/${ws.id}/jobs/${encodeURIComponent(d.job_id)}/`);
+          const j=await s.json().catch(()=>({}));
+          if(!s.ok)throw Error(j.error||j.detail||"Job status unavailable");
+          const stream=await apiFetch(`/ide/workspaces/${ws.id}/jobs/${encodeURIComponent(d.job_id)}/stream/?cursor=${cursor}`);
+          const od=await stream.json().catch(()=>({}));
+          if(stream.ok&&od.output){setTerminal(t=>t+od.output);cursor=typeof od.cursor==="number"?od.cursor:cursor;}
+          if(["success","completed","failed","timeout","cancelled"].includes(j.status)){
+            if(j.files){refs.files.current=j.files;setFiles(j.files);setWs(w=>w?({...w,files:j.files}):w);}
+            const finalOut=[j.stdout,j.stderr].filter(Boolean).join("\n");
+            if(finalOut&&!initial)setTerminal(t=>t+finalOut+"\n");
+            const code=j.exit_code??(["success","completed"].includes(j.status)?0:-1);
+            setTerminal(t=>t+`[exit ${code}] · ${j.duration_ms??Math.round(performance.now()-started)}ms\n`);
+            setStatus(["success","completed"].includes(j.status)?"Command completed":`Command ${j.status}`);
+            executionTimerRef.current=null;return;
+          }
+          failures=0;executionTimerRef.current=setTimeout(poll,150);
+        }catch(err){
+          failures+=1;
+          if(failures>=5){executionTimerRef.current=null;setStatus(`Execution stream unavailable: ${err.message||"temporary error"}`);setTerminal(t=>t+`Execution stream unavailable: ${err.message||"temporary error"}\n`);return;}
+          executionTimerRef.current=setTimeout(poll,Math.min(2000,250*2**(failures-1)));
+        }
+      };poll();
+    }else{
+      setTerminal(t=>t+`[exit ${d.exit_code??0}] · ${d.duration_ms??Math.round(performance.now()-started)}ms\n`);
+      setStatus(d.status==="success"?"Command completed":"Command failed");
+    }
+  }catch(err){setStatus(err.message||"Terminal execution failed");setTerminal(t=>t+`${err.message||"Terminal execution failed"}\n`);}
+ }
  async function syncRepository(direction="push"){if(!ws)return;try{const r=await apiFetch("/repositories/");const repos=await r.json();const repo=repos?.[0];if(!r.ok||!repo)throw Error("Create an independent repository first.");const x=await apiFetch(`/repositories/${repo.id}/sync-workspace/`,{method:"POST",body:JSON.stringify({workspace_id:ws.id,direction})});const d=await x.json();if(!x.ok)throw Error(d.error||"Repository sync failed");setStatus(direction==="push"?"Saved to Developer OS Repository":"Loaded from Developer OS Repository")}catch(e){setStatus(e.message)}}
  async function install(){if(!ws)return;if(!packages.trim())return setStatus("Enter packages first");if(refs.dirty.current)await save(true);try{const r=await apiFetch(`/ide/workspaces/${ws.id}/install/`,{method:"POST",body:JSON.stringify({packages:packages.trim(),framework})}),d=await r.json();if(!r.ok)throw Error(d.error||"Install failed");if(d.files)setFiles(d.files);setTerminal(d.output||"Install completed\n");setStatus("Packages installed")}catch(e){setStatus(e.message)}}
  const filtered=useMemo(()=>Object.keys(files).filter(p=>p.toLowerCase().includes(quick.toLowerCase())).slice(0,40),[files,quick]);
