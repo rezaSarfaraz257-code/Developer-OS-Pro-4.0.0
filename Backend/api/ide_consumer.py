@@ -49,7 +49,11 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         return requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
 
     async def receive_json(self, content, **kwargs):
+        if not isinstance(content, dict) or len(json.dumps(content, ensure_ascii=False)) > 12000:
+            await self.send_json({"type":"error","message":"WebSocket payload too large."}); return
         action=str(content.get("action") or "")
+        if action not in {"start", "stop", "input", "ping"}:
+            await self.send_json({"type":"error","message":"Unsupported terminal action."}); return
         if action=="start":
             command=str(content.get("command") or "").strip()
             if not command or len(command)>2000:
