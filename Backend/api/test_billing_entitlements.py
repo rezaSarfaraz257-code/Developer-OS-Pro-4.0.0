@@ -73,3 +73,10 @@ class BillingEntitlementTests(TestCase):
         response = self.client.post("/api/organizations/", {"name": "Team Org"}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["plan"], "team")
+
+
+    def test_personal_billing_rejects_team_and_enterprise(self):
+        for plan, code in (("team", "organization_billing_required"), ("enterprise", "enterprise_contact_sales")):
+            response = self.client.post("/api/subscription/", {"plan": plan}, format="json")
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["code"], code)
