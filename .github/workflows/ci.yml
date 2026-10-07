@@ -114,10 +114,10 @@ jobs:
           done
           curl -fsS http://127.0.0.1:18080/health
           curl -fsS http://127.0.0.1:18080/ready -H 'Authorization: Bearer ci-runner-token'
-          curl -fsS -X POST http://127.0.0.1:18080/exec             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"ci","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python main.py"}'             | tee runner-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/exec             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python main.py"}'             | tee runner-result.json
           grep -q '"exit_code":0' runner-result.json
           grep -q '42' runner-result.json
-          curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"ci","files":{},"command":"python -c \"print(42)\""}'             | tee process-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{},"command":"python -c \"print(42)\""}'             | tee process-result.json
           grep -q '"id"' process-result.json
 
   release-gate:
