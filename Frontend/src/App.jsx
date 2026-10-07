@@ -628,9 +628,9 @@ function Audit() {
 
 function Billing() {
   const [sub,setSub]=useState(null); const [usage,setUsage]=useState(null); const [keys,setKeys]=useState([]);
-  const [newKey,setNewKey]=useState(""); const [error,setError]=useState("");
-  const load=()=>Promise.all([apiFetch("/subscription/"),apiFetch("/usage/"),apiFetch("/api-keys/")]).then(async rs=>{
-    const ds=await Promise.all(rs.map(r=>r.json()));setSub(ds[0]);setUsage(ds[1]);setKeys(ds[2]);
+  const [newKey,setNewKey]=useState(""); const [error,setError]=useState(""); const [pricing,setPricing]=useState(null);
+  const load=()=>Promise.all([apiFetch("/subscription/"),apiFetch("/usage/"),apiFetch("/api-keys/"),apiFetch("/pricing/")]).then(async rs=>{
+    const ds=await Promise.all(rs.map(r=>r.json()));setSub(ds[0]);setUsage(ds[1]);setKeys(ds[2]);setPricing(ds[3]);
   }).catch(e=>setError(e.message));
   useEffect(load,[]);
   const upgrade=async plan=>{
@@ -640,12 +640,12 @@ function Billing() {
   };
   const portal=async()=>{const r=await apiFetch("/billing/portal/",{method:"POST"});const d=await r.json();if(d.url)window.location.assign(d.url);else setError(d.error||"Portal unavailable")};
   const createKey=async()=>{const r=await apiFetch("/api-keys/",{method:"POST",body:JSON.stringify({name:"Developer OS CLI"})});const d=await r.json();if(!r.ok){setError(d.error||"Key creation failed");return;}setNewKey(d.key);load();};
-  const plans=[["free","FREE","$0","Core workspace","No credit card"],["pro","PRO","$29","Advanced individual developer","AI + IDE + automation"],["team","TEAM","$15/user","Per active seat","Collaboration + governance"],["enterprise","ENTERPRISE","$299+","Starting price","Advanced security + custom controls"]];
+  const plans=pricing?.plans ? Object.entries(pricing.plans).map(([id,p])=>[id,p.label?.toUpperCase()||id.toUpperCase(),p.monthly_usd===0?"$0":id==="team"?"$"+p.monthly_usd+"/user":"$"+p.monthly_usd+(p.starting_at?"+":""),p.billing_model==="per_seat"?"Per active seat":id==="enterprise"?"Starting price":"Core developer plan",Array.isArray(p.features)?p.features:[]]) : [];
   return <div className="page">
     <div className="hero-row"><div><div className="eyebrow">SAAS CONTROL PLANE</div><h1>Plans & Usage</h1><p>Transparent pricing, server-side entitlements, metered usage and secure billing.</p></div><div className="hero-actions"><button className="ghost" onClick={portal}>MANAGE BILLING ↗</button></div></div>
     {error&&<div className="error">{error}</div>}
     <div className="plan-grid">{plans.map(p=><div className={"plan "+(sub?.plan===p[0]?"current":"")} key={p[0]}>
-      <span>{p[1]}</span><h2>{p[2]}</h2><strong>{p[3]}</strong><p>{p[4]}</p>
+      <span>{p[1]}</span><h2>{p[2]}</h2><strong>{p[3]}</strong><p>{Array.isArray(p[4])?p[4].join(" · "):p[4]}</p>{Array.isArray(p[4])&&<ul className="plan-features">{p[4].map(feature=><li key={feature}>✓ {feature}</li>)}</ul>}
       <button className={sub?.plan===p[0]?"ghost":"primary"} onClick={()=>upgrade(p[0])}>{sub?.plan===p[0]?"ACTIVE":p[0]==="team"?"MANAGE TEAM":p[0]==="enterprise"?"REQUEST ENTERPRISE":"SELECT"}</button>
     </div>)}</div>
     <section className="panel"><div className="panel-head"><div><span className="panel-kicker">METERED USAGE</span><h2>This month</h2></div><span>{usage?.plan?.toUpperCase()||"—"}</span></div>
