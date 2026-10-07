@@ -2965,6 +2965,20 @@ def subscription_api(request):
     plan = str(request.data.get("plan") or "free").lower()
     if plan not in dict(Subscription.PLAN_CHOICES):
         return Response({"error": "Unsupported plan"}, status=400)
+    # Personal billing is intentionally limited to Free/Pro. Team is seat-metered
+    # at the organization layer, while Enterprise is negotiated/custom.
+    if plan == "team":
+        return Response({
+            "error": "Team is billed per organization seat. Open Team Control to manage seats.",
+            "code": "organization_billing_required",
+            "required_plan": "team",
+        }, status=400)
+    if plan == "enterprise":
+        return Response({
+            "error": "Enterprise uses custom billing. Contact sales to configure your organization.",
+            "code": "enterprise_contact_sales",
+            "required_plan": "enterprise",
+        }, status=400)
     if plan == "free":
         if sub.provider_subscription_id and sub.status in {"active", "trialing", "past_due"}:
             _, error = _stripe_request(f"/subscriptions/{sub.provider_subscription_id}", {"cancel_at_period_end": "true"})
