@@ -1570,3 +1570,14 @@
  .dos-workbench-strip{padding-left:9px}.dos-workbench-path{display:none}.dos-workbench-actions button{padding:0 7px}
  .dos-workbench-actions button:nth-child(2),.dos-workbench-actions button:nth-child(3){display:none}
 }
+
+/* WELCOME / EMPTY EDITOR */
+.dos-no-tab{flex:1;display:flex!important;align-items:center;justify-content:center;background:radial-gradient(circle at center,rgba(0,229,255,.055),transparent 42%)}
+.dos-welcome{width:min(620px,80%);padding:42px 34px;text-align:center;border:1px solid rgba(0,229,255,.13);border-radius:16px;background:linear-gradient(145deg,rgba(7,20,29,.9),rgba(3,10,16,.76));box-shadow:0 20px 70px rgba(0,0,0,.28),0 0 45px rgba(0,229,255,.035)}
+.dos-welcome-mark{width:54px;height:54px;margin:0 auto 18px;display:grid;place-items:center;border:1px solid rgba(0,229,255,.35);border-radius:14px;color:#7df7ff;font-size:25px;background:rgba(0,229,255,.07);box-shadow:0 0 25px rgba(0,229,255,.10)}
+.dos-welcome strong{display:block;color:#dffbff;font-size:18px;letter-spacing:.16em}
+.dos-welcome>span{display:block;margin-top:8px;color:#7895a5;font-size:12px}
+.dos-welcome-actions{display:flex;justify-content:center;gap:8px;margin:24px 0 18px;flex-wrap:wrap}
+.dos-welcome-actions button{height:34px;padding:0 14px;border:1px solid rgba(0,229,255,.20);border-radius:7px;background:#07141d;color:#bcecf3;cursor:pointer}
+.dos-welcome-actions button:hover{border-color:#00e5ff;background:rgba(0,229,255,.08);box-shadow:0 0 18px rgba(0,229,255,.08)}
+.dos-welcome small{color:#526f7d;font-size:10px}
