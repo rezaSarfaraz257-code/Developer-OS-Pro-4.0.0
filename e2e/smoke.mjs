@@ -35,6 +35,13 @@ const token = await request("/token/", {
 if (!token.access) throw new Error("Login did not return an access token.");
 
 const auth = {"Authorization": `Bearer ${token.access}`};
+const pricing = await request("/pricing/");
+if (pricing.plans?.free?.monthly_usd !== 0 || pricing.plans?.pro?.monthly_usd !== 29 || pricing.plans?.team?.monthly_usd !== 15 || pricing.plans?.enterprise?.monthly_usd !== 299) {
+  throw new Error("SaaS pricing contract failed.");
+}
+if (pricing.plans?.team?.billing_model !== "per_seat" || pricing.plans?.enterprise?.billing_model !== "custom") {
+  throw new Error("SaaS billing model contract failed.");
+}
 const project = await request("/projects/", {
   method: "POST",
   headers: auth,
