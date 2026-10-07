@@ -31,9 +31,9 @@ from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import (
     AccountDeletionRequest,
@@ -64,12 +64,56 @@ User = get_user_model()
 # ---------------------------------------------------------------------------
 
 def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return (forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR"))
+    # X-Forwarded-For is only trusted when the deployment explicitly declares
+    # a trusted reverse proxy. Otherwise it is attacker-controlled input.
+    if getattr(settings, "TRUST_PROXY_HEADERS", False):
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR") or "unknown"
 
 
 def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def revoke_user_sessions(user):
+    """Revoke tracked sessions and blacklist every outstanding refresh token."""
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+    now = timezone.now()
+    SecuritySession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now)
+    for token in OutstandingToken.objects.filter(user=user, expires_at__gt=now):
+        BlacklistedToken.objects.get_or_create(token=token)
+
+
+class MatureTokenRefreshSerializer(TokenRefreshSerializer):
+    """Bind refresh rotation to a live SecuritySession record."""
+    def validate(self, attrs):
+        raw_refresh = attrs.get("refresh")
+        try:
+            old_token = RefreshToken(raw_refresh)
+            user_id = old_token.get("user_id")
+            old_jti = str(old_token.get("jti"))
+        except Exception as exc:
+            raise serializers.ValidationError("Invalid refresh token.") from exc
+
+        session = SecuritySession.objects.filter(
+            user_id=user_id, jti=old_jti, revoked_at__isnull=True
+        ).first()
+        if session is None:
+            raise serializers.ValidationError("Refresh session is no longer active.")
+
+        data = super().validate(attrs)
+        new_refresh = data.get("refresh")
+        if new_refresh:
+            rotated = RefreshToken(new_refresh)
+            session.jti = str(rotated.get("jti"))
+            session.last_seen_at = timezone.now()
+            session.save(update_fields=["jti", "last_seen_at"])
+        else:
+            session.last_seen_at = timezone.now()
+            session.save(update_fields=["last_seen_at"])
+        return data
 
 
 def _totp(secret: str, counter: int) -> str:
@@ -215,6 +259,10 @@ class MatureTokenObtainPairView(TokenObtainPairView):
     serializer_class = MatureTokenObtainPairSerializer
 
 
+class MatureTokenRefreshView(TokenRefreshView):
+    serializer_class = MatureTokenRefreshSerializer
+
+
 # ---------------------------------------------------------------------------
 # Email verification / password recovery / account security
 # ---------------------------------------------------------------------------
@@ -286,7 +334,7 @@ def password_reset_confirm_api(request):
         return Response({"error": getattr(exc, "messages", [str(exc)])}, status=400)
     user.set_password(password)
     user.save(update_fields=["password"])
-    SecuritySession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    revoke_user_sessions(user)
     return Response({"reset": True})
 
 
@@ -303,7 +351,7 @@ def change_password_api(request):
         return Response({"error": getattr(exc, "messages", [str(exc)])}, status=400)
     request.user.set_password(new_password)
     request.user.save(update_fields=["password"])
-    SecuritySession.objects.filter(user=request.user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    revoke_user_sessions(request.user)
     return Response({"changed": True, "sessions_revoked": True})
 
 
@@ -328,12 +376,7 @@ def security_sessions_api(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def revoke_all_sessions_api(request):
-    SecuritySession.objects.filter(user=request.user, revoked_at__isnull=True).update(revoked_at=timezone.now())
-    # Blacklist all outstanding refresh tokens for the user.
-    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-    now = timezone.now()
-    for token in OutstandingToken.objects.filter(user=request.user, expires_at__gt=now):
-        BlacklistedToken.objects.get_or_create(token=token)
+    revoke_user_sessions(request.user)
     return Response({"revoked": True})
 
 
