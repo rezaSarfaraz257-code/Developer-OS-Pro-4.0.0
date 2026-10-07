@@ -62,10 +62,11 @@ class ReferralProgramTests(TestCase):
                 email_verified=True,
                 email_verified_at=timezone.now(),
             )
-            Referral.objects.create(
+                referral = Referral.objects.create(
                 referrer=self.referrer,
                 referred=referred,
                 code=code,
+                attributed_at=timezone.now() - timedelta(days=2),
             )
             project = Project.objects.create(owner=referred, title=f"Qualified Project {index}")
             Task.objects.create(project=project, title="Real task 1")
@@ -100,6 +101,7 @@ class ReferralProgramTests(TestCase):
             referrer=self.referrer,
             referred=referred,
             code=code,
+            attributed_at=timezone.now() - timedelta(days=2),
         )
         project = Project.objects.create(owner=referred, title="Qualified Once")
         Task.objects.create(project=project, title="Real task 1")
