@@ -2,6 +2,7 @@ import main
 import unittest
 import time
 import tempfile
+import os
 from unittest.mock import patch
 from pathlib import Path
 from fastapi import HTTPException
@@ -25,9 +26,18 @@ class RunnerSecurityTests(unittest.TestCase):
                 run_command(Path("/tmp"), command)
 
     def test_container_native_execution_policy_is_available_without_nested_sandbox(self):
-        with patch("main.SANDBOX_MODE", "container"), patch("main.shutil.which", return_value=None):
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.shutil.which", return_value=None):
             command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
             self.assertEqual(command[:2], ["bash", "-lc"])
+
+    def test_shared_container_mode_fails_closed_by_default(self):
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
+            with self.assertRaises(HTTPException) as ctx:
+                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+            self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_runner_token_is_not_left_in_process_environment(self):
+        self.assertNotIn("IDE_RUNNER_TOKEN", os.environ)
 
     def test_bubblewrap_mode_fails_closed_when_unavailable(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value=None):
@@ -159,7 +169,8 @@ class RunnerSecurityTests(unittest.TestCase):
 \n    def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
         root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
         (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
-        result = run_command(root, "python3 main.py")
+        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+            result = run_command(root, "python3 main.py")
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["exit_code"], 0)
         self.assertEqual(result["stdout"].strip(), "runner-source-ok")
@@ -184,7 +195,8 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_interactive_process_input_and_stop_contract(self):
         import main
         root = Path(tempfile.mkdtemp(prefix="developer-os-process-"))
-        process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
+        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+            process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
         try:
             with main.PROCESS_LOCK:
                 proc = main.PROCESSES[process_id]["popen"]
