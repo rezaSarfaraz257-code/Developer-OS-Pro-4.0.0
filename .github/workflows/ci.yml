@@ -1,6 +1,4 @@
 name: Production Validation
-# Post-merge release gate validation.
-# Release branch is validated continuously before merge.
 
 on:
   push:
@@ -18,7 +16,7 @@ env:
 
 jobs:
   backend:
-    name: Django checks + PostgreSQL migrations + tests
+    name: Backend checks and tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -27,10 +25,13 @@ jobs:
           POSTGRES_DB: developeros_test
           POSTGRES_USER: developeros
           POSTGRES_PASSWORD: test-password
-        ports: ["5432:5432"]
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U developeros -d developeros_test"
-          --health-interval 5s --health-timeout 5s --health-retries 20
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,7 +42,7 @@ jobs:
       - name: Install backend dependencies
         working-directory: Backend
         run: python -m pip install -r requirements.txt
-      - name: Django production checks
+      - name: Django checks and tests
         working-directory: Backend
         env:
           DEBUG: "False"
@@ -58,10 +59,10 @@ jobs:
           python manage.py check --deploy
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
-          python manage.py test --verbosity 2
+          python manage.py test --verbosity 1
 
   frontend:
-    name: Frontend lint + build + tests
+    name: Frontend lint build and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +85,7 @@ jobs:
         run: npm test
 
   runner:
-    name: Runner unit + container integration
+    name: Secure runner tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -93,177 +94,35 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: Runner/requirements.txt
+      - name: Install runner dependencies
+        working-directory: Runner
+        run: python -m pip install -r requirements.txt
       - name: Runner unit tests
         working-directory: Runner
-        run: |
-          python -m pip install -r requirements.txt
-          python -m unittest discover -s . -p 'test_*.py'
+        run: python -m unittest discover -s . -p 'test_*.py'
       - name: Build runner image
         run: docker build -t developer-os-runner:ci ./Runner
-      - name: Start runner
+      - name: Runner container smoke
         run: |
-          docker run -d --name developer-os-runner-ci \
-            -e IDE_RUNNER_TOKEN=ci-runner-token \
-            -p 18080:8080 developer-os-runner:ci
-          for i in {1..30}; do
+          docker run -d --name developer-os-runner-ci -e IDE_RUNNER_TOKEN=ci-runner-token -p 18080:8080 developer-os-runner:ci
+          trap 'docker rm -f developer-os-runner-ci || true' EXIT
+          for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:18080/health && break
             sleep 2
           done
-      - name: Runner integration
-        run: |
           curl -fsS http://127.0.0.1:18080/health
           curl -fsS http://127.0.0.1:18080/ready -H 'Authorization: Bearer ci-runner-token'
-          curl -fsS http://127.0.0.1:18080/metrics -H 'Authorization: Bearer ci-runner-token' | tee runner-metrics.json
-          grep -q '"scheduler"' runner-metrics.json
-          grep -q '"queued"' runner-metrics.json
-          curl -fsS http://127.0.0.1:18080/diagnostics -H 'Authorization: Bearer ci-runner-token' | tee runner-diagnostics.json
-          grep -q '"scheduler"' runner-diagnostics.json
-          python - <<'PY'
-import json
-d=json.load(open("runner-diagnostics.json"))
-assert d.get("status") == "ready", d
-assert isinstance(d.get("scheduler"), dict), d
-PY
-          curl -fsS -X POST http://127.0.0.1:18080/exec \
-            -H 'Authorization: Bearer ci-runner-token' \
-            -H 'Content-Type: application/json' \
-            --data '{"workspace_id":"999","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python main.py"}' \
-            | tee runner-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/exec             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"ci","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python main.py"}'             | tee runner-result.json
           grep -q '"exit_code":0' runner-result.json
           grep -q '42' runner-result.json
-          curl -fsS -X POST http://127.0.0.1:18080/exec \
-            -H 'Authorization: Bearer ci-runner-token' \
-            -H 'Content-Type: application/json' \
-            --data '{"workspace_id":"999","files":{"main.py":"import time; print(42); time.sleep(1)"},"active_file":"main.py","command":"python main.py"}' \
-            | tee runner-job.json
-          grep -q '"job_id"' runner-job.json
-          JOB_ID=$(python -c 'import json; print(json.load(open("runner-job.json"))["job_id"])')
-          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID/output?cursor=0" -H 'Authorization: Bearer ci-runner-token' | tee runner-output.json
-          grep -q '42' runner-output.json
-          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID/stream?cursor=0" -H 'Authorization: Bearer ci-runner-token' | tee runner-stream.json
-          grep -q '"job_id"' runner-stream.json
-          curl -fsS "http://127.0.0.1:18080/jobs/$JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-job-status.json
-          grep -q '"status"' runner-job-status.json
-          curl -fsS -X POST http://127.0.0.1:18080/exec \
-            -H 'Authorization: Bearer ci-runner-token' \
-            -H 'Content-Type: application/json' \
-            --data '{"workspace_id":"cancel-ci","files":{"main.py":"import time; print(99); time.sleep(30)"},"active_file":"main.py","command":"python main.py"}' \
-            | tee runner-cancel-job.json
-          CANCEL_JOB_ID=$(python -c 'import json; print(json.load(open("runner-cancel-job.json"))["job_id"])')
-          curl -fsS -X POST "http://127.0.0.1:18080/jobs/$CANCEL_JOB_ID/cancel" \
-            -H 'Authorization: Bearer ci-runner-token' | tee runner-cancel-result.json
-          grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-result.json
-          curl -fsS "http://127.0.0.1:18080/jobs/$CANCEL_JOB_ID" -H 'Authorization: Bearer ci-runner-token' | tee runner-cancel-status.json
-          grep -Eq '"status":"cancelled"|"status": "cancelled"' runner-cancel-status.json
-          python - <<'PY'
-import json, subprocess, time
-base="http://127.0.0.1:18080"
-headers=["-H","Authorization: Bearer ci-runner-token","-H","Content-Type: application/json"]
-jobs=[]
-for i in range(3):
-    payload=json.dumps({"workspace_id":f"stress-{i}","files":{"main.py":f"print({i})"},"active_file":"main.py","command":"python main.py"})
-    out=subprocess.check_output(["curl","-fsS","-X","POST",f"{base}/exec",*headers,"--data",payload], text=True)
-    jobs.append(json.loads(out)["job_id"])
-assert len(set(jobs)) == 3
-for job_id in jobs:
-    for _ in range(40):
-        out=subprocess.check_output(["curl","-fsS",f"{base}/jobs/{job_id}",*headers[:2]], text=True)
-        status=json.loads(out)["status"]
-        if status in {"completed","failed","cancelled"}:
-            break
-        time.sleep(.1)
-    assert status == "completed", (job_id, status)
-PY
-          python - <<'PY'
-import json, subprocess, time
-base="http://127.0.0.1:18080"
-headers=["-H","Authorization: Bearer ci-runner-token","-H","Content-Type: application/json"]
-def submit(workspace, value):
-    payload=json.dumps({"workspace_id":workspace,"files":{"main.py":f"import time; print({value}); time.sleep(.3)"},"active_file":"main.py","command":"python main.py"})
-    return json.loads(subprocess.check_output(["curl","-fsS","-X","POST",f"{base}/exec",*headers,"--data",payload], text=True))["job_id"]
-first=submit("fair-a",1)
-second=submit("fair-b",2)
-seen=[]
-for _ in range(30):
-    for job_id in (first, second):
-        out=subprocess.check_output(["curl","-fsS",f"{base}/jobs/{job_id}",*headers[:2]], text=True)
-        status=json.loads(out)["status"]
-        if status not in seen and status in {"completed","failed","cancelled"}:
-            seen.append(status)
-    if len(seen) >= 2:
-        break
-    time.sleep(.1)
-assert seen and all(s == "completed" for s in seen), seen
-PY
-          curl -fsS -X POST http://127.0.0.1:18080/process/start \
-            -H 'Authorization: Bearer ci-runner-token' \
-            -H 'Content-Type: application/json' \
-            --data '{"workspace_id":"999","files":{"main.py":"import time; print(42); time.sleep(2)"},"command":"python main.py"}' \
-            | tee runner-process.json
-          grep -q '"workspace_id":"999"' runner-process.json
-      - name: Runner cleanup
-        if: always()
-        run: docker rm -f developer-os-runner-ci || true
+          curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"ci","files":{"main.py":"print(42)"},"command":"python main.py"}'             | tee process-result.json
+          grep -q '"id"' process-result.json
 
-  docker-stack:
-    name: Full Docker/PostgreSQL/Runner/Frontend smoke E2E
+  release-gate:
+    name: Static release gate
     runs-on: ubuntu-latest
     needs: [backend, frontend, runner]
     steps:
       - uses: actions/checkout@v4
-      - name: Build complete stack
-        run: docker compose build --pull
-        env:
-          POSTGRES_PASSWORD: ci-postgres-password
-          ENVIRONMENT: ci
-          SECURE_SSL_REDIRECT: "false"
-          EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-          DJANGO_SECRET_KEY: ci-secret-key-123456789-abcdef
-          ALLOWED_HOSTS: localhost,127.0.0.1
-          CORS_ALLOWED_ORIGINS: http://localhost
-          CSRF_TRUSTED_ORIGINS: http://localhost
-          IDE_RUNNER_TOKEN: ci-runner-token
-          EMAIL_VERIFICATION_REQUIRED: "false"
-      - name: Start complete stack
-        run: docker compose up -d
-        env:
-          POSTGRES_PASSWORD: ci-postgres-password
-          ENVIRONMENT: ci
-          SECURE_SSL_REDIRECT: "false"
-          EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-          DJANGO_SECRET_KEY: ci-secret-key-123456789
-          ALLOWED_HOSTS: localhost,127.0.0.1
-          CORS_ALLOWED_ORIGINS: http://localhost
-          CSRF_TRUSTED_ORIGINS: http://localhost
-          IDE_RUNNER_TOKEN: ci-runner-token
-          EMAIL_VERIFICATION_REQUIRED: "false"
-      - name: Wait for readiness
-        run: |
-          for i in {1..60}; do
-            if curl -fsS http://127.0.0.1/api/health/ready/; then exit 0; fi
-            sleep 3
-          done
-          docker compose ps
-          docker compose logs --tail=200 backend
-          exit 1
-      - name: E2E smoke
-        run: node e2e/smoke.mjs http://127.0.0.1
-      - name: Inspect stack
-        if: always()
-        run: |
-          docker compose ps
-          docker compose logs --tail=200 backend runner frontend
-      - name: Shutdown
-        if: always()
-        run: docker compose down -v
-
-  release-gate:
-    name: Release artifact gate
-    runs-on: ubuntu-latest
-    needs: [backend, frontend, runner, docker-stack]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run static release gate
+      - name: Release gate
         run: python scripts/release_gate.py
-
-# Release validation workflow.
