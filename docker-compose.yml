@@ -51,6 +51,9 @@ services:
       AI_MODEL: ${AI_MODEL:-gpt-5.6-luna}
       IDE_RUNNER_URL: ${IDE_RUNNER_URL:-http://runner:8080}
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
+      RUNNER_SANDBOX_MODE: ${RUNNER_SANDBOX_MODE:-container}
+      RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}
+      RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-768}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
