@@ -526,7 +526,7 @@ def referrals_api(request):
         "remaining": max(0, next_milestone - qualified),
         "milestone_size": 10,
         "reward": {"plan": "pro", "duration_days": 30},
-        "referrals": list(Referral.objects.filter(referrer=request.user).select_related("referred").order_by("-created_at").values("id", "status", "qualified_at", "created_at", "referred__username")[:100]),
+        "referrals": list(Referral.objects.filter(referrer=request.user).order_by("-created_at").values("id", "status", "qualified_at", "created_at")[:100]),
         "rewards": list(rewards.values("milestone", "plan", "duration_days", "starts_at", "expires_at")[:50]),
     })
 
@@ -2917,6 +2917,9 @@ def _qualify_referral(user):
         referral.status = "rewarded"
         referral.qualified_at = timezone.now()
         referral.save(update_fields=["status", "qualified_at"])
+        # Serialize milestone calculation per referrer so concurrent referrals
+        # cannot race into duplicate reward creation.
+        ReferralCode.objects.select_for_update().filter(user=referral.referrer).first()
         qualified_count = Referral.objects.filter(referrer=referral.referrer, status="rewarded").count()
         if qualified_count < 10 or qualified_count % 10:
             return referral
