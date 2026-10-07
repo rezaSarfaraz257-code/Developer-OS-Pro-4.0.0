@@ -471,11 +471,12 @@ def snapshot(root):
             continue
     return out
 
-def _limit_process_resources():
+def _limit_process_resources(timeout_seconds=None, memory_mb=None):
     '''Apply per-execution POSIX limits before untrusted code starts.'''
-    resource.setrlimit(resource.RLIMIT_CPU, (TIMEOUT, TIMEOUT + 2))
-    memory_mb = max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768"))))
-    resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024 * 1024, memory_mb * 1024 * 1024))
+    effective_timeout = min(TIMEOUT, int(timeout_seconds or TIMEOUT))
+    effective_memory = max(128, min(2048, int(memory_mb or RUNNER_MEMORY_MB)))
+    resource.setrlimit(resource.RLIMIT_CPU, (effective_timeout, effective_timeout + 2))
+    resource.setrlimit(resource.RLIMIT_AS, (effective_memory * 1024 * 1024, effective_memory * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_WORKSPACE_BYTES, MAX_WORKSPACE_BYTES))
     resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
     resource.setrlimit(resource.RLIMIT_NPROC, (128, 128))
