@@ -105,10 +105,9 @@ GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
 GITHUB_OAUTH_SCOPE = os.environ.get("GITHUB_OAUTH_SCOPE", "read:user user:email repo")
 
-GITHUB_OAUTH_REDIRECT = os.environ.get(
-    "GITHUB_OAUTH_REDIRECT",
-    "http://127.0.0.1:8000/api/github/callback/"
-)
+GITHUB_OAUTH_REDIRECT = getattr(
+    settings, "GITHUB_OAUTH_REDIRECT", ""
+) or os.environ.get("GITHUB_OAUTH_REDIRECT", "")
 
 FRONTEND_URL = os.environ.get(
     "FRONTEND_URL",
@@ -977,8 +976,8 @@ def snippet_detail_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def github_authorize(request):
-    github_client_id = getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID or "test-client"
-    github_client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET or "test-secret"
+    github_client_id = getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID
+    github_client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET
     if not github_client_id:
         return Response(
             {
@@ -3507,16 +3506,25 @@ def organization_invites_api(request, pk):
             seat_limit = max(seat_limit, 1)
         if member_count >= seat_limit:
             return Response({"error": "Your organization plan has reached its member limit.", "limit": seat_limit}, status=403)
-        invite = OrganizationInvite.objects.create(organization=org, inviter=request.user, email=email, role=role, token=secrets.token_urlsafe(48), expires_at=timezone.now()+timedelta(days=7))
+        raw_token = secrets.token_urlsafe(48)
+    invite = OrganizationInvite.objects.create(
+        organization=org, inviter=request.user, email=email, role=role,
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        expires_at=timezone.now()+timedelta(days=7),
+    )
     _audit(request.user, "organization.invite_created", "invite", invite.id, organization=org, metadata={"email": email, "role": role})
-    return Response({"id": invite.id, "email": invite.email, "role": invite.role, "expires_at": invite.expires_at, "token": invite.token}, status=201)
+    return Response({"id": invite.id, "email": invite.email, "role": invite.role, "expires_at": invite.expires_at, "token": raw_token}, status=201)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def organization_invite_accept_api(request):
     token = str(request.data.get("token") or "").strip()
-    invite = get_object_or_404(OrganizationInvite.objects.select_related("organization"), token=token, accepted_at__isnull=True)
+    invite = get_object_or_404(
+        OrganizationInvite.objects.select_related("organization"),
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        accepted_at__isnull=True,
+    )
     if invite.expires_at <= timezone.now():
         return Response({"error": "This invitation has expired."}, status=400)
     if request.user.email.lower() != invite.email.lower():

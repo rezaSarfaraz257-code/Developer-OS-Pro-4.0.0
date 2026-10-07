@@ -82,6 +82,13 @@ if IS_PRODUCTION and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBa
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 GITHUB_TOKEN_ENCRYPTION_KEY = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
+GITHUB_OAUTH_REDIRECT = os.getenv("GITHUB_OAUTH_REDIRECT", f"{FRONTEND_URL}/api/github/callback/").strip()
+if IS_PRODUCTION and GITHUB_OAUTH_REDIRECT:
+    _oauth_redirect = urlparse(GITHUB_OAUTH_REDIRECT)
+    if _oauth_redirect.scheme != "https" or not _oauth_redirect.netloc:
+        raise ImproperlyConfigured("Production GITHUB_OAUTH_REDIRECT must be an absolute HTTPS URL.")
+if IS_PRODUCTION and bool(GITHUB_CLIENT_ID) != bool(GITHUB_CLIENT_SECRET):
+    raise ImproperlyConfigured("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be configured together.")
 
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
@@ -152,10 +159,17 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", ",".join([FRONTEND_URL, "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]))
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", FRONTEND_URL if FRONTEND_URL.startswith(("http://", "https://")) else "")
 if IS_PRODUCTION:
-    if not CORS_ALLOWED_ORIGINS or any(urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"} for origin in CORS_ALLOWED_ORIGINS):
-        raise ImproperlyConfigured("Production CORS_ALLOWED_ORIGINS must contain only real trusted origins.")
-    if not CSRF_TRUSTED_ORIGINS or any(urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"} for origin in CSRF_TRUSTED_ORIGINS):
-        raise ImproperlyConfigured("Production CSRF_TRUSTED_ORIGINS must contain only real trusted origins.")
+    def _validate_production_origins(name, origins):
+        if not origins:
+            raise ImproperlyConfigured(f"Production {name} must contain explicit trusted origins.")
+        for origin in origins:
+            parsed = urlparse(origin)
+            if origin == "*" or parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.path not in {"", "/"}:
+                raise ImproperlyConfigured(f"Production {name} contains an unsafe origin: {origin!r}.")
+            if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+                raise ImproperlyConfigured(f"Production {name} cannot contain loopback hosts.")
+    _validate_production_origins("CORS_ALLOWED_ORIGINS", CORS_ALLOWED_ORIGINS)
+    _validate_production_origins("CSRF_TRUSTED_ORIGINS", CSRF_TRUSTED_ORIGINS)
 CORS_ALLOW_CREDENTIALS = False
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"

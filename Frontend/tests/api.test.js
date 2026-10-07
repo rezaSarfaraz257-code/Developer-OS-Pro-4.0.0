@@ -27,3 +27,10 @@ test("API errors include HTTP status for operator diagnostics", async () => {
   const source = await import("../src/services/api.js");
   assert.equal(source.formatApiError({ error: { message: "AI unavailable" } }), "AI unavailable");
 });
+
+
+test("API client defaults to same-origin instead of a hard-coded Render backend", async () => {
+  const source = await import("../src/services/api.js");
+  assert.equal(source.API_URL, "/api");
+  assert.equal(source.API_URL.includes("onrender.com"), false);
+});

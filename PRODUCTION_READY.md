@@ -39,6 +39,10 @@ For external AI, set `AI_API_URL`, `AI_API_KEY`, and `AI_MODEL`. These values ar
 5. If GitHub is enabled, set the OAuth callback to `/api/github/callback/` on the production API domain.
 6. If using an external AI provider, test the AI Assistant page and verify the provider mode is returned.
 
+## Frontend/backend routing hardening
+
+The browser now defaults to the same-origin `/api` boundary. The Nginx image receives `BACKEND_URL` at runtime instead of embedding a stale Render hostname. For a split Render deployment, set the frontend service variable `BACKEND_URL` to the backend service HTTPS origin without a trailing slash.
+
 ## Important hosting note
 
 TLS should terminate at the public reverse proxy/load balancer. The included Django settings trust `X-Forwarded-Proto` and enable HTTPS security controls when `DEBUG=False`.
