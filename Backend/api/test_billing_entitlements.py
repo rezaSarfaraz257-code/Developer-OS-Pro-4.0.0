@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Organization, OrganizationMembership, OrganizationSubscription
+from .models import Organization, OrganizationMembership, OrganizationSubscription, Subscription
 from .views import PLAN_FEATURES, PLAN_LIMITS, _plan_for
 
 User = get_user_model()
@@ -16,6 +16,7 @@ class BillingEntitlementTests(TestCase):
             email="billing@example.com",
             password="StrongPass123!",
         )
+        Subscription.objects.create(user=self.user, plan="free", status="active")
         self.client.force_authenticate(self.user)
 
     def test_public_pricing_contract(self):
