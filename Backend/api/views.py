@@ -2840,12 +2840,7 @@ STRIPE_PLANS = {
     "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE", ""),
 }
 
-PRODUCT_PRICING = {
-    "free": {"monthly_usd": 0, "billing_model": "free"},
-    "pro": {"monthly_usd": 29, "billing_model": "per_user"},
-    "team": {"monthly_usd": 15, "billing_model": "per_seat", "minimum_seats": 1},
-    "enterprise": {"monthly_usd": 299, "billing_model": "custom", "starting_at": True},
-}
+PRODUCT_PRICING = PLAN_CATALOG
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
@@ -2855,6 +2850,7 @@ def pricing_api(request):
         "currency": "USD",
         "plans": PRODUCT_PRICING,
         "stripe_configured": {plan: bool(STRIPE_PLANS.get(plan)) for plan in ("pro", "team", "enterprise")},
+        "entitlements": PLAN_LIMITS,
     })
 
 
