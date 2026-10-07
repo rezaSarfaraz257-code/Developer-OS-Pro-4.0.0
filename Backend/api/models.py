@@ -512,6 +512,7 @@ class Referral(models.Model):
         ("pending", "Pending"),
         ("rewarded", "Rewarded"),
         ("rejected", "Rejected"),
+        ("review", "Review"),
     ]
     referrer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="referrals_sent")
     referred = models.OneToOneField(User, on_delete=models.CASCADE, related_name="referral_received")
@@ -520,6 +521,9 @@ class Referral(models.Model):
     attributed_at = models.DateTimeField(auto_now_add=True)
     attribution_ip_hash = models.CharField(max_length=128, blank=True, default="")
     attribution_ua_hash = models.CharField(max_length=128, blank=True, default="")
+    risk_score = models.PositiveSmallIntegerField(default=0)
+    risk_reason = models.CharField(max_length=120, blank=True, default="")
+    last_checked_at = models.DateTimeField(null=True, blank=True)
     qualified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
