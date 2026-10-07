@@ -80,7 +80,7 @@ function Shell({ user, onLogout, children, go, current }) {
           const teamLocked = id === "team" && !["team","enterprise"].includes(plan);
           const auditLocked = id === "audit" && !["team","enterprise"].includes(plan);
           const locked = teamLocked || auditLocked;
-          return <button key={id} title={locked ? `${label} — Team or Enterprise` : label} aria-label={label} className={`rail-item ${current === id ? "active" : ""} ${locked ? "locked" : ""}`} onClick={() => go(`/${id}`)}>
+          return <button key={id} title={locked ? `${label} — Team or Enterprise` : label} aria-label={label} className={`rail-item ${current === id ? "active" : ""} ${locked ? "locked" : ""}`} onClick={() => go(locked ? "/billing" : `/${id}`)}>
             <span>{icon}</span><em>{label}{locked ? " · PRO" : ""}</em>
           </button>;
         })}
