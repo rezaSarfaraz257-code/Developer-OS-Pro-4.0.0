@@ -27,3 +27,15 @@ def test_main_exposes_validation_surfaces():
 def test_dependency_contract_has_debug_adapter():
     requirements=(ROOT / "requirements.txt").read_text(encoding="utf-8")
     assert "debugpy==" in requirements
+
+
+def test_entitlement_tiers_are_explicit_and_monotonic():
+    source=(ROOT / "main.py").read_text(encoding="utf-8")
+    for tier in ["free", "pro", "team", "enterprise"]:
+        assert f'"{tier}":' in source
+    assert "max_processes" in source and "memory_mb" in source and "timeout" in source
+
+def test_container_sandbox_policy_is_explicit():
+    source=(ROOT / "main.py").read_text(encoding="utf-8")
+    assert 'SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "container")' in source
+    assert 'if SANDBOX_MODE == "container"' in source
