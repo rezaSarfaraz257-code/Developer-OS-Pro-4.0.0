@@ -46,8 +46,8 @@ export function RunCenter({workspace,files,activeFile,onClose}) {
     // The runner may complete synchronously. In that case the response already
     // contains the authoritative output and there is no reason to wait for a
     // second status/stream cycle.
-    if(["completed","failed","cancelled"].includes(d.status)){
-      setExitCode(d.exit_code??(d.status==="completed"?0:-1));
+    if(["success","completed","failed","timeout","cancelled"].includes(d.status)){
+      setExitCode(d.exit_code??(["success","completed"].includes(d.status)?0:-1));
       setDuration(d.duration_ms??Math.round(performance.now()-started));
       setRunning(false);setJobId(null);return;
     }
