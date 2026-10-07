@@ -82,7 +82,7 @@ if IS_PRODUCTION and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBa
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 GITHUB_TOKEN_ENCRYPTION_KEY = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
-GITHUB_OAUTH_REDIRECT = os.getenv("GITHUB_OAUTH_REDIRECT", "").strip()
+GITHUB_OAUTH_REDIRECT = os.getenv("GITHUB_OAUTH_REDIRECT", f"{FRONTEND_URL}/api/github/callback/").strip()
 if IS_PRODUCTION and GITHUB_OAUTH_REDIRECT:
     _oauth_redirect = urlparse(GITHUB_OAUTH_REDIRECT)
     if _oauth_redirect.scheme != "https" or not _oauth_redirect.netloc:
