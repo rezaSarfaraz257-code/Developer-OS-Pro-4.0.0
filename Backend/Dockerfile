@@ -12,7 +12,7 @@ RUN python -m pip install --upgrade pip \
 
 COPY . .
 
-ENV DEBUG=False ENVIRONMENT=production
+ENV DEBUG=False
 
 RUN python -m compileall -q .
 RUN DJANGO_SECRET_KEY=build-only-ephemeral-secret python manage.py collectstatic --noinput
