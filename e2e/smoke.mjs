@@ -92,9 +92,10 @@ const execute = await request(`/ide/workspaces/${workspace.id}/execute/`, {
   headers: auth,
   body: JSON.stringify({
     command: "python main.py",
+    active_file: "main.py",
   }),
 });
-if (execute.status !== "success" || execute.exit_code !== 0 || !String(execute.stdout || "").includes("42")) {
+if (execute.command !== "python main.py" || execute.active_file !== "main.py" || execute.status !== "success" || execute.exit_code !== 0 || String(execute.stdout || "").trim() !== "42") {
   throw new Error("IDE execute E2E failed.");
 }
 
