@@ -75,9 +75,15 @@ class ReferralProgramTests(TestCase):
             Task.objects.create(project=project, title="Real task 2")
             referred.date_joined = timezone.now() - timedelta(hours=73)
             referred.save(update_fields=["date_joined"])
-            Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=3))
-            Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=2))
-            Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now() - timedelta(days=1))
+            activities = [
+                Activity.objects.create(actor=referred, verb="worked", message="day 1"),
+                Activity.objects.create(actor=referred, verb="worked", message="day 2"),
+                Activity.objects.create(actor=referred, verb="worked", message="day 3"),
+            ]
+            for activity, days_ago in zip(activities, (3, 2, 1)):
+                Activity.objects.filter(pk=activity.pk).update(
+                    created_at=timezone.now() - timedelta(days=days_ago)
+                )
             for event_index in range(3):
                 ProductEvent.objects.create(user=referred, name=f"referral-test-event-{index}-{event_index}", properties={})
             _qualify_referral(referred)
@@ -114,9 +120,15 @@ class ReferralProgramTests(TestCase):
         Task.objects.create(project=project, title="Real task 2")
         referred.date_joined = timezone.now() - timedelta(hours=73)
         referred.save(update_fields=["date_joined"])
-        Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=3))
-        Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=2))
-        Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now() - timedelta(days=1))
+        activities = [
+            Activity.objects.create(actor=referred, verb="worked", message="day 1"),
+            Activity.objects.create(actor=referred, verb="worked", message="day 2"),
+            Activity.objects.create(actor=referred, verb="worked", message="day 3"),
+        ]
+        for activity, days_ago in zip(activities, (3, 2, 1)):
+            Activity.objects.filter(pk=activity.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago)
+            )
         for event_index in range(3):
             ProductEvent.objects.create(user=referred, name=f"referral-once-event-{event_index}", properties={})
         for _ in range(2):
