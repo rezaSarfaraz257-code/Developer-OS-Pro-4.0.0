@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task, Activity
+from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task, Activity, ProductEvent
 from .views import _plan_for, _qualify_referral
 
 
@@ -78,6 +78,8 @@ class ReferralProgramTests(TestCase):
             Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=2))
             Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=1))
             Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now())
+            for event_index in range(3):
+                ProductEvent.objects.create(user=referred, name=f"referral-test-event-{index}-{event_index}", properties={})
             _qualify_referral(referred)
 
         reward = ReferralReward.objects.get(user=self.referrer, milestone=10)
@@ -115,6 +117,8 @@ class ReferralProgramTests(TestCase):
         Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=2))
         Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=1))
         Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now())
+        for event_index in range(3):
+            ProductEvent.objects.create(user=referred, name=f"referral-once-event-{event_index}", properties={})
         for _ in range(2):
             _qualify_referral(referred)
         self.assertEqual(Referral.objects.filter(pk=referral.pk, status="rewarded").count(), 1)
