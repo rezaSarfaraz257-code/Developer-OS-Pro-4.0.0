@@ -2772,20 +2772,28 @@ PLAN_FEATURES = {
 
 PLAN_CATALOG = {
     "free": {
-        "monthly_usd": 0, "billing_model": "free", "label": "Free",
-        "features": ["Core workspace", "30 IDE runs/month", "50 AI messages/month", "3 workspaces", "5 projects"],
+        "monthly_usd": 0, "annual_usd": 0, "billing_model": "free",
+        "label": "Free", "audience": "Solo developers getting started",
+        "recommended": False, "annual_savings_months": 0,
+        "features": ["Core Web IDE", "30 IDE runs/month", "50 AI messages/month", "3 workspaces", "5 projects"],
     },
     "pro": {
-        "monthly_usd": 29, "billing_model": "per_user", "label": "Pro",
+        "monthly_usd": 29, "annual_usd": 290, "billing_model": "per_user",
+        "label": "Pro", "audience": "Serious individual developers",
+        "recommended": True, "annual_savings_months": 2,
         "features": ["Advanced Web IDE", "500 IDE runs/month", "1,000 AI messages/month", "25 workspaces", "50 projects", "10 API keys"],
     },
     "team": {
-        "monthly_usd": 15, "billing_model": "per_seat", "minimum_seats": 1, "label": "Team",
-        "features": ["Everything in Pro", "Shared workspaces", "2,500 IDE runs/month per member", "5,000 AI messages/month per member", "50 members/seat capacity", "Governance & audit log"],
+        "monthly_usd": 15, "annual_usd": 150, "billing_model": "per_seat",
+        "minimum_seats": 1, "label": "Team", "audience": "Teams building together",
+        "recommended": False, "annual_savings_months": 2,
+        "features": ["Everything in Pro", "Shared workspaces", "2,500 IDE runs/month per member", "5,000 AI messages/month per member", "Up to 50 members", "Governance & audit log"],
     },
     "enterprise": {
-        "monthly_usd": 299, "billing_model": "custom", "starting_at": True, "label": "Enterprise",
-        "features": ["Everything in Team", "20,000 IDE runs/month per member", "50,000 AI messages/month per member", "500 members/seat capacity", "Advanced governance", "Custom security & support"],
+        "monthly_usd": 299, "billing_model": "custom",
+        "starting_at": True, "label": "Enterprise", "audience": "Organizations with advanced control requirements",
+        "recommended": False, "annual_savings_months": None,
+        "features": ["Everything in Team", "20,000 IDE runs/month per member", "50,000 AI messages/month per member", "Up to 500 members", "Advanced governance", "Custom security & support"],
     },
 }
 
