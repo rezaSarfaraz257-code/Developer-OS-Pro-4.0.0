@@ -516,7 +516,7 @@ def organization_billing_checkout_api(request, pk):
                 item_id = items[0].get("id")
                 update = {
                     "items[0][id]": item_id, "items[0][price]": price, "items[0][quantity]": str(quantity),
-                    "proration_behavior": "create_prorations", "metadata[organization_id]": str(org.id), "metadata[plan]": plan,
+                    "proration_behavior": "create_prorations", "metadata[organization_id]": str(org.id), "metadata[plan]": plan, "metadata[billing_cycle]": billing_cycle,
                 }
                 changed = requests.post(f"https://api.stripe.com/v1/subscriptions/{sub.provider_subscription_id}", auth=(secret, ""), data=update, timeout=(3.05, 20))
                 if changed.ok:
@@ -534,7 +534,7 @@ def organization_billing_checkout_api(request, pk):
         "line_items[0][quantity]": str(quantity), "success_url": f"{settings.FRONTEND_URL}/billing?organization={org.id}&checkout=success",
         "cancel_url": f"{settings.FRONTEND_URL}/billing?organization={org.id}&checkout=cancel",
         "metadata[organization_id]": str(org.id), "metadata[plan]": plan,
-        "subscription_data[metadata][organization_id]": str(org.id), "subscription_data[metadata][plan]": plan,
+        "subscription_data[metadata][organization_id]": str(org.id), "subscription_data[metadata][plan]": plan, "subscription_data[metadata][billing_cycle]": billing_cycle,
         "subscription_data[metadata][owner_id]": str(org.owner_id),
     }
     r = requests.post("https://api.stripe.com/v1/checkout/sessions", auth=(secret, ""), data=checkout_data, timeout=(3.05, 20))
