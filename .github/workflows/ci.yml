@@ -101,12 +101,13 @@ jobs:
         working-directory: Runner
         env:
           RUNNER_ROOT: /tmp/developer-os-runner-workspaces
+          RUNNER_SECURITY_LEVEL: compat
         run: python3 -m unittest discover -s . -p 'test_*.py'
       - name: Build runner image
         run: docker build -t developer-os-runner:ci ./Runner
       - name: Runner container smoke
         run: |
-          docker run -d --name developer-os-runner-ci -e IDE_RUNNER_TOKEN=ci-runner-token -p 18080:8080 developer-os-runner:ci
+          docker run -d --name developer-os-runner-ci -e IDE_RUNNER_TOKEN=ci-runner-token -e RUNNER_SECURITY_LEVEL=compat -p 18080:8080 developer-os-runner:ci
           trap 'docker rm -f developer-os-runner-ci || true' EXIT
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:18080/health && break
