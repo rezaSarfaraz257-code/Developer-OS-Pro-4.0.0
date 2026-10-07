@@ -50,8 +50,19 @@ assert(ready.ok, `Readiness failed: HTTP ${ready.status}`);
 const pricing = await request("/pricing/");
 assert(pricing.plans?.free?.monthly_usd === 0, "Free pricing contract failed.");
 assert(pricing.plans?.pro?.monthly_usd === 29, "Pro pricing contract failed.");
-assert(pricing.plans?.team?.billing_model === "per_seat", "Team billing model failed.");
-assert(pricing.plans?.enterprise?.billing_model === "custom", "Enterprise billing model failed.");
+assert(pricing.plans?.team?.monthly_usd === 15 && pricing.plans?.team?.billing_model === "per_seat", "Team pricing contract failed.");
+assert(pricing.plans?.enterprise?.monthly_usd === 299 && pricing.plans?.enterprise?.billing_model === "custom", "Enterprise pricing contract failed.");
+assert(pricing.entitlements?.free?.workspaces === 3 && pricing.entitlements?.free?.projects === 5, "Free entitlement contract failed.");
+assert(pricing.entitlements?.pro?.workspaces === 25 && pricing.entitlements?.pro?.projects === 50, "Pro entitlement contract failed.");
+assert(pricing.entitlements?.team?.org_members === 50 && pricing.entitlements?.team?.workspaces === 100, "Team entitlement contract failed.");
+assert(pricing.entitlements?.enterprise?.org_members === 500 && pricing.entitlements?.enterprise?.workspaces === 1000, "Enterprise entitlement contract failed.");
+for (const tier of ["free","pro","team","enterprise"]) {
+  assert(pricing.feature_matrix?.[tier]?.web_ide === true, tier + " Web IDE entitlement failed.");
+  assert(pricing.feature_matrix?.[tier]?.ai_assistant === true, tier + " AI entitlement failed.");
+}
+assert(pricing.feature_matrix?.free?.collaboration === false && pricing.feature_matrix?.pro?.collaboration === false, "Solo collaboration entitlement failed.");
+assert(pricing.feature_matrix?.team?.collaboration === true && pricing.feature_matrix?.team?.governance === true, "Team collaboration/governance entitlement failed.");
+assert(pricing.feature_matrix?.enterprise?.enterprise_controls === true, "Enterprise control entitlement failed.");
 
 await request("/register/", {method:"POST", body:JSON.stringify({...referrer,password,first_name:"Production",last_name:"Referrer"})});
 const refToken = await request("/token/", {method:"POST", body:JSON.stringify({username:referrer.username,password})});
