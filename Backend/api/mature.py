@@ -472,6 +472,9 @@ def organization_billing_checkout_api(request, pk):
         return Response({"error": "Only organization owners/admins can manage billing."}, status=403)
     org = membership.organization
     plan = str(request.data.get("plan") or "free").lower()
+    billing_cycle = str(request.data.get("billing_cycle") or "monthly").strip().lower()
+    if billing_cycle not in {"monthly", "annual"}:
+        return Response({"error": "billing_cycle must be monthly or annual."}, status=400)
     if plan not in {"team", "enterprise"}:
         return Response({
             "error": "Organization billing supports Team seat billing. Pro is personal and Enterprise is custom.",
@@ -486,7 +489,11 @@ def organization_billing_checkout_api(request, pk):
     if plan == "free":
         return Response({"error": "Use the billing portal to cancel a paid subscription."}, status=400)
     secret = os.getenv("STRIPE_SECRET_KEY", "")
-    price = {"pro": os.getenv("STRIPE_PRICE_PRO", ""), "team": os.getenv("STRIPE_PRICE_TEAM", ""), "enterprise": os.getenv("STRIPE_PRICE_ENTERPRISE", "")}.get(plan, "")
+    prices = {
+        "team": {"monthly": os.getenv("STRIPE_PRICE_TEAM", ""), "annual": os.getenv("STRIPE_PRICE_TEAM_ANNUAL", "")},
+        "enterprise": {"monthly": os.getenv("STRIPE_PRICE_ENTERPRISE", ""), "annual": os.getenv("STRIPE_PRICE_ENTERPRISE_ANNUAL", "")},
+    }
+    price = prices.get(plan, {}).get(billing_cycle, "")
     if not secret or not price:
         return Response({"error": "Stripe organization billing is not configured for this plan."}, status=503)
     sub, _ = OrganizationSubscription.objects.get_or_create(organization=org, defaults={"plan": org.plan})
