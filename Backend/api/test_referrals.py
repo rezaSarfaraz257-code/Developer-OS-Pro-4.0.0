@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile
+from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task
 from .views import _plan_for, _qualify_referral
 
 
@@ -67,7 +67,10 @@ class ReferralProgramTests(TestCase):
                 referred=referred,
                 code=code,
             )
-            Project.objects.create(owner=referred, title=f"Qualified Project {index}")
+            project = Project.objects.create(owner=referred, title=f"Qualified Project {index}")
+            Task.objects.create(project=project, title="Real task")
+            referred.date_joined = timezone.now() - timedelta(hours=25)
+            referred.save(update_fields=["date_joined"])
             _qualify_referral(referred)
 
         reward = ReferralReward.objects.get(user=self.referrer, milestone=10)
