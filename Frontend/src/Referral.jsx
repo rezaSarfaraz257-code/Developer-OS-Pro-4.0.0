@@ -79,7 +79,7 @@ export default function Referral({ go }) {
         <div className="panel-head"><div><span className="panel-kicker">REFERRAL LEDGER</span><h2>Your referrals</h2></div><span>{data.referrals.length}</span></div>
         {data.referrals.length ? data.referrals.map(r =>
           <div className="key-row" key={r.id}>
-            <span><b>{r.referred__username}</b></span>
+            <span><b>Developer referral</b></span>
             <small>{r.status.toUpperCase()} {r.qualified_at ? "· " + new Date(r.qualified_at).toLocaleDateString() : "· awaiting activation"}</small>
           </div>
         ) : <div className="empty">No referrals yet. Share your link to start.</div>}
