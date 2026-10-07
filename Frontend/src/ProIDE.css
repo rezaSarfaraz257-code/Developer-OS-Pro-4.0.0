@@ -295,3 +295,15 @@
 .dos-engineering-output{margin:14px 16px;padding:12px;min-height:100px;max-height:220px;overflow:auto;background:#05080d;border-radius:10px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
 .dos-engineering-panel footer{border-top:1px solid rgba(255,255,255,.06);border-bottom:0;font-size:11px;opacity:.8}
 @media(max-width:720px){.dos-engineering-grid{grid-template-columns:1fr}.dos-engineering-actions{flex-wrap:wrap}.dos-engineering-actions input{min-width:100%}}
+
+/* Developer workflow polish: dense, calm, keyboard-first layouts */
+.dos-editor-shell.dos-focus-mode .dos-tabs{border-bottom-color:rgba(80,190,255,.35)}
+.dos-editor-shell.dos-focus-mode .dos-editor-toolbar{opacity:.72;transition:opacity .18s ease}
+.dos-editor-shell.dos-focus-mode .dos-editor-toolbar:hover{opacity:1}
+.dos-editor-shell.dos-compact-mode .dos-editor-toolbar{min-height:34px;gap:4px}
+.dos-editor-shell.dos-compact-mode .dos-editor-toolbar button{padding:4px 7px}
+.dos-editor-shell.dos-compact-mode .dos-tabs{min-height:34px}
+.dos-editor-shell.dos-compact-mode .dos-tab{padding:6px 9px}
+.dos-shortcuts span{white-space:nowrap}
+.dos-shortcuts kbd{cursor:default}
+@media (max-width:900px){.dos-editor-toolbar button:nth-of-type(n+7){display:none}.dos-shortcuts span:nth-of-type(n+5){display:none}}
