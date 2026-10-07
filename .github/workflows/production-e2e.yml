@@ -11,7 +11,7 @@ permissions:
 jobs:
   production-e2e:
     name: Deployed SaaS + IDE + Runner + Billing E2E
-    if: ${{ secrets.PRODUCTION_BASE_URL != '' && secrets.PRODUCTION_BILLING_WEBHOOK_SECRET != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && secrets.PRODUCTION_BASE_URL != '' && secrets.PRODUCTION_BILLING_WEBHOOK_SECRET != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -27,7 +27,7 @@ jobs:
 
   configuration-warning:
     name: Production validation configuration
-    if: ${{ secrets.PRODUCTION_BASE_URL == '' || secrets.PRODUCTION_BILLING_WEBHOOK_SECRET == '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (secrets.PRODUCTION_BASE_URL == '' || secrets.PRODUCTION_BILLING_WEBHOOK_SECRET == '') }}
     runs-on: ubuntu-latest
     steps:
       - name: Explain configuration requirement
