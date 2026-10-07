@@ -45,3 +45,11 @@ The production black-box workflow now fails closed when its required deployment 
 **100% production-validated is only declared after the fresh master workflow and target-environment gates pass.**
 
 The product is intentionally not treated as an ordinary CRUD website: the architecture preserves isolated execution, server-side entitlement enforcement, real-time collaboration, contextual AI, production observability/recovery, and tier-specific SaaS controls.
+
+
+## Latest verified CI evidence — 2026-10-07
+
+- Master commit: `fd3507005c3ee5002ac557240576a560299ae01c`
+- Production Validation workflow: **PASS** (run 1002)
+- Security workflow: **PASS** — Backend validation, Frontend validation, Runner validation, CodeQL (Python/JavaScript), dependency audit, and release gate all passed.
+- This CI evidence validates the repository contract and build/test surface. It does **not** substitute for a live target-environment black-box run against Render with protected production secrets.
