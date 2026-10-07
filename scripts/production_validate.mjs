@@ -26,7 +26,19 @@ const referred = {username:`e2e_new_${suffix}`, email:`e2e_new_${suffix}@example
 
 async function request(path, options = {}) {
   const headers = {"Content-Type":"application/json", ...(options.headers || {})};
-  const response = await fetch(`${api}${path}`, {...options, headers});
+  const timeoutMs = options.timeoutMs || 15000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    const {timeoutMs: _timeoutMs, ...fetchOptions} = options;
+    response = await fetch(`${api}${path}`, {...fetchOptions, headers, signal: controller.signal});
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`HTTP timeout after ${timeoutMs}ms: ${options.method || "GET"} ${path}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   let body = {};
   try { body = await response.json(); } catch {}
   if (!response.ok) {
@@ -43,9 +55,18 @@ function sign(body, secret) {
   return {timestamp, header:`t=${timestamp},v1=${digest}`};
 }
 
-await request("/health/");
-const ready = await fetch(`${api}/health/ready/`);
+const health = await fetch(`${api}/health/`, {signal: AbortSignal.timeout(10000)});
+assert(health.ok, `Health failed: HTTP ${health.status}`);
+const ready = await fetch(`${api}/health/ready/`, {signal: AbortSignal.timeout(10000)});
 assert(ready.ok, `Readiness failed: HTTP ${ready.status}`);
+assert(["GET","HEAD"].includes(ready.headers.get("allow") || "GET"), "Readiness endpoint returned an unexpected Allow header.");
+const securityHeaders = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "same-origin",
+};
+for (const [name, expected] of Object.entries(securityHeaders)) {
+  assert((ready.headers.get(name) || "").toLowerCase() === expected, `Missing/incorrect ${name} security header.`);
+}
 
 const pricing = await request("/pricing/");
 assert(pricing.plans?.free?.monthly_usd === 0, "Free pricing contract failed.");
