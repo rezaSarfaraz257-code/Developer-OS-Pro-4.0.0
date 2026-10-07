@@ -53,6 +53,15 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         elif action=="stop" and getattr(self,"process_id",None):
             response=await sync_to_async(self._runner)("POST",f"/process/{self.process_id}/stop",{"workspace_id":str(self.workspace_id)},20)
             await self.send_json({"type":"process","data":response.json() if response.content else {}})
+        elif action=="input" and getattr(self,"process_id",None):
+            data=str(content.get("data") or "")
+            if len(data)>4000 or "\x00" in data:
+                await self.send_json({"type":"error","message":"Invalid terminal input."}); return
+            response=await sync_to_async(self._runner)("POST",f"/process/{self.process_id}/input",{"workspace_id":str(self.workspace_id),"data":data},20)
+            payload=response.json() if response.content else {}
+            if response.status_code>=400:
+                await self.send_json({"type":"error","message":payload.get("detail") or payload.get("error") or "Terminal input failed."}); return
+            await self.send_json({"type":"process","data":payload})
         elif action=="ping":
             await self.send_json({"type":"pong"})
 
