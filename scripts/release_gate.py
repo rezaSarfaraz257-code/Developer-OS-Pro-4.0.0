@@ -48,6 +48,34 @@ for path in list((ROOT / "Frontend/src").rglob("*.jsx")) + list((ROOT / "Fronten
         if not any(candidate.exists() for candidate in candidates):
             errors.append(f"missing frontend import: {path.relative_to(ROOT)} -> {spec}")
 
+# Security-sensitive static checks. These are release blockers because the
+# platform executes untrusted developer code and handles SaaS credentials.
+for root_name in ("Backend", "Runner"):
+    root = ROOT / root_name
+    for path in root.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"\bshell\s*=\s*True\b|\bos\.system\s*\(", source):
+            errors.append(f"unsafe process primitive detected: {path.relative_to(ROOT)}")
+
+# Migration numbering collisions can make a deployment non-deterministic.
+migration_numbers = {}
+for path in (ROOT / "Backend/api/migrations").glob("[0-9][0-9][0-9][0-9]_*.py"):
+    number = path.name.split("_", 1)[0]
+    migration_numbers.setdefault(number, []).append(path.name)
+for number, names in migration_numbers.items():
+    if len(names) > 1:
+        errors.append(f"duplicate migration number {number}: {", ".join(names)}")
+
+# Never allow obvious credential material into tracked release sources.
+secret_patterns = (r"sk-[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}")
+for path in list((ROOT / "Backend").rglob("*.py")) + list((ROOT / "Runner").rglob("*.py")):
+    source = path.read_text(encoding="utf-8", errors="replace")
+    for pattern in secret_patterns:
+        if re.search(pattern, source):
+            errors.append(f"possible credential material in source: {path.relative_to(ROOT)}")
+
 required_release_files = (
     "Frontend/package.json",
     "Frontend/package-lock.json",
