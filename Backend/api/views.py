@@ -51,7 +51,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward,
 )
 
 from .serializers import (
@@ -201,6 +201,7 @@ def projects_api(request):
             project = serializer.save(owner=locked_user)
             Activity.objects.create(actor=locked_user, verb="created a project", message=project.title, related_type="project", related_id=project.id, metadata={"category": project.category})
             ProductEvent.objects.create(user=locked_user, name="project_created", properties={"project_id": project.id, "category": project.category})
+            _qualify_referral(locked_user)
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
@@ -401,6 +402,8 @@ def register_api(request):
         request.data.get("last_name") or ""
     ).strip()
 
+    referral_code = str(request.data.get("referral_code") or "").strip().upper()
+
     if not username or not email or not password:
 
         return Response(
@@ -419,6 +422,14 @@ def register_api(request):
         validate_password(password, user=candidate)
     except ValidationError as error:
         return Response({"error": error.messages}, status=status.HTTP_400_BAD_REQUEST)
+
+    referral_source = None
+    if referral_code:
+        referral_source = ReferralCode.objects.filter(code=referral_code, active=True).select_related("user").first()
+        if not referral_source:
+            return Response({"error": "Invalid referral code."}, status=status.HTTP_400_BAD_REQUEST)
+        if referral_source.user.email.lower() == email.lower():
+            return Response({"error": "A referral code cannot refer its owner."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Keep the same response for every duplicate case so this endpoint cannot
     # be used to enumerate registered usernames or email addresses.
@@ -442,7 +453,10 @@ def register_api(request):
             profile.save(update_fields=["email_verified", "updated_at"])
             NotificationPreference.objects.get_or_create(user=user)
             Subscription.objects.get_or_create(user=user, defaults={"plan": "free", "status": "active"})
-            ProductEvent.objects.create(user=user, name="account_created", properties={"source": "web"})
+            if referral_source:
+                Referral.objects.create(referrer=referral_source.user, referred=user, code=referral_source, status="pending")
+                ProductEvent.objects.create(user=referral_source.user, name="referral_attributed", properties={"referred_user_id": user.id})
+            ProductEvent.objects.create(user=user, name="account_created", properties={"source": "web", "referral": bool(referral_source)})
             raw = secrets.token_urlsafe(48)
             from .models import EmailVerificationToken
             EmailVerificationToken.objects.create(user=user, token_hash=sha256(raw), expires_at=timezone.now() + timedelta(hours=24))
@@ -464,6 +478,51 @@ def register_api(request):
         },
         status=status.HTTP_201_CREATED
     )
+
+
+# =========================================================
+# REFERRALS / GROWTH
+# =========================================================
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def referrals_api(request):
+    code_obj = _referral_code_for(request.user)
+    if request.method == "POST":
+        code = str(request.data.get("code") or "").strip().upper()
+        if not code:
+            return Response({"error": "Referral code is required."}, status=400)
+        source = ReferralCode.objects.filter(code=code, active=True).select_related("user").first()
+        if not source:
+            return Response({"error": "Invalid referral code."}, status=400)
+        if source.user_id == request.user.id:
+            return Response({"error": "You cannot use your own referral code."}, status=400)
+        existing = Referral.objects.filter(referred=request.user).first()
+        if existing:
+            return Response({"error": "This account already has a referral attribution.", "status": existing.status}, status=409)
+        try:
+            referral = Referral.objects.create(referrer=source.user, referred=request.user, code=source, status="pending")
+        except IntegrityError:
+            referral = Referral.objects.filter(referred=request.user).first()
+            if referral:
+                return Response({"status": referral.status, "attributed": True})
+            return Response({"error": "Unable to record referral attribution."}, status=409)
+        ProductEvent.objects.create(user=source.user, name="referral_attributed", properties={"referred_user_id": request.user.id})
+        return Response({"status": referral.status, "attributed": True}, status=201)
+
+    qualified = Referral.objects.filter(referrer=request.user, status="rewarded").count()
+    next_milestone = ((qualified // 10) + 1) * 10
+    rewards = ReferralReward.objects.filter(user=request.user).order_by("-created_at")
+    return Response({
+        "code": code_obj.code,
+        "qualified": qualified,
+        "next_milestone": next_milestone,
+        "remaining": max(0, next_milestone - qualified),
+        "milestone_size": 10,
+        "reward": {"plan": "pro", "duration_days": 30},
+        "referrals": list(Referral.objects.filter(referrer=request.user).select_related("referred").order_by("-created_at").values("id", "status", "qualified_at", "created_at", "referred__username")[:100]),
+        "rewards": list(rewards.values("milestone", "plan", "duration_days", "starts_at", "expires_at")[:50]),
+    })
 
 
 # =========================================================
@@ -2818,7 +2877,58 @@ def _plan_for(user):
     candidates = [personal_plan, *[str(p).lower() for p in org_plans if str(p).lower() in PLAN_LIMITS]]
     rank = {"free": 0, "pro": 1, "team": 2, "enterprise": 3}
     plan = max(candidates, key=lambda value: rank.get(value, 0), default="free")
+    reward_active = ReferralReward.objects.filter(user=user, plan="pro", starts_at__lte=timezone.now(), expires_at__gt=timezone.now()).exists()
+    if reward_active and rank["pro"] > rank.get(plan, 0):
+        plan = "pro"
     return plan, sub
+
+def _referral_code_for(user):
+    """Return or safely create the user's stable referral code."""
+    existing = ReferralCode.objects.filter(user=user).first()
+    if existing:
+        return existing
+    for _ in range(5):
+        code = secrets.token_hex(5).upper()
+        try:
+            return ReferralCode.objects.create(user=user, code=code)
+        except IntegrityError:
+            continue
+    raise IntegrityError("Unable to allocate a unique referral code.")
+
+
+def _qualify_referral(user):
+    """Qualify a verified referred account and grant every tenth milestone."""
+    profile = UserProfile.objects.filter(user=user).first()
+    if not profile or not profile.email_verified:
+        return None
+    with transaction.atomic():
+        referral = (Referral.objects.select_for_update().select_related("referrer")
+                    .filter(referred=user, status="pending").first())
+        if not referral:
+            return None
+        referral.status = "rewarded"
+        referral.qualified_at = timezone.now()
+        referral.save(update_fields=["status", "qualified_at"])
+        qualified_count = Referral.objects.filter(referrer=referral.referrer, status="rewarded").count()
+        if qualified_count < 10 or qualified_count % 10:
+            return referral
+        milestone = (qualified_count // 10) * 10
+        if ReferralReward.objects.filter(user=referral.referrer, milestone=milestone).exists():
+            return referral
+        now = timezone.now()
+        last_reward = ReferralReward.objects.filter(user=referral.referrer, expires_at__gt=now).order_by("-expires_at").first()
+        sub = Subscription.objects.filter(user=referral.referrer).first()
+        starts_at = now
+        if last_reward:
+            starts_at = max(starts_at, last_reward.expires_at)
+        if sub and sub.plan in {"pro", "team", "enterprise"} and sub.status in {"active", "trialing", "past_due"} and sub.current_period_end:
+            starts_at = max(starts_at, sub.current_period_end)
+        expires_at = starts_at + timedelta(days=30)
+        ReferralReward.objects.create(user=referral.referrer, referral=referral, milestone=milestone, plan="pro", duration_days=30, starts_at=starts_at, expires_at=expires_at)
+        Notification.objects.create(user=referral.referrer, kind="referral_reward", title="30 days of Pro unlocked", body=f"You reached {milestone} qualified developer referrals. Your 30-day Pro reward is ready.", link="/referrals")
+        ProductEvent.objects.create(user=referral.referrer, name="referral_reward_granted", properties={"milestone": milestone, "duration_days": 30})
+        return referral
+
 
 def _usage_period():
     now = timezone.now()
