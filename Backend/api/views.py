@@ -2732,15 +2732,21 @@ def ide_execute_api(request, pk):
             )
             execution = None
 
+        runner_status = str(data.get("status") or "").strip().lower()
+        terminal_runner_statuses = {"success", "completed", "failed", "timeout", "cancelled"}
+        response_status = runner_status if runner_status in terminal_runner_statuses else execution_status
         response_data = {
             "id": execution.id if execution is not None else None,
+            "job_id": data.get("job_id"),
             "command": command,
             "active_file": str(request.data.get("active_file") or ""),
-            "status": execution_status,
+            "status": response_status,
             "exit_code": data.get("exit_code"),
             "stdout": str(data.get("stdout") or ""),
             "stderr": str(data.get("stderr") or ""),
-            "duration_ms": duration,
+            "duration_ms": data.get("duration_ms", duration),
+            "files": dict(ws.files or {}),
+            "revision": int(ws.revision or 0),
         }
         warnings = [x for x in [usage_warning, sync_warning] if x]
         if warnings:
