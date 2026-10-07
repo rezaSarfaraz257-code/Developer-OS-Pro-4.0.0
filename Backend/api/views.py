@@ -2984,7 +2984,7 @@ def _qualify_referral(user):
             attributed_at__gte=now - timedelta(hours=24),
         ).exclude(pk=referral.pk).count()
         if referrer_velocity >= 5:
-            risk += 25
+            risk += 20
             reasons.append("referral_velocity")
         product_depth = ProductEvent.objects.filter(user=user, created_at__gte=referral.attributed_at).exclude(name__in={"account_created", "referral_attributed"}).count()
         if product_depth < 3:
