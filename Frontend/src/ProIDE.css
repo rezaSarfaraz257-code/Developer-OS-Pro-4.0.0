@@ -1597,3 +1597,12 @@
 .dos-ide-pro .dos-tab em{font-style:normal;font-size:8px;color:#6dffb0;text-shadow:0 0 7px rgba(109,255,176,.5)}
 .dos-ide-pro .dos-tab.active em{color:#00e5ff}
 .dos-ide-pro .dos-tab-action{margin-left:auto;flex:0 0 34px}
+
+/* EXPLORER COLLAPSE */
+.dos-body.dos-explorer-collapsed{grid-template-columns:48px 0 minmax(0,1fr) 220px}
+.dos-body.dos-explorer-collapsed .dos-explorer{width:0;min-width:0;overflow:hidden;border-right:0;opacity:0;pointer-events:none}
+.dos-explorer-actions{display:flex;align-items:center;gap:3px}
+.dos-explorer-actions button{width:23px;height:23px;padding:0;display:grid;place-items:center;border:1px solid transparent;border-radius:5px;background:transparent;color:#638093;cursor:pointer}
+.dos-explorer-actions button:hover{color:#dffbff;border-color:rgba(0,229,255,.28);background:rgba(0,229,255,.08)}
+.dos-body.dos-explorer-collapsed .dos-explorer-actions{display:none}
+@media(max-width:900px){.dos-body.dos-explorer-collapsed{grid-template-columns:44px minmax(0,1fr) 0}.dos-body.dos-explorer-collapsed .dos-inspector{display:none}}
