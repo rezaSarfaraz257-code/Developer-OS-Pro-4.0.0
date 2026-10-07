@@ -166,7 +166,8 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_execute_and_process_payloads_use_workspace_lock(self):
         import main
         self.assertTrue(hasattr(main, "_workspace_lock"))
-\n    def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
+
+    def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
         root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
         (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
         with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
