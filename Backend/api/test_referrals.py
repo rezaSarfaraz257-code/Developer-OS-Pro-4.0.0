@@ -67,6 +67,7 @@ class ReferralProgramTests(TestCase):
                 referred=referred,
                 code=code,
             )
+            Project.objects.create(owner=referred, title=f"Qualified Project {index}")
             _qualify_referral(referred)
 
         reward = ReferralReward.objects.get(user=self.referrer, milestone=10)
@@ -93,6 +94,7 @@ class ReferralProgramTests(TestCase):
             referred=referred,
             code=code,
         )
+        Project.objects.create(owner=referred, title="Qualified Once")
         for _ in range(2):
             _qualify_referral(referred)
         self.assertEqual(Referral.objects.filter(pk=referral.pk, status="rewarded").count(), 1)
