@@ -627,27 +627,38 @@ function Audit() {
 function Billing() {
   const [sub,setSub]=useState(null); const [usage,setUsage]=useState(null); const [keys,setKeys]=useState([]);
   const [newKey,setNewKey]=useState(""); const [error,setError]=useState(""); const [pricing,setPricing]=useState(null);
+  const [annual,setAnnual]=useState(false);
   const load=()=>Promise.all([apiFetch("/subscription/"),apiFetch("/usage/"),apiFetch("/api-keys/"),apiFetch("/pricing/")]).then(async rs=>{
     const ds=await Promise.all(rs.map(r=>r.json()));setSub(ds[0]);setUsage(ds[1]);setKeys(ds[2]);setPricing(ds[3]);
   }).catch(e=>setError(e.message));
   useEffect(load,[]);
   const upgrade=async plan=>{
     if(plan==="team"){window.location.assign("/team");return;}
+    if(plan==="enterprise"){window.location.assign("/team?request=enterprise");return;}
     try{const r=await apiFetch("/subscription/",{method:"POST",body:JSON.stringify({plan})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Billing request failed");if(d.checkout_url){window.location.assign(d.checkout_url);return;}load();}
     catch(e){setError(e.message)}
   };
   const portal=async()=>{const r=await apiFetch("/billing/portal/",{method:"POST"});const d=await r.json();if(d.url)window.location.assign(d.url);else setError(d.error||"Portal unavailable")};
   const createKey=async()=>{const r=await apiFetch("/api-keys/",{method:"POST",body:JSON.stringify({name:"Developer OS CLI"})});const d=await r.json();if(!r.ok){setError(d.error||"Key creation failed");return;}setNewKey(d.key);load();};
-  const plans=pricing?.plans ? Object.entries(pricing.plans).map(([id,p])=>[id,p.label?.toUpperCase()||id.toUpperCase(),p.monthly_usd===0?"$0":id==="team"?"$"+p.monthly_usd+"/user":"$"+p.monthly_usd+(p.starting_at?"+":""),p.billing_model==="per_seat"?"Per active seat":id==="enterprise"?"Starting price":"Core developer plan",Array.isArray(p.features)?p.features:[]]) : [];
+  const plans=pricing?.plans ? Object.entries(pricing.plans).map(([id,p])=>{
+    const monthly=Number(p.monthly_usd||0), annual=Number(p.annual_usd||0);
+    const display=annual&&annual? (annual ? "$"+(annual/12).toFixed(2)+"/mo" : "$0") : (monthly===0?"$0":"$"+monthly+(p.starting_at?"+":"")+"/mo");
+    return {id,p,price:annual&&annual ? (annual ? "$"+annual+"/yr" : "$0") : (monthly===0?"$0":"$"+monthly+(p.starting_at?"+":"")),display};
+  }) : [];
   return <div className="page">
-    <div className="hero-row"><div><div className="eyebrow">SAAS CONTROL PLANE</div><h1>Plans & Usage</h1><p>Transparent pricing, server-side entitlements, metered usage and secure billing.</p></div><div className="hero-actions"><button className="ghost" onClick={portal}>MANAGE BILLING ↗</button></div></div>
+    <div className="hero-row"><div><div className="eyebrow">SAAS CONTROL PLANE</div><h1>Plans & Usage</h1><p>Choose the workspace model that matches how you build: solo, professional, team, or enterprise.</p></div><div className="hero-actions"><button className="ghost" onClick={portal}>MANAGE BILLING ↗</button></div></div>
     {error&&<div className="error">{error}</div>}
-    <div className="plan-grid">{plans.map(p=><div className={"plan "+(sub?.plan===p[0]?"current":"")} key={p[0]}>
-      <span>{p[1]}</span><h2>{p[2]}</h2><strong>{p[3]}</strong><p>{Array.isArray(p[4])?p[4].join(" · "):p[4]}</p>{Array.isArray(p[4])&&<ul className="plan-features">{p[4].map(feature=><li key={feature}>✓ {feature}</li>)}</ul>}
-      <button className={sub?.plan===p[0]?"ghost":"primary"} onClick={()=>upgrade(p[0])}>{sub?.plan===p[0]?"ACTIVE":p[0]==="team"?"MANAGE TEAM":p[0]==="enterprise"?"REQUEST ENTERPRISE":"SELECT"}</button>
+    <div className="billing-switch"><button className={!annual?"active":""} onClick={()=>setAnnual(false)}>MONTHLY</button><button className={annual?"active":""} onClick={()=>setAnnual(true)}>ANNUAL <small>SAVE 2 MONTHS</small></button></div>
+    <div className="plan-grid">{plans.map(({id,p,price,display})=><div className={"plan "+(sub?.plan===id?"current ":"")+(p.recommended?"recommended":"")} key={id}>
+      {p.recommended&&<span className="plan-badge">RECOMMENDED</span>}
+      <span>{p.label?.toUpperCase()||id.toUpperCase()}</span><h2>{annual&&p.annual_usd?display:price}</h2>
+      <strong>{p.audience||"Developer OS plan"}</strong>
+      <p>{p.billing_model==="per_seat"?"Per active seat":p.billing_model==="custom"?"Custom organization contract":id==="free"?"No payment required":"Individual developer plan"}</p>
+      {Array.isArray(p.features)&&<ul className="plan-features">{p.features.map(feature=><li key={feature}>✓ {feature}</li>)}</ul>}
+      <button className={sub?.plan===id?"ghost":"primary"} onClick={()=>upgrade(id)}>{sub?.plan===id?"ACTIVE":id==="team"?"MANAGE TEAM":id==="enterprise"?"REQUEST ENTERPRISE":id==="free"?"USE FREE":"UPGRADE TO PRO"}</button>
     </div>)}</div>
     <section className="panel"><div className="panel-head"><div><span className="panel-kicker">METERED USAGE</span><h2>This month</h2></div><span>{usage?.plan?.toUpperCase()||"—"}</span></div>
-      <div className="cards-grid">{Object.entries(usage?.metrics||{}).map(([k,v])=><div className="project-card" key={k}><span>{k.replaceAll("_"," ").toUpperCase()}</span><b>{v.limit==null?(v.used+" / ∞"):(v.used+" / "+v.limit)}</b>{v.limit!=null&&<div className="bar"><i style={{width:Math.min(100,(v.used/Math.max(1,v.limit))*100)+"%"}} /></div>}</div>)}</div>
+      <div className="cards-grid">{Object.entries(usage?.metrics||{}).map(([k,v])=>{const pct=v.limit==null?0:Math.min(100,(v.used/Math.max(1,v.limit))*100);return <div className="project-card" key={k}><span>{k.replaceAll("_"," ").toUpperCase()}</span><b>{v.limit==null?(v.used+" / ∞"):(v.used+" / "+v.limit)}</b>{v.limit!=null&&<div className="bar"><i style={{width:pct+"%"}} /></div>}{v.limit!=null&&pct>=80&&<small>Approaching plan limit — upgrade when you need more capacity.</small>}</div>})}</div>
     </section>
     <section className="panel"><div className="panel-head"><div><span className="panel-kicker">DEVELOPER API</span><h2>API keys</h2></div><button className="primary" onClick={createKey}>+ CREATE KEY</button></div>
       {newKey&&<div className="secret-key"><b>Copy this key now — it will not be shown again:</b><code>{newKey}</code></div>}
