@@ -68,7 +68,7 @@ class ReferralProgramTests(TestCase):
                 code=code,
             )
             Referral.objects.filter(pk=referral.pk).update(
-                attributed_at=timezone.now() - timedelta(days=2)
+                attributed_at=timezone.now() - timedelta(days=4)
             )
             project = Project.objects.create(owner=referred, title=f"Qualified Project {index}")
             Task.objects.create(project=project, title="Real task 1")
@@ -107,7 +107,7 @@ class ReferralProgramTests(TestCase):
             code=code,
         )
         Referral.objects.filter(pk=referral.pk).update(
-            attributed_at=timezone.now() - timedelta(days=2)
+            attributed_at=timezone.now() - timedelta(days=4)
         )
         project = Project.objects.create(owner=referred, title="Qualified Once")
         Task.objects.create(project=project, title="Real task 1")
