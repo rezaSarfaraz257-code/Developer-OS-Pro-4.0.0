@@ -20,7 +20,9 @@ from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path(os.environ.get("RUNNER_ROOT", "/workspaces"))
 ROOT.mkdir(parents=True, exist_ok=True)
-TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
+# Read the control-plane credential once, then remove it from the process
+# environment so untrusted child code cannot inherit or trivially inspect it.
+TOKEN = os.environ.pop("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
@@ -35,6 +37,11 @@ MAX_OUTPUT_BYTES = MAX_OUTPUT
 MAX_PROCESS_DURATION = TIMEOUT
 PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
+# A shared container is NOT a tenant sandbox. Production must use a runtime
+# isolation backend (currently bubblewrap) rather than relying on regex blocks.
+RUNNER_SECURITY_LEVEL = os.environ.get("RUNNER_SECURITY_LEVEL", "strict").strip().lower()
+if RUNNER_SECURITY_LEVEL not in {"strict", "compat"}:
+    RUNNER_SECURITY_LEVEL = "strict"
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
 # bubblewrap requires. Container-native mode is the production default.
 # bwrap remains opt-in for infrastructure that explicitly supports it.
@@ -485,6 +492,11 @@ def _sandbox_command(root, command, allow_network=False):
     fail with: 'bwrap: Failed to make / slave: Permission denied'.
     """
     if SANDBOX_MODE == "container":
+        if RUNNER_SECURITY_LEVEL == "strict":
+            raise HTTPException(
+                status_code=503,
+                detail="Secure execution backend is unavailable. Production runner requires namespace/container isolation."
+            )
         return ["bash", "-lc", command]
 
     bwrap = shutil.which("bwrap")
@@ -656,6 +668,8 @@ def _capability_manifest():
         "sandbox": {
             "backend": SANDBOX_MODE,
             "mode": "container-native" if container_native else "bubblewrap",
+            "security_level": RUNNER_SECURITY_LEVEL,
+            "trusted_shared_container": bool(container_native and RUNNER_SECURITY_LEVEL == "compat"),
             "process_boundary": True,
             "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
         },
