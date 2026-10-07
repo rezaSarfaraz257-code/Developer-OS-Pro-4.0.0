@@ -1970,13 +1970,13 @@ FRAMEWORK_CATALOG = {
     "nextjs": {"label": "Next.js", "runtime": "node", "package_manager": "npm", "install": "npm install next react react-dom", "start": "npm run dev -- --hostname 0.0.0.0"},
     "express": {"label": "Express", "runtime": "node", "package_manager": "npm", "install": "npm install express", "start": "node server.js"},
     "nestjs": {"label": "NestJS", "runtime": "node", "package_manager": "npm", "install": "npm install @nestjs/core @nestjs/common reflect-metadata rxjs", "start": "npm run start:dev"},
-    "django": {"label": "Django + DRF", "runtime": "python", "package_manager": "pip", "install": "python -m pip install django djangorestframework django-cors-headers", "start": "python manage.py runserver 0.0.0.0:8000"},
-    "fastapi": {"label": "FastAPI", "runtime": "python", "package_manager": "pip", "install": "python -m pip install fastapi uvicorn[standard] pydantic", "start": "python -m uvicorn main:app --host 0.0.0.0 --port 8000"},
-    "flask": {"label": "Flask", "runtime": "python", "package_manager": "pip", "install": "python -m pip install flask", "start": "flask --app app run --host 0.0.0.0 --port 8000"},
-    "litestar": {"label": "Litestar", "runtime": "python", "package_manager": "pip", "install": "python -m pip install litestar uvicorn", "start": "uvicorn app:app --host 0.0.0.0 --port 8000"},
-    "streamlit": {"label": "Streamlit", "runtime": "python", "package_manager": "pip", "install": "python -m pip install streamlit", "start": "streamlit run app.py --server.address 0.0.0.0"},
-    "httpx": {"label": "Python HTTP stack", "runtime": "python", "package_manager": "pip", "install": "python -m pip install httpx", "start": "python main.py"},
-    "django-ninja": {"label": "Django Ninja", "runtime": "python", "package_manager": "pip", "install": "python -m pip install django django-ninja", "start": "python manage.py runserver 0.0.0.0:8000"},
+    "django": {"label": "Django + DRF", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install django djangorestframework django-cors-headers", "start": "python3 manage.py runserver 0.0.0.0:8000"},
+    "fastapi": {"label": "FastAPI", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install fastapi uvicorn[standard] pydantic", "start": "python -m uvicorn main:app --host 0.0.0.0 --port 8000"},
+    "flask": {"label": "Flask", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install flask", "start": "flask --app app run --host 0.0.0.0 --port 8000"},
+    "litestar": {"label": "Litestar", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install litestar uvicorn", "start": "uvicorn app:app --host 0.0.0.0 --port 8000"},
+    "streamlit": {"label": "Streamlit", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install streamlit", "start": "streamlit run app.py --server.address 0.0.0.0"},
+    "httpx": {"label": "Python HTTP stack", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install httpx", "start": "python main.py"},
+    "django-ninja": {"label": "Django Ninja", "runtime": "python", "package_manager": "pip", "install": "python3 -m pip install django django-ninja", "start": "python3 manage.py runserver 0.0.0.0:8000"},
 }
 
 RUNNER_URL = os.environ.get("IDE_RUNNER_URL", "http://developer-os-runner:8080").rstrip("/")
@@ -2375,7 +2375,7 @@ def ide_diagnostics_api(request, pk):
     if sync_error:
         return Response(sync_error, status=503)
     if language in {"python", "py"} or path.endswith(".py"):
-        command = "python -m py_compile " + shlex.quote(path)
+        command = "python3 -m py_compile " + shlex.quote(path)
     elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
         command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
     else:
@@ -3504,7 +3504,7 @@ def ide_diagnostics_api(request, pk):
     if sync_error:
         return Response(sync_error, status=503)
     if language in {"python", "py"} or path.endswith(".py"):
-        command = "python -m py_compile " + shlex.quote(path)
+        command = "python3 -m py_compile " + shlex.quote(path)
     elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
         command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
     else:
