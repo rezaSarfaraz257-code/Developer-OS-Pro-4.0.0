@@ -490,11 +490,14 @@ def organization_billing_checkout_api(request, pk):
         sub.provider_customer_id = customer_id
         sub.save(update_fields=["provider_customer_id", "updated_at"])
     try:
-        quantity = max(1, min(5000, int(request.data.get("quantity") or 1)))
+        requested_quantity = max(1, min(5000, int(request.data.get("quantity") or 1)))
     except (TypeError, ValueError):
         return Response({"error": "quantity must be a positive integer."}, status=400)
     active_members = OrganizationMembership.objects.filter(organization=org).count()
-    if quantity < active_members:
+    # Only Team is seat-metered. Pro and Enterprise are organization-level plans;
+    # Enterprise remains a starting price and can be handled through custom sales.
+    quantity = requested_quantity if plan == "team" else 1
+    if plan == "team" and quantity < active_members:
         return Response({"error": f"Team seats ({quantity}) cannot be lower than active members ({active_members}).", "quantity": quantity, "active_members": active_members}, status=400)
     if sub.provider_subscription_id and sub.status in {"active", "trialing", "past_due"}:
         r = requests.get(f"https://api.stripe.com/v1/subscriptions/{sub.provider_subscription_id}", auth=(secret, ""), timeout=(3.05, 20))
