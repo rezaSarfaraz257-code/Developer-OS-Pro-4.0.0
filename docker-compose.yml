@@ -175,6 +175,8 @@ services:
   frontend:
     restart: unless-stopped
     build: ./Frontend
+    environment:
+      BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
     ports:
       - "80:80"
     depends_on:
