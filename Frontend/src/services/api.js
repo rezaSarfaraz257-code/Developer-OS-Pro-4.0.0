@@ -1,9 +1,8 @@
 const configuredApiUrl = import.meta.env?.VITE_API_URL?.trim();
-const isBrowser = typeof window !== "undefined";
 // Same-origin is the production default. VITE_API_URL remains available for
 // deliberate split-service deployments without baking a stale Render origin
 // into the application bundle.
-export const API_URL = (configuredApiUrl || (isBrowser ? "/api" : "/api")).replace(/\/$/, "");
+export const API_URL = (configuredApiUrl || "/api").replace(/\/$/, "");
 
 export function safeExternalUrl(value) {
   try {
