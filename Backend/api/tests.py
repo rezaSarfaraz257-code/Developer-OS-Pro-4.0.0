@@ -1,5 +1,6 @@
 from io import BytesIO
 import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import IntegrityError, connection
@@ -406,6 +407,7 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.data["files"]["main.py"], "print(2)")
 
     def test_organization_membership_and_subscription(self):
+        Subscription.objects.create(user=self.user, plan="team", status="active")
         response = self.client.post("/api/organizations/", {"name":"Quantum Labs"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]
@@ -515,6 +517,7 @@ class SaaSMaturityTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_organization_invite_requires_matching_email_on_accept(self):
+        Subscription.objects.create(user=self.user, plan="team", status="active")
         response = self.client.post("/api/organizations/", {"name": "Maturity Labs"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]

@@ -4,6 +4,11 @@ RUN ln -sf /usr/bin/python3 /usr/local/bin/python && ln -sf /usr/bin/pip3 /usr/l
 RUN npm install -g pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1
 RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
+
+# Fail closed: production execution must use a real sandbox backend.
+ENV RUNNER_SECURITY_LEVEL=strict \
+    RUNNER_SANDBOX_MODE=bwrap \
+    RUNNER_ALLOW_NETWORK=false
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 COPY . .

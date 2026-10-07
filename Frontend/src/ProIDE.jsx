@@ -204,7 +204,15 @@ return()=>{try{socket?.close()}catch{}if(collabRetry.current)clearTimeout(collab
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw Error(d.error||d.detail||`Execution failed (HTTP ${r.status})`);
     if(d.files){refs.files.current=d.files;setFiles(d.files);setWs(w=>w?({...w,files:d.files}):w);}
-    const initial=[d.stdout,d.stderr].filter(Boolean).join("\n");    const terminalStatuses=["success","completed","failed","timeout","cancelled"];\n    if(d.job_id && terminalStatuses.includes(d.status)){\n      if(initial)setTerminal(t=>t+initial+"\\n");\n      const code=d.exit_code??(["success","completed"].includes(d.status)?0:-1);\n      setTerminal(t=>t+`[exit ${code}] · ${d.duration_ms??0}ms\\n`);\n      setStatus(["success","completed"].includes(d.status)?"Command completed":`Command ${d.status}`);\n      return;\n    }\n
+    const initial=[d.stdout,d.stderr].filter(Boolean).join("\n");
+    const terminalStatuses=["success","completed","failed","timeout","cancelled"];
+    if(d.job_id && terminalStatuses.includes(d.status)){
+      if(initial)setTerminal(t=>t+initial+"\n");
+      const code=d.exit_code??(["success","completed"].includes(d.status)?0:-1);
+      setTerminal(t=>t+`[exit ${code}] · ${d.duration_ms??0}ms\n`);
+      setStatus(["success","completed"].includes(d.status)?"Command completed":`Command ${d.status}`);
+      return;
+    }
     if(initial)setTerminal(t=>t+initial+"\n");
     if(d.job_id){
       setStatus(`Job ${d.job_id.slice(0,8)} queued…`);

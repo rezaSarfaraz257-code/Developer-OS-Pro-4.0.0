@@ -41,7 +41,11 @@ SECRET_KEY = get_secret_key()
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured("DEBUG must be False in production.")
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
+if IS_PRODUCTION and any(host in {"*", "localhost", "127.0.0.1", "::1"} for host in ALLOWED_HOSTS):
+    raise ImproperlyConfigured("Production ALLOWED_HOSTS cannot contain wildcard or loopback hosts.")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 if IS_PRODUCTION and ("*" in ALLOWED_HOSTS or not ALLOWED_HOSTS):
     raise ImproperlyConfigured("Production ALLOWED_HOSTS must explicitly list trusted hosts.")
@@ -147,6 +151,11 @@ if not DEBUG:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", ",".join([FRONTEND_URL, "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]))
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", FRONTEND_URL if FRONTEND_URL.startswith(("http://", "https://")) else "")
+if IS_PRODUCTION:
+    if not CORS_ALLOWED_ORIGINS or any(urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"} for origin in CORS_ALLOWED_ORIGINS):
+        raise ImproperlyConfigured("Production CORS_ALLOWED_ORIGINS must contain only real trusted origins.")
+    if not CSRF_TRUSTED_ORIGINS or any(urlparse(origin).hostname in {"localhost", "127.0.0.1", "::1"} for origin in CSRF_TRUSTED_ORIGINS):
+        raise ImproperlyConfigured("Production CSRF_TRUSTED_ORIGINS must contain only real trusted origins.")
 CORS_ALLOW_CREDENTIALS = False
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"

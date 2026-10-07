@@ -74,7 +74,7 @@ jobs:
           cache-dependency-path: Backend/requirements.txt
       - name: Install backend dependencies
         working-directory: Backend
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt pytest
       - name: Django checks and tests
         working-directory: Backend
         env:
@@ -125,13 +125,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runner test dependencies
-        run: python -m pip install fastapi uvicorn pydantic psutil requests pytest
+        working-directory: Runner
+        run: python -m pip install -r requirements.txt pytest
       - name: Runner tests
         working-directory: Runner
         env:
           IDE_RUNNER_TOKEN: ci-runner-token
           RUNNER_ROOT: /tmp/developer-os-runner-workspaces
-        run: pytest -q
+          RUNNER_SECURITY_LEVEL: compat
+        run: python -m pytest -q
 
   release-gate:
     name: Release gate

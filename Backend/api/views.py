@@ -51,7 +51,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution,
 )
 
 from .serializers import (
@@ -2148,9 +2148,14 @@ def _runner_request(method, path, payload, timeout=30):
 def ide_capabilities_api(request):
     """Expose runner capabilities so the IDE can adapt instead of guessing."""
     data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
-    if error:
-        return Response({"status": "degraded", "runner": None, "error": error}, status=503)
     plan, _ = _plan_for(request.user)
+    if error:
+        return Response({
+            "status": "degraded",
+            "runner": None,
+            "error": error,
+            "plan": plan,
+        }, status=200)
     limits = PLAN_LIMITS[plan]
     return Response({
         "status": "ready",
@@ -2979,9 +2984,9 @@ def _qualify_referral(user):
             attributed_at__gte=now - timedelta(hours=24),
         ).exclude(pk=referral.pk).count()
         if referrer_velocity >= 5:
-            risk += 25
+            risk += 20
             reasons.append("referral_velocity")
-        product_depth = ProductEvent.objects.filter(user=user, created_at__gte=referral.attributed_at).exclude(name__in={"account_created", "referral_attributed"}).count()
+        product_depth = ProductEvent.objects.filter(user=user, occurred_at__gte=referral.attributed_at).exclude(name__in={"account_created", "referral_attributed"}).count()
         if product_depth < 3:
             risk += 15
             reasons.append("low_product_depth")

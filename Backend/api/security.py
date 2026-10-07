@@ -51,6 +51,7 @@ RATE_WINDOWS = {
     "runner": (60, 20),
     "upload": (60, 20),
     "invite": (60, 20),
+    "referral": (3600, 12),
     "api": (60, 120),
 }
 

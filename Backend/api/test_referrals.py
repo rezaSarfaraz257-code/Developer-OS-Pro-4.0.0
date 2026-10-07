@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task
+from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task, Activity, ProductEvent
 from .views import _plan_for, _qualify_referral
 
 
@@ -62,19 +62,30 @@ class ReferralProgramTests(TestCase):
                 email_verified=True,
                 email_verified_at=timezone.now(),
             )
-            Referral.objects.create(
+            referral = Referral.objects.create(
                 referrer=self.referrer,
                 referred=referred,
                 code=code,
+            )
+            Referral.objects.filter(pk=referral.pk).update(
+                attributed_at=timezone.now() - timedelta(days=7)
             )
             project = Project.objects.create(owner=referred, title=f"Qualified Project {index}")
             Task.objects.create(project=project, title="Real task 1")
             Task.objects.create(project=project, title="Real task 2")
             referred.date_joined = timezone.now() - timedelta(hours=73)
             referred.save(update_fields=["date_joined"])
-            Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=2))
-            Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=1))
-            Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now())
+            activities = [
+                Activity.objects.create(actor=referred, verb="worked", message="day 1"),
+                Activity.objects.create(actor=referred, verb="worked", message="day 2"),
+                Activity.objects.create(actor=referred, verb="worked", message="day 3"),
+            ]
+            for activity, days_ago in zip(activities, (3, 2, 1)):
+                Activity.objects.filter(pk=activity.pk).update(
+                    created_at=timezone.now() - timedelta(days=days_ago)
+                )
+            for event_index in range(3):
+                ProductEvent.objects.create(user=referred, name=f"referral-test-event-{index}-{event_index}", properties={})
             _qualify_referral(referred)
 
         reward = ReferralReward.objects.get(user=self.referrer, milestone=10)
@@ -101,14 +112,25 @@ class ReferralProgramTests(TestCase):
             referred=referred,
             code=code,
         )
+        Referral.objects.filter(pk=referral.pk).update(
+            attributed_at=timezone.now() - timedelta(days=4)
+        )
         project = Project.objects.create(owner=referred, title="Qualified Once")
         Task.objects.create(project=project, title="Real task 1")
         Task.objects.create(project=project, title="Real task 2")
         referred.date_joined = timezone.now() - timedelta(hours=73)
         referred.save(update_fields=["date_joined"])
-        Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=2))
-        Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=1))
-        Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now())
+        activities = [
+            Activity.objects.create(actor=referred, verb="worked", message="day 1"),
+            Activity.objects.create(actor=referred, verb="worked", message="day 2"),
+            Activity.objects.create(actor=referred, verb="worked", message="day 3"),
+        ]
+        for activity, days_ago in zip(activities, (3, 2, 1)):
+            Activity.objects.filter(pk=activity.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago)
+            )
+        for event_index in range(3):
+            ProductEvent.objects.create(user=referred, name=f"referral-once-event-{event_index}", properties={})
         for _ in range(2):
             _qualify_referral(referred)
         self.assertEqual(Referral.objects.filter(pk=referral.pk, status="rewarded").count(), 1)

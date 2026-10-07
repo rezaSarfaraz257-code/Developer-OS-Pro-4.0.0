@@ -5,6 +5,7 @@ This validates the repository package before the real CI/host build is executed.
 """
 from __future__ import annotations
 
+import ast
 import json
 import py_compile
 import re
@@ -59,15 +60,63 @@ for root_name in ("Backend", "Runner"):
         if re.search(r"\bshell\s*=\s*True\b|\bos\.system\s*\(", source):
             errors.append(f"unsafe process primitive detected: {path.relative_to(ROOT)}")
 
-# Migration numbering collisions can make a deployment non-deterministic.
+# Migration filenames may share a numeric prefix when Django has an explicit
+# branch/merge topology. The release gate must reject unresolved migration
+# conflicts, not valid branches that are later joined by a merge migration.
+migration_dir = ROOT / "Backend/api/migrations"
+migration_files = {p.stem: p for p in migration_dir.glob("[0-9][0-9][0-9][0-9]_*.py")}
+migration_dependencies = {}
+for name, path in migration_files.items():
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        deps = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if any(isinstance(t, ast.Name) and t.id == "dependencies" for t in node.targets):
+                    value = node.value
+                    if isinstance(value, (ast.List, ast.Tuple)):
+                        for item in value.elts:
+                            if isinstance(item, (ast.List, ast.Tuple)) and len(item.elts) >= 2:
+                                app, dep = item.elts[0], item.elts[1]
+                                if (
+                                    isinstance(app, ast.Constant) and app.value == "api"
+                                    and isinstance(dep, ast.Constant) and isinstance(dep.value, str)
+                                ):
+                                    deps.append(dep.value)
+        migration_dependencies[name] = deps
+    except Exception as exc:
+        errors.append(f"migration dependency parse failed: {path.relative_to(ROOT)}: {exc}")
+
+children = {name: [] for name in migration_files}
+for child, deps in migration_dependencies.items():
+    for dep in deps:
+        if dep in children:
+            children[dep].append(child)
+
+def descendants(start):
+    seen = set()
+    stack = list(children.get(start, ()))
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(children.get(node, ()))
+    return seen
+
 migration_numbers = {}
-for path in (ROOT / "Backend/api/migrations").glob("[0-9][0-9][0-9][0-9]_*.py"):
-    number = path.name.split("_", 1)[0]
-    migration_numbers.setdefault(number, []).append(path.name)
+for name in migration_files:
+    number = name.split("_", 1)[0]
+    migration_numbers.setdefault(number, []).append(name)
+
 for number, names in migration_numbers.items():
-    if len(names) > 1:
-        joined = ", ".join(names)
-        errors.append(f"duplicate migration number {number}: {joined}")
+    if len(names) < 2:
+        continue
+    reachable = {name: descendants(name) | {name} for name in names}
+    common = set.intersection(*(reachable[name] for name in names))
+    if not common:
+        joined = ", ".join(sorted(names))
+        errors.append(f"unresolved migration conflict {number}: {joined}")
 
 # Never allow obvious credential material into tracked release sources.
 secret_patterns = (r"sk-[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}")
