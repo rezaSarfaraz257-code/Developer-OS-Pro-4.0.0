@@ -66,7 +66,8 @@ for path in (ROOT / "Backend/api/migrations").glob("[0-9][0-9][0-9][0-9]_*.py"):
     migration_numbers.setdefault(number, []).append(path.name)
 for number, names in migration_numbers.items():
     if len(names) > 1:
-        errors.append(f"duplicate migration number {number}: {\", \".join(names)}")
+        joined = ", ".join(names)
+        errors.append(f"duplicate migration number {number}: {joined}")
 
 # Never allow obvious credential material into tracked release sources.
 secret_patterns = (r"sk-[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}")
