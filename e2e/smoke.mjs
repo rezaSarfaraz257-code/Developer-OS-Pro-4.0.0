@@ -52,7 +52,7 @@ if (!task.id) throw new Error("Task creation failed.");
 const workspace = await request("/ide/workspaces/", {
   method: "POST",
   headers: auth,
-  body: JSON.stringify({name: "E2E Workspace", files: {"main.py": "print(42)"}, active_file: "main.py"}),
+  body: JSON.stringify({name: "E2E Workspace", files: {"main.py": "print('hello')"}, active_file: "main.py"}),
 });
 if (!workspace.id) throw new Error("Workspace creation failed.");
 
@@ -95,7 +95,7 @@ const execute = await request(`/ide/workspaces/${workspace.id}/execute/`, {
     active_file: "main.py",
   }),
 });
-if (execute.command !== "python main.py" || execute.active_file !== "main.py" || execute.status !== "success" || execute.exit_code !== 0 || String(execute.stdout || "").trim() !== "42") {
+if (execute.command !== "python main.py" || execute.active_file !== "main.py" || execute.status !== "success" || execute.exit_code !== 0 || String(execute.stdout || "").trim() !== "hello") {
   throw new Error("IDE execute E2E failed.");
 }
 
