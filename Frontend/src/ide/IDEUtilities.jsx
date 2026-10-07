@@ -61,7 +61,7 @@ export function RunCenter({workspace,files,activeFile,onClose}) {
       const o=await apiFetch(`/ide/workspaces/${workspace.id}/jobs/${encodeURIComponent(d.job_id)}/stream/?cursor=${cursor}`);
       const od=await o.json();if(!o.ok)throw Error(od.error||od.detail||"Live stream unavailable");
       if(od.output){setOutput(prev=>prev+od.output);cursor=typeof od.cursor==="number"?od.cursor:cursor}
-      if(["completed","failed","cancelled"].includes(j.status)){
+      if(["success","completed","failed","timeout","cancelled"].includes(j.status)){
        stopped=true;streamTimerRef.current=null;setJobId(null);setQueueWait(j.queue_wait_ms??null);
        setExitCode(j.exit_code??(j.status==="completed"?0:-1));setDuration(j.duration_ms??Math.round(performance.now()-started));setRunning(false);return;
       }

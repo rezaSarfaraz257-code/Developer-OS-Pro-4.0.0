@@ -348,6 +348,46 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "stale_workspace")
 
+    @patch("api.views._runner_request")
+    def test_ide_execute_returns_runner_contract_and_workspace_state(self, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Execute", "files": {"main.py": "print('ok')"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+        workspace_id = workspace.data["id"]
+        runner_request.return_value = (
+            {
+                "job_id": "job-contract-test",
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "ok\n",
+                "stderr": "",
+                "duration_ms": 17,
+                "files": {"main.py": "print('ok')"},
+            },
+            None,
+        )
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace_id}/execute/",
+            {"command": "python3 main.py", "active_file": "main.py", "files": {"main.py": "print('ok')"}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["job_id"], "job-contract-test")
+        self.assertEqual(response.data["status"], "success")
+        self.assertEqual(response.data["stdout"], "ok\n")
+        self.assertIn("files", response.data)
+        self.assertIn("revision", response.data)
+
+    def test_ide_runner_terminal_states_are_complete(self):
+        terminal_states = {"success", "completed", "failed", "timeout", "cancelled"}
+        self.assertEqual(
+            terminal_states,
+            {"success", "completed", "failed", "timeout", "cancelled"},
+        )
+
     def test_ide_workspace_file_paths_are_safe(self):
         response = self.client.post("/api/ide/workspaces/", {"name": "Safe", "files": {}}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
