@@ -3425,7 +3425,8 @@ def ide_process_start_api(request, pk):
     if not _workspace_write_allowed(ws, request.user): return Response({"error":"Read-only workspace."}, status=403)
     command = str(request.data.get("command") or "").strip()
     if not command: return Response({"error":"Command is required."}, status=400)
-    data, error = _runner_request("POST","/process/start",{**_workspace_payload(ws),"command":command},timeout=30)
+    plan, _ = _plan_for(request.user)
+    data, error = _runner_request("POST","/process/start",{**_workspace_payload(ws),"command":command,"entitlement":{"plan":plan}},timeout=30)
     if error: return Response(error,status=503)
     return Response(data, status=201)
 
