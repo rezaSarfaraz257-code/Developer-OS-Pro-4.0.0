@@ -174,6 +174,14 @@ def test_job_is_cancelled_helper_handles_missing_and_cancelled_jobs():
     assert main._job_is_cancelled(job_id) is True
 
 
+def test_job_is_cancelled_helper_handles_missing_and_cancelled_jobs():
+    assert main._job_is_cancelled("missing-job") is False
+    job_id = main._new_job("cancel-helper")
+    assert main._job_is_cancelled(job_id) is False
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    assert main._job_is_cancelled(job_id) is True
+
+
 def test_job_state_machine_rejects_invalid_terminal_transitions():
     job_id = main._new_job("state-machine")
     assert main._set_job(job_id, status="running") is True
