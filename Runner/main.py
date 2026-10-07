@@ -247,11 +247,6 @@ def _job_is_cancelled(job_id):
     return bool(job and job.get("status") == "cancelled")
 
 
-def _job_is_cancelled(job_id):
-    job = _job_snapshot(job_id)
-    return bool(job and job.get("status") == "cancelled")
-
-
 def _cancel_job(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
@@ -591,11 +586,11 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         _set_job(job_id, status="failed", finished_at=finished, exit_code=124,
-                 error=f"Execution timed out after {TIMEOUT} seconds.")
+                 error=f"Execution timed out after {int(policy["timeout"])} seconds.")
         return {
             "job_id": job_id, "status": "failed", "exit_code": 124,
             "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": f"Execution timed out after {TIMEOUT} seconds.",
+            "stderr": f"Execution timed out after {int(policy["timeout"])} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except Exception as exc:
