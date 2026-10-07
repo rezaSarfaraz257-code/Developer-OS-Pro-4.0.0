@@ -23,7 +23,37 @@ export default function ProIDE({projectId,message}){
  const [workspaces,setWorkspaces]=useState([]),[ws,setWs]=useState(null),[files,setFiles]=useState({}),[active,setActive]=useState(""),[tabs,setTabs]=useState([]),[frameworks,setFrameworks]=useState([]),[framework,setFramework]=useState("react-vite"),[packages,setPackages]=useState(""); const [treeFilter,setTreeFilter]=useState(""),[expanded,setExpanded]=useState(new Set()),[selected,setSelected]=useState(new Set()),[symbols,setSymbols]=useState([]),[symbolQuery,setSymbolQuery]=useState(""),[commandOpen,setCommandOpen]=useState(false),[commandQuery,setCommandQuery]=useState(""),[pinned,setPinned]=useState([]),[contextMenu,setContextMenu]=useState(null);
  const [terminal,setTerminal]=useState("Developer OS Sandbox ready.\n"),[sourceControl,setSourceControl]=useState(false),[command,setCommand]=useState(""),[history,setHistory]=useState([]),[hi,setHi]=useState(-1),[dirty,setDirty]=useState(false),[saving,setSaving]=useState(false),[status,setStatus]=useState("Ready"),[showTerminal,setShowTerminal]=useState(false),[zen,setZen]=useState(false),[palette,setPalette]=useState(false),[quickOpen,setQuickOpen]=useState(false),[quick,setQuick]=useState(""),[split,setSplit]=useState(false),[secondary,setSecondary]=useState(""),[diagnostics,setDiagnostics]=useState([]),[panel,setPanel]=useState(null),[recent,setRecent]=useState([]),[activityFeed,setActivityFeed]=useState([]),[cursor,setCursor]=useState({line:1,column:1}),[presence,setPresence]=useState([]),[collabState,setCollabState]=useState("offline"),[offlineQueue,setOfflineQueue]=useState([]),[focusMode,setFocusMode]=useState(false),[layoutMode,setLayoutMode]=useState("comfortable"),[dockOpen,setDockOpen]=useState(true),[dockTab,setDockTab]=useState("terminal"),[ideCaps,setIdeCaps]=useState(null),[plan,setPlan]=useState("free");
  const filesRef=useRef(files),wsRef=useRef(ws),activeRef=useRef(active),dirtyRef=useRef(dirty),timerRef=useRef(),diagRef=useRef(); useEffect(()=>{let cancelled=false;Promise.all([apiFetch("/ide/capabilities/"),apiFetch("/usage/")]).then(async([a,b])=>{const caps=await a.json().catch(()=>null);const usage=await b.json().catch(()=>null);if(!cancelled){setIdeCaps(caps);setPlan(usage?.plan||caps?.plan||"free")}}).catch(()=>{});return()=>{cancelled=true}},[]); const [aiPanel,setAiPanel]=useState(false),[aiBusy,setAiBusy]=useState(false),[aiInput,setAiInput]=useState(""),[aiMode,setAiMode]=useState("explain"),[aiError,setAiError]=useState(""),[aiProposal,setAiProposal]=useState(null),[aiApproval,setAiApproval]=useState(null),[aiPreview,setAiPreview]=useState(false),[aiSnapshot,setAiSnapshot]=useState(null),[aiUndoBusy,setAiUndoBusy]=useState(false); const collab=useRef(null),terminalSocket=useRef(null),terminalProcess=useRef(null),clientId=useRef(globalThis.crypto?.randomUUID?.()||Math.random().toString(36).slice(2)); const refs={files:filesRef,ws:wsRef,active:activeRef,dirty:dirtyRef,timer:timerRef,diag:diagRef};refs.files.current=files;refs.ws.current=ws;refs.active.current=active;refs.dirty.current=dirty;
- const save=useCallback(async(silent=false)=>{const w=refs.ws.current,p=refs.active.current,f=refs.files.current;if(!w||!p||!refs.dirty.current||saving)return true;setSaving(true);setStatus("Saving…");try{const r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify({path:p,content:f[p]||"",revision:w.revision})}),d=await r.json();if(!r.ok)throw Error(d.error||"Save failed");setFiles(d.files||f);setWs(x=>x?({...x,files:d.files||x.files,revision:d.revision??x.revision}):x);setDirty(false);refs.dirty.current=false;setStatus(silent?"Saved automatically":"Saved");return true}catch(e){setStatus(e.message);return false}finally{setSaving(false)}},[saving]);
+ const save=useCallback(async(silent=false)=>{
+   const w=refs.ws.current,p=refs.active.current,f=refs.files.current;
+   if(!w||!p||!refs.dirty.current||saving)return true;
+   const content=typeof f[p]==="string"?f[p]:"";
+   setSaving(true);setStatus("Saving…");
+   try{
+     let revision=w.revision;
+     let r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify({path:p,content,revision})});
+     let d=await r.json().catch(()=>({}));
+     if(r.status===409){
+       const latest=await apiFetch(`/ide/workspaces/${w.id}/files/`);
+       const latestData=await latest.json().catch(()=>({}));
+       if(!latest.ok)throw Error(latestData.error||"Workspace refresh failed while resolving save conflict.");
+       const latestFiles=latestData.files&&typeof latestData.files==="object"?latestData.files:{};
+       revision=latestData.revision??revision;
+       const serverContent=latestFiles[p];
+       if(typeof serverContent==="string"&&serverContent!==content){
+         setStatus("Save conflict: your local changes were preserved.");
+       }
+       refs.ws.current={...refs.ws.current,files:latestFiles,revision};
+       setWs(x=>x?({...x,files:latestFiles,revision}):x);
+       r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify({path:p,content,revision})});
+       d=await r.json().catch(()=>({}));
+     }
+     if(!r.ok)throw Error(d.error||d.detail||"Save failed");
+     const next=d.files||{...refs.files.current,[p]:content};
+     refs.files.current=next;refs.ws.current=refs.ws.current?({...refs.ws.current,files:next,revision:d.revision??revision}):refs.ws.current;
+     setFiles(next);setWs(x=>x?({...x,files:next,revision:d.revision??revision}):x);
+     setDirty(false);refs.dirty.current=false;setStatus(silent?"Saved automatically":"Saved");return true;
+   }catch(e){setStatus(e.message||"Save failed");return false}finally{setSaving(false)}
+ },[saving]);
  useEffect(()=>{const h=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="p"){e.preventDefault();setCommandOpen(true);setCommandQuery("")}if(e.key==="Escape"){setCommandOpen(false);setPalette(false);setQuickOpen(false);setPanel(null)}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="b"){e.preventDefault();setFocusMode(x=>!x)}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="j"){e.preventDefault();setShowTerminal(x=>!x)}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setPalette(true)}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[]);
 useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")]).then(async([a,b])=>{const[w,f]=await Promise.all([a.json(),b.json()]);if(off)return;setWorkspaces(Array.isArray(w)?w:Array.isArray(w?.results)?w.results:[]);setFrameworks(Array.isArray(f)?f:Array.isArray(f?.results)?f.results:[])}).catch(e=>!off&&(typeof message==="function" ? message(e.message) : setStatus(e.message)));return()=>{off=true;clearTimeout(refs.timer.current);clearTimeout(refs.diag.current)}},[message]);
  const load=useCallback(async(item)=>{if(!item)return;if(refs.dirty.current){const saved=await save(true);if(!saved)return;}setStatus("Loading workspace…");try{const r=await apiFetch(`/ide/workspaces/${item.id}/files/`);const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||`Explorer load failed (HTTP ${r.status})`);const f=d.files&&typeof d.files==="object"?d.files:{};const p=d.active_file||Object.keys(f)[0]||"";const next={...item,files:f,active_file:p,revision:d.revision??item.revision};refs.ws.current=next;refs.files.current=f;refs.active.current=p;refs.dirty.current=false;setWs(next);setFiles(f);setActive(p);setTabs(p?[p]:[]);setSelected(new Set(p?[p]:[]));setDirty(false);setStatus("Explorer synced")}catch(e){setStatus(e.message||"Explorer load failed")}},[save]);
