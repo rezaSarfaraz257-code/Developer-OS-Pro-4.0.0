@@ -12,6 +12,12 @@ from .models import CodeWorkspace
 from .views import RUNNER_URL, RUNNER_TOKEN, _workspace_access_queryset
 
 class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
+    async def disconnect(self, code):
+        task = getattr(self, "stream_task", None)
+        if task:
+            task.cancel()
+        self.stream_task = None
+
     async def connect(self):
         token = parse_qs(self.scope.get("query_string", b"").decode()).get("token", [None])[0]
         if not token:
@@ -26,6 +32,7 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         allowed = await sync_to_async(lambda: _workspace_access_queryset(self.user).filter(pk=self.workspace_id).exists())()
         if not allowed:
             await self.close(code=4403); return
+        self.stream_task = None
         await self.accept()
         await self.send_json({"type":"ready","workspace_id":self.workspace_id})
 
@@ -49,7 +56,7 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_json({"type":"error","message":data.get("detail") or data.get("error") or "Process start failed."}); return
             self.process_id=data["id"]
             await self.send_json({"type":"process","data":data})
-            await self._stream_process()
+            self.stream_task = asyncio.create_task(self._stream_process())
         elif action=="stop" and getattr(self,"process_id",None):
             response=await sync_to_async(self._runner)("POST",f"/process/{self.process_id}/stop",{"workspace_id":str(self.workspace_id)},20)
             await self.send_json({"type":"process","data":response.json() if response.content else {}})
