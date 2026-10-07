@@ -517,6 +517,9 @@ class Referral(models.Model):
     referred = models.OneToOneField(User, on_delete=models.CASCADE, related_name="referral_received")
     code = models.ForeignKey(ReferralCode, on_delete=models.PROTECT, related_name="referrals")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    attributed_at = models.DateTimeField(auto_now_add=True)
+    attribution_ip_hash = models.CharField(max_length=128, blank=True, default="")
+    attribution_ua_hash = models.CharField(max_length=128, blank=True, default="")
     qualified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
