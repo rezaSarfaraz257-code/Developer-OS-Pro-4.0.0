@@ -2148,9 +2148,14 @@ def _runner_request(method, path, payload, timeout=30):
 def ide_capabilities_api(request):
     """Expose runner capabilities so the IDE can adapt instead of guessing."""
     data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
-    if error:
-        return Response({"status": "degraded", "runner": None, "error": error}, status=503)
     plan, _ = _plan_for(request.user)
+    if error:
+        return Response({
+            "status": "degraded",
+            "runner": None,
+            "error": error,
+            "plan": plan,
+        }, status=200)
     limits = PLAN_LIMITS[plan]
     return Response({
         "status": "ready",
