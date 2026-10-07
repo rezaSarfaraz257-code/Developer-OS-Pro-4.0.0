@@ -184,10 +184,10 @@ def _new_job(workspace_id):
 def _is_retryable_error(exc):
     return isinstance(exc, (ConnectionError, TimeoutError, OSError)) or "temporarily" in str(exc).lower()
 
-TERMINAL_JOB_STATES = {"completed", "failed", "cancelled"}
+TERMINAL_JOB_STATES = {"completed", "failed", "timeout", "cancelled"}
 VALID_JOB_TRANSITIONS = {
     "queued": {"queued", "running", "completed", "failed", "cancelled"},
-    "running": {"running", "completed", "failed", "cancelled"},
+    "running": {"running", "completed", "failed", "timeout", "cancelled"},
     "completed": {"completed"},
     "failed": {"failed"},
     "cancelled": {"cancelled"},
@@ -585,10 +585,10 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         if "proc" in locals():
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
-        _set_job(job_id, status="failed", finished_at=finished, exit_code=124,
+        _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
                  error=f"Execution timed out after {int(policy['timeout'])} seconds.")
         return {
-            "job_id": job_id, "status": "failed", "exit_code": 124,
+            "job_id": job_id, "status": "timeout", "exit_code": 124,
             "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
             "stderr": f"Execution timed out after {int(policy['timeout'])} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
