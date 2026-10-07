@@ -2,43 +2,46 @@
 
 ## Engineering state
 
-The 4.0.0 artifact is hardened and prepared for external production validation.
+The product feature set and production-hardening passes are merged on `master`. The release contract is intentionally fail-closed: source inspection or a successful PR build is not treated as proof of target-environment readiness.
 
 ### Implemented
 
 - SaaS organizations, roles and invitations
-- subscriptions and Stripe billing lifecycle
-- webhook signature verification and event idempotency
-- usage metering and plan limits
+- Free / Pro / Team / Enterprise pricing and server-authoritative entitlements
+- Subscriptions, Stripe checkout/update lifecycle and webhook idempotency
+- Usage metering and plan limits
 - API key lifecycle
-- JWT refresh rotation and logout blacklist
-- GitHub OAuth with PKCE
-- encrypted GitHub tokens
-- audit logging
-- workspace/IDE persistence
-- sandboxed Runner with resource limits
-- AI conversation and structured engineering actions
-- production security headers
-- PostgreSQL support
-- Docker Compose production stack
-- health/readiness endpoints
-- frontend lint/build/test CI
-- PostgreSQL migration/test CI
-- runner container integration CI
-- full-stack Docker smoke E2E
+- JWT refresh rotation, session binding and logout blacklist
+- GitHub OAuth with PKCE and encrypted GitHub tokens
+- Audit/security/session persistence
+- Persistent project/workspace filesystem
+- Monaco-based Pro IDE with Explorer, terminal, diagnostics, symbols, run/debug, preview, source control, collaboration and AI patch review
+- Isolated Runner with resource limits and fail-closed production security
+- Context-aware AI engineering actions
+- PostgreSQL + Redis production architecture
+- Docker Compose production stack and Nginx routing
+- Health/readiness endpoints
+- Frontend/backend/runner automated CI
+- Docker runner integration smoke tests
+- Full-stack smoke E2E
 - Stripe webhook regression tests
+- Security/CodeQL/dependency gates
 
-## Validation status
+## Validation contract
 
-| Gate | Status in this environment |
+| Gate | State |
 |---|---|
-| Static Python compile | PASS |
-| Runner unit tests | PASS |
-| Static release gate | PASS |
-| Django + PostgreSQL integration | REQUIRES CI |
-| Frontend npm lint/build/test | REQUIRES CI |
-| Docker build/runtime | REQUIRES CI |
-| Full-stack E2E | REQUIRES CI |
-| Production Render deployment | REQUIRES deployment environment |
+| Code-level release contract | PASS |
+| PR production/security validation | PASS |
+| Current master automated run | PENDING FRESH RUN |
+| Exact Render deployment E2E | REQUIRES TARGET ENVIRONMENT |
+| Real Stripe webhook delivery | REQUIRES TARGET ENVIRONMENT |
+| Real AI provider success/timeout/quota paths | REQUIRES TARGET ENVIRONMENT |
+| Encrypted backup + restore evidence | REQUIRES TARGET ENVIRONMENT |
+| Production monitoring/alerts | REQUIRES TARGET ENVIRONMENT |
 
-The project must only be described as **100% production-validated** after the external CI workflow passes on the deployed commit.
+The production black-box workflow now fails closed when its required deployment secrets are absent. It also validates the complete Free/Pro/Team/Enterprise pricing, entitlement and feature matrix instead of checking only the Free/Pro happy path.
+
+**100% production-validated is only declared after the fresh master workflow and target-environment gates pass.**
+
+The product is intentionally not treated as an ordinary CRUD website: the architecture preserves isolated execution, server-side entitlement enforcement, real-time collaboration, contextual AI, production observability/recovery, and tier-specific SaaS controls.
