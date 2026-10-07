@@ -509,6 +509,27 @@ def _sandbox_command(root, command, allow_network=False):
     ])
     return args
 
+DANGEROUS_ENV_KEYS = {
+    "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME",
+    "PYTHONSTARTUP", "BASH_ENV", "ENV", "CDPATH", "NODE_OPTIONS",
+    "NODE_PATH", "NPM_CONFIG_USERCONFIG", "PIP_CONFIG_FILE",
+    "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "HOME", "TMPDIR",
+}
+
+def _safe_process_env(base_env, env_extra):
+    """Allow user environment variables without allowing runtime hijacking."""
+    if not env_extra:
+        return base_env
+    for key, value in dict(env_extra).items():
+        key = str(key)
+        value = str(value)
+        if not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", key) or len(value) > 4000:
+            continue
+        if key in DANGEROUS_ENV_KEYS or key.startswith(("LD_", "DYLD_")):
+            continue
+        base_env[key] = value
+    return base_env
+
 def _normalize_command(command):
     """Normalize common runtime aliases across Linux runner images."""
     command = str(command or "").strip()
@@ -1037,10 +1058,7 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         "PIP_DISABLE_PIP_VERSION_CHECK": "1",
         "npm_config_update_notifier": "false",
     }
-    if env_extra:
-        for key, value in dict(env_extra).items():
-            if re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", str(key)) and len(str(value)) <= 4000:
-                env[str(key)] = str(value)
+    _safe_process_env(env, env_extra)
     (root / ".home").mkdir(exist_ok=True)
     argv = _sandbox_command(root, command, allow_network=allow_network)
     try:
