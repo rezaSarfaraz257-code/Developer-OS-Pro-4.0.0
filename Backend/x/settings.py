@@ -43,6 +43,11 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+if IS_PRODUCTION and ("*" in ALLOWED_HOSTS or not ALLOWED_HOSTS):
+    raise ImproperlyConfigured("Production ALLOWED_HOSTS must explicitly list trusted hosts.")
+_frontend_parts = urlparse(FRONTEND_URL)
+if _frontend_parts.scheme not in {"http", "https"} or not _frontend_parts.netloc:
+    raise ImproperlyConfigured("FRONTEND_URL must be an absolute http(s) URL.")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true" if not DEBUG else "false").lower() in {"1", "true", "yes", "on"}
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Developer OS <no-reply@localhost>")
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend" if os.getenv("EMAIL_HOST") else "django.core.mail.backends.console.EmailBackend")
@@ -174,5 +179,5 @@ else:
     }
 
 REST_FRAMEWORK = {"EXCEPTION_HANDLER": "api.security.api_exception_handler", "DEFAULT_AUTHENTICATION_CLASSES": ("api.authentication.APIKeyAuthentication", "rest_framework_simplejwt.authentication.JWTAuthentication"), "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",), "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"), "DEFAULT_THROTTLE_RATES": {"anon": "60/hour", "user": "2000/day", "auth": "10/hour", "assistant": "30/hour", "referral": "12/hour", "runner": "20/minute"}}
-SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",)}
+SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",), "UPDATE_LAST_LOGIN": False, "LEEWAY": 5}
 LOGGING = {"version": 1, "disable_existing_loggers": False, "formatters": {"json": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}}, "handlers": {"console_json": {"class": "logging.StreamHandler", "formatter": "json"}}, "loggers": {"developer_os": {"handlers": ["console_json"], "level": os.getenv("LOG_LEVEL", "INFO"), "propagate": False}}}
