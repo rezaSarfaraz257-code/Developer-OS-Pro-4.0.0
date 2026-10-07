@@ -62,7 +62,7 @@ class ReferralProgramTests(TestCase):
                 email_verified=True,
                 email_verified_at=timezone.now(),
             )
-                referral = Referral.objects.create(
+            referral = Referral.objects.create(
                 referrer=self.referrer,
                 referred=referred,
                 code=code,
