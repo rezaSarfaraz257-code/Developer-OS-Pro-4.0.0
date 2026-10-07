@@ -1051,7 +1051,7 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
     try:
         proc = subprocess.Popen(
             argv, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=1, start_new_session=True, preexec_fn=_limit_process_resources,
+            text=True, bufsize=1, start_new_session=True, preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
