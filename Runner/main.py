@@ -241,6 +241,12 @@ def _terminate_process_group(proc, *, grace_seconds=None):
         pass
 
 
+def _job_is_cancelled(job_id):
+    """Return whether a queued/running job has been explicitly cancelled."""
+    job = _job_snapshot(job_id)
+    return bool(job and job.get("status") == "cancelled")
+
+
 def _cancel_job(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
