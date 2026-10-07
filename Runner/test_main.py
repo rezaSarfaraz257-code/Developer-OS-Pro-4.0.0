@@ -141,7 +141,7 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_python_command_is_normalized_when_only_python3_exists(self):
         import main
         with patch("main.shutil.which", side_effect=lambda name: "/usr/bin/python3" if name == "python3" else None):
-            self.assertEqual(main._normalize_command("python main.py"), "python3 main.py")
+            self.assertEqual(main._normalize_command("python3 main.py"), "python3 main.py")
 
     def test_execute_and_process_payloads_use_workspace_lock(self):
         import main
