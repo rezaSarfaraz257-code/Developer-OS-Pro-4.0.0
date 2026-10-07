@@ -616,3 +616,7 @@
 .tier-pro{color:#a8c9ff;background:rgba(80,130,255,.13)}.tier-team{color:#c7b8ff;background:rgba(140,90,255,.14)}.tier-enterprise,.tier-admin{color:#b8f5d0;background:rgba(60,190,120,.13)}
 .dos-dock-meta button{border:1px solid rgba(255,255,255,.08);background:transparent;color:#aab5c4;border-radius:5px;padding:4px 8px;cursor:pointer}
 .dos-ide-pro .dos-statusbar{padding-bottom:38px}
+
+
+/* SaaS tier feature list */
+.plan-features{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px;font-size:.78rem;line-height:1.35;opacity:.86}.plan-features li{display:flex;gap:6px;align-items:flex-start}.plan-features li::first-letter{font-weight:700}
