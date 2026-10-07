@@ -49,6 +49,10 @@ const task = await request("/tasks/", {
 });
 if (!task.id) throw new Error("Task creation failed.");
 
+const capabilities = await request("/ide/capabilities/", {headers: auth});
+if (!capabilities.runner || !capabilities.runner.runtimes || !capabilities.plan || !capabilities.limits) throw new Error("IDE capability/entitlement contract failed.");
+if (!["free","pro","team","enterprise","admin"].includes(capabilities.plan)) throw new Error("Unknown IDE entitlement plan.");
+
 const workspace = await request("/ide/workspaces/", {
   method: "POST",
   headers: auth,
