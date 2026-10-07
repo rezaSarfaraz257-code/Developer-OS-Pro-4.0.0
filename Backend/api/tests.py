@@ -313,6 +313,7 @@ class PlatformUpgradeTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="platform-user", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)
+        Subscription.objects.create(user=self.user, plan="team", status="active")
         self.project = Project.objects.create(owner=self.user, title="Quantum IDE", description="Build a web IDE")
         Task.objects.create(project=self.project, title="Ship editor", priority="urgent")
 
