@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task
+from .models import Project, Referral, ReferralCode, ReferralReward, UserProfile, Task, Activity
 from .views import _plan_for, _qualify_referral
 
 
