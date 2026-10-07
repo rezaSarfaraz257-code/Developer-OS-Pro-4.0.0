@@ -2645,6 +2645,8 @@ def ide_execute_api(request, pk):
 
         response_data = {
             "id": execution.id if execution is not None else None,
+            "command": command,
+            "active_file": str(request.data.get("active_file") or ""),
             "status": execution_status,
             "exit_code": data.get("exit_code"),
             "stdout": str(data.get("stdout") or ""),
