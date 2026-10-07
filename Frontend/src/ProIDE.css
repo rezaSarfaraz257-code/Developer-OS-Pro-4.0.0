@@ -1605,4 +1605,4 @@
 .dos-explorer-actions button{width:23px;height:23px;padding:0;display:grid;place-items:center;border:1px solid transparent;border-radius:5px;background:transparent;color:#638093;cursor:pointer}
 .dos-explorer-actions button:hover{color:#dffbff;border-color:rgba(0,229,255,.28);background:rgba(0,229,255,.08)}
 .dos-body.dos-explorer-collapsed .dos-explorer-actions{display:none}
-@media(max-width:900px){.dos-body.dos-explorer-collapsed{grid-template-columns:44px minmax(0,1fr) 0}.dos-body.dos-explorer-collapsed .dos-inspector{display:none}}
+@media(max-width:900px){.dos-body.dos-explorer-collapsed{grid-template-columns:44px 0 minmax(0,1fr) 0}.dos-body.dos-explorer-collapsed .dos-inspector{display:none}}
