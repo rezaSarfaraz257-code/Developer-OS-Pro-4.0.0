@@ -101,7 +101,14 @@ class ReferralProgramTests(TestCase):
             referred=referred,
             code=code,
         )
-        Project.objects.create(owner=referred, title="Qualified Once")
+        project = Project.objects.create(owner=referred, title="Qualified Once")
+        Task.objects.create(project=project, title="Real task 1")
+        Task.objects.create(project=project, title="Real task 2")
+        referred.date_joined = timezone.now() - timedelta(hours=73)
+        referred.save(update_fields=["date_joined"])
+        Activity.objects.create(actor=referred, verb="worked", message="day 1", created_at=timezone.now() - timedelta(days=2))
+        Activity.objects.create(actor=referred, verb="worked", message="day 2", created_at=timezone.now() - timedelta(days=1))
+        Activity.objects.create(actor=referred, verb="worked", message="day 3", created_at=timezone.now())
         for _ in range(2):
             _qualify_referral(referred)
         self.assertEqual(Referral.objects.filter(pk=referral.pk, status="rewarded").count(), 1)
