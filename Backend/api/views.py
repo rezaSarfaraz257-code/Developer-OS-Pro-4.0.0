@@ -2868,6 +2868,31 @@ def _consume_usage(user, metric, amount=1):
 def _audit(user, action, target_type="", target_id="", organization=None, metadata=None):
     return AuditLog.objects.create(user=user, organization=organization, action=action, target_type=target_type, target_id=str(target_id or ""), metadata=metadata or {})
 
+def _feature_access(user, feature, *, required_plan=None):
+    """Return server-authoritative feature access with a stable upgrade error."""
+    plan, _ = _plan_for(user)
+    allowed = bool(PLAN_FEATURES.get(plan, {}).get(feature, False))
+    if allowed:
+        return True, None
+    return False, {
+        "error": f"{feature.replace('_', ' ').title()} is not available on the {plan.title()} plan.",
+        "code": "plan_upgrade_required",
+        "feature": feature,
+        "plan": plan,
+        "required_plan": required_plan or ("team" if feature in {"organizations", "collaboration", "governance", "audit_log", "seat_billing"} else "pro"),
+    }
+
+
+def _organization_seat_limit(org):
+    """Resolve the effective member ceiling from plan plus purchased seats."""
+    plan = str(org.plan or "free").lower()
+    base = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["org_members"]
+    subscription = OrganizationSubscription.objects.filter(organization=org).first()
+    if subscription and plan in {"team", "enterprise"}:
+        return max(base, int(subscription.quantity or 0))
+    return base
+
+
 def _entitlement(user, feature):
     plan, _ = _plan_for(user)
     limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
@@ -3221,8 +3246,16 @@ def organization_members_api(request, pk):
     identifier = str(request.data.get("username") or request.data.get("email") or "").strip()
     user = get_object_or_404(User, Q(username__iexact=identifier) | Q(email__iexact=identifier))
     role = str(request.data.get("role") or "developer")
-    if role not in {"admin","developer","viewer"}: return Response({"error":"Invalid role"}, status=400)
+    if role not in {"admin","developer","viewer"}:
+        return Response({"error":"Invalid role"}, status=400)
+    if not OrganizationMembership.objects.filter(organization=org, user=user).exists():
+        seat_limit = _organization_seat_limit(org)
+        if seat_limit <= 0:
+            return Response({"error":"Member management requires a Team or Enterprise subscription.", "code":"plan_upgrade_required", "required_plan":"team"}, status=403)
+        if org.memberships.count() >= seat_limit:
+            return Response({"error":"Your organization has reached its purchased seat limit.", "code":"seat_limit_reached", "limit":seat_limit}, status=403)
     m, created = OrganizationMembership.objects.update_or_create(organization=org, user=user, defaults={"role":role})
+    _audit(request.user, "organization.member_added" if created else "organization.member_role_updated", "membership", m.id, organization=org, metadata={"role":role})
     return Response(OrganizationMembershipSerializer(m).data, status=201 if created else 200)
 
 
@@ -3251,8 +3284,7 @@ def organization_invites_api(request, pk):
         plan = org.plan
         member_count = org.memberships.count()
         org_sub = OrganizationSubscription.objects.filter(organization=org).first()
-        base_limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["org_members"]
-        seat_limit = max(base_limit, org_sub.quantity) if org_sub and plan in {"team", "enterprise"} else base_limit
+        seat_limit = _organization_seat_limit(org)
         if plan == "free":
             seat_limit = max(seat_limit, 1)
         if member_count >= seat_limit:
@@ -3280,6 +3312,9 @@ def organization_invite_accept_api(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def audit_log_api(request):
+    allowed, error = _feature_access(request.user, "audit_log", required_plan="team")
+    if not allowed:
+        return Response(error, status=403)
     qs = AuditLog.objects.filter(Q(user=request.user) | Q(organization__memberships__user=request.user)).distinct().order_by("-created_at")[:200]
     return Response([{"id": x.id, "action": x.action, "target_type": x.target_type, "target_id": x.target_id, "metadata": x.metadata, "created_at": x.created_at} for x in qs])
 
