@@ -118,3 +118,21 @@ class BillingEntitlementTests(TestCase):
         self.assertEqual(PLAN_CATALOG["team"]["billing_model"], "per_seat")
         self.assertEqual(PLAN_CATALOG["enterprise"]["billing_model"], "custom")
         self.assertTrue(PLAN_CATALOG["enterprise"]["starting_at"])
+
+    def test_every_plan_exposes_consistent_entitlements(self):
+        from .views import PLAN_CATALOG
+        self.assertEqual(set(PLAN_CATALOG), {"free", "pro", "team", "enterprise"})
+        self.assertEqual(set(PLAN_CATALOG), set(PLAN_LIMITS))
+        self.assertEqual(set(PLAN_CATALOG), set(PLAN_FEATURES))
+        for plan in ("free", "pro", "team", "enterprise"):
+            for value in PLAN_LIMITS[plan].values():
+                self.assertGreaterEqual(value, 0)
+            self.user.subscription.plan = plan
+            self.user.subscription.status = "active"
+            self.user.subscription.save(update_fields=["plan", "status", "updated_at"])
+            usage = self.client.get("/api/usage/")
+            self.assertEqual(usage.status_code, 200)
+            self.assertEqual(usage.json()["plan"], plan)
+            capabilities = self.client.get("/api/ide/capabilities/")
+            self.assertEqual(capabilities.status_code, 200)
+            self.assertEqual(capabilities.json()["plan"], plan)
