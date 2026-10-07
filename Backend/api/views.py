@@ -105,10 +105,9 @@ GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
 GITHUB_OAUTH_SCOPE = os.environ.get("GITHUB_OAUTH_SCOPE", "read:user user:email repo")
 
-GITHUB_OAUTH_REDIRECT = os.environ.get(
-    "GITHUB_OAUTH_REDIRECT",
-    "http://127.0.0.1:8000/api/github/callback/"
-)
+GITHUB_OAUTH_REDIRECT = getattr(
+    settings, "GITHUB_OAUTH_REDIRECT", ""
+) or os.environ.get("GITHUB_OAUTH_REDIRECT", "")
 
 FRONTEND_URL = os.environ.get(
     "FRONTEND_URL",
@@ -977,8 +976,8 @@ def snippet_detail_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def github_authorize(request):
-    github_client_id = getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID or "test-client"
-    github_client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET or "test-secret"
+    github_client_id = getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID
+    github_client_secret = getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET
     if not github_client_id:
         return Response(
             {
