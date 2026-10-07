@@ -346,10 +346,24 @@ BLOCKED = [
     r"\b(kill|pkill|killall)\b",
 ]
 
+RUNNER_TIER_LIMITS = {
+    "free": {"timeout": 30, "memory_mb": 256, "max_processes": 1},
+    "pro": {"timeout": 120, "memory_mb": 768, "max_processes": 2},
+    "team": {"timeout": 180, "memory_mb": 1024, "max_processes": 4},
+    "enterprise": {"timeout": 300, "memory_mb": 2048, "max_processes": 8},
+    "admin": {"timeout": 300, "memory_mb": 2048, "max_processes": 8},
+}
+
+def _entitlement_policy(payload):
+    raw = payload.get("entitlement") if isinstance(payload, dict) else None
+    plan = str((raw or {}).get("plan") or "free").lower() if isinstance(raw, dict) else "free"
+    return RUNNER_TIER_LIMITS.get(plan, RUNNER_TIER_LIMITS["free"])
+
 class Workspace(BaseModel):
     workspace_id: str
     files: dict[str, str] = Field(default_factory=dict)
     active_file: str = ""
+    entitlement: dict[str, str] = Field(default_factory=dict)
 
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
@@ -508,8 +522,9 @@ def _normalize_command(command):
         command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
     return command
 
-def run_command(root, command, *, allow_network=False):
+def run_command(root, command, *, allow_network=False, entitlement=None):
     command = _normalize_command(command)
+    policy = _entitlement_policy({"entitlement": entitlement or {}})
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
         raise HTTPException(status_code=400, detail="Invalid command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -547,8 +562,8 @@ def run_command(root, command, *, allow_network=False):
         with _workspace_lock(root.name):
             proc = subprocess.run(
                 _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=TIMEOUT, start_new_session=True,
-                preexec_fn=_limit_process_resources,
+                capture_output=True, text=True, timeout=min(TIMEOUT, int(policy["timeout"])), start_new_session=True,
+                preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
             )
         finished = time.time()
         final_status = _job_snapshot(job_id) or {}
@@ -928,7 +943,7 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
         started=time.time()
         with _workspace_lock(payload.workspace_id):
             write_snapshot(root, files)
-            result=run_command(root, payload.command)
+            result=run_command(root, payload.command, entitlement=payload.entitlement)
         _metric("exec_total")
         _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
         with METRICS_LOCK:
@@ -997,7 +1012,7 @@ def _process_output_reader(pid, stream_name, stream):
         except Exception:
             pass
 
-def _start_process(root, command, *, allow_network=False, env_extra=None):
+def _start_process(root, command, *, allow_network=False, env_extra=None, entitlement=None):
     global PROCESS_SEQ
     command = _normalize_command(command)
     if not command or len(command) > MAX_COMMAND or "\x00" in command:
@@ -1006,7 +1021,9 @@ def _start_process(root, command, *, allow_network=False, env_extra=None):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
     with PROCESS_LOCK:
         active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
-        if len(active) >= MAX_PROCESSES_PER_WORKSPACE:
+        policy = _entitlement_policy({"entitlement": entitlement or {}})
+        process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
+        if len(active) >= process_limit:
             raise HTTPException(status_code=429, detail="Workspace process limit reached.")
         PROCESS_SEQ += 1
         process_id = str(PROCESS_SEQ)
@@ -1390,7 +1407,7 @@ def process_start(payload: ProcessStartRequest, authorization: str = Header(defa
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         write_snapshot(root, payload.files)
-    pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env)
+    pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env, entitlement=payload.entitlement)
     _metric("process_started")
     return _process_state(pid)
 
