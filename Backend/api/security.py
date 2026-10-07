@@ -82,6 +82,8 @@ def rate_bucket(path: str) -> str:
         return "upload"
     if "/invites" in p or "/invite" in p:
         return "invite"
+    if "/referrals/" in p:
+        return "referral"
     return "api"
 
 
