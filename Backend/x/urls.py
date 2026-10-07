@@ -7,7 +7,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from api.views import AuthRateThrottle
-from api.mature import MatureTokenObtainPairView
+from api.mature import MatureTokenObtainPairView, MatureTokenRefreshView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -21,7 +21,7 @@ urlpatterns = [
 
     path(
         'api/token/refresh/',
-        TokenRefreshView.as_view(),
+        MatureTokenRefreshView.as_view(),
         name='token_refresh'
     ),
 ]
