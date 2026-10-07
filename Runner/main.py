@@ -558,7 +558,7 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         with _workspace_lock(root.name):
             proc = subprocess.run(
                 _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=min(TIMEOUT, int(policy["timeout"])), start_new_session=True,
+                capture_output=True, text=True, timeout=min(TIMEOUT, int(policy['timeout'])), start_new_session=True,
                 preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
             )
         finished = time.time()
@@ -586,11 +586,11 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         _set_job(job_id, status="failed", finished_at=finished, exit_code=124,
-                 error=f"Execution timed out after {int(policy["timeout"])} seconds.")
+                 error=f"Execution timed out after {int(policy['timeout'])} seconds.")
         return {
             "job_id": job_id, "status": "failed", "exit_code": 124,
             "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": f"Execution timed out after {int(policy["timeout"])} seconds.",
+            "stderr": f"Execution timed out after {int(policy['timeout'])} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except Exception as exc:
