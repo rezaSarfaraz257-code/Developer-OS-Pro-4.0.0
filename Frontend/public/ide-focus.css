@@ -684,3 +684,38 @@
 @media(prefers-reduced-motion:reduce){
   .dos-ide-pro *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}
 }
+
+
+/* Workflow ergonomics: focus + density are user-controlled, not hard-coded. */
+.dos-ide-pro.dos-focus-mode .dos-editor-toolbar{
+  opacity:.58;
+  transition:opacity .18s ease,transform .18s ease;
+}
+.dos-ide-pro.dos-focus-mode .dos-editor-toolbar:hover,
+.dos-ide-pro.dos-focus-mode .dos-editor-toolbar:focus-within{
+  opacity:1;
+}
+.dos-ide-pro.dos-focus-mode .dos-inspector{
+  opacity:.72;
+  transition:opacity .18s ease;
+}
+.dos-ide-pro.dos-focus-mode .dos-inspector:hover,
+.dos-ide-pro.dos-focus-mode .dos-inspector:focus-within{opacity:1}
+.dos-ide-pro.dos-focus-mode .dos-activity button:not(.selected){opacity:.65}
+.dos-ide-pro.dos-compact-mode .dos-tabs{min-height:34px}
+.dos-ide-pro.dos-compact-mode .dos-tab{height:34px;min-width:104px;padding:0 8px}
+.dos-ide-pro.dos-compact-mode .dos-editor-toolbar{min-height:32px;padding:3px 5px;gap:3px}
+.dos-ide-pro.dos-compact-mode .dos-editor-toolbar button{height:25px;padding:0 7px;font-size:8px}
+.dos-ide-pro.dos-compact-mode .dos-card{padding:7px;margin-bottom:5px}
+.dos-ide-pro.dos-compact-mode .dos-explorer .dos-file,
+.dos-ide-pro.dos-compact-mode .dos-explorer .dos-folder{min-height:25px}
+.dos-ide-pro .dos-top-actions button:focus-visible,
+.dos-ide-pro .dos-editor-toolbar button:focus-visible,
+.dos-ide-pro .dos-activity button:focus-visible,
+.dos-ide-pro .dos-tab button:focus-visible{
+  outline:2px solid rgba(85,220,255,.42);
+  outline-offset:1px;
+}
+@media(max-width:800px){
+  .dos-ide-pro.dos-focus-mode .dos-editor-toolbar{opacity:.9}
+}
