@@ -167,6 +167,15 @@ const billing = await fetch(`${api}/billing/webhook/`, {
 const billingBody = await billing.json().catch(()=>({}));
 assert(billing.ok && billingBody.received === true && billingBody.duplicate === false, `Billing webhook failed: ${billing.status} ${JSON.stringify(billingBody)}`);
 
+const tamperedSignature = `${signature.header.slice(0, -1)}${signature.header.endsWith("0") ? "1" : "0"}`;
+const rejected = await fetch(`${api}/billing/webhook/`, {
+  method:"POST",
+  headers:{"Content-Type":"application/json","Stripe-Signature":tamperedSignature},
+  body,
+});
+const rejectedBody = await rejected.json().catch(()=>({}));
+assert(rejected.status === 400 && rejectedBody.error === "Invalid webhook signature.", "Invalid billing signature was not rejected.");
+
 const duplicate = await fetch(`${api}/billing/webhook/`, {
   method:"POST",
   headers:{"Content-Type":"application/json","Stripe-Signature":signature.header},
