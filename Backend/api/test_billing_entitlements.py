@@ -82,6 +82,34 @@ class BillingEntitlementTests(TestCase):
             self.assertEqual(response.json()["code"], code)
 
 
+    def test_free_cannot_read_audit_log(self):
+        response = self.client.get("/api/audit/")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "plan_upgrade_required")
+
+    def test_team_can_read_audit_log(self):
+        self.user.subscription.plan = "team"
+        self.user.subscription.status = "active"
+        self.user.subscription.save(update_fields=["plan", "status", "updated_at"])
+        response = self.client.get("/api/audit/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_team_seat_limit_is_enforced(self):
+        from .models import Organization
+        from .views import PLAN_LIMITS
+        self.user.subscription.plan = "team"
+        self.user.subscription.status = "active"
+        self.user.subscription.save(update_fields=["plan", "status", "updated_at"])
+        org = Organization.objects.create(owner=self.user, name="Seat Org", slug="seat-org", plan="team")
+        OrganizationMembership.objects.create(organization=org, user=self.user, role="owner")
+        second = User.objects.create_user(username="seat-user", email="seat@example.com", password="StrongPass123!")
+        for n in range(PLAN_LIMITS["team"]["org_members"] - 1):
+            u = User.objects.create_user(username=f"member-{n}", email=f"member-{n}@example.com", password="StrongPass123!")
+            OrganizationMembership.objects.create(organization=org, user=u, role="developer")
+        response = self.client.post(f"/api/organizations/{org.id}/members/", {"username": second.username}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "seat_limit_reached")
+
     def test_pricing_packaging_contract(self):
         from .views import PLAN_CATALOG
         self.assertTrue(PLAN_CATALOG["pro"]["recommended"])
