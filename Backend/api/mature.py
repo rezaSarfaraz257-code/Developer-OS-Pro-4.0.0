@@ -472,8 +472,17 @@ def organization_billing_checkout_api(request, pk):
         return Response({"error": "Only organization owners/admins can manage billing."}, status=403)
     org = membership.organization
     plan = str(request.data.get("plan") or "free").lower()
-    if plan not in {"free", "pro", "team", "enterprise"}:
-        return Response({"error": "Unsupported plan."}, status=400)
+    if plan not in {"team", "enterprise"}:
+        return Response({
+            "error": "Organization billing supports Team seat billing. Pro is personal and Enterprise is custom.",
+            "code": "organization_plan_not_supported",
+        }, status=400)
+    if plan == "enterprise":
+        return Response({
+            "error": "Enterprise organization billing is custom. Contact sales for a quote and security requirements.",
+            "code": "enterprise_contact_sales",
+            "required_plan": "enterprise",
+        }, status=400)
     if plan == "free":
         return Response({"error": "Use the billing portal to cancel a paid subscription."}, status=400)
     secret = os.getenv("STRIPE_SECRET_KEY", "")
