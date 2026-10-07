@@ -124,6 +124,16 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertIn(cap["mode"], {"live-dap", "unavailable"})
         self.assertEqual(cap["protocol"], "DAP" if cap["available"] else None)
 
+    def test_debug_session_has_bounded_lifecycle(self):
+        from debug_engine import SESSION_TTL, SESSIONS
+        self.assertGreaterEqual(SESSION_TTL, 300)
+        self.assertIsInstance(SESSIONS, dict)
+
+    def test_debug_start_requires_explicit_target(self):
+        from debug_engine import handle
+        with self.assertRaises(ValueError):
+            handle("start", root="/tmp")
+
     def test_debug_target_stays_inside_workspace(self):
         from debug_engine import Session
         root = Path("/tmp/runner-debug-test")
