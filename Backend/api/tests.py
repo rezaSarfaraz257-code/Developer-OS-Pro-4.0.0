@@ -517,6 +517,7 @@ class SaaSMaturityTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_organization_invite_requires_matching_email_on_accept(self):
+        Subscription.objects.create(user=self.user, plan="team", status="active")
         response = self.client.post("/api/organizations/", {"name": "Maturity Labs"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         org_id = response.data["id"]
