@@ -603,3 +603,16 @@
 @media(prefers-reduced-motion:reduce){
   .dos-ide-pro .dos-terminal,.dos-ide-pro .dos-ai-panel,.dos-ide-pro .dos-engineering-panel,.dos-ide-pro .dos-debugger,.dos-ide-pro .dos-run-center,.dos-ide-pro .dos-palette,.dos-ide-pro .dos-command-box,.dos-ide-pro .dos-overlay-search{animation:none}
 }
+
+/* Unified IDE dock */
+.dos-ide-dock{position:absolute;left:0;right:0;bottom:0;height:38px;display:flex;align-items:stretch;z-index:75;border-top:1px solid rgba(255,255,255,.08);background:rgba(8,11,17,.96)}
+.dos-dock-tabs{display:flex;align-items:stretch;min-width:0;overflow:auto}
+.dos-dock-tabs button{border:0;border-right:1px solid rgba(255,255,255,.05);background:transparent;color:#8f9aaa;padding:0 12px;font:600 11px/1 inherit;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.dos-dock-tabs button:hover,.dos-dock-tabs button.active{color:#fff;background:rgba(255,255,255,.055)}
+.dos-dock-tabs button.active{box-shadow:inset 0 2px 0 rgba(120,180,255,.8)}
+.dos-dock-tabs kbd{font-size:9px;color:#697586;background:rgba(255,255,255,.05);padding:2px 5px;border-radius:4px}
+.dos-dock-meta{margin-left:auto;display:flex;align-items:center;gap:10px;padding:0 10px;color:#6f7b8d;font-size:10px;white-space:nowrap}
+.dos-tier{font-weight:800;letter-spacing:.08em;padding:3px 7px;border-radius:5px;background:rgba(255,255,255,.06);color:#b9c6d8}
+.tier-pro{color:#a8c9ff;background:rgba(80,130,255,.13)}.tier-team{color:#c7b8ff;background:rgba(140,90,255,.14)}.tier-enterprise,.tier-admin{color:#b8f5d0;background:rgba(60,190,120,.13)}
+.dos-dock-meta button{border:1px solid rgba(255,255,255,.08);background:transparent;color:#aab5c4;border-radius:5px;padding:4px 8px;cursor:pointer}
+.dos-ide-pro .dos-statusbar{padding-bottom:38px}
