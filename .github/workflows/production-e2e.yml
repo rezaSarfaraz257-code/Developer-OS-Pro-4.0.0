@@ -19,31 +19,23 @@ concurrency:
 jobs:
   production-e2e:
     name: Deployed SaaS + IDE + Runner + Billing E2E
-    if: ${{ secrets.PRODUCTION_BASE_URL != '' && secrets.PRODUCTION_BILLING_WEBHOOK_SECRET != '' }}
     environment:
       name: production
       deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+      PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
+      PRODUCTION_TARGET: ${{ inputs.target }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Validate deployed production
-        env:
-          PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
-          PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
-          PRODUCTION_TARGET: ${{ inputs.target }}
-        run: node scripts/production_validate.mjs
-
-  configuration-warning:
-    name: Production validation configuration
-    if: ${{ secrets.PRODUCTION_BASE_URL == '' || secrets.PRODUCTION_BILLING_WEBHOOK_SECRET == '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail closed when production secrets are missing
+      - name: Fail closed when production configuration is missing
         run: |
-          echo "::error::Production validation is blocked because PRODUCTION_BASE_URL and PRODUCTION_BILLING_WEBHOOK_SECRET must both be configured."
-          echo "Configure the real deployment secrets and run this workflow again."
-          exit 1
+          test -n "$PRODUCTION_BASE_URL" || { echo "::error::PRODUCTION_BASE_URL is missing from the protected production environment."; exit 1; }
+          test -n "$PRODUCTION_BILLING_WEBHOOK_SECRET" || { echo "::error::PRODUCTION_BILLING_WEBHOOK_SECRET is missing from the protected production environment."; exit 1; }
+      - name: Validate deployed production
+        run: node scripts/production_validate.mjs
