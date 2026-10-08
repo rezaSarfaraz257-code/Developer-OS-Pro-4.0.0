@@ -205,6 +205,7 @@ jobs:
           curl -fsS http://127.0.0.1/ >/dev/null
           docker compose ps
           docker compose exec -T backend python manage.py check --deploy
+          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=5)'
 
   release-gate:
     name: Static release gate
