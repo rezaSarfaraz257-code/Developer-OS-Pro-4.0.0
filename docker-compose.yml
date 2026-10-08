@@ -157,7 +157,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "python manage.py migrate --noinput && python manage.py worker --sleep 1"
+    command: sh -c "python manage.py worker --sleep 1"
     volumes:
       - media_data:/app/media
 
