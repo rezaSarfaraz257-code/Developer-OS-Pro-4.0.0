@@ -2888,9 +2888,18 @@ body:has(.dos-ide-pro) .os-main{
   margin-left:0;
 }
 body:has(.dos-ide-pro) .os-rail,
-body:has(.dos-ide-pro) .os-main > .topbar,
-body:has(.dos-ide-pro) .os-main > .os-content{
+body:has(.dos-ide-pro) .os-main > .topbar{
   display:none;
+}
+body:has(.dos-ide-pro) .os-main > .os-content{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
 }
 
 .dos-ide-pro{
