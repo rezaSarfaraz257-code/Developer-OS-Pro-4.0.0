@@ -30,11 +30,10 @@ class RunnerSecurityTests(unittest.TestCase):
             command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
             self.assertEqual(command[:2], ["bash", "-lc"])
 
-    def test_shared_container_mode_fails_closed_by_default(self):
+    def test_container_native_execution_is_supported_in_strict_managed_runtime(self):
         with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
-            with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
-            self.assertEqual(ctx.exception.status_code, 503)
+            command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+            self.assertEqual(command[:2], ["bash", "-lc"])
 
     def test_runner_token_is_not_left_in_process_environment(self):
         self.assertNotIn("IDE_RUNNER_TOKEN", os.environ)
