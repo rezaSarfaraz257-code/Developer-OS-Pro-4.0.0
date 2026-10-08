@@ -3612,3 +3612,12 @@ body:has(.dos-ide-pro) .os-main > .os-content{
   .dos-ide-pro::after,
   .dos-ide-pro .dos-live-dot { animation:none !important; }
 }
+
+/* The terminal sits above the status strip so the status strip remains the true bottom edge. */
+.dos-ide-pro .dos-workbench-strip { order:1; }
+.dos-ide-pro .dos-tabs { order:2; }
+.dos-ide-pro .dos-editor-toolbar { order:3; }
+.dos-ide-pro .dos-editors { order:4; }
+.dos-ide-pro .dos-ide-dock { order:5; }
+.dos-ide-pro .dos-terminal { order:6; }
+.dos-ide-pro .dos-statusbar { order:7; }
