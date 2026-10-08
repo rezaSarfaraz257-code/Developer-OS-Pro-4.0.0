@@ -2782,3 +2782,87 @@
     min-width:86px;
   }
 }
+
+
+/* FINAL WORKSPACE GEOMETRY — terminal/dock are real rows, never overlays */
+.dos-ide-pro .dos-editor-shell{
+  display:grid;
+  grid-template-rows:42px 40px 36px minmax(0,1fr) 38px auto 27px;
+  min-height:0;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-workbench-strip{grid-row:1;min-height:0}
+.dos-ide-pro .dos-tabs{grid-row:2;min-height:0}
+.dos-ide-pro .dos-editor-toolbar{grid-row:3;min-height:0}
+.dos-ide-pro .dos-editors{
+  grid-row:4;
+  min-height:0;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-ide-dock{
+  position:relative;
+  left:auto;
+  right:auto;
+  bottom:auto;
+  grid-row:5;
+  width:auto;
+  height:38px;
+  min-height:38px;
+  max-height:38px;
+  z-index:3;
+}
+.dos-ide-pro .dos-terminal{
+  grid-row:6;
+  position:relative;
+  left:auto;
+  right:auto;
+  top:auto;
+  bottom:auto;
+  width:auto;
+  min-height:0;
+  max-height:220px;
+  height:auto;
+  margin:0;
+  border-radius:8px 8px 0 0;
+  z-index:2;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-terminal-body{
+  min-height:0;
+  max-height:145px;
+  overflow:auto;
+}
+.dos-ide-pro .dos-statusbar{
+  grid-row:7;
+  min-height:27px;
+  height:27px;
+  padding-bottom:0;
+  z-index:4;
+}
+.dos-ide-pro .dos-dock-tabs{
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:hidden;
+}
+.dos-ide-pro .dos-dock-meta{
+  min-width:0;
+}
+.dos-ide-pro .dos-editor-shell .dos-spacer{
+  min-width:8px;
+}
+@media(max-width:760px){
+  .dos-ide-pro .dos-editor-shell{
+    grid-template-rows:40px 36px 35px minmax(0,1fr) 35px auto 24px;
+  }
+  .dos-ide-pro .dos-ide-dock{
+    height:35px;
+    min-height:35px;
+    max-height:35px;
+  }
+  .dos-ide-pro .dos-terminal{
+    max-height:42dvh;
+  }
+  .dos-ide-pro .dos-terminal-body{
+    max-height:none;
+  }
+}
