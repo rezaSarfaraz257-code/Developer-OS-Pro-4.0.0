@@ -196,7 +196,7 @@ jobs:
           CSRF_TRUSTED_ORIGINS: http://localhost
           EMAIL_VERIFICATION_REQUIRED: "false"
         run: |
-          trap 'docker compose down -v --remove-orphans' EXIT
+          trap 'status=$?; echo "=== DOCKER COMPOSE PS ==="; docker compose ps -a || true; echo "=== BACKEND LOGS ==="; docker compose logs --no-color --tail=250 backend || true; echo "=== WORKER LOGS ==="; docker compose logs --no-color --tail=120 worker || true; docker compose down -v --remove-orphans; exit $status' EXIT
           docker compose up -d db redis runner backend
           docker compose ps
           for i in $(seq 1 60); do
