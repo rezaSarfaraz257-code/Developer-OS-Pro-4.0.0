@@ -197,15 +197,21 @@ jobs:
           EMAIL_VERIFICATION_REQUIRED: "false"
         run: |
           trap 'docker compose down -v --remove-orphans' EXIT
-          docker compose up -d
+          docker compose up -d db redis runner worker backend
+          docker compose ps
+          for i in $(seq 1 60); do
+            if docker compose exec -T backend python -c 'import socket; s=socket.create_connection(("127.0.0.1",8000),2); s.close()' >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          docker compose exec -T backend python manage.py check --deploy
+          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=5)'
+          docker compose up -d --no-deps frontend
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1/ >/dev/null 2>&1; then break; fi
             sleep 5
           done
           curl -fsS http://127.0.0.1/ >/dev/null
           docker compose ps
-          docker compose exec -T backend python manage.py check --deploy
-          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=5)'
 
   release-gate:
     name: Static release gate
