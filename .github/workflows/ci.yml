@@ -48,7 +48,7 @@ jobs:
           DEBUG: "False"
           DJANGO_SECRET_KEY: ci-only-secret-key-with-enough-entropy-123456789-abcdef
           ENVIRONMENT: development
-          ALLOWED_HOSTS: backend,localhost
+          ALLOWED_HOSTS: backend,localhost,127.0.0.1
           CORS_ALLOWED_ORIGINS: http://localhost
           CSRF_TRUSTED_ORIGINS: http://localhost
           DATABASE_URL: postgresql://developeros:test-password@127.0.0.1:5432/developeros_test
