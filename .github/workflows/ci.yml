@@ -150,13 +150,13 @@ jobs:
         run: |
           docker run --rm --network host -v "$PWD:/repo" -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD -e BACKUP_DIR postgres:17-alpine sh -ec '
             export PGPASSWORD="$POSTGRES_PASSWORD"
-            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, '''backup-restore-ok''');"
+            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, $backup-restore-ok$);"
             unset PGPASSWORD
             /repo/scripts/backup_postgres.sh
             export PGPASSWORD="$POSTGRES_PASSWORD"
             psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
             unset PGPASSWORD
-            BACKUP_FILE="$(find /repo/recovery-backups -name '''*.dump''' -type f | head -n 1)"
+            BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
             test -n "$BACKUP_FILE"
             export PGPASSWORD="$POSTGRES_PASSWORD"
             pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
@@ -167,7 +167,7 @@ jobs:
   docker-stack:
     name: Full Docker Compose validation
     runs-on: ubuntu-latest
-    needs: [backend, frontend, runner, backup-restore, docker-stack]
+    needs: [backend, frontend, runner, backup-restore]
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose configuration
@@ -208,7 +208,7 @@ jobs:
   release-gate:
     name: Static release gate
     runs-on: ubuntu-latest
-    needs: [backend, frontend, runner]
+    needs: [backend, frontend, runner, backup-restore, docker-stack]
     steps:
       - uses: actions/checkout@v4
       - name: Release gate
