@@ -152,7 +152,7 @@ jobs:
             export PGPASSWORD="$POSTGRES_PASSWORD"
             psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(98)||chr(97)||chr(99)||chr(107)||chr(117)||chr(112)||chr(45)||chr(114)||chr(101)||chr(115)||chr(116)||chr(111)||chr(114)||chr(101)||chr(45)||chr(111)||chr(107));"
             unset PGPASSWORD
-            /repo/scripts/backup_postgres.sh
+            sh /repo/scripts/backup_postgres.sh
             export PGPASSWORD="$POSTGRES_PASSWORD"
             psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
             unset PGPASSWORD
