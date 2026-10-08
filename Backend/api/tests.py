@@ -371,6 +371,12 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "stale_workspace")
 
+        # A create mutation is additive and rebases on the server revision.
+        response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": "new.txt", "content": "new", "revision": 0}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("new.txt", response.data["files"])
+        self.assertGreater(response.data["revision"], revision)
+
     @patch("api.views._runner_request")
     def test_ide_execute_returns_runner_contract_and_workspace_state(self, runner_request):
         workspace = self.client.post(
