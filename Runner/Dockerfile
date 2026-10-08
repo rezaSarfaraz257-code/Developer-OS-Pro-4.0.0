@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Fail closed: production execution must use a real sandbox backend.
 ENV RUNNER_SECURITY_LEVEL=strict \
-    RUNNER_SANDBOX_MODE=bwrap \
+    RUNNER_SANDBOX_MODE=container \
     RUNNER_ALLOW_NETWORK=false
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
