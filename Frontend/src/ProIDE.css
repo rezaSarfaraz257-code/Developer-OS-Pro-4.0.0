@@ -3413,3 +3413,28 @@ body:has(.dos-ide-pro) .os-main > .os-content{
 @media (prefers-reduced-motion:reduce){
   .dos-top-actions>button,.dos-editor-toolbar .dos-toolbar-group button{transition:none}
 }
+
+
+/* Responsive Explorer recovery: keep a reachable toggle when the IDE is narrow. */
+@media (max-width: 900px) {
+  .dos-ide-pro .dos-body { position:relative; grid-template-columns:44px minmax(0,1fr); }
+  .dos-ide-pro .dos-body > .dos-explorer {
+    display:flex;
+    position:absolute;
+    z-index:35;
+    left:44px;
+    top:0;
+    bottom:0;
+    width:min(280px, calc(100% - 52px));
+    min-width:0;
+    max-width:calc(100% - 52px);
+    box-shadow:18px 0 42px rgba(0,0,0,.48);
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-explorer { display:none; }
+}
+@media (max-width: 520px) {
+  .dos-ide-pro .dos-body { grid-template-columns:38px minmax(0,1fr); }
+  .dos-ide-pro .dos-body > .dos-explorer { left:38px; width:min(270px, calc(100% - 44px)); max-width:calc(100% - 44px); }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-explorer { display:none; }
+  .dos-ide-pro .dos-activity { position:relative; z-index:36; }
+}
