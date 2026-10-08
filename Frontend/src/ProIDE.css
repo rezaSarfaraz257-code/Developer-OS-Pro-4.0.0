@@ -2959,3 +2959,67 @@ body:has(.dos-ide-pro) .os-main > .os-content{
     grid-template-rows:54px 29px minmax(0,1fr)!important;
   }
 }
+
+
+/* RESPONSIVE IDE — size follows its parent, never a fixed monitor size */
+body:has(.dos-ide-pro){
+  overflow:hidden;
+}
+body:has(.dos-ide-pro) .os-shell,
+body:has(.dos-ide-pro) .os-main,
+body:has(.dos-ide-pro) .os-content{
+  width:100%;
+  max-width:none;
+  min-width:0;
+  min-height:0;
+  height:100%;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+}
+body:has(.dos-ide-pro) .os-main{
+  display:flex;
+  flex-direction:column;
+}
+body:has(.dos-ide-pro) .os-main > .os-content{
+  flex:1 1 auto;
+  display:block!important;
+  box-sizing:border-box;
+}
+
+.dos-ide-pro{
+  position:relative!important;
+  inset:auto!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-width:none!important;
+  max-height:none!important;
+  margin:0!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+  display:grid!important;
+  grid-template-rows:auto auto minmax(0,1fr)!important;
+}
+.dos-ide-pro .dos-body{
+  width:100%;
+  min-width:0;
+  min-height:0;
+  height:auto;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-editor-shell{
+  width:100%;
+  min-width:0;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-editors,
+.dos-ide-pro .dos-editor-pane,
+.dos-ide-pro .monaco-host{
+  min-width:0;
+  min-height:0;
+}
