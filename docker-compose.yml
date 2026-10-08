@@ -75,10 +75,10 @@ services:
         - CMD-SHELL
         - >-
           python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=3)' >/dev/null 2>&1
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 25s
+      retries: 10
+      start_period: 60s
     depends_on:
       db:
         condition: service_healthy
