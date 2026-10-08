@@ -74,7 +74,7 @@ services:
       test:
         - CMD-SHELL
         - >-
-          python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/", timeout=3)' >/dev/null 2>&1
+          python -c 'import socket; s=socket.create_connection(("127.0.0.1",8000),3); s.close()'
       interval: 10s
       timeout: 5s
       retries: 10
