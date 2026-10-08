@@ -206,7 +206,7 @@ jobs:
             sleep 5
           done
           docker compose exec -T backend python manage.py check --deploy
-          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=5)'
+          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://backend:8000/api/health/ready/", timeout=5)'
           docker compose up -d --no-deps worker
           docker compose up -d --no-deps frontend
           for i in $(seq 1 60); do
