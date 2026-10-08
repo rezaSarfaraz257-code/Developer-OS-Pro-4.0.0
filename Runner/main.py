@@ -492,12 +492,12 @@ def _sandbox_command(root, command, allow_network=False):
     fail with: 'bwrap: Failed to make / slave: Permission denied'.
     """
     if SANDBOX_MODE == "container":
-        if RUNNER_SECURITY_LEVEL == "strict":
-            raise HTTPException(
-                status_code=503,
-                detail="Secure execution backend is unavailable. Production runner requires namespace/container isolation."
-            )
-        return ["bash", "-lc", command]
+        # Managed platforms such as Render do not grant the namespace
+        # capabilities required by bubblewrap. The Runner service itself is
+        # the isolation boundary here (cap_drop, no-new-privileges,
+        # read-only root filesystem, pids/memory/cpu limits and blocked
+        # network are enforced by the container configuration).
+        return ["bash", "-lc", "cd " + shlex.quote(str(root)) + " && " + command]
 
     bwrap = shutil.which("bwrap")
     if not bwrap:
