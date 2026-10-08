@@ -3337,3 +3337,79 @@ body:has(.dos-ide-pro) .os-main > .os-content{
  .dos-explorer-create{padding:5px;gap:4px}
  .dos-explorer-create button{font-size:8px}
 }
+
+
+/* Button Bar v2 — grouped actions, clear hierarchy and viewport-safe overflow */
+.dos-top-actions{
+  min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:6px;
+  flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;
+  scrollbar-width:thin;scrollbar-color:#28536a transparent;padding:3px 1px;
+}
+.dos-top-actions .dos-state{flex:none}
+.dos-top-actions>button{
+  flex:none;min-height:31px;display:inline-flex;align-items:center;justify-content:center;
+  gap:6px;padding:6px 10px;border:1px solid #20394d;border-radius:7px;
+  background:linear-gradient(180deg,#101d2b,#0b1420);color:#9db9cd;
+  font:10px/1.2 inherit;white-space:nowrap;cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s;
+}
+.dos-top-actions>button:hover:not(:disabled){
+  border-color:#2e718c;background:linear-gradient(180deg,#123044,#0c1d2b);
+  color:#c9f7ff;box-shadow:0 0 16px #20c7f20d;
+}
+.dos-top-actions>button:active:not(:disabled){transform:translateY(1px)}
+.dos-top-actions>button:disabled{opacity:.48;cursor:not-allowed}
+.dos-top-actions>button.dos-primary{
+  border-color:#2988a4;background:linear-gradient(135deg,#0a829b,#155fa4);
+  color:#f1fdff;font-weight:700;box-shadow:0 0 18px #18bce51a;
+}
+.dos-top-actions>button.dos-primary:hover:not(:disabled){
+  border-color:#61e8ff;background:linear-gradient(135deg,#0d9ab4,#1c71bd);
+}
+.dos-editor-toolbar{
+  display:flex;align-items:center;gap:8px;min-width:0;padding:5px 9px;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;overscroll-behavior-x:contain;
+}
+.dos-toolbar-group{display:inline-flex;align-items:center;gap:4px;flex:none;min-width:max-content}
+.dos-toolbar-group+.dos-toolbar-group{padding-left:8px;border-left:1px solid #20394d}
+.dos-editor-toolbar .dos-toolbar-group button{
+  flex:none;min-height:28px;display:inline-flex;align-items:center;justify-content:center;
+  gap:5px;padding:5px 9px;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:#8ca9be;font-size:10px;line-height:1.2;white-space:nowrap;
+  cursor:pointer;transition:background .15s,border-color .15s,color .15s,box-shadow .15s;
+}
+.dos-editor-toolbar .dos-toolbar-group button:hover:not(:disabled){
+  border-color:#244d64;background:linear-gradient(180deg,#102638,#0c1b29);
+  color:#b9f5ff;box-shadow:inset 0 1px #ffffff06;
+}
+.dos-editor-toolbar .dos-toolbar-group button[aria-pressed="true"]{
+  border-color:#28637b;background:#0e2a3a;color:#80edff;
+}
+.dos-editor-toolbar .dos-toolbar-group button:disabled{opacity:.42;cursor:not-allowed}
+.dos-ide-pro :is(.dos-top-actions,.dos-editor-toolbar) button:focus-visible{
+  outline:2px solid #57e5ff;outline-offset:2px;box-shadow:0 0 0 4px #25c8ff18;
+}
+@container (max-width:1080px){
+  .dos-top-actions{gap:4px}
+  .dos-top-actions>button{padding-inline:8px}
+  .dos-editor-toolbar{gap:5px;padding-inline:7px}
+  .dos-editor-toolbar .dos-toolbar-group button{padding-inline:7px}
+}
+@container (max-width:760px){
+  .dos-top-actions{max-width:100%;justify-content:flex-start}
+  .dos-top-actions .dos-state{font-size:8px}
+  .dos-top-actions>button{min-height:28px;padding:5px 7px}
+  .dos-editor-toolbar{max-width:100%;flex-wrap:nowrap}
+  .dos-toolbar-group+.dos-toolbar-group{padding-left:5px}
+  .dos-editor-toolbar .dos-toolbar-group button{min-height:27px;padding-inline:6px;font-size:9px}
+}
+@container (max-width:520px){
+  .dos-top-actions{width:100%;justify-content:flex-start}
+  .dos-top-actions>button{min-height:27px;padding:5px 7px}
+  .dos-editor-toolbar{gap:4px}
+  .dos-toolbar-group{gap:2px}
+  .dos-editor-toolbar .dos-toolbar-group button{padding-inline:6px;font-size:8px}
+}
+@media (prefers-reduced-motion:reduce){
+  .dos-top-actions>button,.dos-editor-toolbar .dos-toolbar-group button{transition:none}
+}
