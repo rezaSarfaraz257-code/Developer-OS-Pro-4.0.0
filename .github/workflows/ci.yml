@@ -121,6 +121,90 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{},"command":"python -c \"print(42)\""}'             | tee process-result.json
           grep -q '"id"' process-result.json
 
+
+  backup-restore:
+    name: PostgreSQL backup and restore
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: developeros_recovery
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: recovery-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U developeros -d developeros_recovery"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backup, destroy, restore and verify
+        env:
+          POSTGRES_DB: developeros_recovery
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: recovery-password
+          BACKUP_DIR: /repo/recovery-backups
+        run: |
+          docker run --rm --network host -v "$PWD:/repo" -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD -e BACKUP_DIR postgres:17-alpine sh -ec '
+            export PGPASSWORD="$POSTGRES_PASSWORD"
+            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, '''backup-restore-ok''');"
+            unset PGPASSWORD
+            /repo/scripts/backup_postgres.sh
+            export PGPASSWORD="$POSTGRES_PASSWORD"
+            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
+            unset PGPASSWORD
+            BACKUP_FILE="$(find /repo/recovery-backups -name '''*.dump''' -type f | head -n 1)"
+            test -n "$BACKUP_FILE"
+            export PGPASSWORD="$POSTGRES_PASSWORD"
+            pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
+            test "$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+            unset PGPASSWORD
+          '
+
+  docker-stack:
+    name: Full Docker Compose validation
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, runner, backup-restore, docker-stack]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-compose-password
+          DJANGO_SECRET_KEY: ci-compose-secret-key-with-enough-entropy-123456789
+          IDE_RUNNER_TOKEN: ci-compose-runner-token
+        run: docker compose config -q
+      - name: Build complete Docker stack
+        env:
+          POSTGRES_PASSWORD: ci-compose-password
+          DJANGO_SECRET_KEY: ci-compose-secret-key-with-enough-entropy-123456789
+          IDE_RUNNER_TOKEN: ci-compose-runner-token
+          RUNNER_SANDBOX_MODE: container
+        run: docker compose build --pull
+      - name: Start and validate complete stack
+        env:
+          POSTGRES_PASSWORD: ci-compose-password
+          DJANGO_SECRET_KEY: ci-compose-secret-key-with-enough-entropy-123456789
+          IDE_RUNNER_TOKEN: ci-compose-runner-token
+          RUNNER_SANDBOX_MODE: container
+          SECURE_SSL_REDIRECT: "false"
+          ALLOWED_HOSTS: localhost,127.0.0.1
+          CORS_ALLOWED_ORIGINS: http://localhost
+          CSRF_TRUSTED_ORIGINS: http://localhost
+          EMAIL_VERIFICATION_REQUIRED: "false"
+        run: |
+          trap 'docker compose down -v --remove-orphans' EXIT
+          docker compose up -d
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1/ >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          curl -fsS http://127.0.0.1/ >/dev/null
+          docker compose ps
+          docker compose exec -T backend python manage.py check --deploy
+
   release-gate:
     name: Static release gate
     runs-on: ubuntu-latest
