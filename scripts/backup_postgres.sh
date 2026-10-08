@@ -7,6 +7,7 @@ OUT_DIR="${BACKUP_DIR:-./backups}"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 export PGPASSWORD="$POSTGRES_PASSWORD"
+export PGUSER="$POSTGRES_USER"
 pg_dump --format=custom --no-owner --no-acl --file="$OUT_DIR/developer-os-$STAMP.dump" "$POSTGRES_DB"
 unset PGPASSWORD
 echo "Created $OUT_DIR/developer-os-$STAMP.dump"
