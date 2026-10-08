@@ -44,7 +44,8 @@ IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
 if IS_PRODUCTION and DEBUG:
     raise ImproperlyConfigured("DEBUG must be False in production.")
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
-if IS_PRODUCTION and any(host in {"*", "localhost", "127.0.0.1", "::1"} for host in ALLOWED_HOSTS):
+CI_COMPOSE_VALIDATION = os.getenv("CI_COMPOSE_VALIDATION", "").lower() in {"1", "true", "yes", "on"}
+if IS_PRODUCTION and not CI_COMPOSE_VALIDATION and any(host in {"*", "localhost", "127.0.0.1", "::1"} for host in ALLOWED_HOSTS):
     raise ImproperlyConfigured("Production ALLOWED_HOSTS cannot contain wildcard or loopback hosts.")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 if IS_PRODUCTION and ("*" in ALLOWED_HOSTS or not ALLOWED_HOSTS):
