@@ -2242,7 +2242,15 @@ def _safe_ide_path(value):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def ide_workspace_files_api(request, pk):
+    # Keep reads independent from request.data parsing. GET requests must work
+    # even when clients send a JSON Content-Type header without a request body.
     ws = _workspace_for_user(pk, request.user, for_update=request.method in {"POST", "DELETE"})
+    if request.method == "GET":
+        return Response({
+            "files": dict(ws.files or {}),
+            "active_file": ws.active_file,
+            "revision": ws.revision,
+        })
     if request.method in {"POST", "DELETE"} and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
     expected_revision = request.data.get("revision")
@@ -2254,8 +2262,6 @@ def ide_workspace_files_api(request, pk):
         if expected_revision != ws.revision and request.method == "POST" and str(request.data.get("action") or "write").strip().lower() != "create":
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     files = dict(ws.files or {})
-    if request.method == "GET":
-        return Response({"files": files, "active_file": ws.active_file, "revision": ws.revision})
     if request.method == "DELETE":
         path = _safe_ide_path(request.data.get("path"))
         if not path:
