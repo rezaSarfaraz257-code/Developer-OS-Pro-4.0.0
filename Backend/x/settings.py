@@ -63,6 +63,9 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in {"1", "true", "yes", "on"}
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+EMAIL_DELIVERY_MODE = os.getenv("EMAIL_DELIVERY_MODE", "queued").strip().lower()
+if EMAIL_DELIVERY_MODE not in {"queued", "inline"}:
+    raise ImproperlyConfigured("EMAIL_DELIVERY_MODE must be either 'queued' or 'inline'.")
 CACHE_URL = os.getenv("CACHE_URL", "")
 
 # AI gateway configuration. Never commit the API key.
