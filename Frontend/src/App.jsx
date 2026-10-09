@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
 import Referral from "./Referral";
@@ -86,6 +87,7 @@ function Shell({ user, onLogout, children, go, current }) {
 
   return (
     <div className="os-shell">
+      <FullscreenExperience />
       <aside className="os-rail">
         <button className="brand" onClick={() => go("/")} title="Developer OS">
           <span className="brand-mark">D</span><span className="brand-text">DEVELOPER<span>OS</span></span>
