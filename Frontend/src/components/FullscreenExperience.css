@@ -1,4 +1,5 @@
 /* Adaptive full-screen shell: viewport-sized without hard-coded monitor dimensions. */
+:root { --dos-rail-width: 250px; }
 html, body, #root {
   width: 100%;
   min-width: 320px;
@@ -42,7 +43,9 @@ body { overflow: hidden; }
 .page > *, .panel, .dashboard-grid, .stat-grid, .cards-grid, .plan-grid {
   min-width: 0;
 }
-.os-rail { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.os-rail { width: var(--dos-rail-width); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.os-main { width: calc(100% - var(--dos-rail-width)); margin-left: var(--dos-rail-width); height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.os-content { flex: 1 1 auto; }
 .topbar { min-width: 0; }
 .top-actions { min-width: 0; }
 .top-actions > * { flex-shrink: 0; }
@@ -115,13 +118,19 @@ body { overflow: hidden; }
 .dos-fullscreen-secondary { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.035); color: #b5c5d6; }
 .dos-fullscreen-dialog small { display: block; margin-top: 16px; color: #70869b; font: 11px/1.6 system-ui, sans-serif; }
 .dos-fullscreen-error { color: #ffb2bc; font: 12px/1.5 system-ui, sans-serif; }
-@media (max-width: 900px) {
-  .os-rail { width: clamp(54px, 8vw, 76px); }
+@media (max-width: 1100px) {
+  :root { --dos-rail-width: 76px; }
+  .os-rail { width: var(--dos-rail-width); }
   .os-rail .brand-text, .os-rail .rail-section, .os-rail .rail-item em,
   .os-rail .status-chip, .os-rail .profile-mini > span:last-child { display: none; }
   .os-rail .rail-item { justify-content: center; }
   .ai-layout { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 60dvh; }
   .ai-history { max-height: 180px; overflow: auto; }
+}
+@media (max-width: 720px) {
+  :root { --dos-rail-width: 0px; }
+  .os-rail { display: none; }
+  .os-main { width: 100%; margin-left: 0; }
 }
 @media (max-width: 640px) {
   .os-shell { overflow: hidden; }
