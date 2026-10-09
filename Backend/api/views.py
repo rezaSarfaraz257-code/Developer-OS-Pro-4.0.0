@@ -395,7 +395,7 @@ def register_api(request):
 
     email = (
         request.data.get("email") or ""
-    ).strip()
+    ).strip().lower()
 
     password = (
         request.data.get("password") or ""
@@ -469,7 +469,14 @@ def register_api(request):
             from .models import EmailVerificationToken
             EmailVerificationToken.objects.create(user=user, token_hash=sha256(raw), expires_at=timezone.now() + timedelta(hours=24))
             verify_url = f"{FRONTEND_URL}/verify-email?token={raw}&uid={user.pk}"
-            queue_email("email_verification", user.email, "Verify your Developer OS email", f"Verify your email: {verify_url}", f"<p>Welcome to Developer OS.</p><p><a href=\"{verify_url}\">Verify email</a></p>")
+            queue_email(
+                "email_verification",
+                user.email,
+                "Verify your Developer OS email",
+                f"Verify your email: {verify_url}",
+                f"<p>Welcome to Developer OS.</p><p><a href=\"{verify_url}\">Verify email</a></p>",
+                idempotency_key=f"email-verification:{user.pk}:{sha256(raw)}",
+            )
     except IntegrityError:
         return Response(
             {"error": "Unable to create an account with these details."},
