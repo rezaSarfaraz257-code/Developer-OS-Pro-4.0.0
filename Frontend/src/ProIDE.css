@@ -781,7 +781,6 @@
 .dos-entitlement-strip{display:grid;grid-template-columns:1fr auto;gap:4px 8px;margin:0 10px 10px;padding:9px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.025);}
 .dos-entitlement-strip span,.dos-entitlement-strip small{color:#7f8da0;font-size:10px;}.dos-entitlement-strip strong{font-size:10px;letter-spacing:.1em;}.dos-entitlement-strip small{grid-column:1/-1;}
 .tier-free{color:#aab5c4;}.tier-pro{color:#c7b8ff;}.tier-team{color:#8ee7ff;}.tier-enterprise,.tier-admin{color:#b8f5d0;}
-@media (max-width:900px){.dos-native-fullscreen .dos-inspector{display:none}.dos-native-fullscreen .dos-activity{width:42px}.dos-native-fullscreen .dos-explorer{width:220px;}}
 @media (prefers-reduced-motion:reduce){.dos-ide-pro *{scroll-behavior:auto!important;transition:none!important;animation:none!important;}}
 
 
@@ -973,7 +972,6 @@
   border-color:rgba(0,240,255,.20);
   border-radius:14px;
 }
-.dos-ide-pro:fullscreen{border-radius:0}
 .dos-ide-pro::before{
   opacity:.10;
   background:
@@ -1203,12 +1201,6 @@
   border-color:#a1ffff;font-weight:800;box-shadow:0 0 22px rgba(0,240,255,.16);
 }
 .dos-ide-pro .dos-welcome-actions button:hover{transform:translateY(-1px)}
-.dos-ide-pro .dos-fullscreen-toggle{
-  box-shadow:0 0 16px rgba(0,240,255,.07);
-}
-.dos-ide-pro .dos-fullscreen-toggle.is-exit{
-  animation:cyber-pulse 2.2s ease-in-out infinite;
-}
 .dos-ide-pro .dos-context-menu{
   background:linear-gradient(180deg,#081722,#030b12);
   border-color:rgba(0,240,255,.22);
@@ -1394,7 +1386,6 @@
 @media(max-width:1200px){
   .dos-ide-pro .dos-inspector{display:none}
   .dos-ide-pro .dos-body{grid-template-columns:48px 210px minmax(0,1fr)}
-  .dos-ide-pro .dos-top-actions .dos-fullscreen-toggle{padding:0 8px}
   .dos-ide-pro .dos-top-actions button{padding-left:8px;padding-right:8px}
 }
 
@@ -1423,7 +1414,6 @@
   .dos-ide-pro .dos-workspace-select{max-width:none;flex:1}
   .dos-ide-pro .dos-workspace-select button[title="Delete workspace"]{display:none}
   .dos-ide-pro .dos-top-actions .dos-state,
-  .dos-ide-pro .dos-top-actions .dos-fullscreen-toggle{display:none}
   .dos-ide-pro .dos-top-actions .dos-primary{min-width:54px;padding:0 10px}
   .dos-ide-pro .dos-commandbar{height:28px;font-size:9px}
   .dos-ide-pro .dos-commandbar .dos-collab-status,
@@ -1760,7 +1750,6 @@
   border-color:#8bf6ff!important;
   box-shadow:0 0 22px rgba(63,229,255,.13);
 }
-.dos-ide-pro .dos-top-actions .dos-fullscreen-toggle{
   color:#a9c9d5;
   padding:0 12px;
 }
