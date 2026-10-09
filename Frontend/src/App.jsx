@@ -87,7 +87,6 @@ function Shell({ user, onLogout, children, go, current }) {
 
   return (
     <div className="os-shell">
-      <FullscreenExperience />
       <aside className="os-rail">
         <button className="brand" onClick={() => go("/")} title="Developer OS">
           <span className="brand-mark">D</span><span className="brand-text">DEVELOPER<span>OS</span></span>
@@ -775,5 +774,5 @@ export default function App() {
   else if(current==="audit") content=<Audit/>;
   else content=<Dashboard go={go}/>;
 
-  return <Shell user={user} onLogout={()=>setAuthenticated(false)} go={go} current={current}>{content}</Shell>;
+  return <><FullscreenExperience /><Shell user={user} onLogout={()=>setAuthenticated(false)} go={go} current={current}>{content}</Shell></>;
 }
