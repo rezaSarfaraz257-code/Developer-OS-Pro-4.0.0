@@ -44,6 +44,7 @@ class JsonLogFormatter(logging.Formatter):
 # conservative fixed-window limit before it reaches application code.
 RATE_WINDOWS = {
     "auth": (60, 10),
+    "email_verification": (3600, 5),
     "password": (3600, 8),
     "mfa": (3600, 20),
     "billing": (60, 30),
@@ -67,10 +68,12 @@ def client_ip(request):
 
 def rate_bucket(path: str) -> str:
     p = path.lower()
-    if any(x in p for x in ("/token/", "/register/", "/login/", "/logout/")):
-        return "auth"
+    if "/auth/resend-verification/" in p or "/auth/verify-email/" in p:
+        return "email_verification"
     if "password-reset" in p:
         return "password"
+    if any(x in p for x in ("/token/", "/register/", "/login/", "/logout/")):
+        return "auth"
     if "/mfa/" in p:
         return "mfa"
     if "/billing/" in p or "/subscription/" in p:
@@ -86,7 +89,6 @@ def rate_bucket(path: str) -> str:
     if "/referrals/" in p:
         return "referral"
     return "api"
-
 
 def _principal(request):
     user = getattr(request, "user", None)
