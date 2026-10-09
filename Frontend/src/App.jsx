@@ -159,7 +159,11 @@ function Auth({ onReady }) {
   useEffect(() => {
     if (path !== "/verify-email") return;
     const params = new URLSearchParams(window.location.search);
-    fetch(`${API_URL}/auth/verify-email/`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uid:params.get("uid"), token:params.get("token")})})
+    const uid = params.get("uid");
+    const token = params.get("token");
+    // Keep one-time verification tokens out of the visible URL and browser history.
+    window.history.replaceState({}, document.title, window.location.pathname);
+    fetch(`${API_URL}/auth/verify-email/`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uid, token})})
       .then(async r => { const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(formatApiError(d, "Verification failed.")); setNotice("Email verified successfully. You can sign in now."); setLinkState("verified"); })
       .catch(e => { setError(e.message); setLinkState("error"); });
   }, [path]);
@@ -183,8 +187,10 @@ function Auth({ onReady }) {
       });
 
       setMode("verify");
+      setForm((previous) => ({...previous, password: ""}));
+      setConfirmPassword("");
       setNotice(
-        "Account created. Check your email and verify it before signing in."
+        "Account created. A verification email has been queued. Check your inbox and spam folder; if it does not arrive, request another link."
       );
     } else if (mode === "forgot") {
       const response = await fetch(`${API_URL}/auth/password-reset/`, {
@@ -326,8 +332,8 @@ function Auth({ onReady }) {
       {notice&&<div className="notice" role="status">{notice}</div>}{error&&<div className="error" role="alert">{error}</div>}
       <button className="primary wide auth-submit" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID →" : "SEND RESET LINK →"}</button>
     </form>
-    {mode === "login" && <button className="switch" onClick={()=>{setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
-    {mode === "login" && <button className="switch" onClick={()=>{setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
+    {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
+    {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
     {mode !== "forgot" && <button className="switch" onClick={()=>{setMode(mode==="login"?"register":"login");setError("");setNotice("")}}>{mode==="login" ? "Create a new Developer OS account" : "I already have an account"}</button>}
     {mode === "forgot" && <button className="switch" onClick={()=>{setMode("login");setError("");setNotice("")}}>Back to sign in</button>}
   </div></div>;
