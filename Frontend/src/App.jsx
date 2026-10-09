@@ -4,6 +4,7 @@ import "./NavigationPolish.css";
 import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
+import Avatar from "./components/Avatar";
 import Referral from "./Referral";
 
 const nav = [
@@ -89,8 +90,22 @@ function Shell({ user, onLogout, children, go, current }) {
   return (
     <div className="os-shell">
       <aside className="os-rail">
-        <button className="brand" onClick={() => go("/")} title="Developer OS">
-          <span className="brand-mark">D</span><span className="brand-text">DEVELOPER<span>OS</span></span>
+        <button
+          className="brand rail-identity"
+          onClick={() => go("/settings")}
+          title={`${user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "Developer"} · @${user.username || "developer"}`}
+          aria-label="Open profile settings"
+        >
+          <Avatar
+            imageUrl={user.avatar_url}
+            initials={(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "D").trim().split(/\\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}
+            className="rail-profile-avatar"
+            label={user.full_name || user.username || "Profile"}
+          />
+          <span className="brand-text">
+            <strong>{user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "Developer"}</strong>
+            <span>@{user.username || "developer"}</span>
+          </span>
         </button>
         <div className="rail-section">WORKSPACE</div>
         {nav.slice(0, 6).map(([id, icon, label]) => (
@@ -109,10 +124,6 @@ function Shell({ user, onLogout, children, go, current }) {
         })}
         <div className="rail-spacer" />
         <div className="status-chip"><i /> SYSTEM ONLINE</div>
-        <button className="profile-mini" onClick={() => go("/settings")}>
-          <span className="avatar">{(user.username || "D")[0].toUpperCase()}</span>
-          <span><b>{user.username}</b><small>{user.email || "developer"}</small></span>
-        </button>
       </aside>
 
       <main className="os-main">
