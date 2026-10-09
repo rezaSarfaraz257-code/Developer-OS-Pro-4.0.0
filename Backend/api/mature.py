@@ -43,6 +43,7 @@ from .models import (
     BillingInvoice,
     DataExportRequest,
     EmailVerificationToken,
+    UserProfile,
     Incident,
     LoginAttempt,
     MFADevice,
@@ -283,14 +284,32 @@ def resend_verification_api(request):
     email = str(request.data.get("email") or "").strip().lower()
     user = User.objects.filter(email__iexact=email).first()
     # Always return the same response to prevent account enumeration.
-    if user and user.email and not user.profile.email_verified:
-        raw = secrets.token_urlsafe(48)
-        EmailVerificationToken.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
-        EmailVerificationToken.objects.create(user=user, token_hash=sha256(raw), expires_at=timezone.now() + timedelta(hours=24))
-        url = absolute_frontend(f"verify-email?token={raw}&uid={user.pk}")
-        queue_email("email_verification", user.email, "Verify your Developer OS email", f"Verify your email: {url}", f"<p>Verify your Developer OS email.</p><p><a href=\"{url}\">Verify email</a></p>", idempotency_key=f"email-verification:{user.pk}:{sha256(raw)}")
-    return Response({"detail": "If that address is registered and unverified, a verification email has been queued."}, status=202)
-
+    if user and user.email:
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if not profile.email_verified:
+                raw = secrets.token_urlsafe(48)
+                EmailVerificationToken.objects.filter(
+                    user=user, used_at__isnull=True
+                ).update(used_at=timezone.now())
+                EmailVerificationToken.objects.create(
+                    user=user,
+                    token_hash=sha256(raw),
+                    expires_at=timezone.now() + timedelta(hours=24),
+                )
+                url = absolute_frontend(f"verify-email?token={raw}&uid={user.pk}")
+                queue_email(
+                    "email_verification",
+                    user.email,
+                    "Verify your Developer OS email",
+                    f"Verify your email: {url}",
+                    f"<p>Verify your Developer OS email.</p><p><a href=\"{url}\">Verify email</a></p>",
+                    idempotency_key=f"email-verification:{user.pk}:{sha256(raw)}",
+                )
+    return Response(
+        {"detail": "If that address is registered and unverified, a verification email has been queued."},
+        status=202,
+    )
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -311,7 +330,7 @@ def verify_email_api(request):
         now = timezone.now()
         token.used_at = now
         token.save(update_fields=["used_at"])
-        profile = token.user.profile
+        profile, _ = UserProfile.objects.get_or_create(user=token.user)
         profile.email_verified = True
         profile.email_verified_at = now
         profile.save(update_fields=["email_verified", "email_verified_at"])
