@@ -78,6 +78,7 @@ class AuthenticationHardeningTests(TestCase):
             email="expired-verify@example.test",
             password="A-Unique-Long-Password-934!",
         )
+        profile, _ = UserProfile.objects.get_or_create(user=user)
         raw_token = "expired-test-verification-token"
         EmailVerificationToken.objects.create(
             user=user,
@@ -91,4 +92,5 @@ class AuthenticationHardeningTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-        self.assertFalse(user.profile.email_verified)
+        profile.refresh_from_db()
+        self.assertFalse(profile.email_verified)
