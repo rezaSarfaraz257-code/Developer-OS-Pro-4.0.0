@@ -486,3 +486,17 @@ body{scrollbar-gutter:stable}
     border-radius:13px;
   }
 }
+
+
+/* Keep sidebar navigation icons left-aligned in the normal desktop state. */
+@media(min-width:901px){
+  .os-rail .rail-item{
+    justify-content:flex-start;
+    text-align:left;
+  }
+  .os-rail .rail-item span{
+    flex:0 0 29px;
+    margin-left:0;
+    margin-right:0;
+  }
+}
