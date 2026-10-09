@@ -641,3 +641,18 @@ body{scrollbar-gutter:stable}
     box-shadow:inset 3px 0 #57dff4,0 7px 20px rgba(0,0,0,.12);
   }
 }
+
+/* Remove the reserved right scrollbar gutter in the collapsed icon-only rail. */
+@media (min-width:721px){
+  .os-rail{
+    padding-right:0 !important;
+    scrollbar-gutter:auto !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item{
+    padding-right:0 !important;
+    margin-right:0 !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item span{
+    margin-right:0 !important;
+  }
+}
