@@ -311,6 +311,7 @@ function Auth({ onReady }) {
       <button className="primary wide" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID →" : "SEND RESET LINK →"}</button>
     </form>
     {mode === "login" && <button className="switch" onClick={()=>{setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
+    {mode === "login" && <button className="switch" onClick={()=>{setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
     {mode !== "forgot" && <button className="switch" onClick={()=>{setMode(mode==="login"?"register":"login");setError("");setNotice("")}}>{mode==="login" ? "Create a new Developer OS account" : "I already have an account"}</button>}
     {mode === "forgot" && <button className="switch" onClick={()=>{setMode("login");setError("");setNotice("")}}>Back to sign in</button>}
   </div></div>;
