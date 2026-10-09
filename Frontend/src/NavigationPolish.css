@@ -120,3 +120,22 @@
   .dos-top-actions{gap:3px}
   .dos-top-actions button{padding:6px}
 }
+
+/* Unified app scrollbars and embedded, viewport-adaptive IDE. */
+html{scrollbar-width:thin;scrollbar-color:rgba(91,157,190,.42) rgba(8,14,23,.8);scroll-behavior:smooth}
+body{scrollbar-gutter:stable}
+*{scrollbar-width:thin;scrollbar-color:rgba(91,157,190,.42) rgba(8,14,23,.8)}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:rgba(7,12,20,.72);border-radius:999px}
+*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(78,177,207,.62),rgba(99,111,194,.5));border:2px solid rgba(7,12,20,.82);border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(92,220,246,.86),rgba(126,133,231,.76))}
+*::-webkit-scrollbar-corner{background:transparent}
+.os-rail{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+.os-main{margin-left:248px;width:calc(100% - 248px);min-width:0}
+.os-content:has(.dos-ide-pro){padding:0;max-width:none;margin:0;height:calc(100dvh - 67px);min-height:0;overflow:hidden}
+.dos-ide-pro{width:100%;height:100%;min-height:0;max-height:none;border:0;border-radius:0;box-shadow:none;overflow:hidden}
+.dos-ide-pro .dos-body{min-height:0;flex:1}
+.dos-ide-pro .dos-file-list,.dos-ide-pro .dos-inspector,.dos-ide-pro .dos-terminal-body,.dos-ide-pro .dos-search-results,.dos-ide-pro .dos-run-center pre,.dos-ide-pro .dos-problems>div{overscroll-behavior:contain;scrollbar-width:thin}
+@media(max-width:1180px){.os-main{margin-left:218px;width:calc(100% - 218px)}}
+@media(max-width:900px){.os-main{margin-left:68px;width:calc(100% - 68px)}.os-content{padding:22px}.os-content:has(.dos-ide-pro){padding:0}}
+@media(max-width:640px){.os-content{padding:14px}.os-content:has(.dos-ide-pro){padding:0}.os-content:has(.dos-ide-pro) .dos-inspector{display:none}.dos-ide-pro .dos-body{grid-template-columns:38px minmax(0,1fr)}.dos-ide-pro .dos-explorer{max-width:190px}}
