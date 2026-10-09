@@ -9,13 +9,10 @@ export default function FullscreenExperience() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    try {
-      if (!window.localStorage.getItem(CHOICE_KEY) && document.fullscreenEnabled) {
-        setPromptOpen(true);
-      }
-    } catch {
-      if (document.fullscreenEnabled) setPromptOpen(true);
-    }
+    // The prompt belongs to the authenticated app shell. Always show it when
+    // the shell mounts so a previously saved "keep windowed" choice cannot
+    // accidentally hide the requested post-login experience.
+    setPromptOpen(true);
     const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", sync);
     return () => document.removeEventListener("fullscreenchange", sync);
@@ -31,7 +28,9 @@ export default function FullscreenExperience() {
     try {
       if (!document.fullscreenElement) {
         const target = document.documentElement;
-        if (!target?.requestFullscreen) throw new Error("Fullscreen is not supported by this browser.");
+        if (!target?.requestFullscreen) {
+          throw new Error("Fullscreen is not supported by this browser. You can use your browser's fullscreen shortcut instead.");
+        }
         await target.requestFullscreen({ navigationUI: "hide" });
       }
       remember("accepted");
@@ -51,6 +50,7 @@ export default function FullscreenExperience() {
 
   const resetPrompt = () => {
     try { window.localStorage.removeItem(CHOICE_KEY); } catch { /* storage may be blocked */ }
+    setMessage("");
     setPromptOpen(true);
   };
 
