@@ -530,9 +530,9 @@ body{scrollbar-gutter:stable}
     height:39px;
     min-height:39px;
     margin:1px 0;
-    padding:0 !important;
+    padding:0 0 0 5px;
     padding-right:0 !important;
-    justify-content:center;
+    justify-content:flex-start;
     gap:0;
     border:1px solid transparent;
     border-left:2px solid transparent;
@@ -560,7 +560,8 @@ body{scrollbar-gutter:stable}
   }
   .os-rail .rail-item:hover{
     width:100%;
-    padding:0 !important;
+    padding:0 0 0 5px;
+    padding-right:0 !important;
     border-color:transparent;
     border-left-color:rgba(88,220,244,.4);
     border-radius:0;
