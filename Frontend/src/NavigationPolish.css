@@ -1,0 +1,141 @@
+/* Developer OS navigation refinement: responsive, premium left navigation and IDE return path. */
+.os-rail{
+  width:248px;
+  padding:22px 13px 14px;
+  gap:3px;
+  background:linear-gradient(180deg,rgba(10,17,29,.97),rgba(5,8,15,.98));
+  border-right:1px solid rgba(87,133,165,.2);
+  box-shadow:14px 0 42px rgba(0,0,0,.18);
+}
+.brand{
+  position:relative;
+  padding:7px 9px 22px;
+  margin-bottom:7px;
+  gap:12px;
+}
+.brand-mark{
+  border-radius:11px;
+  background:linear-gradient(145deg,rgba(67,232,255,.14),rgba(88,95,255,.12));
+  box-shadow:0 0 26px rgba(67,232,255,.13),inset 0 1px rgba(255,255,255,.08);
+}
+.brand-text{letter-spacing:.1em}
+.rail-section{
+  padding:16px 12px 8px;
+  color:#62768e;
+  font-size:9px;
+}
+.rail-item{
+  position:relative;
+  min-height:42px;
+  padding:10px 12px;
+  gap:12px;
+  border-radius:10px;
+  margin:2px 0;
+  transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease;
+}
+.rail-item span{
+  width:22px;
+  height:22px;
+  display:grid;
+  place-items:center;
+  border-radius:7px;
+  font-size:17px;
+  flex:none;
+  background:rgba(120,150,180,.055);
+}
+.rail-item em{font-size:12px;letter-spacing:.01em}
+.rail-item:hover{
+  background:linear-gradient(90deg,rgba(91,151,190,.13),rgba(91,151,190,.035));
+  border-color:rgba(93,153,192,.2);
+  color:#e7f5ff;
+  transform:translateX(2px);
+}
+.rail-item.active{
+  background:linear-gradient(105deg,rgba(67,232,255,.15),rgba(95,110,255,.075) 70%,rgba(67,232,255,.025));
+  border-color:rgba(67,232,255,.27);
+  color:#65eaff;
+  box-shadow:inset 2px 0 #55dcff,0 6px 18px rgba(0,0,0,.13);
+}
+.rail-item.active span{
+  background:rgba(67,232,255,.12);
+  box-shadow:inset 0 0 0 1px rgba(67,232,255,.12);
+}
+.rail-item.locked em::after{opacity:.8}
+.status-chip{
+  margin:10px 3px 12px;
+  border:1px solid rgba(85,230,165,.13);
+  border-radius:9px;
+  background:rgba(85,230,165,.035);
+}
+.profile-mini{
+  border-radius:11px;
+  padding:10px;
+  background:linear-gradient(130deg,rgba(20,34,52,.9),rgba(9,14,24,.95));
+  border-color:rgba(95,133,166,.2);
+  transition:border-color .18s ease,background .18s ease;
+}
+.profile-mini:hover{border-color:rgba(67,232,255,.3);background:#101c2c}
+.profile-mini .avatar{border-radius:9px}
+.dos-home-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  flex:none;
+  min-height:34px;
+  padding:0 11px;
+  border:1px solid rgba(67,232,255,.25);
+  border-radius:9px;
+  color:#a8eaff;
+  background:linear-gradient(135deg,rgba(17,55,72,.75),rgba(20,25,48,.75));
+  font:600 10px Inter,system-ui,sans-serif;
+  letter-spacing:.04em;
+  cursor:pointer;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.dos-home-button:hover{transform:translateY(-1px);border-color:rgba(67,232,255,.65);background:linear-gradient(135deg,#12445a,#25244a)}
+.dos-home-button:focus-visible{outline:2px solid #55dcff;outline-offset:2px}
+@media(max-width:1180px){
+  .os-rail{width:218px;padding-inline:10px}
+  .os-main{margin-left:218px;width:calc(100% - 218px)}
+  .dos-home-button{padding:0 8px;font-size:9px}
+}
+@media(max-width:900px){
+  .os-rail{width:68px;padding:15px 7px}
+  .brand{justify-content:center;padding:4px 0 20px}
+  .brand-text,.rail-section,.rail-item em,.status-chip,.profile-mini>span:last-child{display:none}
+  .rail-item{justify-content:center;padding:9px 4px;min-height:42px}
+  .rail-item span{width:30px;height:30px}
+  .profile-mini{justify-content:center;padding:7px}
+  .os-main{margin-left:68px;width:calc(100% - 68px)}
+}
+@media(max-width:640px){
+  .dos-topbar{gap:7px;padding-inline:8px}
+  .dos-brand{min-width:0;gap:6px}
+  .dos-brand strong{font-size:10px}
+  .dos-brand span{font-size:7px}
+  .dos-home-button{min-height:31px;padding:0 7px;font-size:0}
+  .dos-home-button .dos-home-label{display:none}
+  .dos-workspace-select{min-width:0;max-width:none}
+  .dos-top-actions{gap:3px}
+  .dos-top-actions button{padding:6px}
+}
+
+/* Unified app scrollbars and embedded, viewport-adaptive IDE. */
+html{scrollbar-width:thin;scrollbar-color:rgba(91,157,190,.42) rgba(8,14,23,.8);scroll-behavior:smooth}
+body{scrollbar-gutter:stable}
+*{scrollbar-width:thin;scrollbar-color:rgba(91,157,190,.42) rgba(8,14,23,.8)}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:rgba(7,12,20,.72);border-radius:999px}
+*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(78,177,207,.62),rgba(99,111,194,.5));border:2px solid rgba(7,12,20,.82);border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(92,220,246,.86),rgba(126,133,231,.76))}
+*::-webkit-scrollbar-corner{background:transparent}
+.os-rail{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+.os-main{margin-left:248px;width:calc(100% - 248px);min-width:0}
+.os-content:has(.dos-ide-pro){padding:0;max-width:none;margin:0;height:calc(100dvh - 67px);min-height:0;overflow:hidden}
+.dos-ide-pro{width:100%;height:100%;min-height:0;max-height:none;border:0;border-radius:0;box-shadow:none;overflow:hidden}
+.dos-ide-pro .dos-body{min-height:0;flex:1}
+.dos-ide-pro .dos-file-list,.dos-ide-pro .dos-inspector,.dos-ide-pro .dos-terminal-body,.dos-ide-pro .dos-search-results,.dos-ide-pro .dos-run-center pre,.dos-ide-pro .dos-problems>div{overscroll-behavior:contain;scrollbar-width:thin}
+@media(max-width:1180px){.os-main{margin-left:218px;width:calc(100% - 218px)}}
+@media(max-width:900px){.os-main{margin-left:68px;width:calc(100% - 68px)}.os-content{padding:22px}.os-content:has(.dos-ide-pro){padding:0}}
+@media(max-width:640px){.os-content{padding:14px}.os-content:has(.dos-ide-pro){padding:0}.os-content:has(.dos-ide-pro) .dos-inspector{display:none}.dos-ide-pro .dos-body{grid-template-columns:38px minmax(0,1fr)}.dos-ide-pro .dos-explorer{max-width:190px}}

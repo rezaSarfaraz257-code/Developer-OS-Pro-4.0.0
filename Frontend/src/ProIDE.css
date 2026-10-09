@@ -776,12 +776,7 @@
 }
 
 
-/* Native fullscreen workspace: maximize coding surface without hiding IDE controls. */
-.dos-ide-pro:fullscreen,.dos-native-fullscreen{width:100vw!important;height:100vh!important;min-height:100vh!important;margin:0!important;border-radius:0!important;overflow:hidden!important;background:#070b12;z-index:2147483000;}
-.dos-ide-pro:fullscreen .dos-body,.dos-native-fullscreen .dos-body{min-height:0;height:calc(100vh - 78px);}
-.dos-native-fullscreen .dos-editor-shell{min-width:0;}
-.dos-native-fullscreen .dos-editor-pane{min-height:0;}
-.dos-native-fullscreen .dos-inspector{width:260px;}
+/* IDE remains embedded in the application shell. */
 .dos-plan-badge{margin-left:auto;font-size:9px;letter-spacing:.12em;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:3px 6px;}
 .dos-entitlement-strip{display:grid;grid-template-columns:1fr auto;gap:4px 8px;margin:0 10px 10px;padding:9px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.025);}
 .dos-entitlement-strip span,.dos-entitlement-strip small{color:#7f8da0;font-size:10px;}.dos-entitlement-strip strong{font-size:10px;letter-spacing:.1em;}.dos-entitlement-strip small{grid-column:1/-1;}
