@@ -488,15 +488,91 @@ body{scrollbar-gutter:stable}
 }
 
 
-/* Keep sidebar navigation icons left-aligned in the normal desktop state. */
-@media(min-width:901px){
-  .os-rail .rail-item{
+
+/* Collapsed rail: icon-only, flush sides, left-aligned until hover expands it. */
+@media (min-width:901px){
+  .os-rail{
+    width:58px;
+    padding:14px 0;
+    align-items:stretch;
+  }
+  .os-rail .brand.rail-identity{
+    width:100%;
+    min-height:58px;
+    height:58px;
+    padding:0;
+    margin:0 0 10px;
     justify-content:flex-start;
-    text-align:left;
+    border-bottom:0;
+    border-radius:0;
+    background:transparent;
+  }
+  .os-rail .rail-profile-avatar.avatar{
+    width:34px;
+    height:34px;
+    min-width:34px;
+    margin-left:7px;
+    border-radius:10px;
+  }
+  .os-rail .rail-item{
+    width:100%;
+    height:42px;
+    min-height:42px;
+    margin:2px 0;
+    padding:0 0 0 8px;
+    justify-content:flex-start;
+    gap:0;
+    border-left:0;
+    border-right:0;
+    border-radius:0;
   }
   .os-rail .rail-item span{
-    flex:0 0 29px;
+    width:24px;
+    height:28px;
+    margin:0;
+    padding:0;
+    flex:0 0 24px;
+    border:0;
+    border-radius:6px;
+  }
+  .os-rail:hover,
+  .os-rail:focus-within{
+    width:236px;
+    padding:16px 12px;
+    align-items:stretch;
+  }
+  .os-rail:hover .brand.rail-identity,
+  .os-rail:focus-within .brand.rail-identity{
+    width:100%;
+    min-height:82px;
+    height:auto;
+    padding:10px 8px 17px;
+    margin:0 0 4px;
+    justify-content:flex-start;
+    border-bottom:1px solid rgba(119,158,192,.16);
+  }
+  .os-rail:hover .rail-profile-avatar.avatar,
+  .os-rail:focus-within .rail-profile-avatar.avatar{
+    width:48px;
+    height:48px;
+    min-width:48px;
     margin-left:0;
-    margin-right:0;
+  }
+  .os-rail:hover .rail-item,
+  .os-rail:focus-within .rail-item{
+    width:100%;
+    padding:0 12px;
+    justify-content:flex-start;
+    gap:12px;
+    border:1px solid transparent;
+    border-radius:11px;
+  }
+  .os-rail:hover .rail-item span,
+  .os-rail:focus-within .rail-item span{
+    width:29px;
+    height:29px;
+    flex:0 0 29px;
+    border:1px solid rgba(132,164,194,.08);
+    border-radius:9px;
   }
 }
