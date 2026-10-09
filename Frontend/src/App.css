@@ -440,3 +440,46 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .command-list button small{color:#6f7b9a;font-family:monospace}
 .global-search.is-command-active{border-color:rgba(120,150,255,.65);box-shadow:0 0 0 3px rgba(120,150,255,.08)}
 @media(max-width:800px){.command-palette{right:12px;top:64px;width:calc(100vw - 24px)}}
+
+/* AUTH EXPERIENCE 3.0 — responsive, accessible identity surface */
+.auth-screen{isolation:isolate;padding:28px 16px;background:radial-gradient(ellipse at 18% 12%,rgba(67,232,255,.12),transparent 34%),radial-gradient(ellipse at 85% 88%,rgba(141,124,255,.14),transparent 35%),#05070c}
+.auth-grid{opacity:.8;background-size:38px 38px;mask-image:radial-gradient(ellipse at center,#000 0,rgba(0,0,0,.5) 48%,transparent 78%)}
+.auth-card{width:min(520px,calc(100% - 4px));padding:clamp(24px,5vw,42px);border-radius:20px;border-color:rgba(112,155,188,.24);background:linear-gradient(145deg,rgba(12,19,31,.97),rgba(6,10,17,.97));box-shadow:0 35px 110px rgba(0,0,0,.58),0 0 0 1px rgba(255,255,255,.015) inset;backdrop-filter:blur(22px)}
+.auth-logo{font-size:13px;letter-spacing:.08em}
+.auth-logo>span{width:42px;height:42px;border-radius:12px;background:linear-gradient(145deg,rgba(67,232,255,.13),rgba(141,124,255,.13));box-shadow:0 0 28px rgba(67,232,255,.1);font-size:18px}
+.auth-logo small{font-size:8px;letter-spacing:.14em}
+.auth-copy{margin:36px 0 26px}
+.auth-copy>span{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid rgba(67,232,255,.16);border-radius:999px;background:rgba(67,232,255,.045);font-size:9px}
+.auth-copy h1{font-size:clamp(27px,5vw,35px);line-height:1.14;letter-spacing:-.045em;margin:14px 0 10px}
+.auth-copy p{font-family:system-ui,sans-serif;font-size:13px;line-height:1.7;color:#94a5b9;margin:0;max-width:420px}
+.auth-card .auth-form{gap:15px}
+.auth-field{display:grid;gap:7px;min-width:0}
+.auth-field>span{font:700 9px "JetBrains Mono";letter-spacing:.11em;color:#8499af}
+.auth-card .auth-field input{width:100%;height:47px;border-radius:10px;background:rgba(4,8,14,.8);border:1px solid #253447;padding:0 13px;font:12px system-ui,sans-serif;transition:border-color .18s,box-shadow .18s,background .18s}
+.auth-card .auth-field input::placeholder{color:#536276}
+.auth-card .auth-field input:hover{border-color:#344b62}
+.auth-card .auth-field input:focus{border-color:rgba(67,232,255,.8);box-shadow:0 0 0 3px rgba(67,232,255,.09);background:#080f18}
+.auth-password{position:relative;display:flex;align-items:center}
+.auth-password input{padding-right:68px!important}
+.password-toggle{position:absolute;right:8px;border:1px solid rgba(255,255,255,.09);border-radius:7px;padding:6px 8px;background:#111b28;color:#9eb3c7;font:700 9px "JetBrains Mono"}
+.password-toggle:hover{border-color:rgba(67,232,255,.35);color:var(--cyan)}
+.auth-submit{min-height:48px;border-radius:10px;margin-top:4px;font-size:10px;letter-spacing:.1em;background:linear-gradient(115deg,#0d4350,#20265a);box-shadow:0 9px 28px rgba(36,156,187,.11);transition:transform .18s,box-shadow .18s,opacity .18s}
+.auth-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 12px 34px rgba(36,156,187,.2)}
+.auth-submit:disabled{opacity:.55;cursor:wait}
+.auth-card .switch{font:11px system-ui,sans-serif;color:#8396aa;padding:7px;margin-top:7px;transition:color .18s}
+.auth-card .switch:hover{color:var(--cyan)}
+.auth-card .two{gap:12px}
+.password-meter{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:-5px}
+.password-meter>div{height:4px;border-radius:999px;background:#1b2634;transition:background .2s}
+.password-meter .strength-1:nth-child(-n+1){background:#ff637e}
+.password-meter .strength-2:nth-child(-n+2){background:#f5a36b}
+.password-meter .strength-3:nth-child(-n+3){background:#f5c46b}
+.password-meter .strength-4:nth-child(-n+4){background:#62d9b0}
+.password-meter .strength-5{background:#43e8ff}
+.password-hint{margin:-9px 0 0;color:#71859a;font:10px system-ui,sans-serif;line-height:1.5}
+.auth-card .notice,.auth-card .error{border-radius:10px;padding:11px 12px;font:11px/1.6 system-ui,sans-serif}
+.auth-card .notice{border:1px solid rgba(69,224,160,.22);background:rgba(69,224,160,.07);color:#a7f2d2}
+.auth-card .error{border:1px solid rgba(255,99,126,.25);background:rgba(255,99,126,.07);color:#ffadbb}
+.auth-card form .two .auth-field>span{min-height:20px;line-height:1.4}
+@media(max-width:520px){.auth-screen{padding:14px 10px}.auth-card{padding:24px 18px;border-radius:16px}.auth-copy{margin:28px 0 22px}.auth-copy h1{font-size:28px}.auth-card .two{grid-template-columns:1fr}.auth-card .auth-field>span{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.auth-card *{transition:none!important;animation:none!important}}
