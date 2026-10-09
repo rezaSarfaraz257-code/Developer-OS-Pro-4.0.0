@@ -23,17 +23,22 @@ body { overflow: hidden; }
 .os-content {
   min-width: 0;
   min-height: 0;
-  height: calc(100% - var(--dos-topbar-height, 0px));
+  height: calc(100% - 67px);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  padding: clamp(14px, 2vw, 28px);
+  max-width: none;
+  margin: 0;
 }
 .page {
   width: 100%;
   min-width: 0;
   min-height: 100%;
-  padding: clamp(14px, 2vw, 28px);
+  padding: 0;
 }
+.ide-page { height: 100%; min-height: 0; padding: 0; }
+.dos-ide-pro { width: 100%; min-width: 0; min-height: 0; }
 .page > *, .panel, .dashboard-grid, .stat-grid, .cards-grid, .plan-grid {
   min-width: 0;
 }
