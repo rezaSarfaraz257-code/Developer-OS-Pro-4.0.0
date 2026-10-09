@@ -31,6 +31,7 @@ from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -42,6 +43,7 @@ from .models import (
     BillingInvoice,
     DataExportRequest,
     EmailVerificationToken,
+    UserProfile,
     Incident,
     LoginAttempt,
     MFADevice,
@@ -57,6 +59,14 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+class EmailVerificationRateThrottle(AnonRateThrottle):
+    scope = "email_verification"
+
+
+class PasswordResetRateThrottle(AnonRateThrottle):
+    scope = "password_reset"
 
 
 # ---------------------------------------------------------------------------
@@ -269,37 +279,67 @@ class MatureTokenRefreshView(TokenRefreshView):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([EmailVerificationRateThrottle])
 def resend_verification_api(request):
     email = str(request.data.get("email") or "").strip().lower()
     user = User.objects.filter(email__iexact=email).first()
     # Always return the same response to prevent account enumeration.
-    if user and user.email and not user.profile.email_verified:
-        raw = secrets.token_urlsafe(48)
-        EmailVerificationToken.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
-        EmailVerificationToken.objects.create(user=user, token_hash=sha256(raw), expires_at=timezone.now() + timedelta(hours=24))
-        url = absolute_frontend(f"verify-email?token={raw}&uid={user.pk}")
-        queue_email("email_verification", user.email, "Verify your Developer OS email", f"Verify your email: {url}", f"<p>Verify your Developer OS email.</p><p><a href=\"{url}\">Verify email</a></p>", idempotency_key=f"email-verification:{user.pk}:{sha256(raw)}")
-    return Response({"detail": "If that address is registered and unverified, a verification email has been queued."}, status=202)
-
+    if user and user.email:
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if not profile.email_verified:
+                raw = secrets.token_urlsafe(48)
+                EmailVerificationToken.objects.filter(
+                    user=user, used_at__isnull=True
+                ).update(used_at=timezone.now())
+                EmailVerificationToken.objects.create(
+                    user=user,
+                    token_hash=sha256(raw),
+                    expires_at=timezone.now() + timedelta(hours=24),
+                )
+                url = absolute_frontend(f"verify-email?token={raw}&uid={user.pk}")
+                queue_email(
+                    "email_verification",
+                    user.email,
+                    "Verify your Developer OS email",
+                    f"Verify your email: {url}",
+                    f"<p>Verify your Developer OS email.</p><p><a href=\"{url}\">Verify email</a></p>",
+                    idempotency_key=f"email-verification:{user.pk}:{sha256(raw)}",
+                )
+    return Response(
+        {"detail": "If that address is registered and unverified, a verification email has been queued."},
+        status=202,
+    )
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([EmailVerificationRateThrottle])
 def verify_email_api(request):
     raw = str(request.data.get("token") or "").strip()
     uid = request.data.get("uid")
-    token = EmailVerificationToken.objects.filter(token_hash=sha256(raw), user_id=uid, used_at__isnull=True).select_related("user").first()
-    if not token or token.expires_at <= timezone.now():
+    if not raw or not uid:
         return Response({"error": "Verification link is invalid or expired."}, status=400)
-    token.used_at = timezone.now()
-    token.save(update_fields=["used_at"])
-    token.user.profile.email_verified = True
-    token.user.profile.email_verified_at = timezone.now()
-    token.user.profile.save(update_fields=["email_verified", "email_verified_at"])
+
+    # Lock the token row so simultaneous requests cannot both consume the same link.
+    with transaction.atomic():
+        token = EmailVerificationToken.objects.select_for_update().filter(
+            token_hash=sha256(raw), user_id=uid, used_at__isnull=True
+        ).select_related("user").first()
+        if not token or token.expires_at <= timezone.now():
+            return Response({"error": "Verification link is invalid or expired."}, status=400)
+        now = timezone.now()
+        token.used_at = now
+        token.save(update_fields=["used_at"])
+        profile, _ = UserProfile.objects.get_or_create(user=token.user)
+        profile.email_verified = True
+        profile.email_verified_at = now
+        profile.save(update_fields=["email_verified", "email_verified_at"])
     return Response({"verified": True})
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([PasswordResetRateThrottle])
 def password_reset_request_api(request):
     email = str(request.data.get("email") or "").strip().lower()
     user = User.objects.filter(email__iexact=email).first()
@@ -316,6 +356,7 @@ def password_reset_request_api(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([PasswordResetRateThrottle])
 def password_reset_confirm_api(request):
     from django.contrib.auth.tokens import default_token_generator
     from django.utils.http import urlsafe_base64_decode

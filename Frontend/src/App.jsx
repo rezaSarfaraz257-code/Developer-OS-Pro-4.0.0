@@ -152,11 +152,18 @@ function Auth({ onReady }) {
   const [path] = useState(window.location.pathname);
   const [linkState, setLinkState] = useState(path === "/verify-email" ? "verifying" : "idle");
   const [resetPassword, setResetPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const passwordStrength = [form.password.length >= 12, /[A-Z]/.test(form.password), /[a-z]/.test(form.password), /\d/.test(form.password), /[^A-Za-z0-9]/.test(form.password)].filter(Boolean).length;
 
   useEffect(() => {
     if (path !== "/verify-email") return;
     const params = new URLSearchParams(window.location.search);
-    fetch(`${API_URL}/auth/verify-email/`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uid:params.get("uid"), token:params.get("token")})})
+    const uid = params.get("uid");
+    const token = params.get("token");
+    // Keep one-time verification tokens out of the visible URL and browser history.
+    window.history.replaceState({}, document.title, window.location.pathname);
+    fetch(`${API_URL}/auth/verify-email/`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uid, token})})
       .then(async r => { const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(formatApiError(d, "Verification failed.")); setNotice("Email verified successfully. You can sign in now."); setLinkState("verified"); })
       .catch(e => { setError(e.message); setLinkState("error"); });
   }, [path]);
@@ -169,6 +176,8 @@ function Auth({ onReady }) {
 
   try {
     if (mode === "register") {
+      if (form.password !== confirmPassword) throw new Error("Passwords do not match.");
+      if (form.password.length < 12) throw new Error("Use at least 12 characters for your password.");
       await register({
         username: form.username,
         password: form.password,
@@ -178,8 +187,10 @@ function Auth({ onReady }) {
       });
 
       setMode("verify");
+      setForm((previous) => ({...previous, password: ""}));
+      setConfirmPassword("");
       setNotice(
-        "Account created. Check your email and verify it before signing in."
+        "Account created. A verification email has been queued. Check your inbox and spam folder; if it does not arrive, request another link."
       );
     } else if (mode === "forgot") {
       const response = await fetch(`${API_URL}/auth/password-reset/`, {
@@ -301,17 +312,28 @@ function Auth({ onReady }) {
   return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card">
     <div className="auth-logo"><span>D</span><div>DEVELOPER OS<small>THE OPERATING SYSTEM FOR DEVELOPERS</small></div></div>
     <div className="auth-copy"><span>{mode === "forgot" ? "ACCOUNT RECOVERY" : "BOOT SEQUENCE"}</span><h1>{mode === "login" ? "Enter the command center." : mode === "register" ? "Initialize your workspace." : "Recover your account."}</h1><p>{mode === "forgot" ? "We will send a secure, time-limited password reset link." : "Projects, intelligence, code, collaboration and delivery in one developer control plane."}</p></div>
-    <form onSubmit={submit}>
-      {mode === "register" && <div className="two"><input placeholder="First name" value={form.first_name} onChange={e=>setForm({...form,first_name:e.target.value})}/><input placeholder="Last name" value={form.last_name} onChange={e=>setForm({...form,last_name:e.target.value})}/></div>}
-      {mode !== "forgot" && <input required placeholder="Username or email" value={form.username} onChange={e=>setForm({...form,username:e.target.value})}/>} 
-      {(mode === "register" || mode === "forgot") && <input required type="email" placeholder="Email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>} 
-      {mode !== "forgot" && <input required type="password" placeholder="Password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/>} 
-      {mode === "login" && <div className="two"><input inputMode="numeric" placeholder="Authenticator code" value={form.otp} onChange={e=>setForm({...form,otp:e.target.value})}/><input placeholder="Backup code" value={form.backup_code} onChange={e=>setForm({...form,backup_code:e.target.value})}/></div>}
-      {notice&&<div className="notice">{notice}</div>}{error&&<div className="error">{error}</div>}
-      <button className="primary wide" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID →" : "SEND RESET LINK →"}</button>
+    <form onSubmit={submit} className="auth-form">
+      {mode === "register" && <div className="two">
+        <label className="auth-field"><span>FIRST NAME</span><input autoComplete="given-name" placeholder="First name" value={form.first_name} onChange={e=>setForm({...form,first_name:e.target.value})}/></label>
+        <label className="auth-field"><span>LAST NAME</span><input autoComplete="family-name" placeholder="Last name" value={form.last_name} onChange={e=>setForm({...form,last_name:e.target.value})}/></label>
+      </div>}
+      {mode !== "forgot" && <label className="auth-field"><span>{mode === "register" ? "USERNAME" : "USERNAME OR EMAIL"}</span><input required minLength={mode === "register" ? 3 : undefined} autoComplete="username" placeholder={mode === "register" ? "Choose a username" : "Username or email"} value={form.username} onChange={e=>setForm({...form,username:e.target.value})}/></label>}
+      {(mode === "register" || mode === "forgot") && <label className="auth-field"><span>EMAIL ADDRESS</span><input required type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>}
+      {mode !== "forgot" && <label className="auth-field"><span>PASSWORD</span><div className="auth-password"><input required type={showPassword ? "text" : "password"} minLength={mode === "register" ? 12 : undefined} autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder={mode === "register" ? "At least 12 characters" : "Your password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><button type="button" className="password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} onClick={()=>setShowPassword(v=>!v)}>{showPassword ? "HIDE" : "SHOW"}</button></div></label>}
+      {mode === "register" && <>
+        <div className="password-meter" aria-label={`Password strength: ${passwordStrength} of 5`}><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /></div>
+        <p className="password-hint">{form.password ? ["Very weak","Weak","Fair","Good","Strong","Excellent"][passwordStrength] : "Use 12+ characters with a mix of upper/lowercase, numbers and symbols."}</p>
+        <label className="auth-field"><span>CONFIRM PASSWORD</span><input required type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Enter your password again" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
+      </>}
+      {mode === "login" && <div className="two">
+        <label className="auth-field"><span>AUTHENTICATOR CODE (OPTIONAL)</span><input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="6-digit code" value={form.otp} onChange={e=>setForm({...form,otp:e.target.value})}/></label>
+        <label className="auth-field"><span>BACKUP CODE</span><input autoComplete="off" aria-label="Backup code" placeholder="Recovery code" value={form.backup_code} onChange={e=>setForm({...form,backup_code:e.target.value})}/></label>
+      </div>}
+      {notice&&<div className="notice" role="status">{notice}</div>}{error&&<div className="error" role="alert">{error}</div>}
+      <button className="primary wide auth-submit" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID →" : "SEND RESET LINK →"}</button>
     </form>
-    {mode === "login" && <button className="switch" onClick={()=>{setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
-    {mode === "login" && <button className="switch" onClick={()=>{setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
+    {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
+    {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
     {mode !== "forgot" && <button className="switch" onClick={()=>{setMode(mode==="login"?"register":"login");setError("");setNotice("")}}>{mode==="login" ? "Create a new Developer OS account" : "I already have an account"}</button>}
     {mode === "forgot" && <button className="switch" onClick={()=>{setMode("login");setError("");setNotice("")}}>Back to sign in</button>}
   </div></div>;

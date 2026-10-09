@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError, connection
 from django.test import override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.cache import cache
 from cryptography.fernet import Fernet
 from PIL import Image
 from rest_framework import status
@@ -333,6 +334,9 @@ class GitHubIntegrationLifecycleTests(APITestCase):
 
 class PlatformUpgradeTests(APITestCase):
     def setUp(self):
+        # The custom IP-based API throttle uses the shared cache; isolate tests from
+        # requests made by earlier test cases that share the same test-client IP.
+        cache.clear()
         self.user = User.objects.create_user(username="platform-user", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)
         self.project = Project.objects.create(owner=self.user, title="Quantum IDE", description="Build a web IDE")
