@@ -492,11 +492,15 @@ def _sandbox_command(root, command, allow_network=False):
     fail with: 'bwrap: Failed to make / slave: Permission denied'.
     """
     if SANDBOX_MODE == "container":
-        # Managed platforms such as Render do not grant the namespace
-        # capabilities required by bubblewrap. The Runner service itself is
-        # the isolation boundary here (cap_drop, no-new-privileges,
-        # read-only root filesystem, pids/memory/cpu limits and blocked
-        # network are enforced by the container configuration).
+        # A shared service container is not a per-tenant sandbox. In strict
+        # mode, never execute user-controlled code without a supported
+        # isolation backend. Compatibility mode is reserved for trusted CI
+        # and local development, not hostile multi-tenant production traffic.
+        if RUNNER_SECURITY_LEVEL == "strict":
+            raise HTTPException(
+                status_code=503,
+                detail="Secure execution isolation is unavailable. Configure a supported sandbox backend.",
+            )
         return ["bash", "-lc", "cd " + shlex.quote(str(root)) + " && " + command]
 
     bwrap = shutil.which("bwrap")
