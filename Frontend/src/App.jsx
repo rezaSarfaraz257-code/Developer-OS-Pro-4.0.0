@@ -98,7 +98,7 @@ function Shell({ user, onLogout, children, go, current }) {
         >
           <Avatar
             imageUrl={user.avatar_url}
-            initials={(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "D").trim().split(/\\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}
+            initials={(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "D").trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}
             className="rail-profile-avatar"
             label={user.full_name || user.username || "Profile"}
           />
