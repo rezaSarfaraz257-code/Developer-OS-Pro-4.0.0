@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import "./NavigationPolish.css";
 import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
@@ -764,7 +765,7 @@ export default function App() {
   else if(current==="dashboard") content=<Dashboard go={go}/>;
   else if(current==="explore") content=<Explore/>;
   else if(current==="projects") content=<Projects go={go}/>;
-  else if(current==="ide") content=<ProIDE/>;
+  else if(current==="ide") content=<ProIDE go={go}/>;
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;
   else if(current==="team") content=<Team/>;
