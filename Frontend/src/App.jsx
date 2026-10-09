@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
 import Referral from "./Referral";
@@ -773,5 +774,5 @@ export default function App() {
   else if(current==="audit") content=<Audit/>;
   else content=<Dashboard go={go}/>;
 
-  return <Shell user={user} onLogout={()=>setAuthenticated(false)} go={go} current={current}>{content}</Shell>;
+  return <><FullscreenExperience /><Shell user={user} onLogout={()=>setAuthenticated(false)} go={go} current={current}>{content}</Shell></>;
 }

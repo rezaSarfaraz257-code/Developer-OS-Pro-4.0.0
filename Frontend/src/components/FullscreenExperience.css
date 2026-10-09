@@ -1,0 +1,158 @@
+/* Adaptive full-screen shell: viewport-sized without hard-coded monitor dimensions. */
+:root { --dos-rail-width: 250px; }
+html, body, #root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+body { overflow: hidden; }
+.os-shell {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.os-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.os-content {
+  min-width: 0;
+  min-height: 0;
+  height: calc(100% - 67px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: clamp(14px, 2vw, 28px);
+  max-width: none;
+  margin: 0;
+}
+.page {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  padding: 0;
+}
+.ide-page { height: 100%; min-height: 0; padding: 0; }
+.dos-ide-pro { width: 100%; min-width: 0; min-height: 0; }
+.page > *, .panel, .dashboard-grid, .stat-grid, .cards-grid, .plan-grid {
+  min-width: 0;
+}
+.os-rail { width: var(--dos-rail-width); min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.os-main { width: calc(100% - var(--dos-rail-width)); margin-left: var(--dos-rail-width); height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.os-content { flex: 1 1 auto; }
+.topbar { min-width: 0; }
+.top-actions { min-width: 0; }
+.top-actions > * { flex-shrink: 0; }
+.global-search { min-width: 0; }
+.global-search input { min-width: 0; width: 100%; }
+.ai-layout { min-height: 0; height: min(72dvh, 900px); }
+.ai-history, .chat, .messages { min-height: 0; }
+.messages { overflow-y: auto; overscroll-behavior: contain; }
+.dos-fullscreen-toggle {
+  position: fixed;
+  z-index: 1200;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  border: 1px solid rgba(92, 218, 255, .3);
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: rgba(5, 13, 23, .88);
+  color: #bdefff;
+  box-shadow: 0 8px 28px rgba(0,0,0,.32);
+  backdrop-filter: blur(14px);
+  font: 700 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.dos-fullscreen-toggle:hover { border-color: rgba(92,218,255,.7); background: #0b1a2a; }
+.dos-fullscreen-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  background: rgba(1, 5, 11, .76);
+  backdrop-filter: blur(18px);
+}
+.dos-fullscreen-dialog {
+  width: min(500px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  padding: clamp(22px, 4vw, 36px);
+  border: 1px solid rgba(92, 218, 255, .25);
+  border-radius: 22px;
+  background: radial-gradient(ellipse at 100% 0, rgba(83, 103, 255, .12), transparent 45%), linear-gradient(145deg, #0d1725, #070c14);
+  color: #eaf6ff;
+  box-shadow: 0 30px 100px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.04);
+}
+.dos-fullscreen-symbol {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(92,218,255,.25);
+  border-radius: 15px;
+  background: rgba(92,218,255,.08);
+  color: #70e7ff;
+  font-size: 27px;
+}
+.dos-fullscreen-kicker {
+  margin: 22px 0 8px;
+  color: #70e7ff;
+  font: 800 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .16em;
+}
+.dos-fullscreen-dialog h2 { margin: 0; font-size: clamp(23px, 3.8vw, 31px); line-height: 1.17; letter-spacing: -.035em; }
+.dos-fullscreen-copy { color: #a5b7ca; font: 14px/1.75 system-ui, sans-serif; }
+.dos-fullscreen-actions { display: grid; gap: 10px; margin-top: 22px; }
+.dos-fullscreen-actions button { min-height: 44px; border-radius: 10px; font: 800 10px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .08em; cursor: pointer; }
+.dos-fullscreen-primary { border: 1px solid rgba(92,218,255,.42); background: linear-gradient(100deg, #0c6477, #343a7b); color: white; }
+.dos-fullscreen-secondary { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.035); color: #b5c5d6; }
+.dos-fullscreen-dialog small { display: block; margin-top: 16px; color: #70869b; font: 11px/1.6 system-ui, sans-serif; }
+.dos-fullscreen-error { color: #ffb2bc; font: 12px/1.5 system-ui, sans-serif; }
+@media (max-width: 1100px) {
+  :root { --dos-rail-width: 76px; }
+  .os-rail { width: var(--dos-rail-width); }
+  .os-rail .brand-text, .os-rail .rail-section, .os-rail .rail-item em,
+  .os-rail .status-chip, .os-rail .profile-mini > span:last-child { display: none; }
+  .os-rail .rail-item { justify-content: center; }
+  .ai-layout { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 60dvh; }
+  .ai-history { max-height: 180px; overflow: auto; }
+}
+@media (max-width: 720px) {
+  :root { --dos-rail-width: 0px; }
+  .os-rail { display: none; }
+  .os-main { width: 100%; margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .os-shell { overflow: hidden; }
+  .os-rail { width: 48px; }
+  .os-content { overflow-x: hidden; }
+  .topbar { gap: 8px; padding-inline: 10px; }
+  .crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb > span, .crumb > b { display: none; }
+  .top-actions .global-search { display: none; }
+  .top-actions { gap: 5px; }
+  .logout-btn { padding-inline: 8px; }
+  .page { padding: 12px; }
+  .hero-row, .panel-head { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .stat-grid, .dashboard-grid, .cards-grid, .plan-grid { grid-template-columns: minmax(0, 1fr); }
+  .dos-fullscreen-toggle { right: 10px; bottom: 10px; }
+}
+@media (max-height: 700px) {
+  .page { padding-block: 12px; }
+  .hero-row { margin-bottom: 14px; }
+  .dos-fullscreen-dialog { padding: 20px; }
+  .dos-fullscreen-kicker { margin-top: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dos-fullscreen-dialog, .dos-fullscreen-backdrop { scroll-behavior: auto; }
+}
