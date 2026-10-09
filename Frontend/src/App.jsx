@@ -8,17 +8,17 @@ import Avatar from "./components/Avatar";
 import Referral from "./Referral";
 
 const nav = [
-  ["dashboard", "⌂", "Command Center"],
-  ["explore", "◌", "Explore"],
-  ["projects", "◈", "Projects"],
-  ["ide", "⌘", "Web IDE"],
-  ["ai", "✦", "Intelligence"],
+  ["dashboard", "▦", "Command Center"],
+  ["explore", "◉", "Explore"],
+  ["projects", "◫", "Projects"],
+  ["ide", "</>", "Web IDE"],
+  ["ai", "✧", "Intelligence"],
   ["search", "⌕", "Universal Search"],
-  ["team", "◎", "Team & Collab"],
+  ["team", "⊙", "Team & Collab"],
   ["referrals", "↗", "Invite & Earn"],
-  ["billing", "◇", "SaaS / Billing"],
+  ["billing", "◈", "SaaS / Billing"],
   ["settings", "⚙", "Settings"],
-  ["audit", "≡", "Audit Log"],
+  ["audit", "≋", "Audit Log"],
 ];
 
 function useRoute() {
