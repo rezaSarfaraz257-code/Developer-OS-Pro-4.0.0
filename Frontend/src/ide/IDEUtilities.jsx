@@ -107,69 +107,159 @@ export function PreviewPanel({workspace,onClose}) {
  return <div className="dos-preview"><header><strong>LIVE PREVIEW</strong><button onClick={onClose}>×</button></header><div className="dos-preview-toolbar"><button onClick={start}>{loading?"Starting…":"▶ Start Preview"}</button><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="Preview path"/><button onClick={()=>url&&window.open(url,"_blank","noopener,noreferrer")}>↗</button></div>{error&&<div className="dos-preview-empty">{error}</div>}{url&&!error&&<div className="dos-preview-empty">Preview process started. Open the preview path in the authenticated Developer OS session.</div>}{!url&&!error&&<div className="dos-preview-empty">Start a workspace preview to launch the configured framework runner.</div>}</div>
 }
 
-function changedGitPaths(value){return String(value||"").split(/\r?\n/).map(line=>line.trimEnd()).filter(Boolean).map(line=>line.length>3?line.slice(3).trim():line.trim()).map(path=>path.includes(" -> ")?path.split(" -> ").pop().trim():path).map(path=>path.replace(/^"(.*)"$/,"$1")).filter(Boolean)}
+function changedGitPaths(value){
+ return String(value||"").split(/\r?\n/).map(line=>line.trimEnd()).filter(Boolean).map(line=>{
+  const code=line.slice(0,2).trim()||"??";
+  let path=line.length>3?line.slice(3).trim():line.trim();
+  if(path.includes(" -> "))path=path.split(" -> ").pop().trim();
+  path=path.replace(/^"(.*)"$/,"$1");
+  return path?{path,code}:null;
+ }).filter(Boolean);
+}
+function gitOutput(result){return String(result?.stdout??result?.output??"").trimEnd()}
 
 export function SourceControlPanel({workspace,onClose,onSync}) {
- const [repos,setRepos]=useState([]),[name,setName]=useState(""),[selected,setSelected]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState("Source control ready."),[git,setGit]=useState({}),[commitMessage,setCommitMessage]=useState("Workspace update"),[branch,setBranch]=useState("");
- useEffect(()=>{apiFetch("/repositories/").then(r=>r.json()).then(d=>{if(Array.isArray(d)){setRepos(d);if(d[0])setSelected(String(d[0].id));}}).catch(e=>setMessage(e.message))},[]);
+ const [repos,setRepos]=useState([]),[name,setName]=useState(""),[selected,setSelected]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState("Connect a workspace to inspect its Git state."),[git,setGit]=useState({}),[commitMessage,setCommitMessage]=useState("Workspace update"),[branch,setBranch]=useState(""),[tab,setTab]=useState("changes"),[filter,setFilter]=useState("");
+ const changedFiles=useMemo(()=>changedGitPaths(gitOutput(git.files)).filter(item=>item.path.toLowerCase().includes(filter.toLowerCase())),[git.files,filter]);
+ const statusText=gitOutput(git.status);
+ const diffText=gitOutput(git.diff);
+ const branchText=gitOutput(git.branches);
+ const historyText=gitOutput(git.log);
+ const hasGitState=Boolean(git.status||git.files||git.diff||git.branches||git.log);
+ const isError=/failed|error|unavailable|denied|not found|HTTP 5\d\d/i.test(message);
+ useEffect(()=>{let active=true;apiFetch("/repositories/").then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Could not load repositories");return d}).then(d=>{if(active&&Array.isArray(d)){setRepos(d);if(d[0])setSelected(String(d[0].id));}}).catch(e=>{if(active)setMessage(e.message||"Could not load repositories")});return()=>{active=false}},[]);
+ const refresh=useCallback(async function refreshRepositoryState(){
+  if(!workspace?.id){setGit({});setMessage("Open a workspace to inspect repository state.");return}
+  setBusy(true);
+  const operations=[["status",["status","--short"]],["diff",["diff"]],["files",["status","--short"]],["branches",["branch","--list"]],["log",["log","-20","--oneline"]]];
+  try{
+   const results=await Promise.all(operations.map(async([operation,args])=>{
+    const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(d.error||d.detail||`${operation} failed (HTTP ${r.status})`);
+    return [operation,d];
+   }));
+   setGit(Object.fromEntries(results));
+   setMessage("Git state synchronized.");
+  }catch(e){setMessage(e.message||"Repository refresh failed")}
+  finally{setBusy(false)}
+ },[workspace?.id]);
+ useEffect(()=>{void refresh()},[refresh]);
+ async function gitAction(operation,args){
+  if(!workspace?.id)return setMessage("Open a workspace first.");
+  if(busy)return;
+  setBusy(true);
+  try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`${operation} failed (HTTP ${r.status})`);setGit(x=>({...x,[operation]:d}));setMessage(`${operation} completed.`);await refresh();}
+  catch(e){setMessage(e.message||"Git operation failed")}
+  finally{setBusy(false)}
+ }
  async function gitFileAction(operation,path){
   if(!workspace?.id||busy||!path)return;
-  if(operation==="discard"&&!window.confirm("Discard changes for "+path+"?"))return;
+  if(operation==="discard"&&!window.confirm(`Discard changes for "${path}"? This cannot be undone.`))return;
   setBusy(true);
-  try{
-   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation,path})});
-   const d=await r.json();if(!r.ok)throw Error(d.error||"Git file operation failed");
-   setMessage(operation+" completed for "+path);await refresh();
-  }catch(e){setMessage(e.message)}finally{setBusy(false)}
- }
- async function gitAction(operation,args,force=false){
-  if(!workspace?.id||(busy&&!force))return;
-  setBusy(true);
-  try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});const d=await r.json();if(!r.ok)throw Error(d.error||"Git operation failed");setGit(x=>({...x,[operation]:d}));setMessage(operation+" completed.");return d}catch(e){setMessage(e.message)}finally{setBusy(false)}
+  try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation,path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`Git file operation failed (HTTP ${r.status})`);setMessage(`${operation} completed for ${path}`);await refresh();}
+  catch(e){setMessage(e.message||"Git file operation failed")}
+  finally{setBusy(false)}
  }
  async function openDiff(file,original,modified){
   try{
    const left=monaco.editor.createModel(original||"");
    const right=monaco.editor.createModel(modified||"");
-   const container=document.createElement("div");container.style.cssText="position:fixed;inset:8%;z-index:9999;background:#111827;border:1px solid #374151;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)";
-   document.body.appendChild(container);
-   const header=document.createElement("div");header.style.cssText="height:42px;padding:10px 14px;color:#fff;font-weight:600";
-   header.textContent="Diff · "+file+"   ×";header.onclick=()=>{editor.dispose();left.dispose();right.dispose();container.remove()};
-   container.appendChild(header);
-   const host=document.createElement("div");host.style.cssText="position:absolute;top:42px;left:0;right:0;bottom:0";container.appendChild(host);
-   const editor=monaco.editor.createDiffEditor(host,{readOnly:true,automaticLayout:true,renderSideBySide:true});
+   const container=document.createElement("div");
+   container.className="dos-source-diff-modal";
+   const header=document.createElement("div");header.className="dos-source-diff-head";
+   const title=document.createElement("strong");title.textContent="DIFF · "+file;
+   const close=document.createElement("button");close.type="button";close.textContent="×";close.setAttribute("aria-label","Close diff");
+   const host=document.createElement("div");host.className="dos-source-diff-host";
+   container.append(header,host);header.append(title,close);document.body.appendChild(container);
+   const editor=monaco.editor.createDiffEditor(host,{readOnly:true,automaticLayout:true,renderSideBySide:true,theme:"vs-dark",minimap:{enabled:false},scrollBeyondLastLine:false});
    editor.setModel({original:left,modified:right});
-  }catch(e){void e}
+   const cleanup=()=>{editor.dispose();left.dispose();right.dispose();container.remove()};
+   close.onclick=cleanup;
+   const onKey=e=>{if(e.key==="Escape"){cleanup();document.removeEventListener("keydown",onKey)}};
+   document.addEventListener("keydown",onKey);
+  }catch(e){setMessage(e.message||"Could not open diff viewer")}
  }
- const refresh = useCallback(async function refreshRepositoryState(){if(!workspace?.id){setMessage("Open a workspace to inspect repository state.");return}const operations=[["status",["status","--short"]],["diff",["diff"]],["files",["status","--short"]],["branches",["branch","--list"]],["log",["log","-20","--oneline"]]];try{const results=await Promise.all(operations.map(async([operation,args])=>{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`${operation} failed (HTTP ${r.status})`);return [operation,d]}));setGit(previous=>({...previous,...Object.fromEntries(results)}));setMessage("Repository state refreshed.");}catch(e){setMessage(e.message||"Repository refresh failed")}},[workspace?.id]);
- useEffect(()=>{if(workspace?.id){void refresh();}else{setGit({});setMessage("Open a workspace to inspect repository state.");}},[workspace?.id,refresh]);
- async function create(){if(!name.trim()||busy)return;setBusy(true);try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
- async function nativeCommit(){const msg=commitMessage.trim();if(!msg)return setMessage("Commit message is required.");if(busy)return;setBusy(true);try{const staged=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["add","-A"]})});const sd=await staged.json();if(!staged.ok)throw Error(sd.error||sd.detail||"Staging changes failed");const committed=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["commit","-m",msg]})});const cd=await committed.json();if(!committed.ok)throw Error(cd.error||cd.detail||"Commit failed");setGit(x=>({...x,commit:cd}));setMessage("Commit created successfully.");setCommitMessage("");await refresh();}catch(e){setMessage(e.message||"Commit failed");}finally{setBusy(false);}}
- async function checkoutBranch(){
-  const b=branch.trim();
-  if(!b||busy)return;
-  if(!/^[A-Za-z0-9._/-]{1,120}$/.test(b))return setMessage("Invalid branch name.");
-  if(!window.confirm("Switch workspace to branch "+b+"?"))return;
+ async function create(){
+  if(!name.trim()||busy)return;
+  setBusy(true);
+  try{const r=await apiFetch("/repositories/",{method:"POST",body:JSON.stringify({name:name.trim(),files:workspace?.files||{"README.md":"# Developer OS Repository\n"}})});const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Repository creation failed");setRepos(x=>[d,...x]);setSelected(String(d.id));setName("");setMessage("Independent repository created.");setTab("repositories");}
+  catch(e){setMessage(e.message||"Repository creation failed")}
+  finally{setBusy(false)}
+ }
+ async function nativeCommit(){
+  const msg=commitMessage.trim();if(!msg)return setMessage("A commit message is required.");if(!workspace?.id)return setMessage("Open a workspace first.");if(busy)return;
   setBusy(true);
   try{
-   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"checkout",args:["checkout",b]})});
-   const d=await r.json();if(!r.ok)throw Error(d.error||"Branch checkout failed");
-   setMessage("Switched to "+b);setBranch("");await refresh();
-  }catch(e){setMessage(e.message)}finally{setBusy(false)}
+   const staged=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["add","-A"]})});const sd=await staged.json().catch(()=>({}));if(!staged.ok)throw Error(sd.error||sd.detail||"Staging changes failed");
+   const committed=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["commit","-m",msg]})});const cd=await committed.json().catch(()=>({}));if(!committed.ok)throw Error(cd.error||cd.detail||"Commit failed");
+   setCommitMessage("");setMessage("Commit created successfully.");await refresh();
+  }catch(e){setMessage(e.message||"Commit failed")}
+  finally{setBusy(false)}
  }
- async function nativeBranch(){const b=branch.trim();if(!workspace?.id)return setMessage("Open a workspace before creating a branch.");if(!b)return setMessage("Branch name is required.");if(!/^[A-Za-z0-9._/-]{1,120}$/.test(b)||b.startsWith("/")||b.endsWith("/")||b.includes("..")||b.includes("//")||b.endsWith(".")||b.includes("@{"))return setMessage("Invalid branch name.");if(busy)return;setBusy(true);try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"branch",args:["checkout","-b",b]})});const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Branch creation failed");setGit(x=>({...x,branch:d}));setMessage("Created and switched to "+b);setBranch("");await refresh();}catch(e){setMessage(e.message||"Branch creation failed");}finally{setBusy(false);}}
- async function action(type){if(!selected||!workspace||busy)return;setBusy(true);try{const r=await apiFetch(`/repositories/${selected}/${type}/`,{method:"POST",body:JSON.stringify({workspace_id:workspace.id,message:commitMessage||"Workspace update"})});const d=await r.json();if(!r.ok)throw Error(d.error||`${type} failed`);setMessage(type==="push"?"Committed to Developer OS Repository.":"Pulled from Developer OS Repository.");onSync?.(type==="push"?"push":"pull");}catch(e){setMessage(e.message)}finally{setBusy(false)}}
- return <section className="dos-source-control"><header><div><strong>SOURCE CONTROL</strong><small>GIT WORKTREE · NATIVE REPOSITORY</small></div><button onClick={onClose}>×</button></header><div className="dos-source-body">
-  <div className="dos-source-create dos-source-toolbar"><input value={name} onChange={e=>setName(e.target.value)} placeholder="New repository name" aria-label="New repository name"/><button onClick={create} disabled={busy||!name.trim()}>＋ Create</button><button onClick={refresh} disabled={busy}>↻ Refresh</button></div>
-  <label className="dos-source-repo-select">Developer OS Repository<select value={selected} onChange={e=>setSelected(e.target.value)} aria-label="Select Developer OS repository"><option value="">Select repository</option>{repos.map(r=><option key={r.id} value={r.id}>{r.name} · {r.branch}</option>)}</select></label>
-  <div className="dos-source-create"><input value={branch} onChange={e=>setBranch(e.target.value)} placeholder="new branch name"/><button onClick={nativeBranch} disabled={busy}>＋ Branch</button><button onClick={checkoutBranch} disabled={busy}>⇄ Checkout</button></div>
-  <div className="dos-source-create"><input value={commitMessage} onChange={e=>setCommitMessage(e.target.value)} placeholder="Commit message"/><button onClick={nativeCommit} disabled={busy}>✓ Commit</button></div>
-  <div className="dos-source-actions"><button onClick={()=>action("push")} disabled={!selected||busy}>↑ Repository Push</button><button onClick={()=>action("pull")} disabled={!selected||busy}>↓ Repository Pull</button></div>
-  <div className="dos-source-actions"><button onClick={()=>gitAction("status",["status"])} disabled={busy}>Status</button><button onClick={()=>gitAction("diff",["diff"])} disabled={busy}>Diff</button><button onClick={()=>gitAction("files",["status","--short"])} disabled={busy}>Changed Files</button><button onClick={()=>{if(window.confirm("Restore the entire worktree and discard ALL unstaged changes? This cannot be undone."))gitAction("restore",["restore","."])}} disabled={busy}>Restore Worktree</button><button onClick={()=>gitAction("branches",["branch","--list"])} disabled={busy}>Branches</button><button onClick={()=>gitAction("log",["log","-20","--oneline"])} disabled={busy}>Log</button></div>
-  <p>{message}</p>
-  <pre className="dos-source-output">{git.status?.stdout||git.status?.output||"No status loaded."}</pre>  <div className="dos-source-files">{changedGitPaths(git.files?.stdout||"").map((file,index)=><div key={file+index} className="dos-source-file"><code>{file}</code><span><button onClick={()=>gitFileAction("stage",file.trim())} disabled={busy}>Stage</button><button onClick={()=>gitFileAction("unstage",file.trim())} disabled={busy}>Unstage</button><button onClick={()=>{if(window.confirm(`Discard changes for "${file.trim()}"? This cannot be undone.`))gitFileAction("discard",file.trim())}} disabled={busy}>Discard</button><button onClick={async()=>{try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path:file.trim()})});const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");openDiff(file.trim(),d.original||d.base||"",d.stdout||d.output||"")}catch(e){setMessage(e.message||"File diff unavailable")}}} disabled={busy}>Diff</button></span></div>)}</div>
-  <pre className="dos-source-output">{git.diff?.stdout||git.diff?.output||"No diff loaded."}</pre><button onClick={()=>{const raw=git.diff?.stdout||"";openDiff("workspace diff","",raw)}} disabled={!git.diff}>Open Monaco Diff</button><pre className="dos-source-output">{git.files?.stdout||git.files?.output||"No changed-file list loaded."}</pre>
-  <pre className="dos-source-output">{git.branches?.stdout||git.branches?.output||"No branches loaded."}</pre>
-  <pre className="dos-source-output">{git.log?.stdout||git.log?.output||"No history loaded."}</pre>
- </div></section>
+ async function nativeBranch(){
+  const b=branch.trim();
+  if(!workspace?.id)return setMessage("Open a workspace before creating a branch.");
+  if(!b)return setMessage("Branch name is required.");
+  if(!/^[A-Za-z0-9._/-]{1,120}$/.test(b)||b.startsWith("/")||b.endsWith("/")||b.includes("..")||b.includes("//")||b.endsWith(".")||b.includes("@{"))return setMessage("Invalid branch name.");
+  if(busy)return;
+  setBusy(true);
+  try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"branch",args:["checkout","-b",b]})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"Branch creation failed");setBranch("");setMessage("Created and switched to "+b);await refresh();}
+  catch(e){setMessage(e.message||"Branch creation failed")}
+  finally{setBusy(false)}
+ }
+ async function checkoutBranch(){
+  const b=branch.trim();if(!workspace?.id)return setMessage("Open a workspace first.");if(!b)return setMessage("Enter a branch name.");if(busy)return;
+  if(!window.confirm("Switch workspace to branch "+b+"?"))return;
+  setBusy(true);
+  try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"checkout",args:["checkout",b]})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"Branch checkout failed");setBranch("");setMessage("Switched to "+b);await refresh();}
+  catch(e){setMessage(e.message||"Branch checkout failed")}
+  finally{setBusy(false)}
+ }
+ async function repositoryAction(type){
+  if(!selected||!workspace?.id||busy)return;
+  setBusy(true);
+  try{const r=await apiFetch(`/repositories/${selected}/${type}/`,{method:"POST",body:JSON.stringify({workspace_id:workspace.id,message:commitMessage||"Workspace update"})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`${type} failed`);setMessage(type==="push"?"Committed to Developer OS Repository.":"Pulled from Developer OS Repository.");onSync?.(type==="push"?"push":"pull");}
+  catch(e){setMessage(e.message||`${type} failed`)}
+  finally{setBusy(false)}
+ }
+ const tabs=[["changes","Changes",changedFiles.length],["branches","Branches",null],["history","History",null],["repositories","Repositories",repos.length]];
+ return <section className="dos-source-control dos-source-control-pro" role="dialog" aria-label="Source Control">
+  <header className="dos-source-head">
+   <div className="dos-source-brand"><div className="dos-source-mark">⑂</div><div><strong>Source Control</strong><small>WORKTREE <span>•</span> GIT INTEGRATION</small></div></div>
+   <div className="dos-source-head-actions"><span className={`dos-source-connection ${workspace?.id?"connected":"disconnected"}`}><i/>{workspace?.id?"Workspace linked":"No workspace"}</span><button type="button" className="dos-source-icon-button" onClick={()=>void refresh()} disabled={busy} title="Refresh repository state" aria-label="Refresh repository state">↻</button><button type="button" className="dos-source-icon-button" onClick={onClose} title="Close Source Control" aria-label="Close Source Control">×</button></div>
+  </header>
+  <div className="dos-source-context"><span className="dos-source-context-icon">⌘</span><div><strong>{workspace?.name||"No workspace selected"}</strong><small>{workspace?.id? `Workspace #${workspace.id} · Native Git worktree`:"Select or open a workspace to enable Git actions."}</small></div><span className="dos-source-context-spacer"/><span className={`dos-source-sync-state ${busy?"is-busy":hasGitState?"is-ready":"is-idle"}`}><i/>{busy?"Syncing":hasGitState?"Synced":"Waiting"}</span></div>
+  <div className="dos-source-commandbar">
+   <div className="dos-source-branch-input"><span>⑂</span><input value={branch} onChange={e=>setBranch(e.target.value)} placeholder="Create or checkout branch…" aria-label="Branch name" onKeyDown={e=>{if(e.key==="Enter")void nativeBranch()}}/><button type="button" onClick={()=>void nativeBranch()} disabled={busy||!branch.trim()} title="Create and switch to branch">＋ Create</button><button type="button" onClick={()=>void checkoutBranch()} disabled={busy||!branch.trim()} title="Checkout existing branch">Checkout</button></div>
+   <div className="dos-source-commit-input"><input value={commitMessage} onChange={e=>setCommitMessage(e.target.value)} placeholder="Describe the changes for your commit…" aria-label="Commit message" onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")void nativeCommit()}}/><button type="button" className="dos-source-commit-button" onClick={()=>void nativeCommit()} disabled={busy||!workspace?.id||!commitMessage.trim()} title="Commit all worktree changes">✓ Commit</button></div>
+  </div>
+  <nav className="dos-source-tabs" aria-label="Source control views">{tabs.map(([key,label,count])=><button key={key} type="button" className={tab===key?"active":""} onClick={()=>setTab(key)} aria-current={tab===key?"page":undefined}><span>{label}</span>{count!==null&&<b>{count}</b>}</button>)}<span className="dos-source-tabs-spacer"/><button type="button" className="dos-source-refresh-tab" onClick={()=>void refresh()} disabled={busy}>↻ Refresh</button></nav>
+  <div className="dos-source-main">
+   <div className="dos-source-feedback" role="status" aria-live="polite"><span className={`dos-source-feedback-icon ${isError?"error":busy?"busy":"ok"}`}>{isError?"!":busy?"…":"✓"}</span><span>{message}</span></div>
+   {#if tab==="changes"}
+    <div className="dos-source-view-head"><div><h3>Working tree</h3><p>Review, stage, compare, and commit workspace changes.</p></div><div className="dos-source-view-actions"><span className="dos-source-count-pill">{changedFiles.length} changed</span><button type="button" onClick={()=>{if(window.confirm("Restore the entire worktree and discard ALL unstaged changes? This cannot be undone."))void gitAction("restore",["restore","."])}} disabled={busy||!workspace?.id} className="dos-source-danger">Discard all</button></div></div>
+    <div className="dos-source-file-toolbar"><label className="dos-source-filter"><span>⌕</span><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter changed files…" aria-label="Filter changed files"/></label><span className="dos-source-muted">{changedFiles.length?"Select an action on any file":"No matching files"}</span></div>
+    <div className="dos-source-change-list">
+     {changedFiles.map(({path,code})=><article key={path} className="dos-source-change-row"><span className={`dos-source-file-status ${code.includes("?")?"untracked":code.includes("A")?"added":code.includes("D")?"deleted":code.includes("R")?"renamed":"modified"}`}>{code}</span><div className="dos-source-file-details"><code title={path}>{path.split("/").pop()}</code><small title={path}>{path.includes("/")?path.slice(0,path.lastIndexOf("/")):"Workspace root"}</small></div><div className="dos-source-file-actions"><button type="button" onClick={()=>void gitFileAction("stage",path)} disabled={busy} title="Stage file">＋ Stage</button><button type="button" onClick={async()=>{try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");openDiff(path,d.original||d.base||"",d.stdout||d.output||"")}catch(e){setMessage(e.message||"File diff unavailable")}} disabled={busy} title="Open file diff">Diff ↗</button><button type="button" className="dos-source-discard-file" onClick={()=>void gitFileAction("discard",path)} disabled={busy} title="Discard file changes">Discard</button></div></article>)}
+     {!changedFiles.length&&<div className="dos-source-empty"><div className="dos-source-empty-mark">{busy?"↻":"✓"}</div><strong>{busy?"Refreshing worktree…":filter?"No files match this filter":hasGitState?"Working tree clean":"Waiting for Git status"}</strong><p>{busy?"Fetching status, diffs, branches, and recent commits.":filter?"Try another filename or clear the filter.":hasGitState?"Your workspace has no uncommitted changes.":"Open a workspace with a Git worktree, then refresh to load repository state."}</p>{!busy&&<button type="button" onClick={()=>void refresh()} disabled={!workspace?.id}>Refresh status</button>}</div>}
+    </div>
+    <details className="dos-source-raw"><summary>Git status output</summary><pre>{statusText||"No status output returned."}</pre></details>
+    <details className="dos-source-raw"><summary>Unified diff</summary><pre>{diffText||"No diff output returned."}</pre><button type="button" onClick={()=>openDiff("workspace diff","",diffText)} disabled={!diffText}>Open in Monaco Diff Editor</button></details>
+   {:else if tab==="branches"}
+    <div className="dos-source-view-head"><div><h3>Branches</h3><p>Create an isolated line of work or switch to an existing branch.</p></div><span className="dos-source-count-pill">{branchText.split("\n").filter(Boolean).length} listed</span></div>
+    <div className="dos-source-branch-list">{branchText?branchText.split("\n").filter(Boolean).map((line,i)=><div className="dos-source-branch-row" key={line+i}><span>⑂</span><code>{line.replace(/^\*\s*/,"")}</code>{line.startsWith("*")&&<b>Current</b>}<button type="button" onClick={()=>setBranch(line.replace(/^\*\s*/,"").trim())}>Select</button></div>):<div className="dos-source-empty"><div className="dos-source-empty-mark">⑂</div><strong>No branch data yet</strong><p>Refresh repository state to load local branches.</p></div>}</div>
+   {:else if tab==="history"}
+    <div className="dos-source-view-head"><div><h3>Commit history</h3><p>Recent commits from this workspace repository.</p></div><span className="dos-source-count-pill">{historyText.split("\n").filter(Boolean).length} commits</span></div>
+    <div className="dos-source-history-list">{historyText?historyText.split("\n").filter(Boolean).map((line,i)=>{const match=line.match(/^([0-9a-f]{7,40})\s*(.*)$/i);return <article className="dos-source-history-row" key={line+i}><span className="dos-source-history-node"/><div><code>{match?.[1]||"commit"}</code><p>{match?.[2]||line}</p></div><button type="button" onClick={()=>GenUI.copy(line)} title="Copy commit details">Copy</button></article>}):<div className="dos-source-empty"><div className="dos-source-empty-mark">◷</div><strong>No commit history loaded</strong><p>Refresh to retrieve recent commits from Git.</p></div>}</div>
+   {:else}
+    <div className="dos-source-view-head"><div><h3>Developer OS repositories</h3><p>Manage app-level repository snapshots separately from native Git.</p></div></div>
+    <div className="dos-source-create-repository"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Repository name…" aria-label="New repository name"/><button type="button" onClick={()=>void create()} disabled={busy||!name.trim()}>＋ Create repository</button></div>
+    <label className="dos-source-repository-select">Repository<select value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Select repository</option>{repos.map(repo=><option key={repo.id} value={repo.id}>{repo.name} · {repo.branch}</option>)}</select></label>
+    <div className="dos-source-repository-actions"><button type="button" onClick={()=>void repositoryAction("push")} disabled={busy||!selected||!workspace?.id}>↑ Push workspace snapshot</button><button type="button" onClick={()=>void repositoryAction("pull")} disabled={busy||!selected||!workspace?.id}>↓ Pull repository snapshot</button></div>
+    <p className="dos-source-repository-note">These snapshot operations are separate from native Git commits and branches.</p>
+    {repos.length===0&&<div className="dos-source-empty"><div className="dos-source-empty-mark">▤</div><strong>No Developer OS repositories</strong><p>Create a repository to use the app-level snapshot workflow.</p></div>}
+   {/if}
+  </div>
+ </section>
 }
