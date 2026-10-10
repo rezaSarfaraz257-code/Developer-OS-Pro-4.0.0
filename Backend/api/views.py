@@ -2344,7 +2344,7 @@ def ide_workspace_files_api(request, pk):
             expected_revision = int(expected_revision)
         except (TypeError, ValueError):
             return Response({"error": "Invalid workspace revision."}, status=400)
-        if expected_revision != ws.revision and request.method == "POST" and str(request.data.get("action") or "write").strip().lower() != "create":
+        if expected_revision != ws.revision and request.method in {"POST", "DELETE"} and str(request.data.get("action") or "write").strip().lower() != "create":
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     files = dict(ws.files or {})
     if request.method == "DELETE":
@@ -2365,7 +2365,13 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        try:
+            ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed elsewhere. Reload before deleting files.", "code": "stale_workspace", "revision": ws.revision}, status=409)
+        except (DatabaseError, IntegrityError):
+            logger.exception("IDE file deletion persistence failed: workspace=%s path=%s", ws.pk, path)
+            return Response({"error": "Could not delete the file.", "code": "workspace_persistence_error"}, status=503)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
     if action == "create":
