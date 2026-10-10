@@ -681,76 +681,38 @@ body{scrollbar-gutter:stable}
 }
 
 
-/* Layout correction: compact icon rail and consistent 10px page gutters. */
-@media (min-width:721px){
-  .os-rail{
-    box-sizing:border-box !important;
-    width:40px !important;
-    padding:12px 0 !important;
-    padding-right:0 !important;
-    overflow-x:hidden;
-    scrollbar-width:none;
-    scrollbar-gutter:auto !important;
-  }
-  .os-rail::-webkit-scrollbar{display:none !important;width:0 !important}
-  .os-rail .rail-item,
-  .os-rail:not(:hover):not(:focus-within) .rail-item{
-    box-sizing:border-box !important;
-    width:100% !important;
-    padding-left:2px !important;
-    padding-right:0 !important;
-    margin-right:0 !important;
-    gap:0 !important;
-  }
-  .os-rail .rail-item span,
-  .os-rail:not(:hover):not(:focus-within) .rail-item span{
-    flex:0 0 29px !important;
-    width:29px !important;
-    margin:0 !important;
-  }
-  .os-main{
-    box-sizing:border-box !important;
-    min-width:0 !important;
-    margin-left:36px !important;
-    width:calc(100% - 36px) !important;
-  }
-  /* Expand over the content on hover; do not resize the main layout. */
-  .os-rail:hover,
-  .os-rail:focus-within{
-    width:236px !important;
-    padding:16px 12px !important;
-  }
-  .os-rail:hover .rail-item,
-  .os-rail:focus-within .rail-item{
-    padding:0 12px !important;
-    gap:12px !important;
-  }
-  .os-rail:hover .rail-item span,
-  .os-rail:focus-within .rail-item span{
-    flex:0 0 29px !important;
-    width:29px !important;
-  }
+/* GLOBAL APP FRAME — shared by dashboard, projects, AI, settings, billing and IDE. */
+.os-shell{
+  box-sizing:border-box !important;
+  width:95% !important;
+  max-width:95% !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.os-main{
+  box-sizing:border-box !important;
+  min-width:0 !important;
+  width:calc(100% - 36px) !important;
 }
 .os-content{
   box-sizing:border-box !important;
   width:100% !important;
   max-width:none !important;
   margin:0 !important;
-  padding-left:10px !important;
-  padding-right:10px !important;
+  padding:16px !important;
 }
 .topbar{
   box-sizing:border-box !important;
-  padding-left:10px !important;
-  padding-right:10px !important;
+  padding-left:16px !important;
+  padding-right:16px !important;
+}
+@media(max-width:900px){
+  .os-shell{width:95% !important;max-width:95% !important}
+  .os-content{padding:12px !important}
+  .topbar{padding-left:12px !important;padding-right:12px !important}
 }
 @media(max-width:720px){
-  .os-main{
-    margin-left:0 !important;
-    width:100% !important;
-  }
-  .os-content{
-    padding-left:10px !important;
-    padding-right:10px !important;
-  }
+  .os-main{width:100% !important}
+  .os-content{padding:10px !important}
+  .topbar{padding-left:10px !important;padding-right:10px !important}
 }
