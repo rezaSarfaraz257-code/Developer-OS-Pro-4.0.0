@@ -180,3 +180,22 @@ body { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .dos-fullscreen-dialog, .dos-fullscreen-backdrop { scroll-behavior: auto; }
 }
+
+/* Outer app width: leave a visible gutter at the right edge as well as inside page content. */
+@media (min-width:721px){
+  .os-main{
+    box-sizing:border-box !important;
+    width:calc(100% - 48px) !important;
+    margin-left:36px !important;
+    margin-right:12px !important;
+  }
+}
+@media (max-width:720px){
+  .os-main{
+    box-sizing:border-box !important;
+    width:calc(100% - 24px) !important;
+    margin-left:12px !important;
+    margin-right:12px !important;
+  }
+  .os-content{padding-left:8px !important;padding-right:8px !important;}
+}
