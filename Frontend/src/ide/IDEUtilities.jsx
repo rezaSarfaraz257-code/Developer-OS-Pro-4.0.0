@@ -174,9 +174,10 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
    container.append(header,host);header.append(title,close);document.body.appendChild(container);
    const editor=monaco.editor.createDiffEditor(host,{readOnly:true,automaticLayout:true,renderSideBySide:true,theme:"vs-dark",minimap:{enabled:false},scrollBeyondLastLine:false});
    editor.setModel({original:left,modified:right});
-   const cleanup=()=>{editor.dispose();left.dispose();right.dispose();container.remove()};
+   let onKey=null;
+   const cleanup=()=>{editor.dispose();left.dispose();right.dispose();container.remove();if(onKey)document.removeEventListener("keydown",onKey)};
    close.onclick=cleanup;
-   const onKey=e=>{if(e.key==="Escape"){cleanup();document.removeEventListener("keydown",onKey)}};
+   onKey=e=>{if(e.key==="Escape")cleanup()};
    document.addEventListener("keydown",onKey);
   }catch(e){setMessage(e.message||"Could not open diff viewer")}
  }
@@ -251,7 +252,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
     <div className="dos-source-branch-list">{branchText?branchText.split("\n").filter(Boolean).map((line,i)=><div className="dos-source-branch-row" key={line+i}><span>⑂</span><code>{line.replace(/^\*\s*/,"")}</code>{line.startsWith("*")&&<b>Current</b>}<button type="button" onClick={()=>setBranch(line.replace(/^\*\s*/,"").trim())}>Select</button></div>):<div className="dos-source-empty"><div className="dos-source-empty-mark">⑂</div><strong>No branch data yet</strong><p>Refresh repository state to load local branches.</p></div>}</div>
    </>}{tab==="history"&&<>
     <div className="dos-source-view-head"><div><h3>Commit history</h3><p>Recent commits from this workspace repository.</p></div><span className="dos-source-count-pill">{historyText.split("\n").filter(Boolean).length} commits</span></div>
-    <div className="dos-source-history-list">{historyText?historyText.split("\n").filter(Boolean).map((line,i)=>{const match=line.match(/^([0-9a-f]{7,40})\s*(.*)$/i);return <article className="dos-source-history-row" key={line+i}><span className="dos-source-history-node"/><div><code>{match?.[1]||"commit"}</code><p>{match?.[2]||line}</p></div><button type="button" onClick={()=>GenUI.copy(line)} title="Copy commit details">Copy</button></article>}):<div className="dos-source-empty"><div className="dos-source-empty-mark">◷</div><strong>No commit history loaded</strong><p>Refresh to retrieve recent commits from Git.</p></div>}</div>
+    <div className="dos-source-history-list">{historyText?historyText.split("\n").filter(Boolean).map((line,i)=>{const match=line.match(/^([0-9a-f]{7,40})\s*(.*)$/i);return <article className="dos-source-history-row" key={line+i}><span className="dos-source-history-node"/><div><code>{match?.[1]||"commit"}</code><p>{match?.[2]||line}</p></div><button type="button" onClick={()=>{if(navigator.clipboard?.writeText)navigator.clipboard.writeText(line).then(()=>setMessage("Commit details copied."),()=>setMessage("Could not copy commit details."));else setMessage("Clipboard access is unavailable in this browser context.")}} title="Copy commit details">Copy</button></article>}):<div className="dos-source-empty"><div className="dos-source-empty-mark">◷</div><strong>No commit history loaded</strong><p>Refresh to retrieve recent commits from Git.</p></div>}</div>
    </>}{tab==="repositories"&&<>
     <div className="dos-source-view-head"><div><h3>Developer OS repositories</h3><p>Manage app-level repository snapshots separately from native Git.</p></div></div>
     <div className="dos-source-create-repository"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Repository name…" aria-label="New repository name"/><button type="button" onClick={()=>void create()} disabled={busy||!name.trim()}>＋ Create repository</button></div>
