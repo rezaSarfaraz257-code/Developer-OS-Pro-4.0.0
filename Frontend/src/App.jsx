@@ -17,6 +17,7 @@ const nav = [
   ["team", "◎", "Team & Collab"],
   ["referrals", "↗", "Invite & Earn"],
   ["billing", "◇", "SaaS / Billing"],
+  ["profile", "◎", "My Profile"],
   ["settings", "⚙", "Settings"],
   ["audit", "≡", "Audit Log"],
 ];
@@ -77,7 +78,7 @@ function Shell({ user, onLogout, children, go, current }) {
   const commands = useMemo(() => [
     ["Command Center", "/", "⌂"], ["Web IDE", "/ide", "⌘"], ["Projects", "/projects", "◈"],
     ["Intelligence", "/ai", "✦"], ["Universal Search", "/search", "⌕"], ["Team & Collaboration", "/team", "◎"],
-    ["Invite & Earn", "/referrals", "↗"], ["Billing & Plans", "/billing", "◇"], ["Settings", "/settings", "⚙"],
+    ["Invite & Earn", "/referrals", "↗"], ["Billing & Plans", "/billing", "◇"], ["My Profile", "/profile", "◎"], ["Settings", "/settings", "⚙"],
   ], []);
 
   const runSearch = (e) => {
@@ -92,9 +93,9 @@ function Shell({ user, onLogout, children, go, current }) {
       <aside className="os-rail">
         <button
           className="brand rail-identity"
-          onClick={() => go("/settings")}
+          onClick={() => go("/profile")}
           title={`${user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "Developer"} · @${user.username || "developer"}`}
-          aria-label="Open profile settings"
+          aria-label="Open my profile"
         >
           <Avatar
             imageUrl={user.avatar_url}
@@ -740,7 +741,7 @@ function Billing() {
     </section>
   </div>;
 }
-function Settings({ onProfileUpdate }) {
+function Profile({ onProfileUpdate }) {
   const [profile, setProfile] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState("");
@@ -843,7 +844,7 @@ function Settings({ onProfileUpdate }) {
   return (
     <div className="page">
       <div className="hero-row">
-        <div><div className="eyebrow">SYSTEM / IDENTITY</div><h1>Settings</h1><p>Personalize your Developer OS identity and profile photo.</p></div>
+        <div><div className="eyebrow">YOUR SPACE / IDENTITY</div><h1>My Profile</h1><p>Your developer identity, public links and personal details — all in one dedicated place.</p></div>
       </div>
       <section className="panel settings-form profile-settings-panel">
         <div className="profile-settings-avatar-row">
@@ -870,6 +871,18 @@ function Settings({ onProfileUpdate }) {
       </section>
     </div>
   );
+}
+
+function Settings({ go }) {
+  return <div className="page settings-hub">
+    <div className="hero-row"><div><div className="eyebrow">SYSTEM / PREFERENCES</div><h1>Settings</h1><p>Manage your workspace services and platform controls. Your personal identity now lives in its own Profile section.</p></div></div>
+    <div className="settings-hub-grid">
+      <button className="panel settings-hub-card" onClick={() => go("/billing")}><span className="settings-hub-icon">◇</span><span className="panel-kicker">PLAN & USAGE</span><h2>Billing & plans</h2><p>Review your plan, usage limits and subscription options.</p><strong>OPEN BILLING <span>↗</span></strong></button>
+      <button className="panel settings-hub-card" onClick={() => go("/team")}><span className="settings-hub-icon">◎</span><span className="panel-kicker">COLLABORATION</span><h2>Team & access</h2><p>Open team collaboration and workspace membership controls.</p><strong>OPEN TEAM <span>↗</span></strong></button>
+      <button className="panel settings-hub-card" onClick={() => go("/profile")}><span className="settings-hub-icon">◉</span><span className="panel-kicker">PERSONAL IDENTITY</span><h2>My profile</h2><p>Edit your name, bio and developer links on your dedicated profile page.</p><strong>OPEN PROFILE <span>↗</span></strong></button>
+      <button className="panel settings-hub-card" onClick={() => go("/audit")}><span className="settings-hub-icon">≡</span><span className="panel-kicker">SECURITY & ACTIVITY</span><h2>Audit log</h2><p>Review workspace activity and available governance events.</p><strong>VIEW ACTIVITY <span>↗</span></strong></button>
+    </div>
+  </div>;
 }
 
 export default function App() {
@@ -906,7 +919,8 @@ export default function App() {
   else if(current==="team") content=<Team/>;
   else if(current==="referrals") content=<Referral go={go}/>;
   else if(current==="billing") content=<Billing/>;
-  else if(current==="settings") content=<Settings onProfileUpdate={setUser}/>;
+  else if(current==="profile") content=<Profile onProfileUpdate={setUser}/>;
+  else if(current==="settings") content=<Settings go={go}/>;
   else if(current==="audit") content=<Audit/>;
   else content=<Dashboard go={go}/>;
 
