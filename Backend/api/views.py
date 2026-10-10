@@ -164,7 +164,14 @@ def readiness_api(request):
         pass
     checks["secret_key"] = bool(settings.SECRET_KEY and not settings.SECRET_KEY.startswith("django-insecure-"))
     checks["allowed_hosts"] = bool(settings.ALLOWED_HOSTS and settings.ALLOWED_HOSTS != ["*"])
-    checks["email"] = bool(getattr(settings, "EMAIL_HOST", "") or getattr(settings, "EMAIL_BACKEND", "").endswith("console.EmailBackend"))
+    email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
+    # The console backend is useful in local development but cannot deliver
+    # verification, recovery, or notification messages in production.
+    if getattr(settings, "IS_PRODUCTION", False):
+        checks["email"] = bool(email_host and not email_backend.endswith("console.EmailBackend"))
+    else:
+        checks["email"] = bool(email_host or email_backend.endswith("console.EmailBackend"))
     try:
         from django.core.cache import cache
         cache.set("readiness", "ok", timeout=15)
