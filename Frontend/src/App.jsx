@@ -777,6 +777,8 @@ function Settings({ onProfileUpdate }) {
 
   const chooseAvatar = event => {
     const file = event.target.files?.[0];
+    // Clear immediately so choosing the same file again still fires change.
+    event.target.value = "";
     setAvatarError("");
     if (!file) return;
     if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
@@ -811,8 +813,14 @@ function Settings({ onProfileUpdate }) {
         payload.append("remove_avatar", "true");
         payload.append("avatar_url", "");
       }
-      const response = await apiFetch("/profile/", { method: "PATCH", body: payload });
-      const data = await response.json();
+      await apiFetch("/profile/", { method: "PATCH", body: payload });
+      // Re-read the canonical server profile rather than trusting a stale URL
+      // or a cached optimistic preview after upload/removal.
+      const refreshed = await apiFetch("/profile/", { cache: "no-store" });
+      const data = await refreshed.json();
+      if (avatarFile && !data.avatar_url) {
+        throw new Error("The server saved the profile but did not return a photo URL. Please try again.");
+      }
       setProfile(data);
       onProfileUpdate?.(data);
       setAvatarFile(null);
@@ -844,6 +852,7 @@ function Settings({ onProfileUpdate }) {
             <strong>{profileName}</strong>
             <span>@{profile.username || "developer"}</span>
             <p>JPEG, PNG, or WebP · up to 5 MB. Your photo also appears in the sidebar.</p>
+            {avatarFile && <span className="profile-avatar-file-meta">{avatarFile.name} · {(avatarFile.size / 1024 / 1024).toFixed(2)} MB · ready to upload</span>}
             <div className="profile-settings-avatar-actions">
               <button type="button" className="ghost" onClick={() => avatarInputRef.current?.click()} disabled={saving}>CHOOSE PHOTO</button>
               {(profile.avatar_url || avatarFile) && <button type="button" className="profile-remove-avatar" onClick={() => { setAvatarFile(null); setRemoveAvatar(true); setAvatarError(""); setSaved(false); }} disabled={saving}>REMOVE PHOTO</button>}
