@@ -90,16 +90,108 @@ export function RunCenter({workspace,files,activeFile,onClose}) {
  return <section className="dos-run-center"><header><div><strong>CODE EXECUTION</strong><small>SECURE SANDBOX · BUILD · TEST · DEBUG</small></div><button onClick={onClose}>×</button></header><div className="dos-run-presets">{presets.map(([name,cmd])=><button key={name} onClick={()=>setCommand(cmd)}>{name}</button>)}</div><div className="dos-run-command"><span>›</span><input value={command} onChange={e=>setCommand(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")execute()}}/><button className="dos-run-main" onClick={execute} disabled={running||busy}>{running?"■ Running…":"▶ Run"}</button>{running&&jobId?<button className="dos-run-cancel" onClick={cancelJob} disabled={busy}>✕ Cancel Job</button>:null}<button onClick={startProcess} disabled={running||busy||!command.trim()}>⚙ Start Process</button></div><div className="dos-run-tabs"><button className={tab==="terminal"?"active":""} onClick={()=>setTab("terminal")}>TERMINAL</button><button className={tab==="processes"?"active":""} onClick={()=>setTab("processes")}>PROCESSES {processes.length}</button><button onClick={refreshProcesses}>↻</button></div>{tab==="terminal"?<div className="dos-run-output"><div className="dos-run-metrics"><span>STATUS <b>{running?"RUNNING":exitCode===0?"SUCCESS":exitCode===null?"READY":"FAILED"}</b></span><span>EXIT <b>{exitCode??"—"}</b></span><span>QUEUE <b>{running&&queuePosition>0?"#"+queuePosition:"—"}</b></span><span>WAIT <b>{queueWait==null?"—":queueWait+"ms"}</b></span><span>TIME <b>{duration}ms</b></span><span>RUNTIME <b>ISOLATED</b></span></div><pre>{output||"Ready. Code executes in the configured Developer OS runner, not in the browser."}</pre></div>:<div className="dos-process-list">{processes.length?processes.map((p,i)=><div className="dos-process" key={p.id||p.process_id||i}><div><b>{p.command||p.name||"process"}</b><small>{p.id||p.process_id} · {p.status||"running"}</small></div><button onClick={()=>stopProcess(p.id||p.process_id)} disabled={busy}>Stop</button></div>):<div className="dos-empty">No active processes.</div>}</div>}<footer><span>🔒 Sandbox execution · resource limits enforced by runner</span><button onClick={()=>setTab("processes")}>Manage processes</button></footer></section>
 }
 export function DebuggerPanel({workspace,activeFile,onPrepare,onOpen,onClose}) {
- const [session,setSession]=useState(null),[state,setState]=useState("idle"),[breakpoints,setBreakpoints]=useState([]),[expression,setExpression]=useState(""),[result,setResult]=useState(null),[stack,setStack]=useState([]),[scopes,setScopes]=useState([]),[variables,setVariables]=useState([]),[output,setOutput]=useState(""),[busy,setBusy]=useState(false),[line,setLine]=useState(1),[polling,setPolling]=useState(false);
- async function call(action,extra={}){if(!workspace)return;setBusy(true);try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/debug/`,{method:"POST",body:JSON.stringify({action,session_id:session,path:activeFile,...extra})});const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Debugger request failed");setSession(d.session_id||session);setState(d.state||state);setStack(d.stack||[]);setScopes(d.scopes||[]);setVariables(d.variables||[]);setOutput(d.output||"");setResult(d.result??null);if(d.breakpoints)setBreakpoints(d.breakpoints);return d}catch(e){setOutput(e.message||"Debugger request failed")}finally{setBusy(false)}}
- useEffect(()=>{if(!session||!workspace)return;setPolling(true);const timer=setInterval(async()=>{try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/debug/`,{method:"POST",body:JSON.stringify({action:"status",session_id:session})});const d=await r.json();if(r.ok){setState(d.state||"idle");setStack(d.stack||[]);setScopes(d.scopes||[]);setVariables(d.variables||[]);setOutput(d.output||"");setResult(d.result??null);setBreakpoints(d.breakpoints||[]);}}catch(e){setOutput(e?.message||"Debugger status unavailable");}},1000);return()=>{clearInterval(timer);setPolling(false)}},[session,workspace?.id]);
- function toggleBreakpoint(){if(!activeFile)return;const existing=breakpoints.find(b=>b.path===activeFile&&Number(b.line)===Number(line));call(existing?"remove_breakpoint":"set_breakpoint",{path:activeFile,line:Number(line)});}
- return <section className="dos-debugger"><header><div><strong>DEBUGGER</strong><small>{state.toUpperCase()} · LIVE DAP</small></div><button onClick={onClose}>×</button></header><div className="dos-debug-toolbar"><button onClick={async()=>{await onPrepare?.();await call("start",{path:activeFile,line:Number(line)})}} disabled={busy||!activeFile}>▶ Start</button><button onClick={()=>call("continue")} disabled={!session||busy}>Continue</button><button onClick={()=>call("pause")} disabled={!session||busy}>Pause</button><button onClick={()=>call("step_over")} disabled={!session||busy}>Step Over</button><button onClick={()=>call("step_into")} disabled={!session||busy}>Step Into</button><button onClick={()=>call("step_out")} disabled={!session||busy}>Step Out</button><button onClick={()=>call("stop")} disabled={!session||busy}>■ Stop</button></div>
- <div className="dos-debug-breakpoint-bar"><span>Breakpoint line</span><input type="number" min="1" value={line} onChange={e=>setLine(Math.max(1,Number(e.target.value)||1))}/><button onClick={toggleBreakpoint} disabled={!activeFile||busy}>{breakpoints.some(b=>b.path===activeFile&&Number(b.line)===Number(line))?"Remove":"Set"} Breakpoint</button><span className="dos-debug-live">{polling?"● Live":"○ Idle"}</span></div>
- <div className="dos-debug-grid"><div><h4>CALL STACK</h4>{stack.length?stack.map((f,i)=><button key={i} onClick={()=>onOpen?.(f.source?.path||f.path,f.line,f.column)}><strong>{f.name||"frame"}</strong><small>{f.source?.path||f.path||"unknown"}:{f.line||1}</small></button>):<p>Start debugging to inspect the live stack.</p>}</div>
- <div><h4>SCOPES / VARIABLES</h4>{scopes.map((s,i)=><div key={i} className="dos-debug-scope"><b>{s.name}</b><small>{s.variablesReference?"variables available":"empty scope"}</small></div>)}{variables.length?variables.map((v,i)=><div className="dos-debug-var" key={i}><b>{v.name}</b><span>{String(v.value??"")}</span><small>{v.type||""}</small></div>):<p>No variables loaded for current frame.</p>}</div>
- <div><h4>BREAKPOINTS</h4>{breakpoints.length?breakpoints.map((b,i)=><button key={i} onClick={()=>onOpen?.(b.path,b.line,b.column)}><span>{b.verified?"●":"○"} {b.path}</span><small>line {b.line}{b.message?" · "+b.message:""}</small></button>):<p>No breakpoints.</p>}</div></div>
- <div className="dos-debug-console"><div><b>DEBUG CONSOLE</b><button onClick={()=>call("evaluate",{expression})} disabled={!session||busy||!expression.trim()}>Evaluate</button></div><input value={expression} onChange={e=>setExpression(e.target.value)} onKeyDown={e=>e.key==="Enter"&&call("evaluate",{expression})} placeholder="Evaluate expression in current frame…"/>{result!==null&&<pre>{typeof result==="string"?result:JSON.stringify(result,null,2)}</pre>}{output&&<pre>{output}</pre>}</div></section>
+ const [session,setSession]=useState(null),[state,setState]=useState("idle"),[breakpoints,setBreakpoints]=useState([]),[expression,setExpression]=useState(""),[result,setResult]=useState(null),[stack,setStack]=useState([]),[scopes,setScopes]=useState([]),[variables,setVariables]=useState([]),[output,setOutput]=useState(""),[busy,setBusy]=useState(false),[line,setLine]=useState(1),[polling,setPolling]=useState(false),[activeView,setActiveView]=useState("variables");
+ const paused=state==="paused",running=state==="running"||state==="starting",hasSession=Boolean(session)&&state!=="stopped";
+ async function call(action,extra={}) {
+  if(!workspace?.id){setOutput("Open a workspace before starting a debug session.");return}
+  if(busy)return;
+  if(action==="start"&&!activeFile){setOutput("Choose a source file to debug.");return}
+  setBusy(true);
+  try {
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/debug/`,{method:"POST",body:JSON.stringify({action,session_id:session,path:activeFile||"",line:Number(line)||1,column:1,...extra})});
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok)throw Error(d.error||d.detail||`Debugger request failed (HTTP ${r.status})`);
+   setSession(d.session_id||session);
+   setState(d.state|| (action==="stop"?"stopped":state));
+   setStack(d.stack||[]);setScopes(d.scopes||[]);setVariables(d.variables||[]);
+   if(d.output!==undefined)setOutput(d.output||"");
+   if(d.result!==undefined)setResult(d.result);
+   if(d.breakpoints)setBreakpoints(d.breakpoints);
+   if(action==="stop"){setSession(null);setPolling(false);setStack([]);setScopes([]);setVariables([]);setResult(null);setOutput(d.output||"Debug session stopped.");}
+   return d;
+  } catch(e) {setOutput(e?.message||"Debugger request failed");return null}
+  finally {setBusy(false)}
+ }
+ useEffect(()=>{
+  if(!session||!workspace?.id)return;
+  let active=true,inFlight=false;
+  setPolling(true);
+  const timer=setInterval(async()=>{
+   if(!active||inFlight)return;
+   inFlight=true;
+   try{
+    const r=await apiFetch(`/ide/workspaces/${workspace.id}/debug/`,{method:"POST",body:JSON.stringify({action:"status",session_id:session})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(d.error||d.detail||`Debugger status unavailable (HTTP ${r.status})`);
+    if(!active)return;
+    setState(d.state||"idle");setStack(d.stack||[]);setScopes(d.scopes||[]);setVariables(d.variables||[]);
+    if(d.output!==undefined)setOutput(d.output||"");
+    if(d.result!==undefined)setResult(d.result);
+    setBreakpoints(d.breakpoints||[]);
+    if(d.state==="stopped"){setPolling(false);setSession(null);}
+   }catch(e){if(active)setOutput(e?.message||"Debugger status unavailable")}
+   finally{inFlight=false}
+  },1500);
+  return()=>{active=false;clearInterval(timer);setPolling(false)};
+ },[session,workspace?.id]);
+ useEffect(()=>{setLine(1)},[activeFile]);
+ function toggleBreakpoint(){
+  if(!activeFile||busy)return;
+  const existing=breakpoints.find(b=>b.path===activeFile&&Number(b.line)===Number(line));
+  void call(existing?"remove_breakpoint":"set_breakpoint",{path:activeFile,line:Number(line)});
+ }
+ async function startDebugging(){
+  if(!activeFile)return;
+  try{await onPrepare?.();}catch(e){setOutput(e?.message||"Could not save the active file before debugging.");return}
+  await call("start",{path:activeFile,line:Number(line)||1});
+ }
+ const stateLabel=busy?"PROCESSING":state.toUpperCase();
+ const stateClass=paused?"paused":running?"running":state==="stopped"?"stopped":"idle";
+ return <section className="dos-debugger dos-debugger-pro" role="dialog" aria-label="Developer OS debugger">
+  <header className="dos-debugger-head">
+   <div className="dos-debugger-brand"><span className="dos-debugger-brand-icon">⌘</span><div><strong>DEBUGGER</strong><small>DEVELOPER OS <span>·</span> LIVE DAP</small></div></div>
+   <div className="dos-debugger-head-right"><span className={`dos-debugger-state ${stateClass}`}><i/>{stateLabel}</span><button type="button" onClick={onClose} aria-label="Close debugger" title="Close debugger">×</button></div>
+  </header>
+  <div className="dos-debugger-session">
+   <div className="dos-debugger-session-file"><span className="dos-debugger-file-icon">JS</span><div><strong>{activeFile||"No source file selected"}</strong><small>{workspace?.name||"No workspace"}{workspace?.id? ` · Workspace #${workspace.id}`:""}</small></div></div>
+   <div className="dos-debugger-session-metrics"><span><i className={hasSession?"live":""}/>{hasSession?"Session attached":"No active session"}</span><span><i className={polling?"live":""}/>{polling?"Live telemetry":"Telemetry idle"}</span></div>
+  </div>
+  <div className="dos-debug-toolbar" role="toolbar" aria-label="Debug controls">
+   <button type="button" className="dos-debug-primary" onClick={()=>void startDebugging()} disabled={busy||!workspace?.id||!activeFile||hasSession} title="Save file and start a debug session"><span>▶</span> Start</button>
+   <span className="dos-debug-toolbar-divider"/>
+   <button type="button" onClick={()=>void call("continue")} disabled={!hasSession||busy||running} title="Continue execution (F5)">▶ Continue</button>
+   <button type="button" onClick={()=>void call("pause")} disabled={!hasSession||busy||!running} title="Pause execution">Ⅱ Pause</button>
+   <button type="button" onClick={()=>void call("step_over")} disabled={!hasSession||busy||!paused} title="Step over">↷ Over</button>
+   <button type="button" onClick={()=>void call("step_into")} disabled={!hasSession||busy||!paused} title="Step into">↘ Into</button>
+   <button type="button" onClick={()=>void call("step_out")} disabled={!hasSession||busy||!paused} title="Step out">↗ Out</button>
+   <span className="dos-debug-toolbar-spacer"/>
+   <button type="button" className="dos-debug-stop" onClick={()=>void call("stop")} disabled={!hasSession||busy} title="Terminate debug session">■ Stop</button>
+  </div>
+  <div className="dos-debug-breakpoint-bar">
+   <div className="dos-debug-line-control"><label htmlFor="dos-debug-line">BREAK AT LINE</label><input id="dos-debug-line" type="number" min="1" value={line} onChange={e=>setLine(Math.max(1,Number(e.target.value)||1))}/></div>
+   <div className="dos-debug-breakpoint-target" title={activeFile||"Select a source file"}><span>◉</span>{activeFile||"Select a source file in Explorer"}</div>
+   <button type="button" className="dos-debug-set-breakpoint" onClick={toggleBreakpoint} disabled={!activeFile||busy||!workspace?.id}>{breakpoints.some(b=>b.path===activeFile&&Number(b.line)===Number(line))?"− Remove breakpoint":"+ Set breakpoint"}</button>
+  </div>
+  <div className="dos-debug-main">
+   <div className="dos-debug-inspectors">
+    <section className="dos-debug-card dos-debug-stack-card"><header><span className="dos-debug-section-icon">≋</span><div><strong>CALL STACK</strong><small>{stack.length} {stack.length===1?"FRAME":"FRAMES"}</small></div><span className="dos-debug-section-spacer"/><span className="dos-debug-live-dot" title={polling?"Polling active":"Polling idle"}/></header>
+     <div className="dos-debug-card-body">{stack.length?stack.map((frame,i)=><button type="button" key={frame.id||i} className={i===0?"dos-debug-frame active":"dos-debug-frame"} onClick={()=>onOpen?.(frame.source?.path||frame.path,frame.line,frame.column)}><span className="dos-debug-frame-index">{String(i+1).padStart(2,"0")}</span><span className="dos-debug-frame-copy"><strong>{frame.name||"anonymous frame"}</strong><small>{frame.source?.path||frame.path||"Unknown source"}</small></span><span className="dos-debug-frame-line">:{frame.line||1}</span></button>):<div className="dos-debug-empty"><span>≋</span><strong>{paused?"No stack frames":"Stack is waiting"}</strong><small>{hasSession?"Pause execution to inspect frames.":"Start debugging to inspect the live call stack."}</small></div>}</div>
+    </section>
+    <section className="dos-debug-card dos-debug-data-card"><header><span className="dos-debug-section-icon">◇</span><div><strong>INSPECTOR</strong><small>LIVE RUNTIME DATA</small></div></header>
+     <div className="dos-debug-subtabs"><button type="button" className={activeView==="variables"?"active":""} onClick={()=>setActiveView("variables")}>Variables <span>{variables.length}</span></button><button type="button" className={activeView==="scopes"?"active":""} onClick={()=>setActiveView("scopes")}>Scopes <span>{scopes.length}</span></button></div>
+     <div className="dos-debug-card-body">{activeView==="scopes"?(scopes.length?scopes.map((scope,i)=><div key={scope.name||i} className="dos-debug-scope-row"><span>▸</span><div><strong>{scope.name||"Scope"}</strong><small>{scope.expensive?"Lazy evaluation":"Runtime scope"}</small></div><code>{scope.variablesReference||0}</code></div>:<div className="dos-debug-empty"><strong>No scopes available</strong><small>Scopes appear when the debugger is paused.</small></div>):(variables.length?variables.map((variable,i)=><div key={variable.name+"-"+i} className="dos-debug-variable-row"><span className="dos-debug-variable-glyph">{variable.type==="number"?"#":variable.type==="string"?"“":variable.type==="boolean"?"◐":"◇"}</span><span className="dos-debug-variable-name">{variable.name}</span><span className="dos-debug-variable-value" title={String(variable.value??"")}>{String(variable.value??"undefined")}</span><small>{variable.type||"value"}</small></div>):<div className="dos-debug-empty"><span>◇</span><strong>{paused?"No local variables":"Inspector standing by"}</strong><small>{hasSession?"Pause execution to inspect variables.":"Live variables appear when a debug session is active."}</small></div>)}</div>
+    </section>
+    <section className="dos-debug-card dos-debug-breakpoints-card"><header><span className="dos-debug-section-icon">◉</span><div><strong>BREAKPOINTS</strong><small>{breakpoints.length} REGISTERED</small></div></header>
+     <div className="dos-debug-card-body">{breakpoints.length?breakpoints.map((bp,i)=><button type="button" key={bp.path+":"+bp.line+":"+i} className="dos-debug-breakpoint-row" onClick={()=>{setLine(Number(bp.line)||1);onOpen?.(bp.path,bp.line,bp.column)}}><span className={bp.verified?"verified":"unverified"}>●</span><span><strong>{bp.path}</strong><small>Line {bp.line}{bp.message?" · "+bp.message:""}</small></span><span className="dos-debug-breakpoint-status">{bp.verified?"VERIFIED":"PENDING"}</span></button>):<div className="dos-debug-empty compact"><strong>No breakpoints yet</strong><small>Set one on the active file to pause execution.</small></div>}</div>
+    </section>
+   </div>
+   <section className="dos-debug-console-pro"><header><div><span className="dos-debug-section-icon">›_</span><div><strong>DEBUG CONSOLE</strong><small>Evaluate expressions in the current frame</small></div></div><button type="button" onClick={()=>{setOutput("");setResult(null)}} disabled={!output&&!result}>Clear output</button></header>
+    <div className="dos-debug-console-output">{result!==null&&<div className="dos-debug-eval-result"><span>↳</span><code>{typeof result==="object"?JSON.stringify(result,null,2):String(result)}</code></div>}{output&&<pre>{output}</pre>}{!output&&result===null&&<div className="dos-debug-console-placeholder"><span>›</span><div><strong>Console ready</strong><small>Run an expression below. The result appears here.</small></div></div>}</div>
+    <form className="dos-debug-console-form" onSubmit={e=>{e.preventDefault();if(expression.trim())void call("evaluate",{expression})}}><span>›</span><input value={expression} onChange={e=>setExpression(e.target.value)} placeholder={hasSession?"Evaluate expression…":"Start a debug session to evaluate expressions"} disabled={!hasSession||busy}/><button type="submit" disabled={!hasSession||busy||!expression.trim()}>Evaluate ↵</button></form>
+   </section>
+  </div>
+  <footer className="dos-debugger-footer"><span><i className={polling?"live":""}/>{polling?"LIVE SESSION POLLING":"SESSION POLLING STANDBY"}</span><span>{workspace?.id?"WORKSPACE "+workspace.id:"NO WORKSPACE"}</span><span>DEBUG ADAPTER <b>DAP</b></span></footer>
+ </section>
 }
 export function PreviewPanel({workspace,onClose}) {
  const [url,setUrl]=useState(""); const [loading,setLoading]=useState(false); const [error,setError]=useState("");
