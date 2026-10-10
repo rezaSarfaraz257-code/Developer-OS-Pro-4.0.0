@@ -6,6 +6,7 @@ import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
 import Avatar from "./components/Avatar";
+import { normalizeProfileLink, safeProfileLink } from "./utils/profile.js";
 import Referral from "./Referral";
 
 const nav = [
@@ -816,6 +817,10 @@ function Profile({ onProfileUpdate }) {
     setSaved(false);
     setSaveError("");
     try {
+      const github = normalizeProfileLink(profile.github);
+      const linkedin = normalizeProfileLink(profile.linkedin);
+      const x = normalizeProfileLink(profile.x);
+      const website = normalizeProfileLink(profile.website);
       const payload = new FormData();
       payload.append("full_name", profile.full_name || "");
       payload.append("first_name", profile.first_name || "");
@@ -827,19 +832,21 @@ function Profile({ onProfileUpdate }) {
       payload.append("job_title", profile.job_title || "");
       payload.append("skills", profile.skills || "");
       payload.append("timezone", profile.timezone || "");
-      payload.append("github", profile.github || "");
-      payload.append("linkedin", profile.linkedin || "");
-      payload.append("x", profile.x || "");
-      payload.append("website", profile.website || "");
+      payload.append("github", github);
+      payload.append("linkedin", linkedin);
+      payload.append("x", x);
+      payload.append("website", website);
       if (avatarFile) payload.append("avatar", avatarFile);
       if (removeAvatar) {
         payload.append("remove_avatar", "true");
         payload.append("avatar_url", "");
       }
-      await apiFetch("/profile/", { method: "PATCH", body: payload });
-      // Re-read the canonical server profile rather than trusting a stale URL
-      // or a cached optimistic preview after upload/removal.
+      const updateResponse = await apiFetch("/profile/", { method: "PATCH", body: payload });
+      const updateData = await updateResponse.json().catch(() => ({}));
+      if (!updateResponse.ok) throw new Error(formatApiError(updateData, "Unable to save your profile."));
+      // Re-read canonical server state rather than trusting an optimistic preview.
       const refreshed = await apiFetch("/profile/", { cache: "no-store" });
+      if (!refreshed.ok) throw new Error("Profile was updated, but the refreshed profile could not be loaded.");
       const data = await refreshed.json();
       if (avatarFile && !data.avatar_url) {
         throw new Error("The server saved the profile but did not return a photo URL. Please try again.");
@@ -862,12 +869,38 @@ function Profile({ onProfileUpdate }) {
   const profileName = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Developer";
   const initials = profileName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "D";
   const displayedAvatar = avatarFile ? avatarPreview : (removeAvatar ? "" : profile.avatar_url);
+  const profileChecks = [
+    ["Photo", Boolean(displayedAvatar)], ["Name", Boolean(profile.full_name?.trim())],
+    ["Verified email", Boolean(profile.email_verified)], ["Professional title", Boolean(profile.job_title?.trim())],
+    ["Location", Boolean(profile.country?.trim())], ["Bio", Boolean(profile.bio?.trim())],
+    ["Skills", Boolean(profile.skills?.trim())], ["Developer links", Boolean(profile.github || profile.website || profile.linkedin)],
+  ];
+  const profileScore = Math.round(profileChecks.filter(([, complete]) => complete).length / profileChecks.length * 100);
+  const publicLinks = [["GitHub", profile.github], ["Website", profile.website], ["LinkedIn", profile.linkedin], ["X", profile.x]]
+    .map(([label, url]) => [label, safeProfileLink(url)])
+    .filter(([, url]) => Boolean(url));
 
   return (
     <div className="page">
       <div className="hero-row">
         <div><div className="eyebrow">YOUR SPACE / IDENTITY</div><h1>My Profile</h1><p>Your developer identity, public links and personal details — all in one dedicated place.</p></div>
       </div>
+      <section className="profile-command-card" aria-label="Profile readiness and live preview">
+        <div className="profile-readiness">
+          <div className="profile-readiness-top"><span className="panel-kicker">PROFILE READINESS</span><strong>{profileScore}%</strong></div>
+          <div className="profile-readiness-track" role="progressbar" aria-label="Profile completeness" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileScore}><span style={{ width: profileScore + "%" }} /></div>
+          <p>{profileScore === 100 ? "Your developer identity is looking complete." : "Complete a few details to make collaboration and your developer identity more useful."}</p>
+          <div className="profile-checklist">{profileChecks.map(([label, complete]) => <span key={label} className={complete ? "is-complete" : ""}><i>{complete ? "✓" : "○"}</i>{label}</span>)}</div>
+        </div>
+        <div className="profile-live-preview">
+          <span className="panel-kicker">LIVE IDENTITY PREVIEW</span>
+          <div className="profile-preview-person"><Avatar imageUrl={displayedAvatar} initials={initials} className="profile-preview-avatar" label={profileName + " preview"} /><div><h2>{profileName}</h2><span>@{profile.username || "developer"}</span><p>{profile.job_title || "Add a professional title"}</p></div></div>
+          {(profile.city || profile.country || profile.timezone) && <div className="profile-preview-meta">{[profile.city, profile.country].filter(Boolean).join(", ")}{profile.timezone ? " · " + profile.timezone : ""}</div>}
+          <p className="profile-preview-bio">{profile.bio?.trim() || "Your short bio will appear here as you edit it."}</p>
+          {profile.skills?.trim() && <div className="profile-skill-chips">{profile.skills.split(",").map(skill => skill.trim()).filter(Boolean).slice(0, 8).map((skill, index) => <span key={skill + index}>{skill}</span>)}</div>}
+          {publicLinks.length > 0 && <div className="profile-preview-links">{publicLinks.map(([label, url]) => <a key={label} href={url} target="_blank" rel="noopener noreferrer">{label} ↗</a>)}</div>}
+        </div>
+      </section>
       <section className="panel settings-form profile-settings-panel">
         <div className="profile-settings-intro">
           <div><span className="eyebrow">DEVELOPER IDENTITY</span><h2>Profile overview</h2><p>Make your profile useful for collaboration, discoverability, and future team workflows.</p></div>
@@ -897,8 +930,8 @@ function Profile({ onProfileUpdate }) {
           <label>TIME ZONE<select value={profile.timezone || ""} onChange={e => { setProfile({...profile, timezone:e.target.value}); setSaved(false); }}>
             <option value="">Select a time zone</option><option value="Asia/Kabul">Asia/Kabul (UTC+04:30)</option><option value="Asia/Dubai">Asia/Dubai (UTC+04:00)</option><option value="Asia/Karachi">Asia/Karachi (UTC+05:00)</option><option value="Asia/Kolkata">Asia/Kolkata (UTC+05:30)</option><option value="Europe/London">Europe/London</option><option value="Europe/Berlin">Europe/Berlin</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="UTC">UTC</option>
           </select></label>
-          <label className="profile-field-wide">SKILLS / TECH STACK<input value={profile.skills || ""} onChange={e => { setProfile({...profile, skills:e.target.value}); setSaved(false); }} maxLength="500" placeholder="Python, Django, React, PostgreSQL" /><small>Use commas between skills and technologies.</small></label>
-          <label className="profile-field-wide">BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} maxLength="5000" placeholder="What are you building and what do you enjoy solving?" /></label>
+          <label className="profile-field-wide">SKILLS / TECH STACK<input value={profile.skills || ""} onChange={e => { setProfile({...profile, skills:e.target.value}); setSaved(false); }} maxLength="500" placeholder="Python, Django, React, PostgreSQL" /><small>Use commas between skills and technologies. <span className="profile-character-count">{(profile.skills || "").length}/500</span></small></label>
+          <label className="profile-field-wide">BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} maxLength="5000" placeholder="What are you building and what do you enjoy solving?" /><small className="profile-character-count">{(profile.bio || "").length}/5000 characters</small></label>
           <label>GITHUB PROFILE<input type="url" value={profile.github || ""} onChange={e => { setProfile({...profile, github:e.target.value}); setSaved(false); }} placeholder="https://github.com/username" /></label>
           <label>LINKEDIN PROFILE<input type="url" value={profile.linkedin || ""} onChange={e => { setProfile({...profile, linkedin:e.target.value}); setSaved(false); }} placeholder="https://linkedin.com/in/username" /></label>
           <label>X / SOCIAL PROFILE<input type="url" value={profile.x || ""} onChange={e => { setProfile({...profile, x:e.target.value}); setSaved(false); }} placeholder="https://x.com/username" /></label>
