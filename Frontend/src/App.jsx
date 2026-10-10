@@ -359,50 +359,175 @@ function Dashboard({ go }) {
   const [data, setData] = useState(null);
   const [projects, setProjects] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [activeMission, setActiveMission] = useState("build");
 
-  const load = () => {
-    Promise.all([
-      apiFetch("/workspace/summary/").then(r=>r.json()),
-      apiFetch("/projects/").then(r=>r.json()),
-    ]).then(([a,p]) => {setData(a); setProjects(Array.isArray(p)?p:(p.results||[]));}).catch(e=>setError(e.message));
-  };
-  useEffect(load, []);
-
-  const create = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
+  const load = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    setError("");
     try {
-      await apiFetch("/projects/", {method:"POST", body:JSON.stringify({title:name.trim(),description:"",category:"General",status:"Planning",priority:"medium",tags:[],stack:[]})});
-      setName(""); load();
-    } catch(e) { setError(e.message); } finally {setBusy(false);}
+      const [summaryResponse, projectsResponse] = await Promise.all([
+        apiFetch("/workspace/summary/"),
+        apiFetch("/projects/"),
+      ]);
+      if (!summaryResponse.ok) throw new Error("Workspace metrics could not be loaded.");
+      if (!projectsResponse.ok) throw new Error("Projects could not be loaded.");
+      const [summary, projectPayload] = await Promise.all([summaryResponse.json(), projectsResponse.json()]);
+      setData(summary && typeof summary === "object" ? summary : {});
+      setProjects(Array.isArray(projectPayload) ? projectPayload : Array.isArray(projectPayload?.results) ? projectPayload.results : []);
+      setLastUpdated(new Date());
+    } catch (err) {
+      setError(typeof err?.message === "string" ? err.message : "Unable to load the workspace right now.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const stats = [
-    ["PROJECTS", data?.projects ?? "—", "workspace"],
-    ["ACTIVE TASKS", data?.active_tasks ?? "—", `${data?.urgent_tasks || 0} urgent`],
-    ["COMPLETION", `${data?.completion ?? 0}%`, `${data?.done_tasks || 0} shipped`],
-    ["BLOCKED", data?.blocked_tasks ?? "—", `${data?.overdue_tasks || 0} overdue`],
+  useEffect(() => { load(); }, []);
+
+  const create = async (event) => {
+    event?.preventDefault?.();
+    const title = name.trim();
+    if (!title || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await apiFetch("/projects/", {
+        method: "POST",
+        body: JSON.stringify({ title, description: "", category: "General", status: "Planning", priority: "medium", tags: [], stack: [] }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(formatApiError(payload, "Project could not be created."));
+      }
+      setName("");
+      await load({ silent: true });
+    } catch (err) {
+      setError(typeof err?.message === "string" ? err.message : "Project could not be created.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const projectCount = Number(data?.projects ?? projects.length) || 0;
+  const activeTasks = Number(data?.active_tasks ?? 0) || 0;
+  const completion = Math.max(0, Math.min(100, Number(data?.completion ?? 0) || 0));
+  const blockedTasks = Number(data?.blocked_tasks ?? 0) || 0;
+  const urgentTasks = Number(data?.urgent_tasks ?? 0) || 0;
+  const doneTasks = Number(data?.done_tasks ?? 0) || 0;
+  const overdueTasks = Number(data?.overdue_tasks ?? 0) || 0;
+  const projectSignals = Array.isArray(data?.project_completion) && data.project_completion.length ? data.project_completion : projects.map((project) => ({ id: project.id, title: project.title, status: project.status, tasks: project.task_count ?? project.tasks_count ?? 0, progress: project.progress ?? 0 }));
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const displayName = (data?.first_name || "").trim() || "Developer";
+  const missionCards = [
+    { id: "build", icon: "⌘", title: "Build", text: "Turn an idea into working software.", detail: "Open the IDE", path: "/ide", tone: "cyan" },
+    { id: "plan", icon: "◈", title: "Orchestrate", text: "Shape projects and keep delivery moving.", detail: "View projects", path: "/projects", tone: "violet" },
+    { id: "think", icon: "✳", title: "Think with AI", text: "Explore a question and find your next move.", detail: "Open Intelligence", path: "/ai", tone: "blue" },
+  ];
+  const metricCards = [
+    { label: "PROJECTS", value: loading && !data ? "—" : projectCount, note: "Workspace portfolio", icon: "◈", tone: "cyan" },
+    { label: "ACTIVE TASKS", value: loading && !data ? "—" : activeTasks, note: urgentTasks + " urgent", icon: "⌁", tone: "violet" },
+    { label: "DELIVERY RATE", value: loading && !data ? "—" : completion + "%", note: doneTasks + " tasks completed", icon: "↗", tone: "green" },
+    { label: "BLOCKED ITEMS", value: loading && !data ? "—" : blockedTasks, note: overdueTasks + " overdue", icon: "◇", tone: blockedTasks > 0 || overdueTasks > 0 ? "amber" : "green" },
   ];
 
-  return <div className="page">
-    <div className="hero-row"><div><div className="eyebrow">DEVELOPER OS / 01</div><h1>Command Center</h1><p>One control plane for building, reasoning, collaborating and shipping software.</p></div><div className="hero-actions"><button className="ghost" onClick={()=>go("/ide")}>OPEN IDE ⌘</button><button className="primary" onClick={()=>document.getElementById("new-project")?.focus()}>+ NEW PROJECT</button></div></div>
-    <div className="stat-grid">{stats.map(s=><div className="stat-card" key={s[0]}><span>{s[0]}</span><strong>{s[1]}</strong><small>{s[2]}</small></div>)}</div>
-    <div className="dashboard-grid">
-      <section className="panel wide-panel"><div className="panel-head"><div><span className="panel-kicker">DELIVERY GRAPH</span><h2>Project trajectory</h2></div><button className="text-btn" onClick={()=>go("/projects")}>VIEW ALL →</button></div>
-        <div className="project-list">{(data?.project_completion||[]).map(p=><div className="project-line" key={p.id} onClick={()=>go(`/projects/${p.id}`)}><div><b>{p.title}</b><small>{p.status} · {p.tasks} tasks</small></div><div className="bar"><i style={{width:`${p.progress}%`}} /></div><strong>{p.progress}%</strong></div>)}
-        {!data?.project_completion?.length && <div className="empty">No project signals yet. Create the first project.</div>}</div>
+  return <div className={"page command-center-page" + (focusMode ? " cc-focus-mode" : "")}>
+    <section className="cc-hero cc-hero-v2">
+      <div className="cc-hero-grid" aria-hidden="true" />
+      <div className="cc-hero-scanline" aria-hidden="true" />
+      <div className="cc-hero-copy">
+        <div className="cc-overline"><span className="cc-live-dot" /> DEVELOPER OS <span className="cc-overline-divider">/</span> COMMAND CENTER <span className="cc-version-chip">CONTROL PLANE 2.0</span></div>
+        <p className="cc-greeting">{greeting}, {displayName}.</p>
+        <h1>Make your next<br /><span>move matter.</span></h1>
+        <p className="cc-hero-description">One command surface for your engineering universe. Turn project signals into focused action — with less friction and more momentum.</p>
+        <div className="cc-hero-actions">
+          <button className="primary" onClick={() => go("/ide")}>⌘ <span>Enter Web IDE</span> <span aria-hidden="true">↗</span></button>
+          <button className="cc-secondary-action" onClick={() => document.getElementById("cc-new-project")?.focus()}>＋ New initiative</button>
+          <button className="cc-icon-action" onClick={() => load()} disabled={loading} aria-label="Refresh workspace data" title="Refresh workspace data"><span className={loading ? "cc-refreshing" : ""}>↻</span></button>
+        </div>
+        <div className="cc-update-line"><span className="cc-status-pulse" /> {loading ? "SYNCING WORKSPACE SIGNALS" : lastUpdated ? "SYNCED " + lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "WORKSPACE READY"} <span className="cc-update-separator">·</span> LIVE WORKSPACE DATA</div>
+      </div>
+      <div className="cc-hero-visual cc-hero-visual-v2" aria-hidden="true">
+        <div className="cc-visual-orbit cc-visual-orbit-a" /><div className="cc-visual-orbit cc-visual-orbit-b" /><div className="cc-visual-orbit cc-visual-orbit-c" />
+        <div className="cc-visual-cross cc-visual-cross-a" /><div className="cc-visual-cross cc-visual-cross-b" />
+        <div className="cc-visual-core"><span>D</span><i>OS</i></div>
+        <span className="cc-visual-node cc-node-a" /><span className="cc-visual-node cc-node-b" /><span className="cc-visual-node cc-node-c" />
+        <div className="cc-visual-label cc-visual-label-a">BUILD <b>↗</b></div><div className="cc-visual-label cc-visual-label-b">SHIP <b>◎</b></div>
+        <div className="cc-orbit-readout cc-orbit-readout-a"><span>SYS</span><b>ONLINE</b></div><div className="cc-orbit-readout cc-orbit-readout-b"><span>MODE</span><b>FOCUS</b></div>
+      </div>
+      <div className="cc-hero-bottomline"><span>THINK. CODE. BUILD. SCALE.</span><span>PERSONAL ENGINEERING OPERATIONS</span></div>
+    </section>
+
+    {error && <div className="cc-error" role="alert"><span>!</span><div><b>Workspace needs attention</b><p>{error}</p></div><button onClick={() => load()} disabled={loading}>Retry ↻</button></div>}
+
+    <section className="cc-command-strip" aria-label="Command shortcuts">
+      <div className="cc-command-strip-label"><span className="cc-command-prompt">⌘</span><span><b>Command shortcuts</b><small>Choose your next action</small></span></div>
+      <div className="cc-command-shortcuts">
+        <button onClick={() => go("/ide")}><span>⌨</span> Open IDE <kbd>↗</kbd></button>
+        <button onClick={() => go("/projects")}><span>◈</span> Projects <kbd>↗</kbd></button>
+        <button onClick={() => go("/search")}><span>⌕</span> Search <kbd>↗</kbd></button>
+        <button onClick={() => go("/ai")}><span>✳</span> AI lab <kbd>↗</kbd></button>
+      </div>
+      <button className={"cc-focus-toggle" + (focusMode ? " is-active" : "")} onClick={() => setFocusMode((value) => !value)} aria-pressed={focusMode}><span>◉</span>{focusMode ? "Exit focus" : "Focus mode"}</button>
+    </section>
+
+    <section className="cc-metrics" aria-label="Workspace metrics">
+      {metricCards.map((metric, index) => <article className={"cc-metric-card cc-tone-" + metric.tone} key={metric.label} style={{ "--cc-index": index }}>
+        <div className="cc-metric-top"><span>{metric.label}</span><i aria-hidden="true">{metric.icon}</i></div>
+        <strong>{metric.value}</strong><div className="cc-metric-note"><span />{metric.note}</div>
+        {metric.label === "DELIVERY RATE" && <div className="cc-metric-track" aria-label={"Delivery rate " + completion + "%"}><span style={{ width: completion + "%" }} /></div>}
+      </article>)}
+    </section>
+
+    <section className="cc-section-heading">
+      <div><span className="cc-section-eyebrow">YOUR ENGINEERING SPACE</span><h2>Workspace overview</h2><p>From delivery signals to your next high-impact move.</p></div>
+      <button className="cc-link-button" onClick={() => go("/projects")}>Explore portfolio <span>↗</span></button>
+    </section>
+
+    <div className="cc-main-grid">
+      <section className="cc-surface cc-projects-surface">
+        <div className="cc-surface-heading"><div><span className="cc-section-eyebrow">DELIVERY PIPELINE</span><h3>Project trajectory</h3></div><span className="cc-count-pill">{projectSignals.length || projects.length} tracked</span></div>
+        {loading && !data ? <div className="cc-loading-state"><span className="cc-spinner" /> Loading workspace signals…</div> :
+          projectSignals.length > 0 ? <div className="cc-trajectory-list">{projectSignals.slice(0, 5).map((project) => {
+            const progress = Math.max(0, Math.min(100, Number(project.progress) || 0));
+            return <button className="cc-trajectory-row" key={project.id} onClick={() => go("/projects/" + project.id)}>
+              <span className="cc-project-monogram">{(project.title || "P").trim().slice(0, 1).toUpperCase()}</span>
+              <span className="cc-trajectory-info"><b>{project.title || "Untitled project"}</b><small>{project.status || "In progress"} <i>·</i> {Number(project.tasks) || 0} tasks</small><span className="cc-progress-track"><i style={{ width: progress + "%" }} /></span></span>
+              <strong className="cc-progress-value">{progress}%</strong><span className="cc-row-arrow">↗</span>
+            </button>;
+          })}</div> :
+          <div className="cc-empty-state"><span className="cc-empty-icon">◈</span><b>Your delivery pipeline starts here</b><p>Create a project to track progress and keep engineering work in one place.</p><button onClick={() => document.getElementById("cc-new-project")?.focus()}>Create your first project <span>＋</span></button></div>}
+        <div className="cc-surface-footer"><span><i /> PROJECT DATA</span><button onClick={() => go("/projects")}>Open project workspace <span>→</span></button></div>
       </section>
-      <section className="panel intelligence-card"><div className="ai-orb">✦</div><span className="panel-kicker">INTELLIGENCE ENGINE</span><h2>Context-aware AI</h2><p>Ask about your projects, tasks, notes, snippets and delivery risks.</p><button className="primary wide" onClick={()=>go("/ai")}>OPEN INTELLIGENCE →</button></section>
+
+      <section className="cc-surface cc-intelligence-surface">
+        <div className="cc-ai-art" aria-hidden="true"><div className="cc-ai-ring cc-ai-ring-a" /><div className="cc-ai-ring cc-ai-ring-b" /><div className="cc-ai-core">✳</div><span className="cc-ai-star cc-ai-star-a">✦</span><span className="cc-ai-star cc-ai-star-b">·</span></div>
+        <span className="cc-section-eyebrow">ENGINEERING INTELLIGENCE</span><h3>Think beyond the code.</h3>
+        <p>Bring project context, planning and technical questions into one focused engineering flow.</p>
+        <div className="cc-ai-capabilities"><span>PROJECT CONTEXT</span><span>AI WORKFLOWS</span><span>IDE SUPPORT</span></div>
+        <button className="cc-ai-button" onClick={() => go("/ai")}>Open Intelligence <span>↗</span></button>
+      </section>
     </div>
-    <section className="panel"><div className="panel-head"><div><span className="panel-kicker">PROJECTS</span><h2>Workspace</h2></div><div className="inline-create"><input id="new-project" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} placeholder="New project name..." /><button className="primary" disabled={busy} onClick={create}>CREATE</button></div></div>
-      {error&&<div className="error">{error}</div>}
-      <div className="cards-grid">{projects.slice(0,6).map(p=><button className="project-card" key={p.id} onClick={()=>go(`/projects/${p.id}`)}><span>{p.category||"GENERAL"}</span><b>{p.title}</b><small>{p.description||"No description yet."}</small><div className="card-meta"><i>{p.status}</i><strong>{p.progress??0}%</strong></div></button>)}</div>
+
+    <section className="cc-section-heading cc-actions-heading"><div><span className="cc-section-eyebrow">CHOOSE YOUR MISSION</span><h2>What are we doing today?</h2><p>Three direct paths from intent to execution.</p></div></section>
+    <div className="cc-mission-grid">
+      {missionCards.map((item, index) => <button className={"cc-mission-card cc-mission-" + item.tone} key={item.id} onClick={() => { setActiveMission(item.id); go(item.path); }}>
+        <span className="cc-mission-index">0{index + 1} <i> / MISSION</i></span><span className="cc-mission-icon">{item.icon}</span><b>{item.title}</b><p>{item.text}</p><span className="cc-mission-cta">{item.detail} <i>↗</i></span><span className="cc-mission-watermark" aria-hidden="true">{item.icon}</span>
+      </button>)}
+    </div>
+
+    <section className="cc-create-panel">
+      <div className="cc-create-symbol" aria-hidden="true">＋</div>
+      <div className="cc-create-copy"><span className="cc-section-eyebrow">NEW INITIATIVE</span><h3>What are you building next?</h3><p>Start with a project. Keep the plan, tasks and execution close together.</p></div>
+      <form className="cc-create-form" onSubmit={create}><label className="cc-sr-only" htmlFor="cc-new-project">New project name</label><input id="cc-new-project" value={name} onChange={(event) => setName(event.target.value)} maxLength={160} placeholder="Name your next project…" required /><button className="primary" disabled={busy || !name.trim()}>{busy ? "Creating…" : "Create project"} <span>→</span></button></form>
     </section>
   </div>;
 }
-
 function Projects({ go }) {
   const [items,setItems]=useState([]); const [q,setQ]=useState(""); const [form,setForm]=useState(""); const [busy,setBusy]=useState(false);
   const load=()=>apiFetch("/projects/").then(r=>r.json()).then(d=>setItems(Array.isArray(d)?d:d.results||[]));
