@@ -136,6 +136,7 @@ function Shell({ user, onLogout, children, go, current }) {
               <span>⌕</span><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={runSearch} placeholder="Search everything  /  Ctrl K" />
             </div>
             <button className="icon-btn" onClick={() => setOpenNotif(v => !v)}>◌<sup>{notifications.unread || ""}</sup></button>
+            <button className="icon-btn profile-shortcut" onClick={() => go("/profile")} title="My profile" aria-label="My profile"><Avatar imageUrl={user.avatar_url} initials={(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "D").trim().split(/\\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()} label="My profile" /></button>
             <button className="icon-btn" onClick={() => go("/ide")}>⌘</button>
             <button className="logout-btn" onClick={() => { revokeRefreshToken(); clearAuth(); onLogout(); }}>EXIT</button>
           </div>
