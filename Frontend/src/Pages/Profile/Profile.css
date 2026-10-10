@@ -249,3 +249,20 @@
     flex-direction: column;
   }
 }
+
+
+/* Extended developer identity — compact, responsive and accessible */
+.profile-identity-chips{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}
+.profile-identity-chips span{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(103,232,249,.22);background:rgba(103,232,249,.07);border-radius:999px;padding:7px 10px;color:#c9f8ff;font-size:.78rem}
+.profile-identity-chips .verified-chip,.profile-email-status.is-verified{color:#86efac}
+.profile-form-section{display:grid;gap:12px;padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(4,12,24,.36)}
+.profile-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.profile-form-grid label{min-width:0}
+.profile-form-grid input,.profile-form-grid select{width:100%;min-width:0;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.18);border-radius:12px;color:#e5eefb;padding:12px 14px;font:inherit}
+.profile-form-grid select option{background:#0b1220;color:#e5eefb}
+.profile-form-grid input:focus-visible,.profile-form-grid select:focus-visible{outline:2px solid rgba(103,232,249,.7);outline-offset:2px}
+.profile-wide-field{grid-column:1/-1}
+.profile-editor small{color:#8ea5bf;font-size:.78rem;line-height:1.5}
+.profile-email-status{display:block;margin-top:7px;color:#fbbf24;font-size:.75rem}
+.profile-page .primary-button:disabled{opacity:.65;cursor:wait}
+@media(max-width:620px){.profile-form-grid{grid-template-columns:1fr}.profile-wide-field{grid-column:auto}.profile-form-section{padding:12px}.profile-card-panel,.profile-summary{padding:18px;border-radius:18px}}
