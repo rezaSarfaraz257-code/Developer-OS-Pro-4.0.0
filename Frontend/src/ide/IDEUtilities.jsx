@@ -131,7 +131,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
  const branchText=gitOutput(git.branches);
  const historyText=gitOutput(git.log);
  const hasGitState=Boolean(git.status||git.files||git.diff||git.branches||git.log);
- const isError=/failed|error|unavailable|denied|not found|HTTP 5\d\d/i.test(message);
+ const isError=/partial|failed|error|unavailable|denied|not found|HTTP 5\d\d|bubblewrap|sandbox|runner/i.test(message);
  useEffect(()=>{let active=true;apiFetch("/repositories/").then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||d.detail||"Could not load repositories");return d}).then(d=>{if(active&&Array.isArray(d)){setRepos(d);if(d[0])setSelected(String(d[0].id));}}).catch(e=>{if(active)setMessage(e.message||"Could not load repositories")});return()=>{active=false}},[]);
  const refresh=useCallback(async function refreshRepositoryState(){
   if(!workspace?.id){setGit({});setMessage("Open a workspace to inspect repository state.");return}
