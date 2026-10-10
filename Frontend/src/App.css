@@ -604,14 +604,14 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   }
   .os-content {
     box-sizing:border-box;
-    width:100%;
+    width:calc(100% - 16px);
     max-width:none;
-    margin:0;
-    padding:16px 8px;
+    margin:0 8px;
+    padding:16px 0;
   }
 }
 @media (max-width:720px) {
   .os-rail { display:none; }
   .os-main { margin-left:0; width:100%; }
-  .os-content { box-sizing:border-box; width:100%; padding:16px 8px; }
+  .os-content { box-sizing:border-box; width:calc(100% - 16px); margin:0 8px; padding:16px 0; }
 }
