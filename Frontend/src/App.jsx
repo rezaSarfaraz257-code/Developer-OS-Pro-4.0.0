@@ -880,7 +880,6 @@ function Settings({ go }) {
     <div className="settings-hub-grid">
       <button className="panel settings-hub-card" onClick={() => go("/billing")}><span className="settings-hub-icon">◇</span><span className="panel-kicker">PLAN & USAGE</span><h2>Billing & plans</h2><p>Review your plan, usage limits and subscription options.</p><strong>OPEN BILLING <span>↗</span></strong></button>
       <button className="panel settings-hub-card" onClick={() => go("/team")}><span className="settings-hub-icon">◎</span><span className="panel-kicker">COLLABORATION</span><h2>Team & access</h2><p>Open team collaboration and workspace membership controls.</p><strong>OPEN TEAM <span>↗</span></strong></button>
-      <button className="panel settings-hub-card" onClick={() => go("/profile")}><span className="settings-hub-icon">◉</span><span className="panel-kicker">PERSONAL IDENTITY</span><h2>My profile</h2><p>Edit your name, bio and developer links on your dedicated profile page.</p><strong>OPEN PROFILE <span>↗</span></strong></button>
       <button className="panel settings-hub-card" onClick={() => go("/audit")}><span className="settings-hub-icon">≡</span><span className="panel-kicker">SECURITY & ACTIVITY</span><h2>Audit log</h2><p>Review workspace activity and available governance events.</p><strong>VIEW ACTIVITY <span>↗</span></strong></button>
     </div>
   </div>;
