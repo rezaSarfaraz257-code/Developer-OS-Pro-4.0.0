@@ -552,3 +552,66 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .os-content{padding:16px}
   .topbar{padding-left:10px;padding-right:10px}
 }
+
+
+/* FINAL LAYOUT POLISH — inset navigation rail and balanced full-width workspace */
+@media (min-width:721px) {
+  .os-rail {
+    inset:10px auto 10px 10px;
+    width:64px;
+    padding:12px 6px;
+    border:1px solid rgba(67,232,255,.16);
+    border-radius:18px;
+    background:
+      radial-gradient(ellipse at 50% 0%,rgba(67,232,255,.12),transparent 36%),
+      linear-gradient(180deg,rgba(10,17,29,.98),rgba(4,8,15,.98));
+    box-shadow:0 18px 55px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.035);
+    overflow:hidden;
+  }
+  .os-rail .brand { width:46px; height:46px; border-radius:13px; }
+  .os-rail .rail-item {
+    width:44px;
+    height:44px;
+    min-height:44px;
+    margin:4px 0;
+    border-radius:12px;
+    color:#7f94ab;
+    transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease,box-shadow .18s ease;
+  }
+  .os-rail .rail-item:hover {
+    transform:translateY(-1px);
+    color:#e4faff;
+    border-color:rgba(67,232,255,.16);
+    background:linear-gradient(135deg,rgba(67,232,255,.11),rgba(141,124,255,.08));
+  }
+  .os-rail .rail-item.active {
+    color:#65eaff;
+    border-color:rgba(67,232,255,.26);
+    background:linear-gradient(135deg,rgba(67,232,255,.16),rgba(99,102,241,.12));
+    box-shadow:inset 0 0 0 1px rgba(67,232,255,.04),0 5px 20px rgba(0,0,0,.16);
+  }
+  .os-rail .rail-item.active::before {
+    left:-7px;
+    width:3px;
+    border-radius:0 4px 4px 0;
+    background:linear-gradient(180deg,#8af4ff,#6c72ff);
+    box-shadow:0 0 12px rgba(67,232,255,.55);
+  }
+  .os-main {
+    margin-left:86px;
+    width:calc(100% - 86px);
+    min-width:0;
+  }
+  .os-content {
+    box-sizing:border-box;
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:16px 8px;
+  }
+}
+@media (max-width:720px) {
+  .os-rail { display:none; }
+  .os-main { margin-left:0; width:100%; }
+  .os-content { box-sizing:border-box; width:100%; padding:16px 8px; }
+}
