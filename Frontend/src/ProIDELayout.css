@@ -390,3 +390,29 @@
     grid-template-areas:"activity editor";
   }
 }
+
+
+/* WEB IDE focus-mode hardening: use one explicit grid area so hidden panes
+   cannot create implicit columns or steal the editor's layout/focus. */
+.dos-ide-pro.dos-zen-mode .dos-body{
+ display:grid!important;
+ grid-template-columns:minmax(0,1fr)!important;
+ grid-template-areas:"editor"!important;
+ flex:1 1 0!important;
+ height:auto!important;
+ min-height:0!important;
+ overflow:hidden!important;
+}
+.dos-ide-pro.dos-zen-mode .dos-body>.dos-activity,
+.dos-ide-pro.dos-zen-mode .dos-body>.dos-explorer,
+.dos-ide-pro.dos-zen-mode .dos-body>.dos-inspector{display:none!important}
+.dos-ide-pro.dos-zen-mode .dos-body>.dos-editor-shell{
+ grid-area:editor!important;
+ grid-column:1!important;
+ grid-row:1!important;
+ width:100%!important;
+ height:100%!important;
+ min-width:0!important;
+ min-height:0!important;
+ margin:0!important;
+}
