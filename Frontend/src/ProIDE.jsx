@@ -7,6 +7,7 @@ import EngineeringControlPlane from "./ide/EngineeringControlPlane";
 import { GlobalSearch, ProblemsPanel, RunCenter, DebuggerPanel, PreviewPanel, SourceControlPanel } from "./ide/IDEUtilities";
 import "./ProIDE.css";
 import "./NavigationPolish.css";
+import "./ProIDELayout.css";
 const lang=p=>({js:"JavaScript",jsx:"React JSX",ts:"TypeScript",tsx:"React TSX",py:"Python",html:"HTML",css:"CSS",json:"JSON",md:"Markdown",yml:"YAML",yaml:"YAML",sql:"SQL",sh:"Shell",go:"Go",rs:"Rust",java:"Java",php:"PHP"}[p?.split(".").pop()?.toLowerCase()]||"Plain Text");
 const fileKind=p=>{const ext=String(p||"").split(".").pop()?.toLowerCase();if(/^(jsx|tsx)$/.test(ext))return {glyph:"⚛",kind:"react"};if(/^(js|mjs|cjs|ts)$/.test(ext))return {glyph:"JS",kind:"script"};if(ext==="py")return {glyph:"Py",kind:"python"};if(ext==="css"||ext==="scss")return {glyph:"#",kind:"style"};if(/^(html|htm)$/.test(ext))return {glyph:"⌘",kind:"markup"};if(ext==="json")return {glyph:"{}",kind:"data"};if(/^(md|mdx|txt)$/.test(ext))return {glyph:"≡",kind:"text"};if(/^(yml|yaml|toml|ini)$/.test(ext))return {glyph:"⚙",kind:"config"};if(/^(sh|bash|zsh)$/.test(ext))return {glyph:">_",kind:"terminal"};if(/^(png|jpg|jpeg|svg|webp|gif)$/.test(ext))return {glyph:"▧",kind:"image"};return {glyph:"·",kind:"file"};};
 const icon=p=>fileKind(p).glyph;
