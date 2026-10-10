@@ -175,7 +175,7 @@ CORS_ALLOW_CREDENTIALS = False
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_EMBEDDER_POLICY = "require-corp" if not DEBUG else None
-DATA_UPLOAD_MAX_MEMORY_SIZE = 5_242_880
+DATA_UPLOAD_MAX_MEMORY_SIZE = 6_291_456  # Leave room for multipart request overhead around a 5 MB avatar.
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2_621_440
 
