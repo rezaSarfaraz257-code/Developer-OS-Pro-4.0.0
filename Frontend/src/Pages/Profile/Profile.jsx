@@ -21,6 +21,11 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
     email: "",
     full_name: "",
     bio: "",
+    country: "",
+    city: "",
+    job_title: "",
+    skills: "",
+    timezone: "",
     github: "",
     linkedin: "",
     website: "",
@@ -46,6 +51,11 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
           email: data.email || "",
           full_name: data.full_name || "",
           bio: data.bio || "",
+          country: data.country || "",
+          city: data.city || "",
+          job_title: data.job_title || "",
+          skills: data.skills || "",
+          timezone: data.timezone || "",
           github: data.github || "",
           linkedin: data.linkedin || "",
           website: data.website || "",
@@ -116,6 +126,11 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
         email: form.email,
         full_name: form.full_name,
         bio: form.bio,
+        country: form.country,
+        city: form.city,
+        job_title: form.job_title,
+        skills: form.skills,
+        timezone: form.timezone,
         github: form.github,
         linkedin: form.linkedin,
         website: form.website,
@@ -215,8 +230,13 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
           <h3>{profileName}</h3>
           <p>
             {profile?.bio ||
-              "Full-stack developer focused on product UX and backend architecture."}
+              "Build your developer identity with a concise bio, location, role, and technical skills."}
           </p>
+          <div className="profile-identity-chips">
+            {profile?.job_title && <span>{profile.job_title}</span>}
+            {(profile?.city || profile?.country) && <span>⌖ {[profile.city, profile.country].filter(Boolean).join(", ")}</span>}
+            {profile?.email_verified && <span className="verified-chip">✓ Verified email</span>}
+          </div>
 
           <div className="profile-meta">
             {profile?.github && <span>GitHub</span>}
@@ -294,6 +314,43 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
                   onChange={handleChange}
                 />
               </label>
+              <div className="profile-form-section">
+                <span className="eyebrow">Developer identity</span>
+                <div className="profile-form-grid">
+                  <label>
+                    Professional title
+                    <input name="job_title" value={form.job_title} onChange={handleChange} placeholder="e.g. Full-stack Developer" maxLength="120" />
+                  </label>
+                  <label>
+                    Country
+                    <input name="country" value={form.country} onChange={handleChange} placeholder="e.g. Afghanistan" maxLength="100" autoComplete="country-name" />
+                  </label>
+                  <label>
+                    City / Region
+                    <input name="city" value={form.city} onChange={handleChange} placeholder="e.g. Daikundi" maxLength="100" autoComplete="address-level2" />
+                  </label>
+                  <label>
+                    Time zone
+                    <select name="timezone" value={form.timezone} onChange={handleChange}>
+                      <option value="">Choose time zone (optional)</option>
+                      <option value="Asia/Kabul">Asia/Kabul (UTC+04:30)</option>
+                      <option value="Asia/Dubai">Asia/Dubai (UTC+04:00)</option>
+                      <option value="Asia/Karachi">Asia/Karachi (UTC+05:00)</option>
+                      <option value="Asia/Kolkata">Asia/Kolkata (UTC+05:30)</option>
+                      <option value="Europe/London">Europe/London</option>
+                      <option value="Europe/Berlin">Europe/Berlin</option>
+                      <option value="America/New_York">America/New_York</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles</option>
+                      <option value="UTC">UTC</option>
+                    </select>
+                  </label>
+                  <label className="profile-wide-field">
+                    Skills / Tech stack
+                    <input name="skills" value={form.skills} onChange={handleChange} placeholder="Python, Django, React, PostgreSQL" maxLength="500" />
+                    <small>Separate skills with commas so teammates can scan your stack.</small>
+                  </label>
+                </div>
+              </div>
               <label>
                 Bio
                 <textarea
@@ -301,7 +358,10 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
                   value={form.bio}
                   onChange={handleChange}
                   rows="4"
+                  maxLength="5000"
+                  placeholder="What are you building? What problems do you enjoy solving?"
                 />
+                <small>{form.bio.length}/5000 characters</small>
               </label>
               <label>
                 GitHub
@@ -341,6 +401,22 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
             <>
               <div className="stats-grid compact-grid">
                 <div className="stat-card">
+                  <span>Country / City</span>
+                  <strong>{[profile?.city, profile?.country].filter(Boolean).join(", ") || "Not added yet"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Professional title</span>
+                  <strong>{profile?.job_title || "Not added yet"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Time zone</span>
+                  <strong>{profile?.timezone || "Not set"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Skills / Tech stack</span>
+                  <strong>{profile?.skills || "Add your core technologies"}</strong>
+                </div>
+                <div className="stat-card">
                   <span>Username: </span>
                   <strong className="us">{profile?.username}</strong>
                 </div>
@@ -358,7 +434,10 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
                 </div>
                 <div className="stat-card">
                   <span >Email: </span>
-                  <strong className="es">{profile?.email}</strong>
+                  <strong className="es">{profile?.email || "Not added"}</strong>
+                  <small className={profile?.email_verified ? "profile-email-status is-verified" : "profile-email-status"}>
+                    {profile?.email_verified ? "✓ Email verified" : "Email not verified"}
+                  </small>
                 </div>
                 <div className="stat-card">
                   <span >GitHub:</span>
