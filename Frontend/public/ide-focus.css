@@ -1109,3 +1109,35 @@
  min-height:0!important;
  margin:0!important;
 }
+
+
+/* Focus Mode fix: escape the application content column and use the viewport. */
+html body #root .dos-ide-pro.dos-focus-mode{
+  position:fixed!important;inset:0!important;z-index:2147483000!important;
+  display:flex!important;flex-direction:column!important;box-sizing:border-box!important;
+  width:100vw!important;max-width:100vw!important;height:100vh!important;height:100dvh!important;
+  max-height:100dvh!important;min-height:0!important;margin:0!important;padding:0!important;
+  border:0!important;border-radius:0!important;overflow:hidden!important;
+}
+/* Dock, status and terminal are nested inside the editor shell; root-child rules miss them. */
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell>.dos-ide-dock,
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell>.dos-statusbar,
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell>.dos-terminal{display:none!important}
+/* Existing <=520px rules hid every Focus entry point. Keep one accessible. */
+html body #root .dos-ide-pro:not(.dos-focus-mode) .dos-top-actions button[aria-label="Toggle focus mode"]{
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+}
+html body #root .dos-ide-pro:not(.dos-focus-mode) .dos-editor-toolbar .dos-toolbar-group:nth-child(3){display:flex!important}
+/* Leave a low-distraction, usable Exit Focus control for touch and mouse users. */
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar{
+  display:flex!important;position:absolute!important;top:8px!important;right:8px!important;left:auto!important;
+  z-index:1000!important;width:auto!important;min-height:0!important;height:auto!important;padding:4px!important;
+  border:1px solid rgba(110,205,235,.22)!important;border-radius:9px!important;
+  background:rgba(5,12,20,.82)!important;backdrop-filter:blur(12px)!important;opacity:.22!important;
+  transition:opacity .16s ease!important;
+}
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar:hover,
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar:focus-within{opacity:1!important}
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar>.dos-toolbar-group:nth-child(-n+2){display:none!important}
+html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar>.dos-toolbar-group:nth-child(3){display:flex!important}
+@media(max-width:720px){html body #root .dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell .dos-editor-toolbar{opacity:.8!important}}
