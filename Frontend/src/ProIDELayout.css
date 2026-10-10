@@ -431,3 +431,66 @@
 .dos-ide-pro.dos-focus-mode .dos-explorer:focus-within{
   opacity:1;
 }
+
+
+/* WEB IDE FOCUS WORKSPACE — editor-first layout with explicit full-height sizing. */
+.dos-ide-pro.dos-focus-mode{
+ display:flex!important;flex-direction:column!important;min-height:0!important;
+ height:100%!important;max-height:100%!important;overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-brand,
+.dos-ide-pro.dos-focus-mode .dos-workspace-select,
+.dos-ide-pro.dos-focus-mode .dos-commandbar{display:none!important}
+.dos-ide-pro.dos-focus-mode .dos-topbar{
+ flex:0 0 auto!important;min-height:44px!important;height:auto!important;padding-block:5px!important;
+ background:linear-gradient(90deg,rgba(85,220,255,.055),transparent 52%),#071019!important;
+ border-bottom:1px solid rgba(85,220,255,.16)!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-home-label{display:none!important}
+.dos-ide-pro.dos-focus-mode .dos-home-button{min-width:34px!important;width:34px!important;padding-inline:0!important;justify-content:center!important}
+.dos-ide-pro.dos-focus-mode .dos-body{
+ display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"editor"!important;
+ grid-auto-columns:minmax(0,1fr)!important;flex:1 1 0!important;width:100%!important;height:auto!important;
+ min-height:0!important;max-height:none!important;margin:0!important;padding:0!important;gap:0!important;
+ overflow:hidden!important;position:relative!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-inspector{display:none!important}
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell{
+ grid-area:editor!important;grid-column:1!important;grid-row:1!important;display:flex!important;
+ flex-direction:column!important;width:100%!important;min-width:0!important;max-width:none!important;
+ height:100%!important;min-height:0!important;max-height:none!important;margin:0!important;
+ border:0!important;border-radius:0!important;box-shadow:inset 0 0 0 1px rgba(85,220,255,.13)!important;
+ overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-workbench-strip{
+ min-height:32px!important;flex:0 0 auto!important;padding-inline:12px!important;
+ background:linear-gradient(90deg,rgba(85,220,255,.045),transparent 60%),#071019!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-tabs{flex:0 0 auto!important}
+.dos-ide-pro.dos-focus-mode .dos-editor-toolbar{flex:0 0 auto!important;opacity:1!important;min-height:34px!important;background:#08131c!important}
+.dos-ide-pro.dos-focus-mode .dos-editors{
+ flex:1 1 0!important;width:100%!important;min-width:0!important;min-height:0!important;
+ height:auto!important;max-height:none!important;overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editor-pane,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane>.monaco-host,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor .overflow-guard{min-width:0!important;min-height:0!important}
+.dos-ide-pro.dos-focus-mode .dos-statusbar{flex:0 0 auto!important}
+.dos-ide-pro.dos-focus-mode .dos-ide-dock{flex:0 0 auto!important;max-height:34vh!important}
+.dos-ide-pro.dos-focus-mode .dos-terminal{left:0!important;right:0!important}
+.dos-ide-pro.dos-focus-mode .dos-editor-toolbar button[aria-pressed="true"],
+.dos-ide-pro.dos-focus-mode .dos-top-actions button[aria-pressed="true"]{
+ color:#b9f4ff!important;border-color:rgba(85,220,255,.38)!important;background:rgba(85,220,255,.10)!important;
+}
+@media(max-width:760px){
+ .dos-ide-pro.dos-focus-mode .dos-topbar{flex-wrap:nowrap!important;min-height:42px!important;padding-inline:6px!important}
+ .dos-ide-pro.dos-focus-mode .dos-top-actions{
+  flex:1 1 auto!important;min-width:0!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none!important;
+ }
+ .dos-ide-pro.dos-focus-mode .dos-top-actions button{flex:0 0 auto!important}
+ .dos-ide-pro.dos-focus-mode .dos-workbench-actions .dos-return-workbench{display:none!important}
+ .dos-ide-pro.dos-focus-mode .dos-editor-toolbar{overflow-x:auto!important;flex-wrap:nowrap!important}
+}
