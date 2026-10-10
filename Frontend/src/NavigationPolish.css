@@ -1146,3 +1146,110 @@ body{scrollbar-gutter:stable}
     animation: none !important;
   }
 }
+
+
+/* HOVER SCROLL RAIL — keep the sidebar clean at rest, reveal a slim usable scrollbar on hover/focus. */
+@media (min-width: 721px) {
+  .os-rail {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-width: none !important;
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+  }
+  .os-rail:hover,
+  .os-rail:focus-within {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(105, 226, 247, .58) rgba(10, 18, 30, .18) !important;
+  }
+  .os-rail::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+  }
+  .os-rail:hover::-webkit-scrollbar,
+  .os-rail:focus-within::-webkit-scrollbar {
+    width: 5px !important;
+    height: 5px !important;
+  }
+  .os-rail:hover::-webkit-scrollbar-track,
+  .os-rail:focus-within::-webkit-scrollbar-track {
+    background: rgba(10, 18, 30, .22) !important;
+    border-radius: 99px;
+  }
+  .os-rail:hover::-webkit-scrollbar-thumb,
+  .os-rail:focus-within::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(105, 226, 247, .72), rgba(129, 112, 255, .68)) !important;
+    border: 1px solid rgba(7, 12, 22, .7);
+    border-radius: 99px;
+  }
+  .os-rail:hover::-webkit-scrollbar-thumb:hover,
+  .os-rail:focus-within::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #9af4ff, #9b8cff) !important;
+  }
+}
+
+/* PROFILE SETTINGS — premium upload surface with clear keyboard focus. */
+.profile-settings-panel {
+  max-width: 820px;
+  gap: 20px !important;
+  padding: clamp(18px, 3vw, 30px) !important;
+  border-radius: 20px;
+  border-color: rgba(120, 190, 220, .18);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(65, 207, 232, .07), transparent 44%),
+    linear-gradient(160deg, rgba(13, 20, 32, .97), rgba(7, 11, 19, .98));
+}
+.profile-settings-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px;
+  border: 1px solid rgba(115, 190, 220, .18);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(22, 38, 55, .65), rgba(10, 15, 26, .72));
+}
+.profile-settings-avatar.avatar {
+  width: 84px;
+  height: 84px;
+  min-width: 84px;
+  border: 2px solid rgba(119, 225, 246, .58);
+  border-radius: 50%;
+  box-shadow: 0 0 0 5px rgba(82, 207, 234, .07), 0 12px 32px rgba(0, 0, 0, .32);
+  background: linear-gradient(135deg, #123e4c, #272050);
+  color: #e8fbff;
+  font-size: 22px;
+  font-weight: 750;
+}
+.profile-settings-avatar-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.profile-settings-avatar-copy strong { color: #e9f8ff; font-size: 16px; }
+.profile-settings-avatar-copy > span { color: #8ca8c0; font: 11px "JetBrains Mono", monospace; }
+.profile-settings-avatar-copy p { margin: 3px 0 5px; color: #8ea4b9; font-size: 11px; line-height: 1.6; }
+.profile-settings-avatar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.profile-avatar-input { display: none !important; }
+.profile-remove-avatar {
+  border: 1px solid rgba(255, 139, 172, .2);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: #ffb4c9;
+  background: rgba(110, 25, 52, .14);
+  font: 700 9px "JetBrains Mono", monospace;
+  cursor: pointer;
+}
+.profile-remove-avatar:hover { border-color: rgba(255, 139, 172, .48); background: rgba(110, 25, 52, .24); }
+.profile-avatar-error { color: #ff9fb7 !important; }
+.profile-settings-panel button:disabled { opacity: .58; cursor: wait; }
+.profile-settings-panel input:focus-visible,
+.profile-settings-panel textarea:focus-visible,
+.profile-settings-panel button:focus-visible {
+  outline: 2px solid rgba(105, 226, 247, .86);
+  outline-offset: 3px;
+}
+@media (max-width: 560px) {
+  .profile-settings-avatar-row { align-items: flex-start; gap: 13px; padding: 13px; }
+  .profile-settings-avatar.avatar { width: 64px; height: 64px; min-width: 64px; font-size: 18px; }
+  .profile-settings-avatar-copy strong { font-size: 14px; }
+}
