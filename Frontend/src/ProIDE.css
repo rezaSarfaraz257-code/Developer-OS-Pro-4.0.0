@@ -4005,7 +4005,7 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 .dos-debug-set-breakpoint:hover:not(:disabled){border-color:#b15c69;background:#3a1d26}
 .dos-debug-set-breakpoint:disabled{opacity:.4;cursor:not-allowed}
 .dos-debugger-pro .dos-debug-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.88fr);grid-template-rows:minmax(150px,1fr) minmax(145px,.75fr);gap:10px;flex:1;min-height:0;padding:11px;overflow:hidden}
-.dos-debugger-pro .dos-debug-inspectors{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(120px,1fr) minmax(140px,1.1fr);gap:10px;min-height:0;overflow:auto;scrollbar-width:thin}
+.dos-debugger-pro .dos-debug-inspectors{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(105px,.8fr) minmax(125px,1fr) minmax(95px,.75fr);gap:10px;min-height:0;overflow:auto;scrollbar-width:thin}
 .dos-debug-card{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border:1px solid #22364a;border-radius:10px;background:linear-gradient(150deg,#0e1926,#0a121d)}
 .dos-debug-card>header{display:flex;align-items:center;gap:9px;min-height:42px;padding:8px 11px;border-bottom:1px solid #1c2d3e;background:#0e1a27}
 .dos-debug-section-icon{display:grid;place-items:center;width:25px;height:25px;flex:none;border:1px solid #29455b;border-radius:7px;background:#112435;color:#83def7;font:700 12px ui-monospace,monospace}
@@ -4083,7 +4083,7 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
  .dos-debugger-pro .dos-debug-breakpoint-bar{flex-wrap:wrap;padding:8px 11px}
  .dos-debug-breakpoint-target{flex-basis:100%;order:3}
  .dos-debugger-pro .dos-debug-main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(200px,1fr) minmax(180px,.9fr);overflow:auto;padding:8px}
- .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(150px,1fr) minmax(180px,1fr);overflow:visible}
+ .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(145px,auto) minmax(175px,auto) minmax(100px,auto);overflow:visible}
  .dos-debugger-pro .dos-debug-console-pro{grid-column:1;grid-row:auto;min-height:240px}
  .dos-debugger-footer{flex-wrap:wrap;justify-content:flex-start}
 }
@@ -4097,7 +4097,7 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
  .dos-debug-line-control input{width:74px!important}
  .dos-debug-set-breakpoint{flex:1}
  .dos-debugger-pro .dos-debug-main{grid-template-rows:minmax(180px,1fr) minmax(170px,1fr)}
- .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(150px,auto) minmax(180px,auto)}
+ .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(140px,auto) minmax(175px,auto) minmax(100px,auto)}
  .dos-debug-variable-value{max-width:40%}
 }
 @media(prefers-reduced-motion:reduce){.dos-debugger-pro *{animation:none!important;transition:none!important}}
