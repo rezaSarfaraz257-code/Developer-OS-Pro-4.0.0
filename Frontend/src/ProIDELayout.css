@@ -647,3 +647,82 @@
 .dos-ide-pro.dos-focus-mode .dos-inspector:focus-within,
 .dos-ide-pro.dos-focus-mode .dos-explorer:hover,
 .dos-ide-pro.dos-focus-mode .dos-explorer:focus-within{display:none!important}
+
+/* Focus Mode must enlarge the editor inside the existing IDE frame.
+   Never turn the IDE into a fixed viewport overlay or move surrounding page content. */
+.dos-ide-pro.dos-focus-mode{
+  position:relative!important;
+  inset:auto!important;
+  z-index:1!important;
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  max-width:100%!important;
+  height:calc(100dvh - 24px)!important;
+  max-height:calc(100dvh - 24px)!important;
+  min-height:560px!important;
+  margin:0!important;
+  border:1px solid var(--workbench-border)!important;
+  border-radius:14px!important;
+  overflow:hidden!important;
+  isolation:isolate;
+  overscroll-behavior:contain;
+  background:#060b12!important;
+  box-shadow:0 24px 80px rgba(0,0,0,.36)!important;
+}
+
+/* Focus Mode: side panels disappear and the editor takes the only grid track. */
+.dos-ide-pro.dos-focus-mode .dos-body{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  grid-template-areas:"editor"!important;
+  gap:0!important;
+  padding:0!important;
+  margin:0!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-inspector{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+  width:0!important;
+  min-width:0!important;
+  max-width:0!important;
+  flex:0 0 0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell{
+  display:flex!important;
+  grid-area:editor!important;
+  grid-column:1/-1!important;
+  grid-row:1!important;
+  flex:1 1 0!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editors,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane>.monaco-host,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor .overflow-guard{
+  min-width:0!important;
+  min-height:0!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-explorer:hover,
+.dos-ide-pro.dos-focus-mode .dos-explorer:focus-within,
+.dos-ide-pro.dos-focus-mode .dos-inspector:hover,
+.dos-ide-pro.dos-focus-mode .dos-inspector:focus-within{display:none!important}
