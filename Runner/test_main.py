@@ -59,6 +59,18 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertIn("limits", manifest)
         self.assertIn("operations", manifest)
         self.assertIn("network_enforcement", manifest["sandbox"])
+        self.assertIn("execution_available", manifest["sandbox"])
+
+    def test_strict_shared_container_reports_execution_unavailable(self):
+        from main import _capability_manifest
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
+            manifest = _capability_manifest()
+        self.assertFalse(manifest["sandbox"]["execution_available"])
+        self.assertEqual(manifest["sandbox"]["mode"], "unavailable")
+        self.assertFalse(manifest["operations"]["execute"])
+        self.assertFalse(manifest["operations"]["process"])
+        self.assertFalse(manifest["operations"]["install"])
+        self.assertFalse(manifest["operations"]["debug"])
 
     def test_runtime_info_has_stable_capability_shape(self):
         info = _runtime_info()
