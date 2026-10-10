@@ -19,8 +19,6 @@ from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscripti
 
 class ProductionReadinessTests(APITestCase):
     def test_console_email_backend_never_passes_production_readiness(self):
-        from django.conf import settings
-        from unittest.mock import patch
         with override_settings(
             IS_PRODUCTION=True,
             DEBUG=False,
