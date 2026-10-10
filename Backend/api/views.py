@@ -2332,6 +2332,21 @@ def _safe_ide_path(value):
         return None
     return path
 
+def _ide_path_conflicts(files, path):
+    """Return True when a virtual path would collide with a file/directory."""
+    normalized = str(path or "").rstrip("/")
+    if not normalized:
+        return True
+    for existing in files:
+        existing = str(existing or "").rstrip("/")
+        if not existing:
+            continue
+        # A file cannot be placed below an existing file, or replace a
+        # directory that is represented by one or more descendant paths.
+        if normalized.startswith(existing + "/") or existing.startswith(normalized + "/"):
+            return True
+    return False
+
 
 @api_view(["GET", "POST", "DELETE"])
 @permission_classes([IsAuthenticated])
@@ -2398,19 +2413,22 @@ def ide_workspace_files_api(request, pk):
         if not path or not target:
             return Response({"error": "Valid source and target paths are required."}, status=400)
         if target in files:
-            return Response({"error": "Target already exists."}, status=409)
+            return Response({"error": "Target already exists.", "code": "path_conflict"}, status=409)
+        if target == path or target.startswith(path.rstrip("/") + "/"):
+            return Response({"error": "A path cannot be renamed into itself.", "code": "path_conflict"}, status=409)
+        prefix = path.rstrip("/") + "/"
+        source_paths = {path} if path in files else {key for key in files if key.startswith(prefix)}
+        if not source_paths:
+            return Response({"error": "Source file or directory not found."}, status=404)
+        remaining_files = {key: value for key, value in files.items() if key not in source_paths}
+        if _ide_path_conflicts(remaining_files, target):
+            return Response({"error": "Target conflicts with an existing file or directory.", "code": "path_conflict"}, status=409)
         if path in files:
             files[target] = files.pop(path)
         else:
-            prefix = path.rstrip("/") + "/"
-            matches = [key for key in files if key.startswith(prefix)]
-            if not matches:
-                return Response({"error": "Source file or directory not found."}, status=404)
             target_prefix = target.rstrip("/") + "/"
-            if any(key == target or key.startswith(target_prefix) for key in files):
-                return Response({"error": "Target already exists."}, status=409)
             moved = {}
-            for key in matches:
+            for key in source_paths:
                 moved[target_prefix + key[len(prefix):]] = files.pop(key)
             files.update(moved)
         if ws.active_file == path:
@@ -2427,6 +2445,9 @@ def ide_workspace_files_api(request, pk):
         return Response({"error": "Valid path and text content are required."}, status=400)
     if path in files and action == "create":
         return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
+    conflict_files = {key: value for key, value in files.items() if not (action == "write" and key == path)}
+    if _ide_path_conflicts(conflict_files, path):
+        return Response({"error": "Path conflicts with an existing file or directory.", "code": "path_conflict"}, status=409)
 
     # Validate the mutation before touching the database. This endpoint is
     # deliberately independent from the Runner: a Runner outage must never
