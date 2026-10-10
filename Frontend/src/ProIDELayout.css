@@ -535,3 +535,11 @@ html body #root .dos-ide-pro.dos-focus-mode > .dos-body > .dos-editor-shell{
   min-height:0!important;
   margin:0!important;
 }
+
+
+/* Focus Mode should remove only the two side panes, not the editor controls. */
+html body #root .dos-ide-pro.dos-focus-mode > .dos-topbar{display:flex!important}
+html body #root .dos-ide-pro.dos-focus-mode > .dos-commandbar{display:flex!important}
+html body #root .dos-ide-pro.dos-focus-mode .dos-workbench-strip{display:flex!important}
+html body #root .dos-ide-pro.dos-focus-mode .dos-tabs{display:flex!important}
+html body #root .dos-ide-pro.dos-focus-mode .dos-editor-toolbar{display:flex!important}
