@@ -3865,7 +3865,7 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 .dos-source-view-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 12px}
 .dos-source-view-head h3{margin:0;color:#e3edf6;font-size:13px;font-weight:750;letter-spacing:.005em}
 .dos-source-view-head p{margin:5px 0 0;color:#7e95aa;font-size:10px;line-height:1.5}
-.dos-source-view-actions{display:flex;align-items:center;gap:7px}
+.dos-source-view-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap;min-width:0}
 .dos-source-count-pill{padding:5px 8px;border:1px solid #2b4357;border-radius:999px;background:#111f2d;color:#a4bdcf;font-size:10px;white-space:nowrap}
 .dos-source-view-actions button,.dos-source-file-actions button,.dos-source-history-row button,.dos-source-branch-row button,.dos-source-empty button,.dos-source-raw button,.dos-source-repository-actions button{border:1px solid #2a4358;border-radius:6px;background:#111f2d;color:#a7bfd2;padding:6px 9px;font-size:10px;cursor:pointer;white-space:nowrap}
 .dos-source-view-actions button:hover:not(:disabled),.dos-source-file-actions button:hover:not(:disabled),.dos-source-history-row button:hover,.dos-source-branch-row button:hover,.dos-source-empty button:hover,.dos-source-raw button:hover,.dos-source-repository-actions button:hover:not(:disabled){border-color:#428aa5;background:#142a3b;color:#e4f8ff}
