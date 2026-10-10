@@ -945,14 +945,66 @@ function Profile({ onProfileUpdate }) {
 }
 
 function Settings({ go }) {
-  return <div className="page settings-hub">
-    <div className="hero-row"><div><div className="eyebrow">SYSTEM / PREFERENCES</div><h1>Settings</h1><p>Manage your workspace services and platform controls. Your personal identity now lives in its own Profile section.</p></div></div>
-    <div className="settings-hub-grid">
-      <button className="panel settings-hub-card" onClick={() => go("/billing")}><span className="settings-hub-icon">◇</span><span className="panel-kicker">PLAN & USAGE</span><h2>Billing & plans</h2><p>Review your plan, usage limits and subscription options.</p><strong>OPEN BILLING <span>↗</span></strong></button>
-      <button className="panel settings-hub-card" onClick={() => go("/team")}><span className="settings-hub-icon">◎</span><span className="panel-kicker">COLLABORATION</span><h2>Team & access</h2><p>Open team collaboration and workspace membership controls.</p><strong>OPEN TEAM <span>↗</span></strong></button>
-      <button className="panel settings-hub-card" onClick={() => go("/audit")}><span className="settings-hub-icon">≡</span><span className="panel-kicker">SECURITY & ACTIVITY</span><h2>Audit log</h2><p>Review workspace activity and available governance events.</p><strong>VIEW ACTIVITY <span>↗</span></strong></button>
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
+  const sections = [
+    { id: "profile", category: "Account", icon: "◎", eyebrow: "IDENTITY", title: "Developer profile", description: "Manage your public identity, email, location, skills, avatar, and professional links.", action: "Open profile", route: "/profile", tags: "email country timezone avatar identity personal" },
+    { id: "billing", category: "Account", icon: "◇", eyebrow: "PLAN & USAGE", title: "Billing and plans", description: "Review your subscription tier, plan details, and available usage information.", action: "Manage plan", route: "/billing", tags: "subscription payment pro free team enterprise" },
+    { id: "workspace", category: "Workspace", icon: "⌘", eyebrow: "DEVELOPMENT", title: "Web IDE", description: "Open your coding workspace, editor preferences, terminal, and development tools.", action: "Open workspace", route: "/ide", tags: "editor code terminal runtime preferences" },
+    { id: "team", category: "Workspace", icon: "⧉", eyebrow: "COLLABORATION", title: "Team and access", description: "Open team collaboration and workspace membership controls.", action: "Manage team", route: "/team", tags: "members invite roles collaboration permissions" },
+    { id: "ai", category: "Workspace", icon: "✦", eyebrow: "INTELLIGENCE", title: "AI workspace", description: "Open the AI workspace and available assistant capabilities.", action: "Open AI", route: "/ai", tags: "assistant ai provider prompt engineering" },
+    { id: "audit", category: "Security", icon: "◈", eyebrow: "SECURITY & ACTIVITY", title: "Audit log", description: "Review available account and workspace activity records.", action: "View activity", route: "/audit", tags: "security events history governance audit" },
+    { id: "referrals", category: "Growth", icon: "↗", eyebrow: "COMMUNITY", title: "Referrals and rewards", description: "Manage your referral link and review the available referral program.", action: "Open referrals", route: "/referrals", tags: "invite reward referral growth pro" },
+  ];
+  const categories = ["All", "Account", "Workspace", "Security", "Growth"];
+  const filtered = sections.filter(item => {
+    const matchesCategory = category === "All" || item.category === category;
+    const haystack = [item.title, item.description, item.eyebrow, item.tags, item.category].join(" ").toLowerCase();
+    return matchesCategory && haystack.includes(query.trim().toLowerCase());
+  });
+
+  return (
+    <div className="page settings-hub settings-center">
+      <div className="settings-center-hero">
+        <div className="settings-center-hero-copy">
+          <div className="eyebrow">CONTROL PLANE / PREFERENCES</div>
+          <h1>Settings Center</h1>
+          <p>Your control room for account identity, development workspace, collaboration, and platform governance.</p>
+          <div className="settings-hero-meta"><span><i className="settings-status-dot" /> PERSONAL WORKSPACE</span><span>DEVELOPER OS · 4.0</span></div>
+        </div>
+        <div className="settings-hero-orbit" aria-hidden="true"><div className="settings-orbit-ring settings-orbit-ring-one" /><div className="settings-orbit-ring settings-orbit-ring-two" /><div className="settings-orbit-core">D<span>OS</span></div><i className="settings-orbit-node settings-orbit-node-one" /><i className="settings-orbit-node settings-orbit-node-two" /><i className="settings-orbit-node settings-orbit-node-three" /></div>
+      </div>
+
+      <section className="settings-search-panel" aria-label="Find a setting">
+        <div className="settings-search-icon" aria-hidden="true">⌕</div>
+        <label className="settings-search-label" htmlFor="settings-center-search">Find a setting</label>
+        <input id="settings-center-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search profile, billing, security, workspace…" autoComplete="off" />
+        {query && <button type="button" className="settings-clear-search" onClick={() => setQuery("")} aria-label="Clear settings search">×</button>}
+        <kbd>SEARCH</kbd>
+      </section>
+
+      <div className="settings-center-heading"><div><span className="panel-kicker">CONFIGURATION MAP</span><h2>Platform controls</h2><p>Choose a control area to manage the corresponding part of Developer OS.</p></div><span className="settings-result-count">{filtered.length} {filtered.length === 1 ? "CONTROL" : "CONTROLS"}</span></div>
+      <div className="settings-category-tabs" role="group" aria-label="Filter settings by category">
+        {categories.map(item => <button key={item} type="button" className={category === item ? "active" : ""} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}
+      </div>
+
+      {filtered.length ? <div className="settings-center-grid">
+        {filtered.map((item, index) => <button key={item.id} type="button" className="settings-control-card" onClick={() => go(item.route)} style={{ "--settings-card-index": index }}>
+          <span className="settings-control-card-top"><span className="settings-control-icon" aria-hidden="true">{item.icon}</span><span className="settings-control-category">{item.category}</span></span>
+          <span className="panel-kicker">{item.eyebrow}</span>
+          <strong className="settings-control-title">{item.title}</strong>
+          <span className="settings-control-description">{item.description}</span>
+          <span className="settings-control-action">{item.action}<span aria-hidden="true">↗</span></span>
+        </button>)}
+      </div> : <div className="settings-empty-state"><span aria-hidden="true">⌕</span><h3>No matching controls</h3><p>Try another search term or switch to a different category.</p><button type="button" className="ghost" onClick={() => { setQuery(""); setCategory("All"); }}>Clear filters</button></div>}
+
+      <section className="settings-bottom-grid">
+        <div className="settings-info-panel"><span className="settings-info-icon">⌘</span><div><span className="panel-kicker">QUICK NAVIGATION</span><h3>Move faster</h3><p>Use the global search shortcut to jump to tools and pages without leaving your current workflow.</p><div className="settings-shortcut"><kbd>CTRL</kbd><span>+</span><kbd>K</kbd><span>Global search</span></div></div></div>
+        <div className="settings-info-panel settings-info-panel-accent"><span className="settings-info-icon">⛨</span><div><span className="panel-kicker">ACCOUNT SAFETY</span><h3>Security and governance</h3><p>Review activity records and use account controls to keep your workspace organized.</p><button type="button" className="settings-inline-action" onClick={() => go("/audit")}>Open audit log <span aria-hidden="true">→</span></button></div></div>
+      </section>
+      <p className="settings-center-footnote">Settings are grouped by control area. Changes made on linked pages follow each page’s own save and permission rules.</p>
     </div>
-  </div>;
+  );
 }
 
 export default function App() {
