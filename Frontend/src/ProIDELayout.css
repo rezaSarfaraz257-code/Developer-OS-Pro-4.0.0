@@ -544,3 +544,79 @@
   min-width:0!important;
   min-height:0!important;
 }
+
+
+/* FINAL FOCUS OVERRIDE: show the coding workspace, hide peripheral panes and dock. */
+.dos-ide-pro.dos-focus-mode{
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  max-width:100%!important;
+  height:calc(100dvh - 24px)!important;
+  max-height:calc(100dvh - 24px)!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-brand,
+.dos-ide-pro.dos-focus-mode .dos-workspace-select,
+.dos-ide-pro.dos-focus-mode .dos-commandbar,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-inspector,
+.dos-ide-pro.dos-focus-mode .dos-ide-dock{
+  display:none!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-topbar{
+  display:flex!important;
+  flex:0 0 auto!important;
+  min-height:38px!important;
+  height:38px!important;
+  padding:3px 8px!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-body{
+  display:grid!important;
+  flex:1 1 0!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:0!important;
+  max-height:none!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  grid-template-areas:"editor"!important;
+  gap:0!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell{
+  display:flex!important;
+  grid-area:editor!important;
+  grid-column:1!important;
+  grid-row:1!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  height:100%!important;
+  min-height:0!important;
+  margin:0!important;
+  border-radius:0!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-workbench-strip{
+  display:none!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editors{
+  flex:1 1 0!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editor-pane,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane>.monaco-host{
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-statusbar{
+  flex:0 0 auto!important;
+}
