@@ -3602,3 +3602,145 @@ body:has(.dos-ide-pro) .os-main > .os-content{
 .dos-ide-pro .dos-ide-dock { order:5; }
 .dos-ide-pro .dos-terminal { order:6; }
 .dos-ide-pro .dos-statusbar { order:7; }
+
+
+/* FULL-WIDTH IDE FIX — let the editor consume the available viewport without a phantom right gutter */
+.dos-ide-pro {
+  box-sizing:border-box;
+  width:100%;
+  max-width:none;
+  min-width:0;
+  margin:0;
+  flex:1 1 auto;
+}
+.dos-ide-pro *,
+.dos-ide-pro *::before,
+.dos-ide-pro *::after { box-sizing:border-box; }
+.dos-ide-pro .dos-body {
+  width:100%;
+  min-width:0;
+  grid-template-columns:48px minmax(180px,220px) minmax(0,1fr) minmax(190px,220px);
+}
+.dos-ide-pro .dos-editor-shell,
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-inspector { min-width:0; }
+@media (max-width:1180px) {
+  .dos-ide-pro { width:100%; }
+  .dos-ide-pro .dos-body {
+    grid-template-columns:44px minmax(0,1fr) minmax(170px,22%) !important;
+  }
+}
+@media (max-width:900px) {
+  .dos-ide-pro .dos-body { grid-template-columns:42px minmax(0,1fr) !important; }
+}
+
+/* FINAL IDE LAYOUT SAFETY — keep the IDE inside the same 8px global gutters.
+   Override legacy viewport-lock rules that made the editor wider than its app frame. */
+html:has(.dos-ide-pro),
+body:has(.dos-ide-pro) {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+body:has(.dos-ide-pro) .os-shell {
+  display: block !important;
+  width: calc(100% - 16px) !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  margin: 0 8px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+body:has(.dos-ide-pro) .os-rail,
+body:has(.dos-ide-pro) .os-main > .topbar {
+  display: none !important;
+}
+body:has(.dos-ide-pro) .os-main {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+body:has(.dos-ide-pro) .os-main > .os-content {
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+body:has(.dos-ide-pro) .dos-ide-pro {
+  position: relative !important;
+  inset: auto !important;
+  display: grid !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--line, #1a2a3c) !important;
+  box-sizing: border-box !important;
+}
+body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-template-columns: 48px minmax(160px, 220px) minmax(0, 1fr) minmax(0, 220px) !important;
+}
+body:has(.dos-ide-pro) .dos-ide-pro .dos-editor-shell,
+body:has(.dos-ide-pro) .dos-ide-pro .dos-explorer,
+body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
+  min-width: 0 !important;
+}
+@media (max-width: 1180px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 22%) !important;
+  }
+}
+@media (max-width: 900px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+  }
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
+    display: none !important;
+  }
+}
+
+/* Correct responsive track order: Explorer stays compact and the editor gets the remaining width. */
+@media (max-width: 1180px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 48px minmax(160px, 220px) minmax(0, 1fr) !important;
+  }
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
+    display: none !important;
+  }
+}
+@media (max-width: 900px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 42px minmax(145px, 180px) minmax(0, 1fr) !important;
+  }
+}
+@media (max-width: 560px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 38px minmax(0, 1fr) !important;
+  }
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-explorer {
+    display: none !important;
+  }
+}
