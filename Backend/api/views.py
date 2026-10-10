@@ -383,6 +383,26 @@ def profile_api(request):
     uploaded_avatar = payload.pop("avatar", None)
     remove_avatar = payload.pop("remove_avatar", False)
 
+    # Check mandatory durable-media configuration before mutating profile fields.
+    # This turns a predictable deployment misconfiguration into an actionable 503
+    # instead of a generic 500 and prevents partial updates on failed avatar uploads.
+    if uploaded_avatar:
+        storage = profile.avatar.storage
+        require_bucket = getattr(storage, "_require_bucket", None)
+        if callable(require_bucket):
+            try:
+                require_bucket()
+            except ImproperlyConfigured as exc:
+                return Response(
+                    {
+                        "error": {
+                            "code": "media_storage_unavailable",
+                            "message": str(exc),
+                        }
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+
     if "email" in payload and payload["email"] and User.objects.exclude(pk=user.pk).filter(
         email__iexact=payload["email"]
     ).exists():
