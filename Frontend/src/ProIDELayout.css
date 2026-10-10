@@ -264,3 +264,54 @@
 @media(prefers-reduced-motion:reduce){
   .dos-ide-pro *, .dos-ide-pro *::before, .dos-ide-pro *::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}
 }
+
+
+/* WEB IDE 4.5 — explicit editor gutter and terminal containment.
+   Keep the Explorer and editor visually distinct; anchor terminal inside the editor,
+   above the dock, so it can never slide beneath the Explorer pane. */
+.dos-ide-pro .dos-body>.dos-editor-shell{
+  margin:6px 0 6px 8px;
+  width:calc(100% - 8px);
+  height:calc(100% - 12px);
+  min-width:0;
+  min-height:0;
+  border:1px solid rgba(137,177,204,.12);
+  border-radius:9px;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-body.dos-explorer-collapsed>.dos-editor-shell{
+  margin-left:8px;
+  width:calc(100% - 8px);
+}
+.dos-ide-pro .dos-editor-shell .dos-terminal{
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:60;
+  width:100%;
+  max-width:100%;
+  max-height:54%;
+  min-height:150px;
+  border-radius:9px 9px 0 0;
+}
+.dos-ide-pro .dos-editor-shell .dos-terminal-body{
+  min-width:0;
+  max-height:calc(54dvh - 92px);
+}
+@media(max-width:820px){
+  .dos-ide-pro .dos-body>.dos-editor-shell{
+    margin:4px 0 4px 6px;
+    width:calc(100% - 6px);
+    height:calc(100% - 8px);
+    border-radius:8px;
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed>.dos-editor-shell{
+    margin-left:6px;
+    width:calc(100% - 6px);
+  }
+  .dos-ide-pro .dos-editor-shell .dos-terminal{
+    bottom:0;
+    max-height:58%;
+    min-height:135px;
+  }
+}
