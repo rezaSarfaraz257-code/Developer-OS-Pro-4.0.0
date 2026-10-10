@@ -14,8 +14,19 @@ conditional = {
 missing = [x for x in required if not os.getenv(x)]
 if missing:
     print("MISSING REQUIRED:", ", ".join(missing)); sys.exit(2)
-if os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() not in {"1","true","yes","on"}:
+email_verification_required = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() in {"1", "true", "yes", "on"}
+if not email_verification_required:
     print("WARNING: EMAIL_VERIFICATION_REQUIRED is disabled.")
+else:
+    smtp_keys = conditional["SMTP"]
+    missing_smtp = [key for key in smtp_keys if not os.getenv(key)]
+    if missing_smtp:
+        print("MISSING REQUIRED EMAIL DELIVERY:", ", ".join(missing_smtp))
+        sys.exit(4)
+    if os.getenv("EMAIL_BACKEND", "").endswith("console.EmailBackend"):
+        print("INVALID PRODUCTION EMAIL_BACKEND: console email delivery is not production-safe.")
+        sys.exit(4)
+
 for name, keys in conditional.items():
     configured = sum(bool(os.getenv(k)) for k in keys)
     if configured and configured != len(keys):
