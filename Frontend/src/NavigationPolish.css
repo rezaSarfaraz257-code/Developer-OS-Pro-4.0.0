@@ -816,3 +816,43 @@ body{scrollbar-gutter:stable}
   }
   .os-content{padding:10px !important}
 }
+
+
+/* GLOBAL FULL-WIDTH OVERRIDE — 100% viewport width across the entire app. */
+.os-shell{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  margin-left:0 !important;
+  margin-right:0 !important;
+  margin-inline:0 !important;
+  border-radius:0 !important;
+}
+@media (min-width:721px){
+  .os-shell{
+    grid-template-columns:48px minmax(0,1fr) !important;
+  }
+  .os-rail{
+    position:sticky !important;
+    left:auto !important;
+    margin-left:0 !important;
+  }
+  .os-main{
+    width:100% !important;
+    max-width:100% !important;
+    margin-left:0 !important;
+  }
+}
+@media (max-width:720px){
+  .os-shell{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    margin:0 !important;
+  }
+  .os-main{
+    width:100% !important;
+    max-width:100% !important;
+    margin:0 !important;
+  }
+}
