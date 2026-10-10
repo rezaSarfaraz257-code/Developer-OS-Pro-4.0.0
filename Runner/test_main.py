@@ -46,8 +46,15 @@ class RunnerSecurityTests(unittest.TestCase):
                 _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
 
+    def test_bwrap_runtime_failure_fails_closed(self):
+        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=False):
+            with self.assertRaises(HTTPException) as ctx:
+                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+            self.assertEqual(ctx.exception.status_code, 503)
+            self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
+
     def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
-        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"):
+        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
             command = _sandbox_command(Path("/tmp"), "npm install react", allow_network=True)
             self.assertNotIn("--unshare-net", command)
 
