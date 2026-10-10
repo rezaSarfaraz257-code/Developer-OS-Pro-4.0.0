@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -26,7 +27,17 @@ urlpatterns = [
     ),
 ]
 
-# Django serves user-uploaded avatars only while developing. In production the
-# reverse proxy/object storage should serve MEDIA_ROOT directly.
+# Profile photos are public identity assets. Render does not automatically serve
+# MEDIA_URL, so explicitly serve only the avatar subtree in every environment.
+# Keep other user-uploaded media private and outside this route.
+urlpatterns += [
+    re_path(
+        r"^media/avatars/(?P<path>.*)$",
+        serve,
+        {"document_root": settings.MEDIA_ROOT / "avatars"},
+        name="profile-avatar-media",
+    ),
+]
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
