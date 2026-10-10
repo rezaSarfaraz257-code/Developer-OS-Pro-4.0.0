@@ -132,17 +132,21 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   if(!workspace?.id){setGit({});setMessage("Open a workspace to inspect repository state.");return}
   setBusy(true);
   const operations=[["status",["status","--short"]],["diff",["diff"]],["files",["status","--short"]],["branches",["branch","--list"]],["log",["log","-20","--oneline"]]];
-  try{
-   const results=await Promise.all(operations.map(async([operation,args])=>{
-    const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw Error(d.error||d.detail||`${operation} failed (HTTP ${r.status})`);
-    return [operation,d];
-   }));
-   setGit(Object.fromEntries(results));
-   setMessage("Git state synchronized.");
-  }catch(e){setMessage(e.message||"Repository refresh failed")}
-  finally{setBusy(false)}
+  const results=await Promise.allSettled(operations.map(async([operation,args])=>{
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation,args})});
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok)throw Error(d.error||d.detail||`${operation} failed (HTTP ${r.status})`);
+   return [operation,d];
+  }));
+  const next={},failed=[];
+  results.forEach((result,index)=>{
+   const operation=operations[index][0];
+   if(result.status==="fulfilled")next[result.value[0]]=result.value[1];
+   else failed.push(`${operation}: ${result.reason?.message||"request failed"}`);
+  });
+  setGit(next);
+  setMessage(failed.length?(`Partial Git refresh — ${failed.join(" · ")}`):"Git state synchronized.");
+  setBusy(false);
  },[workspace?.id]);
  useEffect(()=>{void refresh()},[refresh]);
  async function gitAction(operation,args){
@@ -153,9 +157,10 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   catch(e){setMessage(e.message||"Git operation failed")}
   finally{setBusy(false)}
  }
- async function gitFileAction(operation,path){
+ async function gitFileAction(operation,path,code=""){
   if(!workspace?.id||busy||!path)return;
-  if(operation==="discard"&&!window.confirm(`Discard changes for "${path}"? This cannot be undone.`))return;
+  if(operation==="discard"&&code.includes("?"))return setMessage("Git cannot restore an untracked file. Remove it from the Explorer if you want to delete it.");
+  if(operation==="discard"&&!window.confirm(`Restore tracked changes for "${path}"? This cannot be undone.`))return;
   setBusy(true);
   try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation,path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||`Git file operation failed (HTTP ${r.status})`);setMessage(`${operation} completed for ${path}`);await refresh();}
   catch(e){setMessage(e.message||"Git file operation failed")}
@@ -192,7 +197,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   const msg=commitMessage.trim();if(!msg)return setMessage("A commit message is required.");if(!workspace?.id)return setMessage("Open a workspace first.");if(busy)return;
   setBusy(true);
   try{
-   const staged=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["add","-A"]})});const sd=await staged.json().catch(()=>({}));if(!staged.ok)throw Error(sd.error||sd.detail||"Staging changes failed");
+   const staged=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"add",args:["add","-A"]})});const sd=await staged.json().catch(()=>({}));if(!staged.ok)throw Error(sd.error||sd.detail||"Staging changes failed");
    const committed=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["commit","-m",msg]})});const cd=await committed.json().catch(()=>({}));if(!committed.ok)throw Error(cd.error||cd.detail||"Commit failed");
    setCommitMessage("");setMessage("Commit created successfully.");await refresh();
   }catch(e){setMessage(e.message||"Commit failed")}
@@ -239,10 +244,10 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   <div className="dos-source-main">
    <div className="dos-source-feedback" role="status" aria-live="polite"><span className={`dos-source-feedback-icon ${isError?"error":busy?"busy":"ok"}`}>{isError?"!":busy?"…":"✓"}</span><span>{message}</span></div>
    {tab==="changes"&&<>
-    <div className="dos-source-view-head"><div><h3>Working tree</h3><p>Review, stage, compare, and commit workspace changes.</p></div><div className="dos-source-view-actions"><span className="dos-source-count-pill">{changedFiles.length} changed</span><button type="button" onClick={()=>{if(window.confirm("Restore the entire worktree and discard ALL unstaged changes? This cannot be undone."))void gitAction("restore",["restore","."])}} disabled={busy||!workspace?.id} className="dos-source-danger">Discard all</button></div></div>
+    <div className="dos-source-view-head"><div><h3>Working tree</h3><p>Review, stage, compare, and commit workspace changes.</p></div><div className="dos-source-view-actions"><span className="dos-source-count-pill">{changedFiles.length} changed</span><button type="button" onClick={()=>void gitAction("add",["add","-A"])} disabled={busy||!changedFiles.length} title="Stage all changes">Stage all</button><button type="button" onClick={()=>void gitAction("reset",["reset","HEAD","--","."])} disabled={busy||!changedFiles.length} title="Unstage all staged changes">Unstage all</button><button type="button" onClick={()=>{if(window.confirm("Restore all tracked file changes? Untracked files will remain untouched."))void gitAction("restore",["restore","."])}} disabled={busy||!changedFiles.length} className="dos-source-danger">Restore tracked</button></div></div>
     <div className="dos-source-file-toolbar"><label className="dos-source-filter"><span>⌕</span><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter changed files…" aria-label="Filter changed files"/></label><span className="dos-source-muted">{changedFiles.length?"Select an action on any file":"No matching files"}</span></div>
     <div className="dos-source-change-list">
-     {changedFiles.map(({path,code})=><article key={path} className="dos-source-change-row"><span className={`dos-source-file-status ${code.includes("?")?"untracked":code.includes("A")?"added":code.includes("D")?"deleted":code.includes("R")?"renamed":"modified"}`}>{code}</span><div className="dos-source-file-details"><code title={path}>{path.split("/").pop()}</code><small title={path}>{path.includes("/")?path.slice(0,path.lastIndexOf("/")):"Workspace root"}</small></div><div className="dos-source-file-actions"><button type="button" onClick={()=>void gitFileAction("stage",path)} disabled={busy} title="Stage file">＋ Stage</button><button type="button" onClick={async()=>{try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");openDiff(path,d.original||d.base||"",d.stdout||d.output||"")}catch(e){setMessage(e.message||"File diff unavailable")}}} disabled={busy} title="Open file diff">Diff ↗</button><button type="button" className="dos-source-discard-file" onClick={()=>void gitFileAction("discard",path)} disabled={busy} title="Discard file changes">Discard</button></div></article>)}
+     {changedFiles.map(({path,code})=><article key={path} className="dos-source-change-row"><span className={`dos-source-file-status ${code.includes("?")?"untracked":code.includes("A")?"added":code.includes("D")?"deleted":code.includes("R")?"renamed":"modified"}`}>{code}</span><div className="dos-source-file-details"><code title={path}>{path.split("/").pop()}</code><small title={path}>{path.includes("/")?path.slice(0,path.lastIndexOf("/")):"Workspace root"}</small></div><div className="dos-source-file-actions"><button type="button" onClick={()=>void gitFileAction("stage",path)} disabled={busy} title="Stage file">＋ Stage</button><button type="button" onClick={async()=>{if(code.includes("?")){openDiff(path,"",workspace?.files?.[path]||"");return}try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");openDiff(path,d.original||d.base||"",d.stdout||d.output||"")}catch(e){setMessage(e.message||"File diff unavailable")}}} disabled={busy} title="Open file diff">Diff ↗</button><button type="button" className="dos-source-discard-file" onClick={()=>void gitFileAction("discard",path,code)} disabled={busy||code.includes("?")} disabled={busy} title="Discard file changes">Discard</button></div></article>)}
      {!changedFiles.length&&<div className="dos-source-empty"><div className="dos-source-empty-mark">{busy?"↻":"✓"}</div><strong>{busy?"Refreshing worktree…":filter?"No files match this filter":hasGitState?"Working tree clean":"Waiting for Git status"}</strong><p>{busy?"Fetching status, diffs, branches, and recent commits.":filter?"Try another filename or clear the filter.":hasGitState?"Your workspace has no uncommitted changes.":"Open a workspace with a Git worktree, then refresh to load repository state."}</p>{!busy&&<button type="button" onClick={()=>void refresh()} disabled={!workspace?.id}>Refresh status</button>}</div>}
     </div>
     <details className="dos-source-raw"><summary>Git status output</summary><pre>{statusText||"No status output returned."}</pre></details>
