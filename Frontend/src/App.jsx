@@ -740,12 +740,127 @@ function Billing() {
     </section>
   </div>;
 }
-function Settings() {
-  const [profile,setProfile]=useState(null); const [saved,setSaved]=useState(false);
-  useEffect(()=>apiFetch("/profile/").then(r=>r.json()).then(setProfile).catch(()=>{}),[]);
-  const save=async()=>{await apiFetch("/profile/",{method:"PATCH",body:JSON.stringify(profile)});setSaved(true);setTimeout(()=>setSaved(false),1800);};
-  if(!profile)return <div className="page loading">LOADING PROFILE...</div>;
-  return <div className="page"><div className="hero-row"><div><div className="eyebrow">SYSTEM / IDENTITY</div><h1>Settings</h1><p>Control your Developer OS identity and account surface.</p></div></div><section className="panel settings-form"><label>FULL NAME<input value={profile.full_name||""} onChange={e=>setProfile({...profile,full_name:e.target.value})}/></label><label>BIO<textarea value={profile.bio||""} onChange={e=>setProfile({...profile,bio:e.target.value})}/></label><label>GITHUB<input value={profile.github||""} onChange={e=>setProfile({...profile,github:e.target.value})}/></label><label>WEBSITE<input value={profile.website||""} onChange={e=>setProfile({...profile,website:e.target.value})}/></label><button className="primary" onClick={save}>{saved?"SAVED ✓":"SAVE CHANGES"}</button></section></div>;
+function Settings({ onProfileUpdate }) {
+  const [profile, setProfile] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const avatarInputRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/profile/")
+      .then(response => response.json())
+      .then(data => {
+        if (active) {
+          setProfile(data);
+          onProfileUpdate?.(data);
+        }
+      })
+      .catch(() => { if (active) setSaveError("Could not load your profile. Please refresh and try again."); });
+    return () => { active = false; };
+  }, [onProfileUpdate]);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview("");
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [avatarFile]);
+
+  const chooseAvatar = event => {
+    const file = event.target.files?.[0];
+    setAvatarError("");
+    if (!file) return;
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+      setAvatarError("Choose a JPEG, PNG, or WebP image.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("The profile photo must be 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+    setSaved(false);
+    setSaveError("");
+  };
+
+  const save = async () => {
+    if (!profile || saving) return;
+    setSaving(true);
+    setSaved(false);
+    setSaveError("");
+    try {
+      const payload = new FormData();
+      payload.append("full_name", profile.full_name || "");
+      payload.append("bio", profile.bio || "");
+      payload.append("github", profile.github || "");
+      payload.append("website", profile.website || "");
+      if (avatarFile) payload.append("avatar", avatarFile);
+      if (removeAvatar) {
+        payload.append("remove_avatar", "true");
+        payload.append("avatar_url", "");
+      }
+      const response = await apiFetch("/profile/", { method: "PATCH", body: payload });
+      const data = await response.json();
+      setProfile(data);
+      onProfileUpdate?.(data);
+      setAvatarFile(null);
+      setRemoveAvatar(false);
+      setAvatarError("");
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (error) {
+      setSaveError(error.message || "Unable to save your profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!profile) return <div className="page loading">LOADING PROFILE...</div>;
+  const profileName = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Developer";
+  const initials = profileName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "D";
+  const displayedAvatar = avatarFile ? avatarPreview : (removeAvatar ? "" : profile.avatar_url);
+
+  return (
+    <div className="page">
+      <div className="hero-row">
+        <div><div className="eyebrow">SYSTEM / IDENTITY</div><h1>Settings</h1><p>Personalize your Developer OS identity and profile photo.</p></div>
+      </div>
+      <section className="panel settings-form profile-settings-panel">
+        <div className="profile-settings-avatar-row">
+          <Avatar imageUrl={displayedAvatar} initials={initials} className="profile-settings-avatar" label={profileName + " profile photo"} />
+          <div className="profile-settings-avatar-copy">
+            <strong>{profileName}</strong>
+            <span>@{profile.username || "developer"}</span>
+            <p>JPEG, PNG, or WebP · up to 5 MB. Your photo also appears in the sidebar.</p>
+            <div className="profile-settings-avatar-actions">
+              <button type="button" className="ghost" onClick={() => avatarInputRef.current?.click()} disabled={saving}>CHOOSE PHOTO</button>
+              {(profile.avatar_url || avatarFile) && <button type="button" className="profile-remove-avatar" onClick={() => { setAvatarFile(null); setRemoveAvatar(true); setAvatarError(""); setSaved(false); }} disabled={saving}>REMOVE PHOTO</button>}
+              <input ref={avatarInputRef} className="profile-avatar-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseAvatar} />
+            </div>
+            {avatarError && <p className="profile-avatar-error" role="alert">{avatarError}</p>}
+          </div>
+        </div>
+        <label>FULL NAME<input value={profile.full_name || ""} onChange={e => { setProfile({...profile, full_name:e.target.value}); setSaved(false); }} /></label>
+        <label>BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} /></label>
+        <label>GITHUB<input value={profile.github || ""} onChange={e => { setProfile({...profile, github:e.target.value}); setSaved(false); }} /></label>
+        <label>WEBSITE<input value={profile.website || ""} onChange={e => { setProfile({...profile, website:e.target.value}); setSaved(false); }} /></label>
+        {saveError && <div className="error" role="alert">{saveError}</div>}
+        <button className="primary" type="button" onClick={save} disabled={saving}>{saving ? "SAVING PROFILE…" : saved ? "SAVED ✓" : "SAVE CHANGES"}</button>
+      </section>
+    </div>
+  );
 }
 
 export default function App() {
@@ -782,7 +897,7 @@ export default function App() {
   else if(current==="team") content=<Team/>;
   else if(current==="referrals") content=<Referral go={go}/>;
   else if(current==="billing") content=<Billing/>;
-  else if(current==="settings") content=<Settings/>;
+  else if(current==="settings") content=<Settings onProfileUpdate={setUser}/>;
   else if(current==="audit") content=<Audit/>;
   else content=<Dashboard go={go}/>;
 
