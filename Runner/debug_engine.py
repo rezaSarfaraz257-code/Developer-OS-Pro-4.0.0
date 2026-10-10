@@ -105,7 +105,14 @@ class Session:
         requested.append({"line":line,"column":column,**({"condition":condition} if condition else {})})
         response=self.dap.call("setBreakpoints",{"source":{"path":str(target)},"breakpoints":requested,"sourceModified":False}).get("breakpoints",[])
         retained=[b for b in self.breakpoints if b.get("path")!=path]
-        retained.extend({"path":path,"line":x.get("line",line),"column":x.get("column",column),"verified":bool(x.get("verified")),"id":x.get("id"),**({"condition":condition} if condition else {})} for x in response)
+        requested_by_line={int(item["line"]):item for item in requested}
+        for item in response:
+            actual_line=int(item.get("line") or line)
+            config=requested_by_line.get(actual_line,{})
+            record={"path":path,"line":actual_line,"column":int(item.get("column") or config.get("column") or column),"verified":bool(item.get("verified")),"id":item.get("id")}
+            if item.get("message"):record["message"]=str(item["message"])[:500]
+            if config.get("condition"):record["condition"]=config["condition"]
+            retained.append(record)
         self.breakpoints=retained
         return self.snapshot()
 
@@ -115,7 +122,14 @@ class Session:
         requested=[{"line":int(b["line"]),"column":max(1,int(b.get("column") or 1)),**({"condition":b["condition"]} if b.get("condition") else {})} for b in remaining]
         response=self.dap.call("setBreakpoints",{"source":{"path":str(target)},"breakpoints":requested,"sourceModified":False}).get("breakpoints",[])
         retained=[b for b in self.breakpoints if b.get("path")!=path]
-        retained.extend({"path":path,"line":x.get("line"),"column":x.get("column",1),"verified":bool(x.get("verified")),"id":x.get("id")} for x in response)
+        requested_by_line={int(item["line"]):item for item in requested}
+        for item in response:
+            actual_line=int(item.get("line") or 1)
+            config=requested_by_line.get(actual_line,{})
+            record={"path":path,"line":actual_line,"column":int(item.get("column") or config.get("column") or 1),"verified":bool(item.get("verified")),"id":item.get("id")}
+            if item.get("message"):record["message"]=str(item["message"])[:500]
+            if config.get("condition"):record["condition"]=config["condition"]
+            retained.append(record)
         self.breakpoints=retained
         return self.snapshot()
     def _thread(self):
