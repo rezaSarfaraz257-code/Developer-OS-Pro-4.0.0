@@ -681,27 +681,57 @@ body{scrollbar-gutter:stable}
 }
 
 
-/* FINAL FIX — collapsed rail has no right scrollbar strip; main app keeps 10px side gutters. */
+/* Layout correction: compact icon rail and consistent 10px page gutters. */
 @media (min-width:721px){
-  .os-rail:not(:hover):not(:focus-within){
-    scrollbar-width:none !important;
-    -ms-overflow-style:none !important;
-    scrollbar-gutter:auto !important;
+  .os-rail{
+    box-sizing:border-box !important;
+    width:36px !important;
+    padding:12px 0 !important;
     padding-right:0 !important;
+    overflow-x:hidden;
+    scrollbar-width:none;
+    scrollbar-gutter:auto !important;
   }
-  .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar{
-    display:none !important;
-    width:0 !important;
-    height:0 !important;
-    background:transparent !important;
+  .os-rail::-webkit-scrollbar{display:none !important;width:0 !important}
+  .os-rail .rail-item,
+  .os-rail:not(:hover):not(:focus-within) .rail-item{
+    box-sizing:border-box !important;
+    width:100% !important;
+    padding-left:2px !important;
+    padding-right:0 !important;
+    margin-right:0 !important;
+    gap:0 !important;
+  }
+  .os-rail .rail-item span,
+  .os-rail:not(:hover):not(:focus-within) .rail-item span{
+    flex:0 0 29px !important;
+    width:29px !important;
+    margin:0 !important;
+  }
+  .os-main{
+    box-sizing:border-box !important;
+    min-width:0 !important;
+    margin-left:36px !important;
+    width:calc(100% - 36px) !important;
+  }
+  /* Expand over the content on hover; do not resize the main layout. */
+  .os-rail:hover,
+  .os-rail:focus-within{
+    width:236px !important;
+    padding:16px 12px !important;
+  }
+  .os-rail:hover .rail-item,
+  .os-rail:focus-within .rail-item{
+    padding:0 12px !important;
+    gap:12px !important;
+  }
+  .os-rail:hover .rail-item span,
+  .os-rail:focus-within .rail-item span{
+    flex:0 0 29px !important;
+    width:29px !important;
   }
 }
-.os-main{
-  box-sizing:border-box !important;
-  min-width:0 !important;
-  width:calc(100% - 248px) !important;
-}
-.os-content:not(:has(.dos-ide-pro)){
+.os-content{
   box-sizing:border-box !important;
   width:100% !important;
   max-width:none !important;
@@ -714,18 +744,13 @@ body{scrollbar-gutter:stable}
   padding-left:10px !important;
   padding-right:10px !important;
 }
-@media(max-width:1180px){
-  .os-main{width:calc(100% - 218px) !important}
-}
-@media(max-width:900px){
-  .os-main{width:calc(100% - 68px) !important}
-  .os-rail:not(:hover):not(:focus-within){
-    scrollbar-width:none !important;
-    scrollbar-gutter:auto !important;
-  }
-  .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar{display:none !important;width:0 !important}
-}
 @media(max-width:720px){
-  .os-main{width:calc(100% - 68px) !important}
-  .os-content:not(:has(.dos-ide-pro)){padding-left:10px !important;padding-right:10px !important}
+  .os-main{
+    margin-left:0 !important;
+    width:100% !important;
+  }
+  .os-content{
+    padding-left:10px !important;
+    padding-right:10px !important;
+  }
 }
