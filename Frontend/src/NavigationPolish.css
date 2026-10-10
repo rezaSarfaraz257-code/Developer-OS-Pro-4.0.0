@@ -743,3 +743,76 @@ body{scrollbar-gutter:stable}
     width:100% !important;
   }
 }
+
+
+/* GLOBAL APP FRAME — keep every authenticated page, including the sidebar, inside
+   the same centered 95% viewport container. Override legacy fixed-rail offsets. */
+.os-shell{
+  box-sizing:border-box !important;
+  display:grid !important;
+  grid-template-columns:48px minmax(0,1fr) !important;
+  align-items:start !important;
+  gap:0 !important;
+  width:95% !important;
+  max-width:95% !important;
+  min-width:0 !important;
+  margin-inline:auto !important;
+}
+.os-rail{
+  position:sticky !important;
+  grid-column:1 !important;
+  grid-row:1 !important;
+  top:10px !important;
+  left:auto !important;
+  right:auto !important;
+  bottom:auto !important;
+  width:48px !important;
+  height:calc(100vh - 20px) !important;
+  min-width:0 !important;
+  margin:0 !important;
+  box-sizing:border-box !important;
+  z-index:100 !important;
+}
+.os-main{
+  grid-column:2 !important;
+  grid-row:1 !important;
+  margin:0 !important;
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  box-sizing:border-box !important;
+}
+.os-content{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  margin:0 !important;
+  padding:16px !important;
+  box-sizing:border-box !important;
+}
+@media (min-width:721px){
+  .os-shell:has(.os-rail:hover),
+  .os-shell:has(.os-rail:focus-within){
+    grid-template-columns:48px minmax(0,1fr) !important;
+  }
+  .os-rail:hover,
+  .os-rail:focus-within{
+    width:236px !important;
+    max-width:min(236px,80vw) !important;
+  }
+}
+@media (max-width:720px){
+  .os-shell{
+    display:block !important;
+    width:calc(100% - 20px) !important;
+    max-width:calc(100% - 20px) !important;
+    margin-inline:10px !important;
+  }
+  .os-rail{display:none !important}
+  .os-main{
+    display:block !important;
+    width:100% !important;
+    margin:0 !important;
+  }
+  .os-content{padding:10px !important}
+}
