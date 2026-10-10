@@ -1071,3 +1071,15 @@
     right:0!important;
   }
 }
+
+
+/* Secure execution readiness: never present a disabled runner as a working terminal. */
+.dos-run-capability-warning{
+ display:flex;flex-direction:column;gap:5px;margin:10px 12px;padding:10px 12px;
+ border:1px solid color-mix(in srgb,#f59e0b 38%,var(--dos-border,#303744));
+ border-radius:10px;background:color-mix(in srgb,#f59e0b 7%,var(--dos-panel,#11151c));
+ color:var(--dos-text,#e5e7eb);font-size:12px;line-height:1.5;
+}
+.dos-run-capability-warning strong{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#fbbf24}
+.dos-run-capability-warning span{overflow-wrap:anywhere;color:var(--dos-muted,#a1a1aa)}
+.dos-run-main:disabled{opacity:.58;cursor:not-allowed}
