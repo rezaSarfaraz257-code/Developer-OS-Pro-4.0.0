@@ -679,3 +679,53 @@ body{scrollbar-gutter:stable}
     display:none;
   }
 }
+
+
+/* FINAL FIX — collapsed rail has no right scrollbar strip; main app keeps 10px side gutters. */
+@media (min-width:721px){
+  .os-rail:not(:hover):not(:focus-within){
+    scrollbar-width:none !important;
+    -ms-overflow-style:none !important;
+    scrollbar-gutter:auto !important;
+    padding-right:0 !important;
+  }
+  .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar{
+    display:none !important;
+    width:0 !important;
+    height:0 !important;
+    background:transparent !important;
+  }
+}
+.os-main{
+  box-sizing:border-box !important;
+  min-width:0 !important;
+  width:calc(100% - 248px) !important;
+}
+.os-content:not(:has(.dos-ide-pro)){
+  box-sizing:border-box !important;
+  width:100% !important;
+  max-width:none !important;
+  margin:0 !important;
+  padding-left:10px !important;
+  padding-right:10px !important;
+}
+.topbar{
+  box-sizing:border-box !important;
+  padding-left:10px !important;
+  padding-right:10px !important;
+}
+@media(max-width:1180px){
+  .os-main{width:calc(100% - 218px) !important}
+}
+@media(max-width:900px){
+  .os-main{width:calc(100% - 68px) !important}
+  .os-rail:not(:hover):not(:focus-within){
+    scrollbar-width:none !important;
+    scrollbar-gutter:auto !important;
+  }
+  .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar{display:none !important;width:0 !important}
+}
+@media(max-width:720px){
+  .os-main{width:calc(100% - 68px) !important}
+  .os-content:not(:has(.dos-ide-pro)){padding-left:10px !important;padding-right:10px !important}
+}
