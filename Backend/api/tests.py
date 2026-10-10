@@ -17,6 +17,32 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
 
 
+class ProductionReadinessTests(APITestCase):
+    def test_console_email_backend_never_passes_production_readiness(self):
+        from django.conf import settings
+        from unittest.mock import patch
+        with override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            EMAIL_HOST="",
+            EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        ):
+            response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(response.data["checks"]["email"])
+        self.assertEqual(response.data["status"], "not_ready")
+
+    def test_configured_non_console_email_backend_can_pass_email_check(self):
+        with override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            EMAIL_HOST="smtp.example.test",
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        ):
+            response = self.client.get("/api/health/ready/")
+        self.assertTrue(response.data["checks"]["email"])
+
+
 class ProjectApiSecurityTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="owner", password="long-test-password-123")
