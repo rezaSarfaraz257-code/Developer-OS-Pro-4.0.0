@@ -579,7 +579,7 @@
   width:100%!important;
   min-width:0!important;
   min-height:0!important;
-  height:0!important;
+  height:auto!important;
   max-height:none!important;
   grid-template-columns:minmax(0,1fr)!important;
   grid-template-rows:minmax(0,1fr)!important;
