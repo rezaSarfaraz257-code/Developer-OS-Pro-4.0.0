@@ -705,7 +705,10 @@ def _capability_manifest():
             "Bubblewrap is not installed."
             if not shutil.which("bwrap")
             else "Bubblewrap cannot create the required Linux namespaces in this runtime. "
-                 "Execution is disabled to preserve per-execution tenant isolation."
+                 "This is an infrastructure limitation, not a source-code error. Execution is "
+                 "disabled to preserve tenant isolation. Use a Linux host that permits the "
+                 "required namespaces or integrate a per-execution sandbox provider; keep strict "
+                 "security enabled and do not use shared-container compatibility for untrusted code."
         )
     else:
         sandbox_unavailable_reason = (
