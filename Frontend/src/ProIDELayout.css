@@ -431,18 +431,3 @@
 .dos-ide-pro.dos-focus-mode .dos-explorer:focus-within{
   opacity:1;
 }
-.dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
-.dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
-.dos-ide-pro.dos-focus-mode .dos-body>.dos-inspector{
-  display:none!important;
-}
-.dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell{
-  grid-area:editor!important;
-  grid-column:1!important;
-  grid-row:1!important;
-  width:100%!important;
-  height:100%!important;
-  min-width:0!important;
-  min-height:0!important;
-  margin:0!important;
-}
