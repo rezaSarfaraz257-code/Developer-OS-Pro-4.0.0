@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import "./ExploreModern.css";
 import "./NavigationPolish.css";
 import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
@@ -539,6 +540,8 @@ function Explore() {
   const [aiResult,setAiResult]=useState("");
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
+  const [savedOnly,setSavedOnly]=useState(false);
+  const [pageSize,setPageSize]=useState(12);
 
   const load=async()=>{
     setBusy(true); setError("");
@@ -604,7 +607,7 @@ function Explore() {
     const featureScore=(t.features||[]).length*2;
     return queryScore+favScore+ratingScore+featureScore;
   };
-  const filteredTools=tools.filter(t=>(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(t.features||[]).includes(activeTag)));
+  const filteredTools=tools.filter(t=>(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(t.features||[]).includes(activeTag))&&(!savedOnly||favoriteNames.has(String(t.name).toLowerCase())));
   const sortedTools=[...filteredTools].sort((a,b)=>{
     if(sort==="rating")return Number(b.rating||0)-Number(a.rating||0);
     if(sort==="name")return String(a.name).localeCompare(String(b.name));
@@ -613,6 +616,12 @@ function Explore() {
   });
   const data=tab==="tools"?sortedTools:tab==="workflows"?workflows:resources;
   const total=tools.length+workflows.length+resources.length;
+  const visibleTools=sortedTools.slice(0,pageSize);
+  const visibleWorkflows=workflows.slice(0,pageSize);
+  const visibleResources=resources.slice(0,pageSize);
+  const hasFilters=Boolean(q.trim()||category!=="All"||activeTag||savedOnly);
+  const currentCount=data.length;
+  useEffect(()=>{setPageSize(12)},[q,tab,category,activeTag,savedOnly,sort]);
 
   return <div className="page explore-page">
     <section className="explore-hero">
@@ -631,7 +640,7 @@ function Explore() {
     </section>
 
     <section className="explore-command panel">
-      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Find a tool, workflow, stack or idea…"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
+      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
       <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>setTab(id)} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
     </section>
 
@@ -648,14 +657,15 @@ function Explore() {
 
     <section className="explore-controls">
       <div className="explore-categories">{categories.map(x=><button key={x} className={category===x?"active":""} onClick={()=>setCategory(x)}>{x}</button>)}</div>
-      <select value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select>
+      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>setSavedOnly(v=>!v)}>♥ Saved only</button>}<label className="explore-sort-label">SORT <select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label><button type="button" className="explore-refresh" onClick={()=>void load()} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended")}}>Clear filters</button>}</div>
     </section>
 
     {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>setActiveTag(activeTag===x?"":x)}>#{x}</button>)}</div>}
 
+    <div className="explore-results-line" aria-live="polite"><div><strong>{busy?"Updating catalog…":currentCount.toLocaleString()+" results"}</strong><span>{tab==="tools"?"Developer tools":tab==="workflows"?"Engineering workflows":"Knowledge resources"}{hasFilters?" · filtered":" · full catalog"}</span></div><span>{tab.toUpperCase()} / {Math.min(pageSize,currentCount)} OF {currentCount}</span></div>
     {busy?<section className="explore-grid-pro">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>:
       <section className="explore-grid-pro">
-        {tab==="tools"&&sortedTools.map((t,index)=>{
+        {tab==="tools"&&visibleTools.map((t,index)=>{
           const saved=favoriteNames.has(String(t.name).toLowerCase());
           return <article className={`explore-card ${index<3?"trending-card":""}`} key={t.id}>
             {index<3&&<div className="trending-badge">↗ TRENDING SIGNAL</div>}
@@ -666,10 +676,11 @@ function Explore() {
             <div className="explore-card-footer"><button onClick={()=>addToWorkspace(t)}>＋ ADD TO WORKSPACE</button><i>→</i></div>
           </article>
         })}
-        {tab==="workflows"&&workflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
-        {tab==="resources"&&resources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
+        {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
+        {tab==="resources"&&visibleResources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
         {!data.length&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
       </section>}
+    {!busy&&data.length>pageSize&&<div className="explore-load-more"><span>Showing {Math.min(pageSize,data.length)} of {data.length}</span><button type="button" className="ghost" onClick={()=>setPageSize(v=>Math.min(v+12,data.length))}>LOAD MORE <span>↓</span></button></div>}
   </div>;
 }
 function SearchPage() {
