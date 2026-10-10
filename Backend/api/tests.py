@@ -474,9 +474,11 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.data["code"], "path_conflict")
 
         # Existing file writes remain valid and do not trigger a false conflict.
+        current = self.client.get(endpoint)
+        self.assertEqual(current.status_code, status.HTTP_200_OK)
         response = self.client.post(
             endpoint,
-            {"action": "write", "path": "src", "content": "print('updated')", "revision": response.data.get("revision", 0)},
+            {"action": "write", "path": "src", "content": "print('updated')", "revision": current.data["revision"]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
