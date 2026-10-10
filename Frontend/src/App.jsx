@@ -363,6 +363,8 @@ function Dashboard({ go }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [activeMission, setActiveMission] = useState("build");
 
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -422,37 +424,57 @@ function Dashboard({ go }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const displayName = (data?.first_name || "").trim() || "Developer";
+  const missionCards = [
+    { id: "build", icon: "⌘", title: "Build", text: "Turn an idea into working software.", detail: "Open the IDE", path: "/ide", tone: "cyan" },
+    { id: "plan", icon: "◈", title: "Orchestrate", text: "Shape projects and keep delivery moving.", detail: "View projects", path: "/projects", tone: "violet" },
+    { id: "think", icon: "✳", title: "Think with AI", text: "Explore a question and find your next move.", detail: "Open Intelligence", path: "/ai", tone: "blue" },
+  ];
   const metricCards = [
-    { label: "PROJECTS", value: loading && !data ? "—" : projectCount, note: "Across your workspace", icon: "◈", tone: "cyan" },
+    { label: "PROJECTS", value: loading && !data ? "—" : projectCount, note: "Workspace portfolio", icon: "◈", tone: "cyan" },
     { label: "ACTIVE TASKS", value: loading && !data ? "—" : activeTasks, note: urgentTasks + " urgent", icon: "⌁", tone: "violet" },
     { label: "DELIVERY RATE", value: loading && !data ? "—" : completion + "%", note: doneTasks + " tasks completed", icon: "↗", tone: "green" },
     { label: "BLOCKED ITEMS", value: loading && !data ? "—" : blockedTasks, note: overdueTasks + " overdue", icon: "◇", tone: blockedTasks > 0 || overdueTasks > 0 ? "amber" : "green" },
   ];
 
-  return <div className="page command-center-page">
-    <section className="cc-hero">
+  return <div className={"page command-center-page" + (focusMode ? " cc-focus-mode" : "")}>
+    <section className="cc-hero cc-hero-v2">
       <div className="cc-hero-grid" aria-hidden="true" />
+      <div className="cc-hero-scanline" aria-hidden="true" />
       <div className="cc-hero-copy">
-        <div className="cc-overline"><span className="cc-live-dot" /> DEVELOPER OS <span className="cc-overline-divider">/</span> COMMAND CENTER</div>
+        <div className="cc-overline"><span className="cc-live-dot" /> DEVELOPER OS <span className="cc-overline-divider">/</span> COMMAND CENTER <span className="cc-version-chip">CONTROL PLANE 2.0</span></div>
         <p className="cc-greeting">{greeting}, {displayName}.</p>
-        <h1>Your next breakthrough<br /><span>starts here.</span></h1>
-        <p className="cc-hero-description">Your projects, execution signals and engineering tools — unified in one intelligent workspace.</p>
+        <h1>Make your next<br /><span>move matter.</span></h1>
+        <p className="cc-hero-description">One command surface for your engineering universe. Turn project signals into focused action — with less friction and more momentum.</p>
         <div className="cc-hero-actions">
-          <button className="primary" onClick={() => go("/ide")}>⌘ <span>Open Web IDE</span> <span aria-hidden="true">↗</span></button>
-          <button className="cc-secondary-action" onClick={() => document.getElementById("cc-new-project")?.focus()}>＋ Create project</button>
+          <button className="primary" onClick={() => go("/ide")}>⌘ <span>Enter Web IDE</span> <span aria-hidden="true">↗</span></button>
+          <button className="cc-secondary-action" onClick={() => document.getElementById("cc-new-project")?.focus()}>＋ New initiative</button>
           <button className="cc-icon-action" onClick={() => load()} disabled={loading} aria-label="Refresh workspace data" title="Refresh workspace data"><span className={loading ? "cc-refreshing" : ""}>↻</span></button>
         </div>
-        <div className="cc-update-line"><span className="cc-status-pulse" /> {loading ? "SYNCING WORKSPACE SIGNALS" : lastUpdated ? "UPDATED " + lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "WORKSPACE READY"} <span className="cc-update-separator">·</span> DATA FROM YOUR WORKSPACE</div>
+        <div className="cc-update-line"><span className="cc-status-pulse" /> {loading ? "SYNCING WORKSPACE SIGNALS" : lastUpdated ? "SYNCED " + lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "WORKSPACE READY"} <span className="cc-update-separator">·</span> LIVE WORKSPACE DATA</div>
       </div>
-      <div className="cc-hero-visual" aria-hidden="true">
+      <div className="cc-hero-visual cc-hero-visual-v2" aria-hidden="true">
         <div className="cc-visual-orbit cc-visual-orbit-a" /><div className="cc-visual-orbit cc-visual-orbit-b" /><div className="cc-visual-orbit cc-visual-orbit-c" />
+        <div className="cc-visual-cross cc-visual-cross-a" /><div className="cc-visual-cross cc-visual-cross-b" />
         <div className="cc-visual-core"><span>D</span><i>OS</i></div>
         <span className="cc-visual-node cc-node-a" /><span className="cc-visual-node cc-node-b" /><span className="cc-visual-node cc-node-c" />
         <div className="cc-visual-label cc-visual-label-a">BUILD <b>↗</b></div><div className="cc-visual-label cc-visual-label-b">SHIP <b>◎</b></div>
+        <div className="cc-orbit-readout cc-orbit-readout-a"><span>SYS</span><b>ONLINE</b></div><div className="cc-orbit-readout cc-orbit-readout-b"><span>MODE</span><b>FOCUS</b></div>
       </div>
+      <div className="cc-hero-bottomline"><span>THINK. CODE. BUILD. SCALE.</span><span>PERSONAL ENGINEERING OPERATIONS</span></div>
     </section>
 
     {error && <div className="cc-error" role="alert"><span>!</span><div><b>Workspace needs attention</b><p>{error}</p></div><button onClick={() => load()} disabled={loading}>Retry ↻</button></div>}
+
+    <section className="cc-command-strip" aria-label="Command shortcuts">
+      <div className="cc-command-strip-label"><span className="cc-command-prompt">⌘</span><span><b>Command shortcuts</b><small>Choose your next action</small></span></div>
+      <div className="cc-command-shortcuts">
+        <button onClick={() => go("/ide")}><span>⌨</span> Open IDE <kbd>↗</kbd></button>
+        <button onClick={() => go("/projects")}><span>◈</span> Projects <kbd>↗</kbd></button>
+        <button onClick={() => go("/search")}><span>⌕</span> Search <kbd>↗</kbd></button>
+        <button onClick={() => go("/ai")}><span>✳</span> AI lab <kbd>↗</kbd></button>
+      </div>
+      <button className={"cc-focus-toggle" + (focusMode ? " is-active" : "")} onClick={() => setFocusMode((value) => !value)} aria-pressed={focusMode}><span>◉</span>{focusMode ? "Exit focus" : "Focus mode"}</button>
+    </section>
 
     <section className="cc-metrics" aria-label="Workspace metrics">
       {metricCards.map((metric, index) => <article className={"cc-metric-card cc-tone-" + metric.tone} key={metric.label} style={{ "--cc-index": index }}>
@@ -463,8 +485,8 @@ function Dashboard({ go }) {
     </section>
 
     <section className="cc-section-heading">
-      <div><span className="cc-section-eyebrow">YOUR ENGINEERING SPACE</span><h2>Workspace overview</h2><p>Move from signal to action without losing context.</p></div>
-      <button className="cc-link-button" onClick={() => go("/projects")}>All projects <span>↗</span></button>
+      <div><span className="cc-section-eyebrow">YOUR ENGINEERING SPACE</span><h2>Workspace overview</h2><p>From delivery signals to your next high-impact move.</p></div>
+      <button className="cc-link-button" onClick={() => go("/projects")}>Explore portfolio <span>↗</span></button>
     </section>
 
     <div className="cc-main-grid">
@@ -486,21 +508,16 @@ function Dashboard({ go }) {
       <section className="cc-surface cc-intelligence-surface">
         <div className="cc-ai-art" aria-hidden="true"><div className="cc-ai-ring cc-ai-ring-a" /><div className="cc-ai-ring cc-ai-ring-b" /><div className="cc-ai-core">✳</div><span className="cc-ai-star cc-ai-star-a">✦</span><span className="cc-ai-star cc-ai-star-b">·</span></div>
         <span className="cc-section-eyebrow">ENGINEERING INTELLIGENCE</span><h3>Think beyond the code.</h3>
-        <p>Use your project context to reason through plans, identify risks and turn questions into your next engineering action.</p>
+        <p>Bring project context, planning and technical questions into one focused engineering flow.</p>
         <div className="cc-ai-capabilities"><span>PROJECT CONTEXT</span><span>AI WORKFLOWS</span><span>IDE SUPPORT</span></div>
         <button className="cc-ai-button" onClick={() => go("/ai")}>Open Intelligence <span>↗</span></button>
       </section>
     </div>
 
-    <section className="cc-section-heading cc-actions-heading"><div><span className="cc-section-eyebrow">BUILT FOR MOMENTUM</span><h2>Quick launch</h2><p>Jump directly into the part of your workflow you need.</p></div></section>
-    <div className="cc-launch-grid">
-      {[
-        { icon: "⌘", label: "Web IDE", tag: "BUILD", description: "Write, run and debug your code.", path: "/ide", tone: "cyan" },
-        { icon: "◈", label: "Projects", tag: "ORGANIZE", description: "Manage project scope and delivery.", path: "/projects", tone: "violet" },
-        { icon: "⌕", label: "Universal Search", tag: "DISCOVER", description: "Find workspace knowledge faster.", path: "/search", tone: "blue" },
-        { icon: "◎", label: "Team & Collab", tag: "CONNECT", description: "Coordinate work with your team.", path: "/team", tone: "green" },
-      ].map((item) => <button className={"cc-launch-card cc-launch-" + item.tone} key={item.path} onClick={() => go(item.path)}>
-        <span className="cc-launch-icon">{item.icon}</span><span className="cc-launch-tag">{item.tag}</span><b>{item.label}</b><p>{item.description}</p><span className="cc-launch-arrow">↗</span>
+    <section className="cc-section-heading cc-actions-heading"><div><span className="cc-section-eyebrow">CHOOSE YOUR MISSION</span><h2>What are we doing today?</h2><p>Three direct paths from intent to execution.</p></div></section>
+    <div className="cc-mission-grid">
+      {missionCards.map((item, index) => <button className={"cc-mission-card cc-mission-" + item.tone} key={item.id} onClick={() => { setActiveMission(item.id); go(item.path); }}>
+        <span className="cc-mission-index">0{index + 1} <i> / MISSION</i></span><span className="cc-mission-icon">{item.icon}</span><b>{item.title}</b><p>{item.text}</p><span className="cc-mission-cta">{item.detail} <i>↗</i></span><span className="cc-mission-watermark" aria-hidden="true">{item.icon}</span>
       </button>)}
     </div>
 
@@ -511,7 +528,6 @@ function Dashboard({ go }) {
     </section>
   </div>;
 }
-
 function Projects({ go }) {
   const [items,setItems]=useState([]); const [q,setQ]=useState(""); const [form,setForm]=useState(""); const [busy,setBusy]=useState(false);
   const load=()=>apiFetch("/projects/").then(r=>r.json()).then(d=>setItems(Array.isArray(d)?d:d.results||[]));
