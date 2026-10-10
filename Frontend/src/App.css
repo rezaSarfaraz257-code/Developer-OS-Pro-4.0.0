@@ -527,3 +527,28 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .auth-screen{padding:12px 10px}
   .auth-card{width:min(520px,100%);padding:20px 18px}
 }
+
+
+/* GLOBAL LAYOUT — use the available viewport and keep a consistent 10px side inset. */
+.os-main{
+  min-width:0;
+}
+.os-content{
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding-left:10px;
+  padding-right:10px;
+}
+.topbar{
+  padding-left:10px;
+  padding-right:10px;
+}
+.ide-page{
+  padding-left:10px;
+  padding-right:10px;
+}
+@media(max-width:720px){
+  .os-content{padding-left:10px;padding-right:10px}
+  .topbar{padding-left:10px;padding-right:10px}
+}
