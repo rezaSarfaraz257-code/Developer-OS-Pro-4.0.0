@@ -3946,3 +3946,158 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
  .dos-source-branch-input button,.dos-source-commit-input button{padding:7px}
 }
 @media(prefers-reduced-motion:reduce){.dos-source-control-pro *{animation:none!important;transition:none!important}}
+
+
+/* Debugger Pro — high-density IDE inspector with responsive runtime controls. */
+.dos-debugger-pro{
+ --dbg-bg:#080e17;--dbg-panel:#0d1723;--dbg-raised:#111f2d;--dbg-border:#26394d;--dbg-text:#e3edf7;--dbg-muted:#8197ab;--dbg-cyan:#72ddfa;--dbg-green:#5ce0ac;
+ position:fixed!important;z-index:1001;top:50%;left:50%;transform:translate(-50%,-50%);
+ width:min(1050px,calc(100vw - 28px))!important;max-width:1050px!important;
+ height:min(820px,calc(100dvh - 32px));max-height:calc(100dvh - 32px)!important;min-height:430px;
+ display:flex!important;flex-direction:column;overflow:hidden!important;
+ color:var(--dbg-text);background:radial-gradient(ellipse at 4% -20%,#15445b55,transparent 42%),linear-gradient(155deg,#0d1723,#080e17 72%)!important;
+ border:1px solid #2c4358!important;border-radius:16px!important;box-shadow:0 36px 110px #000d,0 0 0 1px #6ddcff0b,inset 0 1px #ffffff08!important;backdrop-filter:blur(24px)
+}
+.dos-debugger-pro *{box-sizing:border-box}
+.dos-debugger-pro>.dos-debugger-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:66px;padding:12px 17px;border-bottom:1px solid #203247;background:#0d1723ef}
+.dos-debugger-brand,.dos-debugger-head-right,.dos-debugger-session-file,.dos-debugger-session-metrics,.dos-debugger-session-metrics span{display:flex;align-items:center;min-width:0}
+.dos-debugger-brand{gap:11px}
+.dos-debugger-brand-icon{display:grid;place-items:center;width:38px;height:38px;border:1px solid #3a7187;border-radius:11px;background:linear-gradient(145deg,#14394b,#0d1b2a);color:#83e6ff;font-size:22px;box-shadow:inset 0 1px #ffffff10}
+.dos-debugger-brand>div:last-child{display:grid;gap:4px}
+.dos-debugger-brand strong{color:#f1f7fc;font-size:14px;font-weight:800;letter-spacing:.07em}
+.dos-debugger-brand small{color:#7892a8;font-size:9px;font-weight:750;letter-spacing:.15em}
+.dos-debugger-brand small span{color:#4d839e;padding:0 4px}
+.dos-debugger-head-right{gap:10px}
+.dos-debugger-head-right>button{display:grid;place-items:center;width:31px;height:31px;border:1px solid #2a4054;border-radius:8px;background:#101d2b;color:#a8c0d4;font-size:18px;cursor:pointer}
+.dos-debugger-head-right>button:hover{border-color:#5488a1;color:#f2fbff}
+.dos-debugger-state{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #29394a;border-radius:999px;background:#101923;color:#9aaec0;font-size:9px;font-weight:800;letter-spacing:.09em;white-space:nowrap}
+.dos-debugger-state i,.dos-debugger-session-metrics i,.dos-debugger-footer i{width:6px;height:6px;border-radius:50%;background:#6b8296;flex:none}
+.dos-debugger-state.running{border-color:#245a48;background:#0c211d;color:#80edbd}.dos-debugger-state.running i,.dos-debugger-session-metrics i.live,.dos-debugger-footer i.live{background:#5de0aa;box-shadow:0 0 10px #5de0aa66}
+.dos-debugger-state.paused{border-color:#705b30;background:#2a2111;color:#f2cc7d}.dos-debugger-state.paused i{background:#f2bf5b;box-shadow:0 0 10px #f2bf5b66}
+.dos-debugger-state.stopped{border-color:#623a43;background:#261419;color:#ff9da9}.dos-debugger-state.stopped i{background:#fa7584}
+.dos-debugger-state.idle i{background:#74899b}
+.dos-debugger-session{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;padding:10px 17px;border-bottom:1px solid #1b2b3b;background:#0a131e}
+.dos-debugger-session-file{gap:10px;flex:1;min-width:0}
+.dos-debugger-file-icon{display:grid;place-items:center;width:29px;height:31px;flex:none;border:1px solid #3c536b;border-radius:7px;background:#142234;color:#b6d4e8;font:800 9px ui-monospace,monospace}
+.dos-debugger-session-file>div{display:grid;gap:4px;min-width:0}
+.dos-debugger-session-file strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dbe9f5;font:600 11px ui-monospace,SFMono-Regular,Consolas,monospace}
+.dos-debugger-session-file small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#718ba1;font-size:9px}
+.dos-debugger-session-metrics{gap:13px;flex-wrap:wrap;justify-content:flex-end}
+.dos-debugger-session-metrics span{gap:6px;color:#7890a5;font-size:9px;white-space:nowrap}
+.dos-debugger-session-metrics i.live{background:#5de0aa;box-shadow:0 0 8px #5de0aa55}
+.dos-debugger-pro .dos-debug-toolbar{display:flex;align-items:center;gap:5px;min-height:49px;padding:8px 14px;border-bottom:1px solid #203247;background:#0c1520;overflow-x:auto;scrollbar-width:thin}
+.dos-debugger-pro .dos-debug-toolbar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;min-height:29px;padding:6px 9px;border:1px solid #2a4055;border-radius:7px;background:#101e2c;color:#a9bfd2;font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.dos-debugger-pro .dos-debug-toolbar button:hover:not(:disabled){border-color:#4386a1;background:#132b3c;color:#e4faff}
+.dos-debugger-pro .dos-debug-toolbar button:disabled{opacity:.34;cursor:not-allowed}
+.dos-debugger-pro .dos-debug-toolbar .dos-debug-primary{border-color:#2e7965;background:linear-gradient(135deg,#15513f,#10362f);color:#9af0ca}
+.dos-debugger-pro .dos-debug-toolbar .dos-debug-primary:hover:not(:disabled){border-color:#49b18e;background:#185b47}
+.dos-debugger-pro .dos-debug-toolbar .dos-debug-stop{border-color:#563541;background:#25151c;color:#f5a6b0}
+.dos-debugger-pro .dos-debug-toolbar-divider{width:1px;height:22px;flex:none;margin:0 3px;background:#2a3b4d}
+.dos-debugger-pro .dos-debug-toolbar-spacer{flex:1;min-width:4px}
+.dos-debugger-pro .dos-debug-breakpoint-bar{display:flex;align-items:center;gap:10px;min-height:55px;padding:8px 17px;border-bottom:1px solid #203247;background:#0b1420}
+.dos-debug-line-control{display:flex;align-items:center;gap:8px;flex:none}
+.dos-debug-line-control label{color:#6f879c;font-size:9px;font-weight:800;letter-spacing:.08em;white-space:nowrap}
+.dos-debug-line-control input{width:62px!important;min-width:0!important;padding:6px 7px!important;border:1px solid #2a4055!important;border-radius:7px!important;outline:none!important;background:#080f18!important;color:#d9eaf6!important;font:11px ui-monospace,monospace!important}
+.dos-debug-line-control input:focus{border-color:#4b9bb5!important;box-shadow:0 0 0 3px #59d9ff12!important}
+.dos-debug-breakpoint-target{display:flex;align-items:center;gap:7px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8198ad;font:10px ui-monospace,monospace}
+.dos-debug-breakpoint-target>span{color:#ff8b9a}
+.dos-debug-set-breakpoint{flex:none;padding:7px 10px;border:1px solid #70434b;border-radius:7px;background:#2a171e;color:#ffb0b9;font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer}
+.dos-debug-set-breakpoint:hover:not(:disabled){border-color:#b15c69;background:#3a1d26}
+.dos-debug-set-breakpoint:disabled{opacity:.4;cursor:not-allowed}
+.dos-debugger-pro .dos-debug-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.88fr);grid-template-rows:minmax(150px,1fr) minmax(145px,.75fr);gap:10px;flex:1;min-height:0;padding:11px;overflow:hidden}
+.dos-debugger-pro .dos-debug-inspectors{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(120px,1fr) minmax(140px,1.1fr);gap:10px;min-height:0;overflow:auto;scrollbar-width:thin}
+.dos-debug-card{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border:1px solid #22364a;border-radius:10px;background:linear-gradient(150deg,#0e1926,#0a121d)}
+.dos-debug-card>header{display:flex;align-items:center;gap:9px;min-height:42px;padding:8px 11px;border-bottom:1px solid #1c2d3e;background:#0e1a27}
+.dos-debug-section-icon{display:grid;place-items:center;width:25px;height:25px;flex:none;border:1px solid #29455b;border-radius:7px;background:#112435;color:#83def7;font:700 12px ui-monospace,monospace}
+.dos-debug-card>header>div{display:grid;gap:3px;min-width:0}
+.dos-debug-card>header strong,.dos-debug-console-pro>header strong{color:#dceaf5;font-size:10px;font-weight:800;letter-spacing:.08em}
+.dos-debug-card>header small,.dos-debug-console-pro>header small{color:#71879c;font-size:8px;font-weight:700;letter-spacing:.08em}
+.dos-debug-section-spacer{flex:1}
+.dos-debug-live-dot{width:6px;height:6px;border-radius:50%;background:#5de0aa;box-shadow:0 0 9px #5de0aa66}
+.dos-debug-card-body{min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#2a4155 transparent}
+.dos-debug-frame{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-bottom:1px solid #172839;background:transparent;text-align:left;cursor:pointer}
+.dos-debug-frame:hover,.dos-debug-frame.active{background:#122638}
+.dos-debug-frame-index{color:#5e7a91;font:9px ui-monospace,monospace}
+.dos-debug-frame-copy{display:grid;gap:4px;flex:1;min-width:0}
+.dos-debug-frame-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c8dbea;font:600 10px ui-monospace,monospace}
+.dos-debug-frame-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#71879c;font:9px ui-monospace,monospace}
+.dos-debug-frame-line{color:#7ebbd2;font:10px ui-monospace,monospace}
+.dos-debug-empty{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;min-height:105px;padding:15px;text-align:center}
+.dos-debug-empty>span{color:#4c8da7;font-size:19px}
+.dos-debug-empty strong{color:#a5bbcd;font-size:10px;font-weight:700}
+.dos-debug-empty small{max-width:260px;color:#637b90;font-size:9px;line-height:1.55}
+.dos-debug-empty.compact{min-height:72px}
+.dos-debug-subtabs{display:flex;align-items:center;gap:4px;padding:6px 9px;border-bottom:1px solid #1b2b3a}
+.dos-debug-subtabs button{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:#7f95a9;font-size:9px;font-weight:700;cursor:pointer}
+.dos-debug-subtabs button.active{border-color:#2b5368;background:#112b3b;color:#a4e8fc}
+.dos-debug-subtabs button span{padding:2px 5px;border-radius:4px;background:#1a2c3c;color:#8ea7bb;font-size:8px}
+.dos-debug-scope-row,.dos-debug-variable-row{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;border-bottom:1px solid #172839}
+.dos-debug-scope-row>span{color:#72cbe7}
+.dos-debug-scope-row>div{display:grid;gap:3px;flex:1;min-width:0}
+.dos-debug-scope-row strong{color:#c7d9e8;font-size:10px}
+.dos-debug-scope-row small{color:#6e859a;font-size:9px}
+.dos-debug-scope-row code{color:#6b9ab2;font-size:9px}
+.dos-debug-variable-glyph{width:15px;flex:none;color:#72cbe7;text-align:center;font:11px ui-monospace,monospace}
+.dos-debug-variable-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;color:#b8d3e5;font:10px ui-monospace,monospace}
+.dos-debug-variable-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48%;color:#a9c6a4;font:10px ui-monospace,monospace}
+.dos-debug-variable-row>small{flex:none;color:#617a8f;font-size:8px}
+.dos-debug-breakpoint-row{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:0;border-bottom:1px solid #172839;background:transparent;text-align:left;cursor:pointer}
+.dos-debug-breakpoint-row:hover{background:#122638}
+.dos-debug-breakpoint-row>span:first-child{flex:none;font-size:10px}
+.dos-debug-breakpoint-row>span:first-child.verified{color:#ff7f91}
+.dos-debug-breakpoint-row>span:first-child.unverified{color:#8b7e65}
+.dos-debug-breakpoint-row>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}
+.dos-debug-breakpoint-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c8dbea;font:10px ui-monospace,monospace}
+.dos-debug-breakpoint-row small{color:#71879c;font-size:9px}
+.dos-debug-breakpoint-status{flex:none;color:#758b9f;font-size:8px;font-weight:800;letter-spacing:.05em}
+.dos-debug-console-pro{display:flex;flex-direction:column;grid-column:2;grid-row:1 / span 2;min-width:0;min-height:0;overflow:hidden;border:1px solid #22364a;border-radius:10px;background:#080f18}
+.dos-debug-console-pro>header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:47px;padding:8px 11px;border-bottom:1px solid #203247;background:#0e1a27}
+.dos-debug-console-pro>header>div{display:flex;align-items:center;gap:9px;min-width:0}
+.dos-debug-console-pro>header>div>div{display:grid;gap:4px}
+.dos-debug-console-pro>header button{flex:none;padding:5px 7px;border:1px solid #263d51;border-radius:6px;background:#101e2c;color:#8099ae;font-size:9px;cursor:pointer}
+.dos-debug-console-pro>header button:disabled{opacity:.35;cursor:not-allowed}
+.dos-debug-console-output{flex:1;min-height:0;overflow:auto;padding:10px;scrollbar-width:thin;scrollbar-color:#2a4155 transparent}
+.dos-debug-console-output pre{margin:0 0 8px;color:#d0e1ef;font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.dos-debug-eval-result{display:flex;align-items:flex-start;gap:8px;margin-bottom:9px;padding:9px;border:1px solid #274636;border-radius:7px;background:#0c1b17}
+.dos-debug-eval-result>span{color:#6fe2ae}
+.dos-debug-eval-result code{color:#a6e9c9;font:10px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.dos-debug-console-placeholder{display:flex;align-items:center;gap:10px;min-height:75px;color:#7d95aa}
+.dos-debug-console-placeholder>span{color:#7de1fb;font:22px ui-monospace,monospace}
+.dos-debug-console-placeholder>div{display:grid;gap:5px}
+.dos-debug-console-placeholder strong{color:#9bb2c6;font-size:10px}
+.dos-debug-console-placeholder small{color:#657d92;font-size:9px}
+.dos-debug-console-form{display:flex;align-items:center;gap:7px;min-height:43px;padding:6px 8px;border-top:1px solid #1d2d3d;background:#0d1723}
+.dos-debug-console-form>span{color:#78def7;font:13px ui-monospace,monospace}
+.dos-debug-console-form input{flex:1;min-width:0;padding:7px 5px!important;border:0!important;outline:none!important;background:transparent!important;color:#dbe9f5!important;font:10px ui-monospace,monospace!important;box-shadow:none!important}
+.dos-debug-console-form input::placeholder{color:#5e758a}
+.dos-debug-console-form button{flex:none;padding:7px 9px;border:1px solid #2c6e5b;border-radius:6px;background:#113b31;color:#9aebc9;font-size:9px;font-weight:750;cursor:pointer}
+.dos-debug-console-form button:disabled{opacity:.35;cursor:not-allowed}
+.dos-debugger-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:29px;padding:6px 14px;border-top:1px solid #1e3041;background:#080e16;color:#61798e;font-size:8px;font-weight:800;letter-spacing:.09em}
+.dos-debugger-footer>span{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.dos-debugger-footer b{color:#8cb2c8}
+@media(max-width:760px){
+ .dos-debugger-pro{width:calc(100vw - 12px)!important;height:calc(100dvh - 16px);max-height:calc(100dvh - 16px)!important;min-height:0;border-radius:11px!important}
+ .dos-debugger-pro>.dos-debugger-head{min-height:55px;padding:9px 11px}
+ .dos-debugger-session{align-items:flex-start;flex-direction:column;gap:8px;padding:9px 11px}
+ .dos-debugger-session-metrics{justify-content:flex-start;gap:10px}
+ .dos-debugger-pro .dos-debug-breakpoint-bar{flex-wrap:wrap;padding:8px 11px}
+ .dos-debug-breakpoint-target{flex-basis:100%;order:3}
+ .dos-debugger-pro .dos-debug-main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(200px,1fr) minmax(180px,.9fr);overflow:auto;padding:8px}
+ .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(150px,1fr) minmax(180px,1fr);overflow:visible}
+ .dos-debugger-pro .dos-debug-console-pro{grid-column:1;grid-row:auto;min-height:240px}
+ .dos-debugger-footer{flex-wrap:wrap;justify-content:flex-start}
+}
+@media(max-width:440px){
+ .dos-debugger-brand-icon{width:32px;height:32px}
+ .dos-debugger-brand strong{font-size:12px}
+ .dos-debugger-session-metrics span{font-size:8px}
+ .dos-debugger-pro .dos-debug-toolbar{padding:7px;gap:4px}
+ .dos-debugger-pro .dos-debug-toolbar button{padding:6px 7px;font-size:9px}
+ .dos-debug-line-control{width:100%;justify-content:space-between}
+ .dos-debug-line-control input{width:74px!important}
+ .dos-debug-set-breakpoint{flex:1}
+ .dos-debugger-pro .dos-debug-main{grid-template-rows:minmax(180px,1fr) minmax(170px,1fr)}
+ .dos-debugger-pro .dos-debug-inspectors{grid-template-rows:minmax(150px,auto) minmax(180px,auto)}
+ .dos-debug-variable-value{max-width:40%}
+}
+@media(prefers-reduced-motion:reduce){.dos-debugger-pro *{animation:none!important;transition:none!important}}
