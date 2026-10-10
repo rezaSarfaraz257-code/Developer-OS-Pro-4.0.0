@@ -17,6 +17,30 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
 
 
+class ProductionReadinessTests(APITestCase):
+    def test_console_email_backend_never_passes_production_readiness(self):
+        with override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            EMAIL_HOST="",
+            EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        ):
+            response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(response.data["checks"]["email"])
+        self.assertEqual(response.data["status"], "not_ready")
+
+    def test_configured_non_console_email_backend_can_pass_email_check(self):
+        with override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            EMAIL_HOST="smtp.example.test",
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        ):
+            response = self.client.get("/api/health/ready/")
+        self.assertTrue(response.data["checks"]["email"])
+
+
 class ProjectApiSecurityTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="owner", password="long-test-password-123")
@@ -382,6 +406,14 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("src/main.py", response.data["files"])
         self.assertNotIn("src/app.py", response.data["files"])
 
+        # A stale delete must return a conflict rather than an unhandled 500,
+        # and must never remove a file from a newer workspace revision.
+        response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision - 1}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "stale_workspace")
+        from .models import CodeWorkspace
+        self.assertIn("src/main.py", CodeWorkspace.objects.get(pk=workspace_id).files)
+
         response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn("src/main.py", response.data["files"])
@@ -549,6 +581,24 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(ws.files["main.py"], "print(1) # ok")
 
 class SaaSMaturityTests(APITestCase):
+    def test_free_workspace_limit_is_enforced_server_side(self):
+        user = User.objects.create_user(username="workspace-quota-user", password="long-test-password-123")
+        self.client.force_authenticate(user=user)
+        for index in range(3):
+            response = self.client.post(
+                "/api/ide/workspaces/",
+                {"name": f"Workspace {index}", "files": {"README.md": "# Test"}},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        overflow = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Workspace overflow", "files": {"README.md": "# Test"}},
+            format="json",
+        )
+        self.assertEqual(overflow.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(overflow.data["limit"], 3)
+
     def setUp(self):
         self.user = User.objects.create_user(username="saas-user", email="saas@example.test", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)

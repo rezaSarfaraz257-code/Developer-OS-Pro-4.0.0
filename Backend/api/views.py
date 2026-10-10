@@ -164,7 +164,14 @@ def readiness_api(request):
         pass
     checks["secret_key"] = bool(settings.SECRET_KEY and not settings.SECRET_KEY.startswith("django-insecure-"))
     checks["allowed_hosts"] = bool(settings.ALLOWED_HOSTS and settings.ALLOWED_HOSTS != ["*"])
-    checks["email"] = bool(getattr(settings, "EMAIL_HOST", "") or getattr(settings, "EMAIL_BACKEND", "").endswith("console.EmailBackend"))
+    email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
+    # The console backend is useful in local development but cannot deliver
+    # verification, recovery, or notification messages in production.
+    if getattr(settings, "IS_PRODUCTION", False):
+        checks["email"] = bool(email_host and not email_backend.endswith("console.EmailBackend"))
+    else:
+        checks["email"] = bool(email_host or email_backend.endswith("console.EmailBackend"))
     try:
         from django.core.cache import cache
         cache.set("readiness", "ok", timeout=15)
@@ -2074,7 +2081,10 @@ def task_dependencies_api(request, pk):
 
 @api_view(["GET", "POST", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def ide_workspaces_api(request):
+    # Keep the user row lock and quota check in the same outer transaction as
+    # serializer.save(); otherwise concurrent creates can both pass the limit.
     if request.method == "DELETE":
         ws = get_object_or_404(CodeWorkspace, pk=request.data.get("id"), owner=request.user)
         ws.delete()
@@ -2344,7 +2354,7 @@ def ide_workspace_files_api(request, pk):
             expected_revision = int(expected_revision)
         except (TypeError, ValueError):
             return Response({"error": "Invalid workspace revision."}, status=400)
-        if expected_revision != ws.revision and request.method == "POST" and str(request.data.get("action") or "write").strip().lower() != "create":
+        if expected_revision != ws.revision and request.method in {"POST", "DELETE"} and str(request.data.get("action") or "write").strip().lower() != "create":
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
     files = dict(ws.files or {})
     if request.method == "DELETE":
@@ -2365,7 +2375,13 @@ def ide_workspace_files_api(request, pk):
                 del files[key]
         if ws.active_file not in files:
             ws.active_file = next(iter(files), "")
-        ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        try:
+            ws = _persist_workspace_files(ws, files, ws.active_file, expected_revision)
+        except StaleWorkspaceError:
+            return Response({"error": "Workspace changed elsewhere. Reload before deleting files.", "code": "stale_workspace", "revision": ws.revision}, status=409)
+        except (DatabaseError, IntegrityError):
+            logger.exception("IDE file deletion persistence failed: workspace=%s path=%s", ws.pk, path)
+            return Response({"error": "Could not delete the file.", "code": "workspace_persistence_error"}, status=503)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     action = str(request.data.get("action") or "write").strip().lower()
     if action == "create":
