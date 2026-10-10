@@ -485,18 +485,23 @@ def _limit_process_resources(timeout_seconds=None, memory_mb=None):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 def _sandbox_command(root, command, allow_network=False):
-    """Return an execution command for the selected isolation backend.
+    """Return an execution command only when the selected isolation is safe.
 
-    Render already provides the process/container boundary. Trying to create
-    another Linux namespace with bubblewrap inside that managed container can
-    fail with: 'bwrap: Failed to make / slave: Permission denied'.
+    A service container is not, by itself, a tenant boundary: multiple
+    executions share its kernel and filesystem namespace. Strict production
+    mode therefore refuses shared-container execution. Compatibility mode is
+    reserved for trusted local/CI environments only.
     """
     if SANDBOX_MODE == "container":
-        # Managed platforms such as Render do not grant the namespace
-        # capabilities required by bubblewrap. The Runner service itself is
-        # the isolation boundary here (cap_drop, no-new-privileges,
-        # read-only root filesystem, pids/memory/cpu limits and blocked
-        # network are enforced by the container configuration).
+        if RUNNER_SECURITY_LEVEL == "strict":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Secure code execution is unavailable: the selected container "
+                    "backend does not provide per-execution isolation. Configure "
+                    "RUNNER_SANDBOX_MODE=bwrap on a runtime that supports it."
+                ),
+            )
         return ["bash", "-lc", "cd " + shlex.quote(str(root)) + " && " + command]
 
     bwrap = shutil.which("bwrap")
