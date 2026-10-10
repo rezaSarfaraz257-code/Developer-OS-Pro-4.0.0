@@ -1381,3 +1381,8 @@ body{scrollbar-gutter:stable}
   .settings-hub-card{min-height:185px;padding:18px !important}
   .profile-settings-panel{padding:14px !important}
 }
+
+.profile-shortcut{display:grid!important;place-items:center;width:34px;min-width:34px;height:34px;padding:3px!important;border:1px solid rgba(103,215,241,.22)!important;border-radius:11px!important;background:linear-gradient(145deg,rgba(54,190,220,.11),rgba(107,102,230,.1))!important}
+.profile-shortcut .avatar{display:grid;width:25px;height:25px;min-width:25px;place-items:center;overflow:hidden;border-radius:7px;font-size:10px}
+.profile-shortcut .avatar img{width:100%;height:100%;object-fit:cover}
+.profile-shortcut:hover{border-color:rgba(103,226,247,.56)!important}
