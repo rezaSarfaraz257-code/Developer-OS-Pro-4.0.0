@@ -290,13 +290,23 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   catch(e){setMessage(e.message||"Repository creation failed")}
   finally{setBusy(false)}
  }
+ async function openFileDiff(path,code=""){
+  if(!workspace?.id||busy||!path)return;
+  if(code.includes("?")){openDiff(path,"",workspace?.files?.[path]||"");return;}
+  try{
+   const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path})});
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");
+   openDiff(path,d.original||d.base||"",d.stdout||d.output||"");
+  }catch(e){setMessage(e.message||"File diff unavailable");}
+ }
  async function nativeCommit(){
   const msg=commitMessage.trim();if(!msg)return setMessage("A commit message is required.");if(!workspace?.id)return setMessage("Open a workspace first.");if(busy)return;
+  if(stagedCount===0)return setMessage("Stage at least one file before committing. Unstaged changes will remain untouched.");
   setBusy(true);
   try{
-   const staged=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"add",args:["add","-A"]})});const sd=await staged.json().catch(()=>({}));if(!staged.ok)throw Error(sd.error||sd.detail||"Staging changes failed");
    const committed=await apiFetch(`/ide/workspaces/${workspace.id}/git/`,{method:"POST",body:JSON.stringify({operation:"commit",args:["commit","-m",msg]})});const cd=await committed.json().catch(()=>({}));if(!committed.ok)throw Error(cd.error||cd.detail||"Commit failed");
-   setCommitMessage("");setMessage("Commit created successfully.");await refresh();
+   setCommitMessage("");setMessage("Staged changes committed successfully.");await refresh();
   }catch(e){setMessage(e.message||"Commit failed")}
   finally{setBusy(false)}
  }
@@ -344,7 +354,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
     <div className="dos-source-view-head"><div><h3>Working tree</h3><p>Review, stage, compare, and commit workspace changes.</p></div><div className="dos-source-view-actions"><span className="dos-source-count-pill">{allChangedFiles.length} changed</span><span className="dos-source-count-pill">{stagedCount} staged</span><span className="dos-source-count-pill">{unstagedCount} unstaged</span><span className="dos-source-count-pill">{untrackedCount} untracked</span><button type="button" onClick={()=>void gitAction("add",["add","-A"])} disabled={busy||!allChangedFiles.length} title="Stage all changes">Stage all</button><button type="button" onClick={()=>void gitAction("reset",["reset","HEAD","--","."])} disabled={busy||!stagedCount} title="Unstage all staged changes">Unstage all</button><button type="button" onClick={()=>{if(window.confirm("Restore all tracked file changes? Untracked files will remain untouched."))void gitAction("restore",["restore","."])}} disabled={busy||!unstagedCount} className="dos-source-danger">Restore tracked</button></div></div>
     <div className="dos-source-file-toolbar"><label className="dos-source-filter"><span>⌕</span><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter changed files…" aria-label="Filter changed files"/></label><span className="dos-source-muted">{changedFiles.length?"Select an action on any file":"No matching files"}</span></div>
     <div className="dos-source-change-list">
-     {changedFiles.map(({path,code})=><article key={path} className="dos-source-change-row"><span className={`dos-source-file-status ${code.includes("?")?"untracked":code.includes("A")?"added":code.includes("D")?"deleted":code.includes("R")?"renamed":"modified"}`}>{code}</span><div className="dos-source-file-details"><code title={path}>{path.split("/").pop()}</code><small title={path}>{path.includes("/")?path.slice(0,path.lastIndexOf("/")):"Workspace root"}</small></div><div className="dos-source-file-actions"><button type="button" onClick={()=>void gitFileAction("stage",path)} disabled={busy} title="Stage file">＋ Stage</button><button type="button" onClick={async()=>{if(code.includes("?")){openDiff(path,"",workspace?.files?.[path]||"");return}try{const r=await apiFetch(`/ide/workspaces/${workspace.id}/git/file/`,{method:"POST",body:JSON.stringify({operation:"diff",path})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||d.detail||"File diff unavailable");openDiff(path,d.original||d.base||"",d.stdout||d.output||"")}catch(e){setMessage(e.message||"File diff unavailable")}}} disabled={busy} title="Open file diff">Diff ↗</button><button type="button" className="dos-source-discard-file" onClick={()=>void gitFileAction("discard",path,code)} disabled={busy||code.includes("?")} title="Discard tracked file changes">Discard</button></div></article>)}
+     {changedFiles.map(({path,code})=><article key={path} className="dos-source-change-row"><span className={`dos-source-file-status ${code.includes("?")?"untracked":code.includes("A")?"added":code.includes("D")?"deleted":code.includes("R")?"renamed":"modified"}`}>{code}</span><div className="dos-source-file-details"><code title={path}>{path.split("/").pop()}</code><small title={path}>{path.includes("/")?path.slice(0,path.lastIndexOf("/")):"Workspace root"}</small></div><div className="dos-source-file-actions"><button type="button" onClick={()=>void gitFileAction("stage",path)} disabled={busy} title="Stage file">＋ Stage</button><button type="button" onClick={()=>void openFileDiff(path,code)} disabled={busy} title="Open file diff">Diff ↗</button><button type="button" className="dos-source-discard-file" onClick={()=>void gitFileAction("discard",path,code)} disabled={busy||code.includes("?")} title="Discard tracked file changes">Discard</button></div></article>)}
      {!changedFiles.length&&<div className="dos-source-empty"><div className="dos-source-empty-mark">{busy?"↻":"✓"}</div><strong>{busy?"Refreshing worktree…":filter?"No files match this filter":hasGitState?"Working tree clean":"Waiting for Git status"}</strong><p>{busy?"Fetching status, diffs, branches, and recent commits.":filter?"Try another filename or clear the filter.":hasGitState?"Your workspace has no uncommitted changes.":"Open a workspace with a Git worktree, then refresh to load repository state."}</p>{!busy&&<button type="button" onClick={()=>void refresh()} disabled={!workspace?.id}>Refresh status</button>}</div>}
     </div>
     <details className="dos-source-raw"><summary>Git status output</summary><pre>{statusText||"No status output returned."}</pre></details>
