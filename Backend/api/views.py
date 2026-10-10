@@ -300,13 +300,45 @@ def profile_api(request):
                 # Do not advertise a stale local/S3 object URL when the file
                 # is absent; missing uploads can then be replaced cleanly.
                 if profile.avatar.storage.exists(profile.avatar.name):
-                    avatar_url = request.build_absolute_uri(profile.avatar.url)
+                    avatar_url = profile.avatar.url
+                    if avatar_url.startswith("/"):
+                        avatar_url = request.build_absolute_uri(avatar_url)
                 else:
                     avatar_url = ""
             except Exception:
                 # A temporary object-store error must not break all profile
                 # settings; omit the image and keep the rest of the profile usable.
                 avatar_url = ""
+        elif avatar_url:
+            # Older releases persisted MEDIA_URL paths in avatar_url instead
+            # of the ImageField. Render's local disk is ephemeral, so a legacy
+            # path must be checked against the active storage before returning
+            # it to the browser; otherwise every page load repeats a 404.
+            from urllib.parse import urlparse
+            from django.core.files.storage import default_storage
+
+            parsed_avatar_url = urlparse(avatar_url)
+            media_prefix = settings.MEDIA_URL
+            if (
+                parsed_avatar_url.path.startswith(media_prefix + "avatars/")
+                and not parsed_avatar_url.netloc
+            ) or (
+                parsed_avatar_url.path.startswith(media_prefix + "avatars/")
+                and parsed_avatar_url.netloc == request.get_host()
+            ):
+                storage_name = parsed_avatar_url.path[len(media_prefix):]
+                try:
+                    if default_storage.exists(storage_name):
+                        avatar_url = default_storage.url(storage_name)
+                        if avatar_url.startswith("/"):
+                            avatar_url = request.build_absolute_uri(avatar_url)
+                    else:
+                        avatar_url = ""
+                        profile.avatar_url = ""
+                        profile.save(update_fields=["avatar_url", "updated_at"])
+                except Exception:
+                    # Keep profile data available if storage is temporarily down.
+                    avatar_url = ""
 
         return Response({
             "id": user.id,
