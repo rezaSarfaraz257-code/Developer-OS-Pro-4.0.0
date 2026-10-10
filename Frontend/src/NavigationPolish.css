@@ -660,3 +660,22 @@ body{scrollbar-gutter:stable}
     margin-right:0 !important;
   }
 }
+
+
+/* Collapsed rail polish: no visible scrollbar/gutter beside the icon column.
+   Keep scrolling available while the rail is collapsed; expanded hover styling is unchanged. */
+@media (min-width:721px){
+  .os-rail:not(:hover):not(:focus-within){
+    box-sizing:border-box;
+    padding-right:0 !important;
+    overflow-y:auto;
+    overflow-x:hidden;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar{
+    width:0 !important;
+    height:0 !important;
+    display:none;
+  }
+}
