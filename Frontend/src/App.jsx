@@ -621,7 +621,7 @@ function Explore() {
   const visibleResources=resources.slice(0,pageSize);
   const hasFilters=Boolean(q.trim()||category!=="All"||activeTag||savedOnly);
   const currentCount=data.length;
-  useEffect(()=>{setPageSize(12)},[q,tab,category,activeTag,savedOnly,sort]);
+
 
   return <div className="page explore-page">
     <section className="explore-hero">
@@ -640,8 +640,8 @@ function Explore() {
     </section>
 
     <section className="explore-command panel">
-      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
-      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>setTab(id)} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
+      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
+      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12)}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
     </section>
 
     <div className="explore-insights">
@@ -656,11 +656,11 @@ function Explore() {
     {toast&&<div className="explore-toast">✓ {toast}</div>}
 
     <section className="explore-controls">
-      <div className="explore-categories">{categories.map(x=><button key={x} className={category===x?"active":""} onClick={()=>setCategory(x)}>{x}</button>)}</div>
-      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>setSavedOnly(v=>!v)}>♥ Saved only</button>}<label className="explore-sort-label">SORT <select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label><button type="button" className="explore-refresh" onClick={()=>void load()} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended")}}>Clear filters</button>}</div>
+      <div className="explore-categories">{categories.map(x=><button key={x} className={category===x?"active":""} onClick={()=>{setCategory(x);setPageSize(12)}}>{x}</button>)}</div>
+      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>{setSavedOnly(v=>!v);setPageSize(12)}}>♥ Saved only</button>}<label className="explore-sort-label">SORT <select value={sort} onChange={e=>{setSort(e.target.value);setPageSize(12)}} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label><button type="button" className="explore-refresh" onClick={()=>void load()} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended");setPageSize(12)}}>Clear filters</button>}</div>
     </section>
 
-    {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>setActiveTag(activeTag===x?"":x)}>#{x}</button>)}</div>}
+    {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>{setActiveTag(activeTag===x?"":x);setPageSize(12)}}>#{x}</button>)}</div>}
 
     <div className="explore-results-line" aria-live="polite"><div><strong>{busy?"Updating catalog…":currentCount.toLocaleString()+" results"}</strong><span>{tab==="tools"?"Developer tools":tab==="workflows"?"Engineering workflows":"Knowledge resources"}{hasFilters?" · filtered":" · full catalog"}</span></div><span>{tab.toUpperCase()} / {Math.min(pageSize,currentCount)} OF {currentCount}</span></div>
     {busy?<section className="explore-grid-pro">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>:
