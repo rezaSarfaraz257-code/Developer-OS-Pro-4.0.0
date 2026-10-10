@@ -698,6 +698,20 @@ def _capability_manifest():
     container_native = SANDBOX_MODE == "container"
     trusted_compat = bool(container_native and RUNNER_SECURITY_LEVEL == "compat")
     sandbox_available = bool(trusted_compat or (SANDBOX_MODE == "bwrap" and _bwrap_runtime_available()))
+    if sandbox_available:
+        sandbox_unavailable_reason = None
+    elif SANDBOX_MODE == "bwrap":
+        sandbox_unavailable_reason = (
+            "Bubblewrap is not installed."
+            if not shutil.which("bwrap")
+            else "Bubblewrap cannot create the required Linux namespaces in this runtime. "
+                 "Execution is disabled to preserve per-execution tenant isolation."
+        )
+    else:
+        sandbox_unavailable_reason = (
+            "Strict mode requires per-execution isolation. The shared-container compatibility "
+            "backend is disabled for untrusted code."
+        )
     return {
         "service": "developer-os-runner",
         "api_version": "1",
@@ -708,6 +722,7 @@ def _capability_manifest():
             "security_level": RUNNER_SECURITY_LEVEL,
             "trusted_shared_container": trusted_compat,
             "execution_available": sandbox_available,
+            "unavailable_reason": sandbox_unavailable_reason,
             "process_boundary": True,
             "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
         },
@@ -922,6 +937,8 @@ def health():
     return {
         "status": "ok",
         "service": "developer-os-runner",
+        "execution_available": _capability_manifest()["operations"]["execute"],
+        "execution_block_reason": _capability_manifest()["sandbox"]["unavailable_reason"],
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
