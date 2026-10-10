@@ -966,3 +966,21 @@
   .dos-ide-pro *::before,
   .dos-ide-pro *::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+
+/* Mobile Explorer remains reachable from the activity rail. */
+@media(max-width:760px){
+  .dos-ide-pro .dos-body{position:relative}
+  .dos-ide-pro .dos-explorer{
+    display:flex;
+    position:absolute;
+    z-index:60;
+    top:0;bottom:0;left:38px;
+    width:min(250px,calc(100vw - 76px))!important;
+    min-width:0!important;
+    max-width:calc(100vw - 76px)!important;
+    box-shadow:18px 0 48px rgba(0,0,0,.55);
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed .dos-explorer{display:none}
+  .dos-ide-pro .dos-body:not(.dos-explorer-collapsed) .dos-editor-shell{grid-column:2}
+}
