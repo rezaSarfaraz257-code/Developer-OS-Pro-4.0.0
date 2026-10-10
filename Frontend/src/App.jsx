@@ -836,10 +836,12 @@ function Profile({ onProfileUpdate }) {
         payload.append("remove_avatar", "true");
         payload.append("avatar_url", "");
       }
-      await apiFetch("/profile/", { method: "PATCH", body: payload });
-      // Re-read the canonical server profile rather than trusting a stale URL
-      // or a cached optimistic preview after upload/removal.
+      const updateResponse = await apiFetch("/profile/", { method: "PATCH", body: payload });
+      const updateData = await updateResponse.json().catch(() => ({}));
+      if (!updateResponse.ok) throw new Error(formatApiError(updateData, "Unable to save your profile."));
+      // Re-read canonical server state rather than trusting an optimistic preview.
       const refreshed = await apiFetch("/profile/", { cache: "no-store" });
+      if (!refreshed.ok) throw new Error("Profile was updated, but the refreshed profile could not be loaded.");
       const data = await refreshed.json();
       if (avatarFile && !data.avatar_url) {
         throw new Error("The server saved the profile but did not return a photo URL. Please try again.");
@@ -862,12 +864,36 @@ function Profile({ onProfileUpdate }) {
   const profileName = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Developer";
   const initials = profileName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "D";
   const displayedAvatar = avatarFile ? avatarPreview : (removeAvatar ? "" : profile.avatar_url);
+  const profileChecks = [
+    ["Photo", Boolean(displayedAvatar)], ["Name", Boolean(profile.full_name?.trim())],
+    ["Verified email", Boolean(profile.email_verified)], ["Professional title", Boolean(profile.job_title?.trim())],
+    ["Location", Boolean(profile.country?.trim())], ["Bio", Boolean(profile.bio?.trim())],
+    ["Skills", Boolean(profile.skills?.trim())], ["Developer links", Boolean(profile.github || profile.website || profile.linkedin)],
+  ];
+  const profileScore = Math.round(profileChecks.filter(([, complete]) => complete).length / profileChecks.length * 100);
+  const publicLinks = [["GitHub", profile.github], ["Website", profile.website], ["LinkedIn", profile.linkedin], ["X", profile.x]].filter(([, url]) => url);
 
   return (
     <div className="page">
       <div className="hero-row">
         <div><div className="eyebrow">YOUR SPACE / IDENTITY</div><h1>My Profile</h1><p>Your developer identity, public links and personal details — all in one dedicated place.</p></div>
       </div>
+      <section className="profile-command-card" aria-label="Profile readiness and live preview">
+        <div className="profile-readiness">
+          <div className="profile-readiness-top"><span className="panel-kicker">PROFILE READINESS</span><strong>{profileScore}%</strong></div>
+          <div className="profile-readiness-track" role="progressbar" aria-label="Profile completeness" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileScore}><span style={{ width: profileScore + "%" }} /></div>
+          <p>{profileScore === 100 ? "Your developer identity is looking complete." : "Complete a few details to make collaboration and your developer identity more useful."}</p>
+          <div className="profile-checklist">{profileChecks.map(([label, complete]) => <span key={label} className={complete ? "is-complete" : ""}><i>{complete ? "✓" : "○"}</i>{label}</span>)}</div>
+        </div>
+        <div className="profile-live-preview">
+          <span className="panel-kicker">LIVE IDENTITY PREVIEW</span>
+          <div className="profile-preview-person"><Avatar imageUrl={displayedAvatar} initials={initials} className="profile-preview-avatar" label={profileName + " preview"} /><div><h2>{profileName}</h2><span>@{profile.username || "developer"}</span><p>{profile.job_title || "Add a professional title"}</p></div></div>
+          {(profile.city || profile.country || profile.timezone) && <div className="profile-preview-meta">{[profile.city, profile.country].filter(Boolean).join(", ")}{profile.timezone ? " · " + profile.timezone : ""}</div>}
+          <p className="profile-preview-bio">{profile.bio?.trim() || "Your short bio will appear here as you edit it."}</p>
+          {profile.skills?.trim() && <div className="profile-skill-chips">{profile.skills.split(",").map(skill => skill.trim()).filter(Boolean).slice(0, 8).map((skill, index) => <span key={skill + index}>{skill}</span>)}</div>}
+          {publicLinks.length > 0 && <div className="profile-preview-links">{publicLinks.map(([label, url]) => <a key={label} href={url} target="_blank" rel="noopener noreferrer">{label} ↗</a>)}</div>}
+        </div>
+      </section>
       <section className="panel settings-form profile-settings-panel">
         <div className="profile-settings-intro">
           <div><span className="eyebrow">DEVELOPER IDENTITY</span><h2>Profile overview</h2><p>Make your profile useful for collaboration, discoverability, and future team workflows.</p></div>
