@@ -382,6 +382,14 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("src/main.py", response.data["files"])
         self.assertNotIn("src/app.py", response.data["files"])
 
+        # A stale delete must return a conflict rather than an unhandled 500,
+        # and must never remove a file from a newer workspace revision.
+        response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision - 1}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "stale_workspace")
+        from .models import CodeWorkspace
+        self.assertIn("src/main.py", CodeWorkspace.objects.get(pk=workspace_id).files)
+
         response = self.client.delete(f"/api/ide/workspaces/{workspace_id}/files/", {"path": "src/main.py", "revision": revision}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn("src/main.py", response.data["files"])
