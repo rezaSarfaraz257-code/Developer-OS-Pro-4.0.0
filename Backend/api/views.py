@@ -2081,7 +2081,10 @@ def task_dependencies_api(request, pk):
 
 @api_view(["GET", "POST", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def ide_workspaces_api(request):
+    # Keep the user row lock and quota check in the same outer transaction as
+    # serializer.save(); otherwise concurrent creates can both pass the limit.
     if request.method == "DELETE":
         ws = get_object_or_404(CodeWorkspace, pk=request.data.get("id"), owner=request.user)
         ws.delete()
