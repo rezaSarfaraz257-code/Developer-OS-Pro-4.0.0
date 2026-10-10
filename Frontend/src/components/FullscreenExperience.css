@@ -153,6 +153,23 @@ body { overflow: hidden; }
   .dos-fullscreen-dialog { padding: 20px; }
   .dos-fullscreen-kicker { margin-top: 14px; }
 }
+/* Final app-content gutters: the fullscreen stylesheet loads after App.css. */
+.os-content{
+  box-sizing:border-box !important;
+  padding:10px !important;
+  max-width:none !important;
+  margin:0 !important;
+}
+.os-content > .page{
+  box-sizing:border-box;
+  padding:0 !important;
+  margin:0 !important;
+}
+.topbar{
+  box-sizing:border-box;
+  padding-left:10px !important;
+  padding-right:10px !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .dos-fullscreen-dialog, .dos-fullscreen-backdrop { scroll-behavior: auto; }
 }
