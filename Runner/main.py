@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -484,6 +484,31 @@ def _limit_process_resources(timeout_seconds=None, memory_mb=None):
     resource.setrlimit(resource.RLIMIT_NPROC, (128, 128))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
+@functools.lru_cache(maxsize=1)
+def _bwrap_runtime_available():
+    """Check that bubblewrap can actually create the isolation used in production."""
+    bwrap = shutil.which("bwrap")
+    if not bwrap:
+        return False
+    args = [
+        bwrap, "--die-with-parent", "--new-session",
+        "--unshare-pid", "--unshare-uts", "--unshare-ipc", "--unshare-net",
+        "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
+        "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
+        "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
+        "--proc", "/proc", "--dev", "/dev", "--", "/bin/true",
+    ]
+    try:
+        result = subprocess.run(
+            args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=3, check=False,
+            env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _sandbox_command(root, command, allow_network=False):
     """Return an execution command only when the selected isolation is safe.
 
@@ -507,6 +532,11 @@ def _sandbox_command(root, command, allow_network=False):
     bwrap = shutil.which("bwrap")
     if not bwrap:
         raise HTTPException(status_code=503, detail="Bubblewrap sandbox is unavailable.")
+    if not _bwrap_runtime_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Bubblewrap is installed but this runtime cannot create the required isolated namespaces.",
+        )
     args = [
         bwrap, "--die-with-parent", "--new-session",
         "--unshare-pid", "--unshare-uts", "--unshare-ipc",
@@ -667,7 +697,7 @@ def _capability_manifest():
     """Stable control-plane contract consumed by the Django IDE."""
     container_native = SANDBOX_MODE == "container"
     trusted_compat = bool(container_native and RUNNER_SECURITY_LEVEL == "compat")
-    sandbox_available = bool(trusted_compat or (SANDBOX_MODE == "bwrap" and shutil.which("bwrap")))
+    sandbox_available = bool(trusted_compat or (SANDBOX_MODE == "bwrap" and _bwrap_runtime_available()))
     return {
         "service": "developer-os-runner",
         "api_version": "1",
