@@ -138,6 +138,13 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Render's container filesystem is ephemeral. Store uploaded media in the
+# configured S3-compatible bucket (AWS S3 / Cloudflare R2) in production.
+STORAGES = {
+    "default": {"BACKEND": "api.avatar_storage.ProfileMediaStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
