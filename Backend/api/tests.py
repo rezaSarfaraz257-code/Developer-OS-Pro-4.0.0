@@ -156,6 +156,19 @@ class ProjectApiSecurityTests(APITestCase):
         self.assertEqual(response.data["full_name"], "Profile Owner")
         self.assertEqual(response.data["website"], "https://owner.example.test")
 
+    def test_profile_get_clears_a_missing_legacy_render_avatar_url(self):
+        self.authenticate(self.owner)
+        profile = self.owner.profile
+        profile.avatar_url = "/media/avatars/user_1/missing-avatar.webp"
+        profile.save(update_fields=["avatar_url"])
+
+        response = self.client.get("/api/profile/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["avatar_url"], "")
+        profile.refresh_from_db()
+        self.assertEqual(profile.avatar_url, "")
+
     def test_profile_avatar_is_reencoded_and_returned_as_a_media_url(self):
         image_buffer = BytesIO()
         Image.new("RGBA", (40, 30), "#2ad9ff").save(image_buffer, format="PNG")
