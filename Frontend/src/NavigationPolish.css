@@ -685,7 +685,7 @@ body{scrollbar-gutter:stable}
 @media (min-width:721px){
   .os-rail{
     box-sizing:border-box !important;
-    width:45px !important;
+    width:40px !important;
     padding:12px 0 !important;
     padding-right:0 !important;
     overflow-x:hidden;
