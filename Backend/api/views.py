@@ -305,6 +305,14 @@ def profile_api(request):
                         avatar_url = request.build_absolute_uri(avatar_url)
                 else:
                     avatar_url = ""
+            except ImproperlyConfigured:
+                # A legacy image on Render's ephemeral filesystem is not
+                # recoverable after that instance loses its disk. Clear its
+                # reference so clients stop requesting a URL that will 404.
+                avatar_url = ""
+                profile.avatar = ""
+                profile.avatar_url = ""
+                profile.save(update_fields=["avatar", "avatar_url", "updated_at"])
             except Exception:
                 # A temporary object-store error must not break all profile
                 # settings; omit the image and keep the rest of the profile usable.
