@@ -524,3 +524,5 @@
 .dos-ide-pro .dos-editor-settings-panel>footer{padding-top:9px;border-top:1px solid var(--workbench-border,rgba(137,177,204,.15))}
 .dos-ide-pro .dos-editor-settings-panel>footer .dos-primary{background:var(--workbench-accent,#6bdcf7);color:#031018;border-color:transparent;font-weight:700}
 @media(max-width:600px){.dos-ide-pro .dos-editor-settings-panel{top:58px!important;right:8px!important;width:calc(100% - 16px);max-height:calc(100% - 72px);padding:12px}}
+
+.dos-ide-pro .dos-settings-shortcuts{color:var(--workbench-muted,#7d93a7);font-size:10px;line-height:1.5}
