@@ -856,3 +856,75 @@ body{scrollbar-gutter:stable}
     margin:0 !important;
   }
 }
+
+/* STABLE GLOBAL FRAME — 16px total horizontal gutter (8px per side).
+   Keep the sidebar and page content in one predictable responsive grid. */
+.os-shell {
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  gap: 0 !important;
+  width: calc(100% - 16px) !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 8px !important;
+}
+.os-rail {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  width: 48px !important;
+  min-width: 0 !important;
+  max-width: 48px !important;
+  margin: 0 !important;
+  left: auto !important;
+  right: auto !important;
+  box-sizing: border-box !important;
+}
+.os-main {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+.os-content {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 16px 8px !important;
+  box-sizing: border-box !important;
+}
+.os-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (min-width: 721px) {
+  .os-rail {
+    position: sticky !important;
+    top: 10px !important;
+    height: calc(100vh - 20px) !important;
+  }
+  .os-rail:hover,
+  .os-rail:focus-within {
+    width: 236px !important;
+    max-width: min(236px, 80vw) !important;
+  }
+}
+@media (max-width: 720px) {
+  .os-shell {
+    display: block !important;
+    width: calc(100% - 16px) !important;
+    max-width: none !important;
+    margin: 0 8px !important;
+  }
+  .os-rail { display: none !important; }
+  .os-main {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .os-content { padding: 12px 4px !important; }
+}
