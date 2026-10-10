@@ -374,6 +374,11 @@ def profile_api(request):
             "avatar_url": avatar_url,
             "has_uploaded_avatar": bool(avatar_url),
             "bio": profile.bio,
+            "country": profile.country,
+            "city": profile.city,
+            "job_title": profile.job_title,
+            "skills": profile.skills,
+            "timezone": profile.timezone,
             "github": profile.github,
             "linkedin": profile.linkedin,
             "x": profile.x,
@@ -426,7 +431,7 @@ def profile_api(request):
     if changed_user_fields:
         user.save(update_fields=changed_user_fields)
 
-    profile_fields = {"full_name", "avatar_url", "bio", "github", "linkedin", "x", "website"}
+    profile_fields = {"full_name", "avatar_url", "bio", "country", "city", "job_title", "skills", "timezone", "github", "linkedin", "x", "website"}
     changed_profile_fields = [field for field in profile_fields if field in payload]
     if email_changed:
         changed_profile_fields.append("email_verified")
