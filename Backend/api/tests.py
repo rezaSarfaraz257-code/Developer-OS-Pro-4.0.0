@@ -581,6 +581,24 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(ws.files["main.py"], "print(1) # ok")
 
 class SaaSMaturityTests(APITestCase):
+    def test_free_workspace_limit_is_enforced_server_side(self):
+        user = User.objects.create_user(username="workspace-quota-user", password="long-test-password-123")
+        self.client.force_authenticate(user=user)
+        for index in range(3):
+            response = self.client.post(
+                "/api/ide/workspaces/",
+                {"name": f"Workspace {index}", "files": {"README.md": "# Test"}},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        overflow = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Workspace overflow", "files": {"README.md": "# Test"}},
+            format="json",
+        )
+        self.assertEqual(overflow.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(overflow.data["limit"], 3)
+
     def setUp(self):
         self.user = User.objects.create_user(username="saas-user", email="saas@example.test", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)
