@@ -14,7 +14,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession
+from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
 
 
 class ProjectApiSecurityTests(APITestCase):
@@ -158,7 +158,7 @@ class ProjectApiSecurityTests(APITestCase):
 
     def test_profile_get_clears_a_missing_legacy_render_avatar_url(self):
         self.authenticate(self.owner)
-        profile = self.owner.profile
+        profile, _ = UserProfile.objects.get_or_create(user=self.owner)
         profile.avatar_url = "/media/avatars/user_1/missing-avatar.webp"
         profile.save(update_fields=["avatar_url"])
 
@@ -177,7 +177,13 @@ class ProjectApiSecurityTests(APITestCase):
         self.addCleanup(media_directory.cleanup)
 
         self.authenticate(self.owner)
-        with override_settings(MEDIA_ROOT=media_directory.name):
+        with override_settings(
+            MEDIA_ROOT=media_directory.name,
+            STORAGES={
+                "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+                "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+            },
+        ):
             response = self.client.patch("/api/profile/", {"avatar": avatar}, format="multipart")
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
