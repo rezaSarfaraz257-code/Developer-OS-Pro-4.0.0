@@ -984,3 +984,53 @@
   .dos-ide-pro .dos-body.dos-explorer-collapsed .dos-explorer{display:none}
   .dos-ide-pro .dos-body:not(.dos-explorer-collapsed) .dos-editor-shell{grid-column:2}
 }
+
+
+/* WEB IDE 4.3 — real Explorer collapse behavior and stable responsive grid */
+.dos-ide-pro .dos-body{
+  grid-template-columns:44px minmax(220px,250px) minmax(0,1fr) 214px !important;
+  min-height:0;
+  height:calc(100% - 84px);
+}
+.dos-ide-pro .dos-body.dos-explorer-collapsed{
+  grid-template-columns:44px minmax(0,1fr) 214px !important;
+}
+.dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-explorer{
+  display:none !important;
+}
+.dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-editor-shell{
+  grid-column:auto;
+  min-width:0;
+}
+@media(max-width:1100px){
+  .dos-ide-pro .dos-body{
+    grid-template-columns:40px minmax(190px,220px) minmax(0,1fr) !important;
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed{
+    grid-template-columns:40px minmax(0,1fr) !important;
+  }
+}
+@media(max-width:760px){
+  .dos-ide-pro .dos-body{
+    grid-template-columns:38px minmax(0,1fr) !important;
+    height:calc(100% - 84px);
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-explorer{
+    display:none !important;
+  }
+  .dos-ide-pro .dos-body:not(.dos-explorer-collapsed) > .dos-explorer{
+    display:flex !important;
+    position:absolute;
+    inset:0 auto 0 38px;
+    z-index:60;
+    width:min(250px,calc(100vw - 76px)) !important;
+    min-width:0 !important;
+    max-width:calc(100vw - 76px) !important;
+  }
+  .dos-ide-pro .dos-body:not(.dos-explorer-collapsed) > .dos-editor-shell{
+    grid-column:2;
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed{
+    grid-template-columns:38px minmax(0,1fr) !important;
+  }
+}
