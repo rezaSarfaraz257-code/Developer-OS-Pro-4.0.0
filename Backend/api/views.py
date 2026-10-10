@@ -3877,22 +3877,6 @@ def ide_build_api(request, pk):
         return Response(error, status=503)
     return Response(data)
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def ide_debug_api(request, pk):
-    ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user):
-        return Response({"error": "You have read-only access to this workspace."}, status=403)
-    payload = {**_workspace_payload(ws)}
-    for key in ("path", "line", "command", "breakpoints"):
-        if key in request.data:
-            payload[key] = request.data[key]
-    data, error = _runner_request("POST", "/debug", payload, timeout=60)
-    if error:
-        return Response(error, status=503)
-    return Response(data)
-
-
 # ---------------------------------------------------------------------------
 # CLOUD IDE CONTROL PLANE
 # ---------------------------------------------------------------------------
