@@ -432,6 +432,56 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("new.txt", response.data["files"])
         self.assertGreater(response.data["revision"], revision)
 
+    def test_ide_workspace_paths_reject_file_directory_collisions(self):
+        response = self.client.post(
+            "/api/ide/workspaces/",
+            {
+                "name": "Path collision checks",
+                "files": {"src": "this is a file", "docs/readme.md": "# Docs"},
+                "active_file": "src",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workspace_id = response.data["id"]
+        endpoint = f"/api/ide/workspaces/{workspace_id}/files/"
+
+        # A file must not also become the parent directory of another file.
+        response = self.client.post(
+            endpoint,
+            {"action": "create", "path": "src/child.py", "content": "print(1)"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        # A virtual directory cannot be overwritten by a file.
+        response = self.client.post(
+            endpoint,
+            {"action": "create", "path": "docs", "content": "not a directory"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        # Renaming a directory into itself must not create malformed paths.
+        response = self.client.post(
+            endpoint,
+            {"action": "rename", "path": "docs", "to": "docs/archive"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        # Existing file writes remain valid and do not trigger a false conflict.
+        response = self.client.post(
+            endpoint,
+            {"action": "write", "path": "src", "content": "print('updated')", "revision": response.data.get("revision", 0)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["files"]["src"], "print('updated')")
+
     @patch("api.views._runner_request")
     def test_ide_execute_returns_runner_contract_and_workspace_state(self, runner_request):
         workspace = self.client.post(
