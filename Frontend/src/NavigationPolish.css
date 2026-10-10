@@ -928,3 +928,166 @@ body{scrollbar-gutter:stable}
   }
   .os-content { padding: 12px 4px !important; }
 }
+
+/* SIDEBAR 2026 POLISH — precise icon rail, smooth expansion, accessible focus and active state.
+   Visual-only layer: preserves existing routes, click handlers, and page layout. */
+@media (min-width: 721px) {
+  .os-rail {
+    position: sticky !important;
+    z-index: 1200 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    isolation: isolate;
+    background:
+      radial-gradient(ellipse at 18% 0%, rgba(64, 205, 235, .13), transparent 42%),
+      radial-gradient(ellipse at 100% 62%, rgba(118, 100, 246, .10), transparent 38%),
+      linear-gradient(180deg, rgba(11, 18, 31, .98), rgba(6, 10, 19, .99)) !important;
+    border: 1px solid rgba(126, 170, 205, .16) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, .28), inset 0 1px rgba(255, 255, 255, .045) !important;
+    backdrop-filter: blur(18px) saturate(135%);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    transition: width .22s cubic-bezier(.2,.75,.25,1), padding .22s ease,
+      border-color .18s ease, box-shadow .22s ease !important;
+    scrollbar-width: none !important;
+  }
+  .os-rail::-webkit-scrollbar { display: none !important; width: 0 !important; }
+
+  .os-rail:not(:hover):not(:focus-within) {
+    width: 48px !important;
+    padding: 10px 4px !important;
+    border-radius: 14px !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .brand.rail-identity {
+    justify-content: center !important;
+    width: 100% !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    margin: 0 0 9px !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .brand-text,
+  .os-rail:not(:hover):not(:focus-within) .rail-section,
+  .os-rail:not(:hover):not(:focus-within) .rail-item em,
+  .os-rail:not(:hover):not(:focus-within) .status-chip,
+  .os-rail:not(:hover):not(:focus-within) .rail-spacer {
+    display: none !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-profile-avatar.avatar {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    margin: 0 !important;
+    border-radius: 10px !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 38px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    margin: 2px auto !important;
+    padding: 0 !important;
+    border: 1px solid transparent !important;
+    border-radius: 11px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item span {
+    width: 30px !important;
+    height: 30px !important;
+    flex: 0 0 30px !important;
+    margin: 0 !important;
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+    color: #91a9c0 !important;
+    background: transparent !important;
+    font-size: 18px !important;
+    transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item:hover {
+    border-color: rgba(103, 219, 244, .16) !important;
+    background: rgba(69, 193, 220, .075) !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item:hover span {
+    color: #d4faff !important;
+    background: rgba(65, 196, 225, .13) !important;
+    transform: scale(1.06);
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item.active {
+    border-color: rgba(89, 220, 245, .18) !important;
+    background: linear-gradient(135deg, rgba(58, 194, 222, .15), rgba(106, 103, 230, .10)) !important;
+    box-shadow: inset 0 0 0 1px rgba(88, 220, 245, .035), 0 5px 15px rgba(0, 0, 0, .16) !important;
+  }
+  .os-rail:not(:hover):not(:focus-within) .rail-item.active span {
+    color: #a1f2ff !important;
+    background: linear-gradient(145deg, rgba(52, 197, 226, .20), rgba(88, 102, 215, .13)) !important;
+    border-color: rgba(89, 224, 247, .18) !important;
+  }
+
+  .os-rail:hover,
+  .os-rail:focus-within {
+    width: 236px !important;
+    max-width: min(236px, calc(100vw - 24px)) !important;
+    padding: 14px 10px 12px !important;
+    border-color: rgba(105, 201, 229, .24) !important;
+    box-shadow: 0 20px 56px rgba(0, 0, 0, .38), inset 0 1px rgba(255, 255, 255, .06) !important;
+  }
+  .os-rail:hover .rail-item em,
+  .os-rail:focus-within .rail-item em {
+    display: block !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .os-rail:hover .rail-section,
+  .os-rail:focus-within .rail-section { display: block !important; }
+  .os-rail:hover .status-chip,
+  .os-rail:focus-within .status-chip { display: flex !important; }
+  .os-rail:hover .rail-spacer,
+  .os-rail:focus-within .rail-spacer { display: flex !important; }
+  .os-rail:hover .brand-text,
+  .os-rail:focus-within .brand-text { display: flex !important; }
+}
+
+.os-rail .rail-item,
+.os-rail .brand.rail-identity {
+  -webkit-tap-highlight-color: transparent;
+}
+.os-rail .rail-item:focus-visible,
+.os-rail .brand.rail-identity:focus-visible {
+  outline: 2px solid rgba(105, 226, 247, .92) !important;
+  outline-offset: 2px !important;
+  z-index: 2;
+}
+.os-rail .rail-item.active::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #8beeff;
+  box-shadow: 0 0 10px rgba(99, 224, 248, .55);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .os-rail { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .os-rail,
+  .os-rail *,
+  .os-rail *::before,
+  .os-rail *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
