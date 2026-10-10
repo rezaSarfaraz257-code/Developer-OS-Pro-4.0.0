@@ -88,13 +88,35 @@ class Session:
             if e.get("event")=="stopped": self.state="paused"; self.stop_event=e.get("body") or {}
             elif e.get("event")=="continued": self.state="running"
             elif e.get("event") in ("terminated","exited"): self.state="stopped"
+    def _debug_path(self,path):
+        raw=str(path or "").strip()
+        if not raw or "\x00" in raw:
+            raise ValueError("A valid source path is required.")
+        target=(self.root/raw).resolve()
+        if self.root not in target.parents or not target.is_file():
+            raise ValueError("Debug source must be an existing file inside the workspace.")
+        return target
+
     def set_breakpoint(self,path,line,column=1,condition=""):
-        b=self.dap.call("setBreakpoints",{"source":{"path":str((self.root/path).resolve())},"breakpoints":[{"line":int(line),"column":int(column),**({"condition":condition} if condition else {})}],"sourceModified":False}).get("breakpoints",[])
-        self.breakpoints=[{"path":path,"line":x.get("line",line),"column":x.get("column",column),"verified":bool(x.get("verified")),"id":x.get("id")} for x in b]
+        target=self._debug_path(path)
+        line=max(1,int(line or 1)); column=max(1,int(column or 1))
+        existing=[b for b in self.breakpoints if b.get("path")==path and int(b.get("line") or 0)!=line]
+        requested=[{"line":int(b["line"]),"column":max(1,int(b.get("column") or 1)),**({"condition":b["condition"]} if b.get("condition") else {})} for b in existing]
+        requested.append({"line":line,"column":column,**({"condition":condition} if condition else {})})
+        response=self.dap.call("setBreakpoints",{"source":{"path":str(target)},"breakpoints":requested,"sourceModified":False}).get("breakpoints",[])
+        retained=[b for b in self.breakpoints if b.get("path")!=path]
+        retained.extend({"path":path,"line":x.get("line",line),"column":x.get("column",column),"verified":bool(x.get("verified")),"id":x.get("id"),**({"condition":condition} if condition else {})} for x in response)
+        self.breakpoints=retained
         return self.snapshot()
+
     def remove_breakpoint(self,path,line):
-        self.dap.call("setBreakpoints",{"source":{"path":str((self.root/path).resolve())},"breakpoints":[]})
-        self.breakpoints=[b for b in self.breakpoints if not(b["path"]==path and b["line"]==int(line))]
+        target=self._debug_path(path)
+        remaining=[b for b in self.breakpoints if b.get("path")==path and int(b.get("line") or 0)!=int(line)]
+        requested=[{"line":int(b["line"]),"column":max(1,int(b.get("column") or 1)),**({"condition":b["condition"]} if b.get("condition") else {})} for b in remaining]
+        response=self.dap.call("setBreakpoints",{"source":{"path":str(target)},"breakpoints":requested,"sourceModified":False}).get("breakpoints",[])
+        retained=[b for b in self.breakpoints if b.get("path")!=path]
+        retained.extend({"path":path,"line":x.get("line"),"column":x.get("column",1),"verified":bool(x.get("verified")),"id":x.get("id")} for x in response)
+        self.breakpoints=retained
         return self.snapshot()
     def _thread(self):
         self._events()
