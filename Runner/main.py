@@ -666,15 +666,18 @@ def _runtime_info():
 def _capability_manifest():
     """Stable control-plane contract consumed by the Django IDE."""
     container_native = SANDBOX_MODE == "container"
+    trusted_compat = bool(container_native and RUNNER_SECURITY_LEVEL == "compat")
+    sandbox_available = bool(trusted_compat or (SANDBOX_MODE == "bwrap" and shutil.which("bwrap")))
     return {
         "service": "developer-os-runner",
         "api_version": "1",
         "version": os.environ.get("RELEASE_VERSION", "3.2.0"),
         "sandbox": {
             "backend": SANDBOX_MODE,
-            "mode": "container-native" if container_native else "bubblewrap",
+            "mode": ("container-native" if trusted_compat else ("bubblewrap" if sandbox_available else "unavailable")),
             "security_level": RUNNER_SECURITY_LEVEL,
-            "trusted_shared_container": bool(container_native and RUNNER_SECURITY_LEVEL == "compat"),
+            "trusted_shared_container": trusted_compat,
+            "execution_available": sandbox_available,
             "process_boundary": True,
             "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
         },
@@ -694,10 +697,19 @@ def _capability_manifest():
             "max_processes_per_workspace": MAX_PROCESSES_PER_WORKSPACE,
             "max_process_output_bytes": MAX_PROCESS_OUTPUT,
         },
-        "operations": {"sync": True, "snapshot": True, "execute": True, "process": True, "git": True, "preview": True, "install": True, "debug": debug_capability()["available"], "lsp": True},
+        "operations": {
+            "sync": True,
+            "snapshot": True,
+            "execute": sandbox_available,
+            "process": sandbox_available,
+            "git": True,
+            "preview": True,
+            "install": sandbox_available,
+            "debug": bool(sandbox_available and debug_capability()["available"]),
+            "lsp": True,
+        },
         "lsp": LSP_MANAGER.capability(),
     }
-
 
 
 class LSPRequest(Workspace):
