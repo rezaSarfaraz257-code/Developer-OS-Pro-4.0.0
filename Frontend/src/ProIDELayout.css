@@ -418,16 +418,28 @@
 }
 
 
-/* Stable Focus mode: keep the application chrome visible and give the editor
-   one deterministic grid track. Do not use viewport-sized min-heights here. */
-.dos-ide-pro.dos-focus-mode .dos-body{
-  display:grid!important;
-  grid-template-columns:minmax(0,1fr)!important;
-  grid-template-areas:"editor"!important;
-  flex:1 1 0!important;
-  height:auto!important;
-  min-height:0!important;
-  overflow:hidden!important;
+/* Safe Focus mode: preserve the IDE's measured grid and editor dimensions.
+   Only reduce peripheral visual weight; structural pane hiding can collapse
+   Monaco's host to zero pixels on some responsive layouts. */
+.dos-ide-pro.dos-focus-mode .dos-editor-shell{
+  position:relative;
+  box-shadow:inset 0 0 0 1px rgba(107,220,247,.28);
+}
+.dos-ide-pro.dos-focus-mode .dos-inspector{
+  opacity:.55;
+  transition:opacity .16s ease;
+}
+.dos-ide-pro.dos-focus-mode .dos-inspector:hover,
+.dos-ide-pro.dos-focus-mode .dos-inspector:focus-within{
+  opacity:1;
+}
+.dos-ide-pro.dos-focus-mode .dos-explorer{
+  opacity:.72;
+  transition:opacity .16s ease;
+}
+.dos-ide-pro.dos-focus-mode .dos-explorer:hover,
+.dos-ide-pro.dos-focus-mode .dos-explorer:focus-within{
+  opacity:1;
 }
 .dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
 .dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
