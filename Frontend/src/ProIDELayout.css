@@ -496,109 +496,51 @@
 }
 
 
-/* FOCUS MODE FIX — keep the workbench sized to the viewport and give Monaco
-   one explicit, non-collapsing grid cell. These rules intentionally come last
-   to override the legacy focus/zen/responsive layout rules above. */
+/* Focus Mode means a wider editor, not a separate/full-screen black page.
+   Keep the normal IDE frame and only reclaim horizontal space from side panes. */
 .dos-ide-pro.dos-focus-mode{
-  display:flex!important;
-  flex-direction:column!important;
   width:100%!important;
+  max-width:100%!important;
   height:calc(100dvh - 24px)!important;
-  min-height:min(560px,calc(100dvh - 24px))!important;
   max-height:calc(100dvh - 24px)!important;
-  flex:0 0 auto!important;
   overflow:hidden!important;
 }
-.dos-ide-pro.dos-focus-mode>.dos-ide-glow{flex:0 0 0!important;min-height:0!important}
-.dos-ide-pro.dos-focus-mode>.dos-topbar{
-  display:flex!important;
-  flex:0 0 auto!important;
-  min-width:0!important;
-  min-height:44px!important;
-  width:100%!important;
-}
-.dos-ide-pro.dos-focus-mode>.dos-body{
+.dos-ide-pro.dos-focus-mode .dos-body{
   display:grid!important;
-  position:relative!important;
-  grid-template-columns:minmax(0,1fr)!important;
-  grid-template-rows:minmax(0,1fr)!important;
-  grid-template-areas:"editor"!important;
-  grid-auto-flow:row!important;
-  flex:1 1 0!important;
   width:100%!important;
   min-width:0!important;
   min-height:0!important;
-  height:0!important;
-  max-height:none!important;
-  overflow:hidden!important;
-  gap:0!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  grid-template-areas:"editor"!important;
+  column-gap:0!important;
+  row-gap:0!important;
 }
-.dos-ide-pro.dos-focus-mode>.dos-body>.dos-activity,
-.dos-ide-pro.dos-focus-mode>.dos-body>.dos-explorer,
-.dos-ide-pro.dos-focus-mode>.dos-body>.dos-inspector{
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-activity,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-inspector{
   display:none!important;
-  width:0!important;
-  min-width:0!important;
-  max-width:0!important;
 }
-.dos-ide-pro.dos-focus-mode>.dos-body>.dos-editor-shell{
+.dos-ide-pro.dos-focus-mode .dos-body>.dos-editor-shell{
   display:flex!important;
-  position:relative!important;
   grid-area:editor!important;
-  grid-column:1 / 2!important;
-  grid-row:1 / 2!important;
-  align-self:stretch!important;
-  justify-self:stretch!important;
+  grid-column:1 / -1!important;
+  grid-row:1!important;
   width:100%!important;
   min-width:0!important;
   max-width:none!important;
   height:100%!important;
   min-height:0!important;
-  max-height:none!important;
   margin:0!important;
-  padding:0!important;
-  overflow:hidden!important;
 }
 .dos-ide-pro.dos-focus-mode .dos-editors{
-  display:grid!important;
-  grid-template-columns:minmax(0,1fr)!important;
-  flex:1 1 0!important;
   width:100%!important;
   min-width:0!important;
   min-height:0!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow:hidden!important;
 }
-.dos-ide-pro.dos-focus-mode .dos-editor-pane{
-  position:relative!important;
-  width:100%!important;
-  min-width:0!important;
-  min-height:0!important;
-  height:100%!important;
-  max-height:none!important;
-  overflow:hidden!important;
-}
+.dos-ide-pro.dos-focus-mode .dos-editor-pane,
 .dos-ide-pro.dos-focus-mode .dos-editor-pane>.monaco-host{
-  display:block!important;
   width:100%!important;
   min-width:0!important;
   min-height:0!important;
-  height:100%!important;
-  max-height:none!important;
-  overflow:hidden!important;
-}
-.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor,
-.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor .overflow-guard{
-  min-width:0!important;
-  max-width:100%!important;
-}
-.dos-ide-pro.dos-focus-mode>.dos-statusbar{
-  display:flex!important;
-  flex:0 0 auto!important;
-  width:100%!important;
-  min-width:0!important;
-}
-@media(max-height:620px){
-  .dos-ide-pro.dos-focus-mode{min-height:0!important;height:calc(100dvh - 12px)!important;max-height:calc(100dvh - 12px)!important}
 }
