@@ -1253,3 +1253,26 @@ body{scrollbar-gutter:stable}
   .profile-settings-avatar.avatar { width: 64px; height: 64px; min-width: 64px; font-size: 18px; }
   .profile-settings-avatar-copy strong { font-size: 14px; }
 }
+
+
+/* Clear, responsive feedback for a selected image before it is uploaded. */
+.profile-avatar-file-meta {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid rgba(91, 221, 205, .22);
+  border-radius: 8px;
+  color: #9ce9df;
+  background: rgba(33, 140, 125, .09);
+  font: 10px/1.5 "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.profile-settings-avatar-row .profile-settings-avatar.avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+}
