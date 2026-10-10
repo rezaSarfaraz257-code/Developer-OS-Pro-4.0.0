@@ -13,6 +13,10 @@ services:
     envVars:
       - key: IDE_RUNNER_TOKEN
         generateValue: true
+      - key: RUNNER_SECURITY_LEVEL
+        value: strict
+      - key: RUNNER_SANDBOX_MODE
+        value: bwrap
       - key: RUNNER_TIMEOUT_SECONDS
         value: "120"
       - key: RUNNER_MAX_CONCURRENT
