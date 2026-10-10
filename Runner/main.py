@@ -937,8 +937,10 @@ def health():
     return {
         "status": "ok",
         "service": "developer-os-runner",
-        "execution_available": _capability_manifest()["operations"]["execute"],
-        "execution_block_reason": _capability_manifest()["sandbox"]["unavailable_reason"],
+        "execution_available": bool(
+            (SANDBOX_MODE == "container" and RUNNER_SECURITY_LEVEL == "compat")
+            or (SANDBOX_MODE == "bwrap" and _bwrap_runtime_available())
+        ),
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
