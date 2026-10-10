@@ -499,3 +499,39 @@
 @media(max-width:760px){
   .dos-ide-pro.dos-focus-mode{height:100dvh!important;max-height:100dvh!important}
 }
+
+
+/* Focus Mode — requested behavior: hide only the Explorer and right Workspace
+   inspector, then give the editor the freed width. Keep the IDE header, activity
+   rail, command bar, editor controls, and other workbench UI available. */
+html body #root .dos-ide-pro.dos-focus-mode > .dos-body{
+  display:grid!important;
+  grid-template-columns:42px minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  grid-template-areas:"activity editor"!important;
+  column-gap:0!important;
+  row-gap:0!important;
+  overflow:hidden!important;
+}
+html body #root .dos-ide-pro.dos-focus-mode > .dos-body > .dos-explorer,
+html body #root .dos-ide-pro.dos-focus-mode > .dos-body > .dos-inspector{
+  display:none!important;
+}
+html body #root .dos-ide-pro.dos-focus-mode > .dos-body > .dos-activity{
+  display:flex!important;
+  grid-area:activity!important;
+  grid-column:1!important;
+  grid-row:1!important;
+}
+html body #root .dos-ide-pro.dos-focus-mode > .dos-body > .dos-editor-shell{
+  display:flex!important;
+  grid-area:editor!important;
+  grid-column:2!important;
+  grid-row:1!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  height:100%!important;
+  min-height:0!important;
+  margin:0!important;
+}
