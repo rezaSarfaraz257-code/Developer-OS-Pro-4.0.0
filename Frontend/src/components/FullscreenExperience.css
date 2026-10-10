@@ -181,21 +181,25 @@ body { overflow: hidden; }
   .dos-fullscreen-dialog, .dos-fullscreen-backdrop { scroll-behavior: auto; }
 }
 
-/* Outer app width: leave a visible gutter at the right edge as well as inside page content. */
-@media (min-width:721px){
-  .os-main{
-    box-sizing:border-box !important;
-    width:calc(100% - 48px) !important;
-    margin-left:36px !important;
-    margin-right:12px !important;
-  }
+/* Keep the authenticated app shell at 95% viewport width, centered.
+   The sidebar remains part of the shell; all routes inherit the same responsive frame. */
+.os-shell{
+  box-sizing:border-box !important;
+  width:95% !important;
+  max-width:95% !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.os-main{
+  box-sizing:border-box !important;
+  min-width:0 !important;
 }
 @media (max-width:720px){
-  .os-main{
-    box-sizing:border-box !important;
-    width:calc(100% - 24px) !important;
-    margin-left:12px !important;
-    margin-right:12px !important;
+  .os-shell{
+    width:95% !important;
+    max-width:95% !important;
+    margin-left:auto !important;
+    margin-right:auto !important;
   }
   .os-content{padding-left:8px !important;padding-right:8px !important;}
 }
