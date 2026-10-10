@@ -1276,3 +1276,108 @@ body{scrollbar-gutter:stable}
   object-fit: cover;
   border-radius: inherit;
 }
+
+/* PROFILE 2026 — dedicated identity page, independent from general settings. */
+.profile-settings-panel{
+  max-width:980px;
+  margin:0 auto;
+  border:1px solid rgba(111,198,226,.2);
+  box-shadow:0 24px 70px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.035);
+}
+.profile-settings-panel > label{
+  display:grid;
+  gap:9px;
+  color:#829bb2;
+  font:750 10px/1.4 Inter,system-ui,sans-serif;
+  letter-spacing:.12em;
+}
+.profile-settings-panel > label input,
+.profile-settings-panel > label textarea{
+  box-sizing:border-box;
+  width:100%;
+  min-height:45px;
+  padding:12px 14px;
+  border:1px solid rgba(126,164,194,.18);
+  border-radius:11px;
+  outline:none;
+  color:#e6f4ff;
+  background:rgba(4,10,19,.62);
+  font:500 13px/1.6 Inter,system-ui,sans-serif;
+  letter-spacing:0;
+  transition:border-color .18s ease,box-shadow .18s ease,background .18s ease;
+}
+.profile-settings-panel > label textarea{min-height:100px;resize:vertical}
+.profile-settings-panel > label input:focus,
+.profile-settings-panel > label textarea:focus{
+  border-color:rgba(89,218,244,.62);
+  background:rgba(8,19,31,.9);
+  box-shadow:0 0 0 3px rgba(70,200,229,.08);
+}
+.profile-settings-panel > .primary{
+  min-height:44px;
+  padding:0 20px;
+  border-radius:11px;
+  font-weight:800;
+}
+.settings-hub-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.settings-hub-card{
+  position:relative;
+  display:flex;
+  min-height:210px;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:10px;
+  padding:23px !important;
+  border:1px solid rgba(117,164,197,.16);
+  border-radius:17px;
+  color:#e8f5ff;
+  text-align:left;
+  cursor:pointer;
+  background:
+    radial-gradient(ellipse at 100% 0%,rgba(71,194,221,.08),transparent 50%),
+    linear-gradient(145deg,rgba(17,28,44,.94),rgba(8,13,23,.98));
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.settings-hub-card:hover{
+  transform:translateY(-3px);
+  border-color:rgba(94,219,242,.34);
+  box-shadow:0 18px 38px rgba(0,0,0,.2),0 0 24px rgba(65,192,220,.055);
+}
+.settings-hub-card:focus-visible{outline:2px solid #68e2f5;outline-offset:3px}
+.settings-hub-icon{
+  display:grid;
+  width:42px;
+  height:42px;
+  place-items:center;
+  margin-bottom:5px;
+  border:1px solid rgba(103,215,241,.19);
+  border-radius:13px;
+  color:#9cefff;
+  background:linear-gradient(145deg,rgba(54,190,220,.16),rgba(107,102,230,.13));
+  font-size:21px;
+}
+.settings-hub-card .panel-kicker{color:#7795af;font-size:9px;letter-spacing:.16em}
+.settings-hub-card h2{margin:0;color:#e9f6ff;font-size:19px;letter-spacing:-.025em}
+.settings-hub-card p{margin:0;color:#8ea6bb;font-size:12px;line-height:1.7}
+.settings-hub-card > strong{
+  display:flex;
+  width:100%;
+  align-items:center;
+  justify-content:space-between;
+  margin-top:auto;
+  padding-top:12px;
+  border-top:1px solid rgba(124,164,194,.12);
+  color:#83e8f8;
+  font-size:9px;
+  letter-spacing:.12em;
+}
+.settings-hub-card > strong span{font-size:15px}
+@media(max-width:620px){
+  .settings-hub-grid{grid-template-columns:minmax(0,1fr);gap:11px}
+  .settings-hub-card{min-height:185px;padding:18px !important}
+  .profile-settings-panel{padding:14px !important}
+}
