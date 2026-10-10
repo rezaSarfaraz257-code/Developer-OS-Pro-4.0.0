@@ -651,3 +651,8 @@ html body #root .dos-ide-pro.dos-focus-mode .dos-body > .dos-editor-shell .dos-e
   }
 }
 
+/* Focus toolbar specificity guard: override legacy nth-child hiding rules. */
+html body #root .dos-ide-pro.dos-focus-mode .dos-body > .dos-editor-shell .dos-editor-toolbar > .dos-toolbar-group:nth-child(-n+2){
+  display:flex!important;
+}
+
