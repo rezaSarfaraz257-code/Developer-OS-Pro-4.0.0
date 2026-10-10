@@ -237,7 +237,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   <nav className="dos-source-tabs" aria-label="Source control views">{tabs.map(([key,label,count])=><button key={key} type="button" className={tab===key?"active":""} onClick={()=>setTab(key)} aria-current={tab===key?"page":undefined}><span>{label}</span>{count!==null&&<b>{count}</b>}</button>)}<span className="dos-source-tabs-spacer"/><button type="button" className="dos-source-refresh-tab" onClick={()=>void refresh()} disabled={busy}>↻ Refresh</button></nav>
   <div className="dos-source-main">
    <div className="dos-source-feedback" role="status" aria-live="polite"><span className={`dos-source-feedback-icon ${isError?"error":busy?"busy":"ok"}`}>{isError?"!":busy?"…":"✓"}</span><span>{message}</span></div>
-   {#if tab==="changes"}
+   {tab==="changes"&&<>
     <div className="dos-source-view-head"><div><h3>Working tree</h3><p>Review, stage, compare, and commit workspace changes.</p></div><div className="dos-source-view-actions"><span className="dos-source-count-pill">{changedFiles.length} changed</span><button type="button" onClick={()=>{if(window.confirm("Restore the entire worktree and discard ALL unstaged changes? This cannot be undone."))void gitAction("restore",["restore","."])}} disabled={busy||!workspace?.id} className="dos-source-danger">Discard all</button></div></div>
     <div className="dos-source-file-toolbar"><label className="dos-source-filter"><span>⌕</span><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter changed files…" aria-label="Filter changed files"/></label><span className="dos-source-muted">{changedFiles.length?"Select an action on any file":"No matching files"}</span></div>
     <div className="dos-source-change-list">
@@ -246,20 +246,20 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
     </div>
     <details className="dos-source-raw"><summary>Git status output</summary><pre>{statusText||"No status output returned."}</pre></details>
     <details className="dos-source-raw"><summary>Unified diff</summary><pre>{diffText||"No diff output returned."}</pre><button type="button" onClick={()=>openDiff("workspace diff","",diffText)} disabled={!diffText}>Open in Monaco Diff Editor</button></details>
-   {:else if tab==="branches"}
+   </>}{tab==="branches"&&<>
     <div className="dos-source-view-head"><div><h3>Branches</h3><p>Create an isolated line of work or switch to an existing branch.</p></div><span className="dos-source-count-pill">{branchText.split("\n").filter(Boolean).length} listed</span></div>
     <div className="dos-source-branch-list">{branchText?branchText.split("\n").filter(Boolean).map((line,i)=><div className="dos-source-branch-row" key={line+i}><span>⑂</span><code>{line.replace(/^\*\s*/,"")}</code>{line.startsWith("*")&&<b>Current</b>}<button type="button" onClick={()=>setBranch(line.replace(/^\*\s*/,"").trim())}>Select</button></div>):<div className="dos-source-empty"><div className="dos-source-empty-mark">⑂</div><strong>No branch data yet</strong><p>Refresh repository state to load local branches.</p></div>}</div>
-   {:else if tab==="history"}
+   </>}{tab==="history"&&<>
     <div className="dos-source-view-head"><div><h3>Commit history</h3><p>Recent commits from this workspace repository.</p></div><span className="dos-source-count-pill">{historyText.split("\n").filter(Boolean).length} commits</span></div>
     <div className="dos-source-history-list">{historyText?historyText.split("\n").filter(Boolean).map((line,i)=>{const match=line.match(/^([0-9a-f]{7,40})\s*(.*)$/i);return <article className="dos-source-history-row" key={line+i}><span className="dos-source-history-node"/><div><code>{match?.[1]||"commit"}</code><p>{match?.[2]||line}</p></div><button type="button" onClick={()=>GenUI.copy(line)} title="Copy commit details">Copy</button></article>}):<div className="dos-source-empty"><div className="dos-source-empty-mark">◷</div><strong>No commit history loaded</strong><p>Refresh to retrieve recent commits from Git.</p></div>}</div>
-   {:else}
+   </>}{tab==="repositories"&&<>
     <div className="dos-source-view-head"><div><h3>Developer OS repositories</h3><p>Manage app-level repository snapshots separately from native Git.</p></div></div>
     <div className="dos-source-create-repository"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Repository name…" aria-label="New repository name"/><button type="button" onClick={()=>void create()} disabled={busy||!name.trim()}>＋ Create repository</button></div>
     <label className="dos-source-repository-select">Repository<select value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Select repository</option>{repos.map(repo=><option key={repo.id} value={repo.id}>{repo.name} · {repo.branch}</option>)}</select></label>
     <div className="dos-source-repository-actions"><button type="button" onClick={()=>void repositoryAction("push")} disabled={busy||!selected||!workspace?.id}>↑ Push workspace snapshot</button><button type="button" onClick={()=>void repositoryAction("pull")} disabled={busy||!selected||!workspace?.id}>↓ Pull repository snapshot</button></div>
     <p className="dos-source-repository-note">These snapshot operations are separate from native Git commits and branches.</p>
     {repos.length===0&&<div className="dos-source-empty"><div className="dos-source-empty-mark">▤</div><strong>No Developer OS repositories</strong><p>Create a repository to use the app-level snapshot workflow.</p></div>}
-   {/if}
+   </>}
   </div>
  </section>
 }
