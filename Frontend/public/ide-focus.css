@@ -719,3 +719,250 @@
 @media(max-width:800px){
   .dos-ide-pro.dos-focus-mode .dos-editor-toolbar{opacity:.9}
 }
+
+
+/* WEB IDE POLISH 4.2 — stable layout, calm hierarchy, accessible controls */
+.dos-ide-pro{
+  --ide-surface:#080f17;
+  --ide-surface-raised:#0b1722;
+  --ide-border:rgba(132,183,207,.14);
+  --ide-border-active:rgba(85,220,255,.38);
+  min-width:0;
+  min-height:0;
+  height:100%;
+  max-height:100%;
+  contain:layout paint;
+}
+.dos-ide-pro *,
+.dos-ide-pro *::before,
+.dos-ide-pro *::after{box-sizing:border-box}
+.dos-ide-pro .dos-topbar{
+  flex:0 0 auto;
+  gap:clamp(6px,1vw,14px);
+  padding-inline:clamp(8px,1.1vw,16px);
+}
+.dos-ide-pro .dos-home-button,
+.dos-ide-pro .dos-top-actions button,
+.dos-ide-pro .dos-workspace-select button{
+  min-height:32px;
+  border-radius:8px;
+}
+.dos-ide-pro .dos-home-button{
+  max-width:170px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.dos-ide-pro .dos-workspace-select{min-width:100px}
+.dos-ide-pro .dos-workspace-select select{
+  min-width:0;
+  height:34px;
+  border:1px solid var(--ide-border);
+  border-radius:8px;
+  background:var(--ide-surface);
+  color:var(--ide-text);
+}
+.dos-ide-pro .dos-body{
+  flex:1 1 auto;
+  min-height:0;
+  height:auto;
+  overflow:hidden;
+  align-items:stretch;
+}
+.dos-ide-pro .dos-activity,
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-editor-shell,
+.dos-ide-pro .dos-inspector{min-height:0}
+.dos-ide-pro .dos-editor-shell{overflow:hidden}
+.dos-ide-pro .dos-workbench-strip{
+  min-height:36px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:4px 10px;
+  border-bottom:1px solid var(--ide-border);
+  background:linear-gradient(90deg,rgba(85,220,255,.035),transparent 55%),#071019;
+}
+.dos-ide-pro .dos-workbench-title{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  color:#a6bdcb;
+  font-size:10px;
+}
+.dos-ide-pro .dos-workbench-title strong{
+  color:#d8edf6;
+  font-weight:650;
+  white-space:nowrap;
+}
+.dos-ide-pro .dos-workbench-path{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#718b9b;
+  font:10px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.dos-ide-pro .dos-live-dot{
+  width:6px;height:6px;flex:0 0 6px;
+  border-radius:50%;
+  background:#55e6a5;
+  box-shadow:0 0 9px rgba(85,230,165,.45);
+}
+.dos-ide-pro .dos-workbench-actions{
+  display:flex;align-items:center;gap:4px;flex:0 0 auto;
+}
+.dos-ide-pro .dos-workbench-actions button{
+  min-height:27px;
+  padding:0 8px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:#8da9b8;
+  font-size:9px;
+  white-space:nowrap;
+}
+.dos-ide-pro .dos-workbench-actions button:hover{
+  color:#e4f8ff;
+  border-color:var(--ide-border);
+  background:rgba(85,220,255,.055);
+}
+.dos-ide-pro .dos-tabs{flex:0 0 auto;min-width:0}
+.dos-ide-pro .dos-editor-toolbar{flex:0 0 auto;min-width:0}
+.dos-ide-pro .dos-editors{
+  flex:1 1 auto;
+  min-width:0;
+  min-height:0;
+  height:auto;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-editor-pane{
+  min-width:0;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
+}
+.dos-ide-pro .monaco-host{
+  width:100%;
+  height:100%;
+  min-height:0;
+}
+.dos-ide-pro .dos-explorer{
+  min-width:0;
+  min-height:0;
+  overflow:hidden;
+}
+.dos-ide-pro .dos-file-list{
+  min-height:0;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.dos-ide-pro .dos-inspector{
+  min-height:0;
+  overscroll-behavior:contain;
+}
+.dos-ide-pro .dos-ide-dock{
+  min-height:0;
+  max-height:38vh;
+  overflow:hidden;
+  border-top:1px solid var(--ide-border);
+  background:#070e15;
+}
+.dos-ide-pro .dos-dock-tabs{
+  min-height:34px;
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.dos-ide-pro .dos-dock-tabs button{
+  min-height:32px;
+  white-space:nowrap;
+}
+.dos-ide-pro .dos-dock-meta{
+  min-width:0;
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.dos-ide-pro .dos-commandbar{
+  min-width:0;
+  flex:0 0 auto;
+}
+.dos-ide-pro .dos-commandbar>*{min-width:0}
+.dos-ide-pro button,
+.dos-ide-pro input,
+.dos-ide-pro select,
+.dos-ide-pro textarea{font-family:inherit}
+.dos-ide-pro button{touch-action:manipulation}
+.dos-ide-pro button:disabled{
+  opacity:.42;
+  cursor:not-allowed;
+  transform:none!important;
+}
+.dos-ide-pro :is(button,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid rgba(85,220,255,.72);
+  outline-offset:2px;
+}
+.dos-ide-pro :is(input,select,textarea){
+  max-width:100%;
+}
+.dos-ide-pro :is(.dos-file-list,.dos-terminal-body,.dos-search-results,.dos-command-results,.dos-dock-content,.dos-inspector){
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:#25485a transparent;
+}
+.dos-ide-pro ::-webkit-scrollbar{width:8px;height:8px}
+.dos-ide-pro ::-webkit-scrollbar-thumb{
+  border:2px solid transparent;
+  border-radius:20px;
+  background:#254252;
+  background-clip:padding-box;
+}
+.dos-ide-pro ::-webkit-scrollbar-thumb:hover{background:#38677c;background-clip:padding-box}
+.dos-ide-pro .dos-top-actions button,
+.dos-ide-pro .dos-editor-toolbar button,
+.dos-ide-pro .dos-activity button,
+.dos-ide-pro .dos-workbench-actions button,
+.dos-ide-pro .dos-dock-tabs button{
+  transition:background-color .14s ease,border-color .14s ease,color .14s ease,transform .14s ease;
+}
+.dos-ide-pro .dos-tab.active{position:relative}
+.dos-ide-pro .dos-tab.active::after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:0;
+  height:2px;
+  background:linear-gradient(90deg,#55dcff,#7c9dff);
+  pointer-events:none;
+}
+.dos-ide-pro .dos-statusbar{flex:0 0 auto;overflow:hidden}
+.dos-ide-pro .dos-statusbar span{white-space:nowrap}
+@media(max-width:1100px){
+  .dos-ide-pro .dos-body{grid-template-columns:40px 210px minmax(0,1fr)!important}
+  .dos-ide-pro .dos-inspector{display:none}
+  .dos-ide-pro .dos-workbench-actions .dos-return-workbench{display:none}
+}
+@media(max-width:760px){
+  .dos-ide-pro .dos-topbar{flex-wrap:wrap;height:auto;min-height:54px;padding-block:7px}
+  .dos-ide-pro .dos-brand{display:none}
+  .dos-ide-pro .dos-home-button{max-width:38px;min-width:34px}
+  .dos-ide-pro .dos-home-label{display:none}
+  .dos-ide-pro .dos-workspace-select{flex:1 1 140px;max-width:none}
+  .dos-ide-pro .dos-top-actions{gap:3px}
+  .dos-ide-pro .dos-top-actions button{padding-inline:7px}
+  .dos-ide-pro .dos-commandbar{gap:5px;padding-inline:7px}
+  .dos-ide-pro .dos-commandbar>*:nth-child(n+5):not(.dos-spacer){display:none}
+  .dos-ide-pro .dos-body{grid-template-columns:38px minmax(0,1fr)!important}
+  .dos-ide-pro .dos-explorer{display:none}
+  .dos-ide-pro .dos-editor-toolbar .dos-toolbar-group:nth-child(3),
+  .dos-ide-pro .dos-editor-toolbar .dos-toolbar-file-actions{display:none}
+  .dos-ide-pro .dos-workbench-strip{padding-inline:7px}
+  .dos-ide-pro .dos-workbench-actions{gap:2px}
+  .dos-ide-pro .dos-workbench-actions button{padding-inline:5px}
+  .dos-ide-pro .dos-ide-dock{max-height:42vh}
+}
+@media(prefers-reduced-motion:reduce){
+  .dos-ide-pro *,
+  .dos-ide-pro *::before,
+  .dos-ide-pro *::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
