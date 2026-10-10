@@ -3721,3 +3721,26 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
     display: none !important;
   }
 }
+
+/* Correct responsive track order: Explorer stays compact and the editor gets the remaining width. */
+@media (max-width: 1180px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 48px minmax(160px, 220px) minmax(0, 1fr) !important;
+  }
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
+    display: none !important;
+  }
+}
+@media (max-width: 900px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 42px minmax(145px, 180px) minmax(0, 1fr) !important;
+  }
+}
+@media (max-width: 560px) {
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-body {
+    grid-template-columns: 38px minmax(0, 1fr) !important;
+  }
+  body:has(.dos-ide-pro) .dos-ide-pro .dos-explorer {
+    display: none !important;
+  }
+}
