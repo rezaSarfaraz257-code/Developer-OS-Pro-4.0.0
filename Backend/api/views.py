@@ -294,6 +294,20 @@ def profile_api(request):
         full_name = profile.full_name or " ".join(
             filter(None, [user.first_name, user.last_name])
         ).strip()
+        avatar_url = profile.avatar_url
+        if profile.avatar:
+            try:
+                # Do not advertise a stale local/S3 object URL when the file
+                # is absent; missing uploads can then be replaced cleanly.
+                if profile.avatar.storage.exists(profile.avatar.name):
+                    avatar_url = request.build_absolute_uri(profile.avatar.url)
+                else:
+                    avatar_url = ""
+            except Exception:
+                # A temporary object-store error must not break all profile
+                # settings; omit the image and keep the rest of the profile usable.
+                avatar_url = ""
+
         return Response({
             "id": user.id,
             "username": user.username,
@@ -302,12 +316,8 @@ def profile_api(request):
             "email": user.email,
             "email_verified": profile.email_verified,
             "full_name": full_name,
-            "avatar_url": (
-                request.build_absolute_uri(profile.avatar.url)
-                if profile.avatar
-                else profile.avatar_url
-            ),
-            "has_uploaded_avatar": bool(profile.avatar),
+            "avatar_url": avatar_url,
+            "has_uploaded_avatar": bool(avatar_url),
             "bio": profile.bio,
             "github": profile.github,
             "linkedin": profile.linkedin,
