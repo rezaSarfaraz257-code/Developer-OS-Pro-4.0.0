@@ -247,7 +247,7 @@ export function SourceControlPanel({workspace,onClose,onSync}) {
   setGit(next);
   setMessage(failed.length?(`Partial Git refresh — ${failed.join(" · ")}`):"Git state synchronized.");
   setBusy(false);
- },[workspace?.id]);
+ },[workspace]);
  useEffect(()=>{void refresh()},[refresh]);
  async function gitAction(operation,args){
   if(!workspace?.id)return setMessage("Open a workspace first.");
