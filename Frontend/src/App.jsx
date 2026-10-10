@@ -6,6 +6,7 @@ import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
 import ProIDE from "./ProIDE";
 import Avatar from "./components/Avatar";
+import { normalizeProfileLink, safeProfileLink } from "./utils/profile.js";
 import Referral from "./Referral";
 
 const nav = [
@@ -816,6 +817,10 @@ function Profile({ onProfileUpdate }) {
     setSaved(false);
     setSaveError("");
     try {
+      const github = normalizeProfileLink(profile.github);
+      const linkedin = normalizeProfileLink(profile.linkedin);
+      const x = normalizeProfileLink(profile.x);
+      const website = normalizeProfileLink(profile.website);
       const payload = new FormData();
       payload.append("full_name", profile.full_name || "");
       payload.append("first_name", profile.first_name || "");
@@ -827,10 +832,10 @@ function Profile({ onProfileUpdate }) {
       payload.append("job_title", profile.job_title || "");
       payload.append("skills", profile.skills || "");
       payload.append("timezone", profile.timezone || "");
-      payload.append("github", profile.github || "");
-      payload.append("linkedin", profile.linkedin || "");
-      payload.append("x", profile.x || "");
-      payload.append("website", profile.website || "");
+      payload.append("github", github);
+      payload.append("linkedin", linkedin);
+      payload.append("x", x);
+      payload.append("website", website);
       if (avatarFile) payload.append("avatar", avatarFile);
       if (removeAvatar) {
         payload.append("remove_avatar", "true");
@@ -871,7 +876,9 @@ function Profile({ onProfileUpdate }) {
     ["Skills", Boolean(profile.skills?.trim())], ["Developer links", Boolean(profile.github || profile.website || profile.linkedin)],
   ];
   const profileScore = Math.round(profileChecks.filter(([, complete]) => complete).length / profileChecks.length * 100);
-  const publicLinks = [["GitHub", profile.github], ["Website", profile.website], ["LinkedIn", profile.linkedin], ["X", profile.x]].filter(([, url]) => url);
+  const publicLinks = [["GitHub", profile.github], ["Website", profile.website], ["LinkedIn", profile.linkedin], ["X", profile.x]]
+    .map(([label, url]) => [label, safeProfileLink(url)])
+    .filter(([, url]) => Boolean(url));
 
   return (
     <div className="page">
@@ -923,8 +930,8 @@ function Profile({ onProfileUpdate }) {
           <label>TIME ZONE<select value={profile.timezone || ""} onChange={e => { setProfile({...profile, timezone:e.target.value}); setSaved(false); }}>
             <option value="">Select a time zone</option><option value="Asia/Kabul">Asia/Kabul (UTC+04:30)</option><option value="Asia/Dubai">Asia/Dubai (UTC+04:00)</option><option value="Asia/Karachi">Asia/Karachi (UTC+05:00)</option><option value="Asia/Kolkata">Asia/Kolkata (UTC+05:30)</option><option value="Europe/London">Europe/London</option><option value="Europe/Berlin">Europe/Berlin</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="UTC">UTC</option>
           </select></label>
-          <label className="profile-field-wide">SKILLS / TECH STACK<input value={profile.skills || ""} onChange={e => { setProfile({...profile, skills:e.target.value}); setSaved(false); }} maxLength="500" placeholder="Python, Django, React, PostgreSQL" /><small>Use commas between skills and technologies.</small></label>
-          <label className="profile-field-wide">BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} maxLength="5000" placeholder="What are you building and what do you enjoy solving?" /></label>
+          <label className="profile-field-wide">SKILLS / TECH STACK<input value={profile.skills || ""} onChange={e => { setProfile({...profile, skills:e.target.value}); setSaved(false); }} maxLength="500" placeholder="Python, Django, React, PostgreSQL" /><small>Use commas between skills and technologies. <span className="profile-character-count">{(profile.skills || "").length}/500</span></small></label>
+          <label className="profile-field-wide">BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} maxLength="5000" placeholder="What are you building and what do you enjoy solving?" /><small className="profile-character-count">{(profile.bio || "").length}/5000 characters</small></label>
           <label>GITHUB PROFILE<input type="url" value={profile.github || ""} onChange={e => { setProfile({...profile, github:e.target.value}); setSaved(false); }} placeholder="https://github.com/username" /></label>
           <label>LINKEDIN PROFILE<input type="url" value={profile.linkedin || ""} onChange={e => { setProfile({...profile, linkedin:e.target.value}); setSaved(false); }} placeholder="https://linkedin.com/in/username" /></label>
           <label>X / SOCIAL PROFILE<input type="url" value={profile.x || ""} onChange={e => { setProfile({...profile, x:e.target.value}); setSaved(false); }} placeholder="https://x.com/username" /></label>
