@@ -526,3 +526,92 @@
 @media(max-width:600px){.dos-ide-pro .dos-editor-settings-panel{top:58px!important;right:8px!important;width:calc(100% - 16px);max-height:calc(100% - 72px);padding:12px}}
 
 .dos-ide-pro .dos-settings-shortcuts{color:var(--workbench-muted,#7d93a7);font-size:10px;line-height:1.5}
+
+
+/* FOCUS MODE FIX — keep the workbench sized to the viewport and give Monaco
+   one explicit, non-collapsing grid cell. These rules intentionally come last
+   to override the legacy focus/zen/responsive layout rules above. */
+.dos-ide-pro.dos-focus-mode{
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  height:calc(100dvh - 24px)!important;
+  min-height:min(560px,calc(100dvh - 24px))!important;
+  max-height:calc(100dvh - 24px)!important;
+  flex:0 0 auto!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode>.dos-ide-glow{flex:0 0 0!important;min-height:0!important}
+.dos-ide-pro.dos-focus-mode>.dos-topbar{
+  display:flex!important;
+  flex:0 0 auto!important;
+  min-width:0!important;
+  min-height:44px!important;
+  width:100%!important;
+}
+.dos-ide-pro.dos-focus-mode>.dos-body{
+  display:grid!important;
+  position:relative!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  grid-template-areas:"editor"!important;
+  grid-auto-flow:row!important;
+  flex:1 1 0!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:0!important;
+  max-height:none!important;
+  overflow:hidden!important;
+  gap:0!important;
+}
+.dos-ide-pro.dos-focus-mode>.dos-body>.dos-activity,
+.dos-ide-pro.dos-focus-mode>.dos-body>.dos-explorer,
+.dos-ide-pro.dos-focus-mode>.dos-body>.dos-inspector{
+  display:none!important;
+  width:0!important;
+  min-width:0!important;
+  max-width:0!important;
+}
+.dos-ide-pro.dos-focus-mode>.dos-body>.dos-editor-shell{
+  display:flex!important;
+  position:relative!important;
+  grid-area:editor!important;
+  grid-column:1 / 2!important;
+  grid-row:1 / 2!important;
+  align-self:stretch!important;
+  justify-self:stretch!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editors,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane>.monaco-host{
+  flex:1 1 0!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:0!important;
+  max-height:none!important;
+}
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor,
+.dos-ide-pro.dos-focus-mode .dos-editor-pane .monaco-editor .overflow-guard{
+  min-width:0!important;
+  max-width:100%!important;
+}
+.dos-ide-pro.dos-focus-mode>.dos-statusbar{
+  display:flex!important;
+  flex:0 0 auto!important;
+  width:100%!important;
+  min-width:0!important;
+}
+@media(max-height:620px){
+  .dos-ide-pro.dos-focus-mode{min-height:0!important;height:calc(100dvh - 12px)!important;max-height:calc(100dvh - 12px)!important}
+}
