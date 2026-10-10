@@ -1,18 +1,29 @@
+import re
 import time
 import uuid
 import logging
 
 logger = logging.getLogger("developer_os.request")
 
+# Client-supplied trace IDs are untrusted. Keep them short and log-safe.
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _request_id_from_header(value):
+    candidate = (value or "").strip()
+    if _REQUEST_ID_PATTERN.fullmatch(candidate):
+        return candidate
+    return uuid.uuid4().hex
+
 
 class RequestObservabilityMiddleware:
-    """Attach a correlation ID and server timing to every API response."""
+    """Attach a validated correlation ID and server timing to every response."""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        request_id = _request_id_from_header(request.headers.get("X-Request-ID"))
         request.request_id = request_id
         started = time.perf_counter()
         try:
@@ -24,7 +35,6 @@ class RequestObservabilityMiddleware:
         response["X-Request-ID"] = request_id
         response["Server-Timing"] = f"app;dur={duration_ms}"
         response["X-Content-Type-Options"] = "nosniff"
-        response["X-Request-ID"] = request_id
         return response
 
 
