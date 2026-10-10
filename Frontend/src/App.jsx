@@ -418,7 +418,7 @@ function Dashboard({ go }) {
   const urgentTasks = Number(data?.urgent_tasks ?? 0) || 0;
   const doneTasks = Number(data?.done_tasks ?? 0) || 0;
   const overdueTasks = Number(data?.overdue_tasks ?? 0) || 0;
-  const projectSignals = Array.isArray(data?.project_completion) ? data.project_completion : [];
+  const projectSignals = Array.isArray(data?.project_completion) && data.project_completion.length ? data.project_completion : projects.map((project) => ({ id: project.id, title: project.title, status: project.status, tasks: project.task_count ?? project.tasks_count ?? 0, progress: project.progress ?? 0 }));
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const displayName = (data?.first_name || "").trim() || "Developer";
