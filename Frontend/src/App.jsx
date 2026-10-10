@@ -818,8 +818,18 @@ function Profile({ onProfileUpdate }) {
     try {
       const payload = new FormData();
       payload.append("full_name", profile.full_name || "");
+      payload.append("first_name", profile.first_name || "");
+      payload.append("last_name", profile.last_name || "");
+      payload.append("email", profile.email || "");
       payload.append("bio", profile.bio || "");
+      payload.append("country", profile.country || "");
+      payload.append("city", profile.city || "");
+      payload.append("job_title", profile.job_title || "");
+      payload.append("skills", profile.skills || "");
+      payload.append("timezone", profile.timezone || "");
       payload.append("github", profile.github || "");
+      payload.append("linkedin", profile.linkedin || "");
+      payload.append("x", profile.x || "");
       payload.append("website", profile.website || "");
       if (avatarFile) payload.append("avatar", avatarFile);
       if (removeAvatar) {
@@ -859,6 +869,10 @@ function Profile({ onProfileUpdate }) {
         <div><div className="eyebrow">YOUR SPACE / IDENTITY</div><h1>My Profile</h1><p>Your developer identity, public links and personal details — all in one dedicated place.</p></div>
       </div>
       <section className="panel settings-form profile-settings-panel">
+        <div className="profile-settings-intro">
+          <div><span className="eyebrow">DEVELOPER IDENTITY</span><h2>Profile overview</h2><p>Make your profile useful for collaboration, discoverability, and future team workflows.</p></div>
+          <div className={profile.email_verified ? "profile-verification verified" : "profile-verification"}>{profile.email_verified ? "✓ EMAIL VERIFIED" : "○ EMAIL UNVERIFIED"}</div>
+        </div>
         <div className="profile-settings-avatar-row">
           <Avatar imageUrl={displayedAvatar} initials={initials} className="profile-settings-avatar" label={profileName + " profile photo"} />
           <div className="profile-settings-avatar-copy">
@@ -874,10 +888,22 @@ function Profile({ onProfileUpdate }) {
             {avatarError && <p className="profile-avatar-error" role="alert">{avatarError}</p>}
           </div>
         </div>
-        <label>FULL NAME<input value={profile.full_name || ""} onChange={e => { setProfile({...profile, full_name:e.target.value}); setSaved(false); }} /></label>
-        <label>BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} /></label>
-        <label>GITHUB<input value={profile.github || ""} onChange={e => { setProfile({...profile, github:e.target.value}); setSaved(false); }} /></label>
-        <label>WEBSITE<input value={profile.website || ""} onChange={e => { setProfile({...profile, website:e.target.value}); setSaved(false); }} /></label>
+        <div className="profile-settings-grid">
+          <label>FULL NAME<input autoComplete="name" value={profile.full_name || ""} onChange={e => { setProfile({...profile, full_name:e.target.value}); setSaved(false); }} maxLength="200" placeholder="Your display name" /></label>
+          <label>EMAIL ADDRESS<input type="email" autoComplete="email" value={profile.email || ""} onChange={e => { setProfile({...profile, email:e.target.value}); setSaved(false); }} maxLength="254" placeholder="you@example.com" /><small>Changing your email requires verification again.</small></label>
+          <label>PROFESSIONAL TITLE<input value={profile.job_title || ""} onChange={e => { setProfile({...profile, job_title:e.target.value}); setSaved(false); }} maxLength="120" placeholder="e.g. Full-stack Developer" /></label>
+          <label>COUNTRY<input autoComplete="country-name" value={profile.country || ""} onChange={e => { setProfile({...profile, country:e.target.value}); setSaved(false); }} maxLength="100" placeholder="Country" /></label>
+          <label>CITY / REGION<input autoComplete="address-level2" value={profile.city || ""} onChange={e => { setProfile({...profile, city:e.target.value}); setSaved(false); }} maxLength="100" placeholder="City or region" /></label>
+          <label>TIME ZONE<select value={profile.timezone || ""} onChange={e => { setProfile({...profile, timezone:e.target.value}); setSaved(false); }}>
+            <option value="">Select a time zone</option><option value="Asia/Kabul">Asia/Kabul (UTC+04:30)</option><option value="Asia/Dubai">Asia/Dubai (UTC+04:00)</option><option value="Asia/Karachi">Asia/Karachi (UTC+05:00)</option><option value="Asia/Kolkata">Asia/Kolkata (UTC+05:30)</option><option value="Europe/London">Europe/London</option><option value="Europe/Berlin">Europe/Berlin</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="UTC">UTC</option>
+          </select></label>
+          <label className="profile-field-wide">SKILLS / TECH STACK<input value={profile.skills || ""} onChange={e => { setProfile({...profile, skills:e.target.value}); setSaved(false); }} maxLength="500" placeholder="Python, Django, React, PostgreSQL" /><small>Use commas between skills and technologies.</small></label>
+          <label className="profile-field-wide">BIO<textarea value={profile.bio || ""} onChange={e => { setProfile({...profile, bio:e.target.value}); setSaved(false); }} maxLength="5000" placeholder="What are you building and what do you enjoy solving?" /></label>
+          <label>GITHUB PROFILE<input type="url" value={profile.github || ""} onChange={e => { setProfile({...profile, github:e.target.value}); setSaved(false); }} placeholder="https://github.com/username" /></label>
+          <label>LINKEDIN PROFILE<input type="url" value={profile.linkedin || ""} onChange={e => { setProfile({...profile, linkedin:e.target.value}); setSaved(false); }} placeholder="https://linkedin.com/in/username" /></label>
+          <label>X / SOCIAL PROFILE<input type="url" value={profile.x || ""} onChange={e => { setProfile({...profile, x:e.target.value}); setSaved(false); }} placeholder="https://x.com/username" /></label>
+          <label>PERSONAL WEBSITE<input type="url" value={profile.website || ""} onChange={e => { setProfile({...profile, website:e.target.value}); setSaved(false); }} placeholder="https://example.com" /></label>
+        </div>
         {saveError && <div className="error" role="alert">{saveError}</div>}
         <button className="primary" type="button" onClick={save} disabled={saving}>{saving ? "SAVING PROFILE…" : saved ? "SAVED ✓" : "SAVE CHANGES"}</button>
       </section>
