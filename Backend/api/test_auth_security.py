@@ -2,12 +2,13 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .mature import sha256
-from .models import EmailVerificationToken, UserProfile
+from .models import BackgroundJob, EmailVerificationToken, UserProfile
+from .mature import queue_email
 
 
 class AuthenticationHardeningTests(TestCase):
@@ -37,6 +38,79 @@ class AuthenticationHardeningTests(TestCase):
         queue_email.assert_called_once()
         self.assertEqual(queue_email.call_args.args[1], user.email)
         self.assertEqual(queue_email.call_args.kwargs["idempotency_key"].split(":")[:2], ["email-verification", str(user.pk)])
+
+    @override_settings(
+        EMAIL_DELIVERY_MODE="inline",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.test>",
+    )
+    def test_registration_sends_verification_email_without_worker(self):
+        from django.core import mail
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/register/",
+                {
+                    "username": "inline-mail-user",
+                    "email": "inline-mail@example.test",
+                    "password": "A-Unique-Long-Password-934!",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["inline-mail@example.test"])
+        self.assertIn("verify-email?token=", mail.outbox[0].body)
+        job = BackgroundJob.objects.get(kind="email", payload__to="inline-mail@example.test")
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.attempts, 1)
+        self.assertEqual(job.result.get("delivery_mode"), "inline")
+
+    @override_settings(
+        EMAIL_DELIVERY_MODE="inline",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.test>",
+    )
+    def test_inline_email_failure_is_recorded_without_raising(self):
+        with patch("api.mature.EmailMultiAlternatives.send", side_effect=OSError("SMTP unavailable")):
+            with self.captureOnCommitCallbacks(execute=True):
+                job = queue_email(
+                    "email_verification",
+                    "failure@example.test",
+                    "Verify",
+                    "Verification link",
+                    idempotency_key="inline-failure-test",
+                )
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(job.attempts, 1)
+        self.assertIn("SMTP unavailable", job.error)
+        self.assertIsNotNone(job.finished_at)
+
+    @override_settings(
+        EMAIL_DELIVERY_MODE="inline",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.test>",
+    )
+    def test_inline_delivery_respects_idempotency(self):
+        from django.core import mail
+
+        with self.captureOnCommitCallbacks(execute=True):
+            first = queue_email(
+                "email_verification", "same@example.test", "Verify", "Link",
+                idempotency_key="same-verification-token",
+            )
+        with self.captureOnCommitCallbacks(execute=True):
+            second = queue_email(
+                "email_verification", "same@example.test", "Verify again", "Different link",
+                idempotency_key="same-verification-token",
+            )
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(BackgroundJob.objects.filter(kind="email", idempotency_key="same-verification-token").count(), 1)
 
     def test_verification_token_is_single_use(self):
         user = User.objects.create_user(
