@@ -3602,3 +3602,34 @@ body:has(.dos-ide-pro) .os-main > .os-content{
 .dos-ide-pro .dos-ide-dock { order:5; }
 .dos-ide-pro .dos-terminal { order:6; }
 .dos-ide-pro .dos-statusbar { order:7; }
+
+
+/* FULL-WIDTH IDE FIX — let the editor consume the available viewport without a phantom right gutter */
+.dos-ide-pro {
+  box-sizing:border-box;
+  width:100%;
+  max-width:none;
+  min-width:0;
+  margin:0;
+  flex:1 1 auto;
+}
+.dos-ide-pro *,
+.dos-ide-pro *::before,
+.dos-ide-pro *::after { box-sizing:border-box; }
+.dos-ide-pro .dos-body {
+  width:100%;
+  min-width:0;
+  grid-template-columns:48px minmax(180px,220px) minmax(0,1fr) minmax(190px,220px);
+}
+.dos-ide-pro .dos-editor-shell,
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-inspector { min-width:0; }
+@media (max-width:1180px) {
+  .dos-ide-pro { width:100%; }
+  .dos-ide-pro .dos-body {
+    grid-template-columns:44px minmax(0,1fr) minmax(170px,22%) !important;
+  }
+}
+@media (max-width:900px) {
+  .dos-ide-pro .dos-body { grid-template-columns:42px minmax(0,1fr) !important; }
+}
