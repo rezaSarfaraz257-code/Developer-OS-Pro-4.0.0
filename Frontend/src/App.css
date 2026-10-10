@@ -489,6 +489,7 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .auth-screen{
   min-height:100vh;
   min-height:100dvh;
+  margin:10px;
   height:auto;
   display:flex;
   flex-direction:column;
