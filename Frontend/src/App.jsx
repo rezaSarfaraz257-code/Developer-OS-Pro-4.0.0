@@ -623,7 +623,7 @@ function Explore() {
   const currentCount=data.length;
 
 
-  return <div className="page explore-page">
+  return <div className="page explore-page explore-modern">
     <section className="explore-hero">
       <div className="explore-hero-glow"/>
       <div className="explore-hero-copy">
