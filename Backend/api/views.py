@@ -10,7 +10,7 @@ import logging
 from django.contrib.auth.models import User
 from django.db import connection, DatabaseError
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, F
@@ -336,6 +336,14 @@ def profile_api(request):
                         avatar_url = ""
                         profile.avatar_url = ""
                         profile.save(update_fields=["avatar_url", "updated_at"])
+                except ImproperlyConfigured:
+                    # Without durable storage configured, a legacy Render
+                    # filesystem URL cannot be served reliably. Remove it so
+                    # the frontend falls back to initials instead of retrying
+                    # a broken image URL on every page load.
+                    avatar_url = ""
+                    profile.avatar_url = ""
+                    profile.save(update_fields=["avatar_url", "updated_at"])
                 except Exception:
                     # Keep profile data available if storage is temporarily down.
                     avatar_url = ""
