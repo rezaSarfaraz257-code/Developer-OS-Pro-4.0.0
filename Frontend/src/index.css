@@ -78,8 +78,8 @@ img { display: block; max-width: 100%; }
    Overlay scrollbars on macOS/mobile remain controlled by the operating system. */
 @media (hover: hover) and (pointer: fine) {
   *::-webkit-scrollbar:hover {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 
   *:hover::-webkit-scrollbar-thumb {
