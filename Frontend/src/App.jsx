@@ -536,23 +536,60 @@ function Explore() {
   const [savedOnly,setSavedOnly]=useState(false);
   const [pageSize,setPageSize]=useState(12);
 
-  const load=async()=>{
-    setBusy(true); setError("");
-    try{
-      const [t,w,r,f,ws]=await Promise.all([
-        apiFetch(`/tools/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch(`/workflows/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch(`/resources/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch("/favorites/").then(x=>x.json()),
-        apiFetch("/ide/workspaces/").then(x=>x.json()),
-      ]);
-      const arr=x=>Array.isArray(x)?x:(x?.results||[]);
-      setTools(arr(t)); setWorkflows(arr(w)); setResources(arr(r)); setFavorites(arr(f)); setWorkspaces(arr(ws));
-    }catch(e){setError(e.message)}
-    finally{setBusy(false)}
+  const requestSequence = useRef(0);
+  const favoriteBusyRef = useRef(new Set());
+  const workspaceBusyRef = useRef(new Set());
+  const [favoriteBusy, setFavoriteBusy] = useState([]);
+  const [workspaceBusy, setWorkspaceBusy] = useState([]);
+  const [compact, setCompact] = useState(false);
+  const searchRef = useRef(null);
+  const toastTimer = useRef(null);
+
+  const parseCatalogResponse = async (response, label) => {
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || payload.detail || label + " could not be loaded (HTTP " + response.status + ").");
+    return payload;
   };
-  useEffect(()=>{const t=setTimeout(()=>load(),220);return()=>clearTimeout(t)},[q]);
-  useEffect(()=>{const fn=e=>{if(e.key==="/"&&!["INPUT","TEXTAREA"].includes(document.activeElement?.tagName)){e.preventDefault();document.querySelector(".explore-search")?.focus()}};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn)},[]);
+  const asArray = value => Array.isArray(value) ? value : Array.isArray(value?.results) ? value.results : [];
+  const notify = message => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 3200);
+  };
+
+  const load = useCallback(async (query = q) => {
+    const requestId = ++requestSequence.current;
+    setBusy(true);
+    setError("");
+    const encoded = encodeURIComponent(query.trim());
+    const results = await Promise.allSettled([
+      apiFetch("/tools/?q=" + encoded).then(response => parseCatalogResponse(response, "Tools")),
+      apiFetch("/workflows/?q=" + encoded).then(response => parseCatalogResponse(response, "Workflows")),
+      apiFetch("/resources/?q=" + encoded).then(response => parseCatalogResponse(response, "Resources")),
+      apiFetch("/favorites/").then(response => parseCatalogResponse(response, "Favorites")),
+      apiFetch("/ide/workspaces/").then(response => parseCatalogResponse(response, "Workspaces")),
+    ]);
+    if (requestId !== requestSequence.current) return;
+    const labels = ["tools", "workflows", "resources", "favorites", "workspaces"];
+    const setters = [setTools, setWorkflows, setResources, setFavorites, setWorkspaces];
+    const failures = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") setters[index](asArray(result.value));
+      else failures.push(labels[index] + ": " + (result.reason?.message || "temporarily unavailable"));
+    });
+    setError(failures.length ? "Some Explore services need attention — " + failures.join("; ") + "." : "");
+    setBusy(false);
+  }, [q]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(q); }, q.trim() ? 260 : 0);
+    return () => window.clearTimeout(timer);
+  }, [q, load]);
+
+  useEffect(() => () => {
+    requestSequence.current += 1;
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+  }, []);
 
   const toggle=async tool=>{
     const saved=favorites.some(f=>f.tool?.name?.toLowerCase()===tool.name.toLowerCase());
