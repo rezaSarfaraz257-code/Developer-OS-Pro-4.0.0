@@ -22,6 +22,7 @@ async function responseData(response, fallback) {
 
 export default function CommunityFeed() {
   const [posts, setPosts] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
@@ -42,6 +43,7 @@ export default function CommunityFeed() {
       const response = await apiFetch(`/community/posts/${suffix}`);
       const payload = await responseData(response, "Community feed could not be loaded.");
       const results = Array.isArray(payload) ? payload : (payload.results || []);
+      setHasMore(Boolean(payload.next_before_id));
       setPosts(previous => append ? [...previous, ...results.filter(p => !previous.some(old => old.id === p.id))] : results);
     } catch (err) {
       setError(err?.message || "Community feed could not be loaded.");
@@ -175,6 +177,6 @@ export default function CommunityFeed() {
         </div>}
       </article>)}</div>
     }
-    {!loading && posts.length >= 50 && <div className="community-load-more"><button type="button" onClick={() => void loadPosts(posts[posts.length - 1]?.id, true)}>LOAD OLDER POSTS ↓</button></div>}
+    {!loading && hasMore && <div className="community-load-more"><button type="button" onClick={() => void loadPosts(posts[posts.length - 1]?.id, true)}>LOAD OLDER POSTS ↓</button></div>}
   </section>;
 }
