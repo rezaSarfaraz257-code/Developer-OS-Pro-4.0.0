@@ -32,3 +32,68 @@ img { display: block; max-width: 100%; }
 
 .app-error-card p { color: #a9bbcf; line-height: 1.7; }
 .app-error-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+
+
+/* Adaptive scrollbars: compact at rest, easier to grab on hover/focus.
+   Keep native scrolling and layout intact; touch devices retain their system behavior. */
+:root {
+  scrollbar-color: rgba(112, 145, 174, 0.58) rgba(9, 15, 24, 0.55);
+  scrollbar-width: thin;
+}
+
+* {
+  scrollbar-color: rgba(112, 145, 174, 0.58) rgba(9, 15, 24, 0.55);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(9, 15, 24, 0.38);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: rgba(112, 145, 174, 0.58);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover,
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background-color: rgba(103, 232, 249, 0.82);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Increase the hit target only while a scroll container is interacted with.
+   Overlay scrollbars on macOS/mobile remain controlled by the operating system. */
+@media (hover: hover) and (pointer: fine) {
+  *::-webkit-scrollbar:hover {
+    width: 16px;
+    height: 16px;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    border-width: 3px;
+    background-color: rgba(103, 232, 249, 0.72);
+  }
+
+  *:hover::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(103, 232, 249, 0.95);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  *::-webkit-scrollbar-thumb {
+    transition: background-color 160ms ease;
+  }
+}
