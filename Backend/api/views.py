@@ -4041,9 +4041,9 @@ def _community_post_payload(post, user):
         "author_username": post.author.username,
         "created_at": post.created_at.isoformat(),
         "updated_at": post.updated_at.isoformat(),
-        "like_count": int(getattr(post, "like_count", post.likes.count())),
-        "comment_count": int(getattr(post, "comment_count", post.comments.count())),
-        "liked_by_me": bool(getattr(post, "liked_by_me", post.likes.filter(pk=user.pk).exists())),
+        "like_count": int(post.like_count if hasattr(post, "like_count") else post.likes.count()),
+        "comment_count": int(post.comment_count if hasattr(post, "comment_count") else post.comments.count()),
+        "liked_by_me": bool(post.liked_by_me if hasattr(post, "liked_by_me") else post.likes.filter(pk=user.pk).exists()),
         "is_author": post.author_id == user.pk,
     }
 
@@ -4078,7 +4078,7 @@ def community_posts_api(request):
             return Response({"error": "before_id must be a positive post ID."}, status=400)
         if before_id > 0:
             before = get_object_or_404(CommunityPost, pk=before_id)
-            query = query.filter(created_at__lt=before.created_at) | query.filter(created_at=before.created_at, id__lt=before.id)
+            query = query.filter(Q(created_at__lt=before.created_at) | Q(created_at=before.created_at, id__lt=before.id))
             query = query.select_related("author").annotate(
                 like_count=Count("likes", distinct=True),
                 comment_count=Count("comments", distinct=True),
