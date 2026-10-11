@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "./services/api";
 import "./CommunityFeed.css";
 
@@ -34,21 +34,27 @@ export default function CommunityFeed() {
   const [commentDrafts, setCommentDrafts] = useState({});
   const [commentLoading, setCommentLoading] = useState([]);
   const [commentPosting, setCommentPosting] = useState([]);
+  const [feedQuery, setFeedQuery] = useState("");
+  const [feedView, setFeedView] = useState("all");
+  const [feedSort, setFeedSort] = useState("newest");
+  const requestSequence = useRef(0);
 
   const loadPosts = useCallback(async (beforeId = null, append = false) => {
+    const requestId = ++requestSequence.current;
     if (!append) setLoading(true);
     setError("");
     try {
       const suffix = beforeId ? `?before_id=${encodeURIComponent(beforeId)}` : "";
       const response = await apiFetch(`/community/posts/${suffix}`);
       const payload = await responseData(response, "Community feed could not be loaded.");
+      if (requestId !== requestSequence.current) return;
       const results = Array.isArray(payload) ? payload : (payload.results || []);
       setHasMore(Boolean(payload.next_before_id));
       setPosts(previous => append ? [...previous, ...results.filter(p => !previous.some(old => old.id === p.id))] : results);
     } catch (err) {
-      setError(err?.message || "Community feed could not be loaded.");
+      if (requestId === requestSequence.current) setError(err?.message || "Community feed could not be loaded.");
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, []);
 
@@ -148,25 +154,47 @@ export default function CommunityFeed() {
     }
   };
 
+  const visiblePosts = useMemo(() => {
+    const needle = feedQuery.trim().toLowerCase();
+    const filtered = posts.filter(post => {
+      if (feedView === "mine" && !post.is_author) return false;
+      if (feedView === "liked" && !post.liked_by_me) return false;
+      return !needle || `${post.author_username || ""} ${post.body || ""}`.toLowerCase().includes(needle);
+    });
+    return filtered.sort((a, b) => {
+      if (feedSort === "popular") return (Number(b.like_count || 0) + Number(b.comment_count || 0) * 2) - (Number(a.like_count || 0) + Number(a.comment_count || 0) * 2) || new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      if (feedSort === "oldest") return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0) || Number(b.id || 0) - Number(a.id || 0);
+    });
+  }, [posts, feedQuery, feedView, feedSort]);
+  const loadedLikes = posts.reduce((sum, post) => sum + Number(post.like_count || 0), 0);
+  const activeDiscussions = posts.filter(post => Number(post.comment_count || 0) > 0).length;
+
   return <section className="community-feed">
     <header className="community-heading">
       <div><span className="community-eyebrow">DEVELOPER OS / COMMUNITY NETWORK</span><h2>Build in public. <em>Grow together.</em></h2><p>One shared space for developers to publish ideas, show progress, give feedback and connect across every account.</p></div>
-      <div className="community-live"><i /> PUBLIC FEED <b>{posts.length}</b></div>
+      <div className="community-live"><i /> PUBLIC NETWORK <b>{posts.length} loaded</b></div>
     </header>
+
+    <div className="community-network-stats" aria-label="Community feed summary"><div><span>POSTS LOADED</span><strong>{posts.length}</strong></div><div><span>REACTIONS</span><strong>{loadedLikes}</strong></div><div><span>ACTIVE DISCUSSIONS</span><strong>{activeDiscussions}</strong></div><div className="community-network-note"><span>BUILD IN PUBLIC</span><strong>Ideas grow when shared.</strong></div></div>
 
     <form className="community-composer" onSubmit={publish}>
       <div className="community-composer-top"><div className="community-composer-mark">✦</div><div><strong>Share with the community</strong><span>Your post will be visible to Developer OS members.</span></div><span className="community-public-chip">PUBLIC</span></div>
       <textarea value={draft} onChange={event => setDraft(event.target.value.slice(0, 3000))} maxLength={3000} rows={4} placeholder="What are you building, learning, or thinking about today?" aria-label="Write a public community post" />
+      <div className="community-writing-prompts" aria-label="Post ideas"><span>NEED AN IDEA?</span><button type="button" onClick={() => setDraft("🚀 What I’m building this week:\n\n🎯 Goal: \n🛠️ Stack: \n💡 Looking for feedback on: ")}>Build log</button><button type="button" onClick={() => setDraft("💡 I have an idea for a developer tool:\n\nProblem: \nMy idea: \nWho would benefit: ")}>Share an idea</button><button type="button" onClick={() => setDraft("🧠 Something I learned recently:\n\nThe lesson: \nHow I used it: \nWhat I’d tell another developer: ")}>Learning note</button></div>
       <div className="community-composer-footer"><span>{draft.length.toLocaleString()} / 3,000 characters · Be respectful. Never share secrets or access tokens.</span><button type="submit" disabled={!draft.trim() || posting}>{posting ? "PUBLISHING…" : "PUBLISH POST"} <b>↗</b></button></div>
     </form>
 
     {error && <div className="community-alert" role="alert">{error}</div>}
     {notice && <div className="community-notice" role="status">{notice}</div>}
 
-    <div className="community-feed-toolbar"><div><span>THE NETWORK</span><h3>Latest from developers</h3></div><button type="button" onClick={() => void loadPosts()} disabled={loading}>{loading ? "SYNCING…" : "↻ Refresh feed"}</button></div>
+    <div className="community-feed-toolbar"><div><span>THE NETWORK</span><h3>Developer conversations</h3><p>Discover ideas, share progress and join the discussion.</p></div><button type="button" onClick={() => void loadPosts()} disabled={loading}>{loading ? "SYNCING…" : "↻ Refresh feed"}</button></div>
 
-    {loading && posts.length === 0 ? <div className="community-loading"><i/><i/><i/></div> : posts.length === 0 ? <div className="community-empty"><div>◌</div><h3>The next great idea could be yours.</h3><p>Start the conversation by sharing what you are working on.</p></div> :
-      <div className="community-post-list">{posts.map(post => <article className="community-post" key={post.id}>
+    <div className="community-discovery-bar"><label className="community-feed-search"><span>⌕</span><input value={feedQuery} onChange={event => setFeedQuery(event.target.value)} placeholder="Search posts or developers…" aria-label="Search loaded community posts"/>{feedQuery && <button type="button" onClick={() => setFeedQuery("")} aria-label="Clear search">×</button>}</label><div className="community-feed-filters" role="group" aria-label="Filter posts">{[["all","All posts"],["mine","My posts"],["liked","Liked"]].map(([id,label]) => <button key={id} type="button" className={feedView === id ? "active" : ""} aria-pressed={feedView === id} onClick={() => setFeedView(id)}>{label}</button>)}</div><label className="community-feed-sort"><span>SORT</span><select value={feedSort} onChange={event => setFeedSort(event.target.value)} aria-label="Sort community posts"><option value="newest">Newest</option><option value="popular">Most discussed</option><option value="oldest">Oldest</option></select></label></div>
+    <div className="community-result-summary" aria-live="polite"><span>{visiblePosts.length} matching posts</span><span>Search and filters apply to the posts currently loaded</span></div>
+
+    {loading && posts.length === 0 ? <div className="community-loading"><i/><i/><i/></div> : posts.length === 0 ? <div className="community-empty"><div>◌</div><h3>The next great idea could be yours.</h3><p>Start the conversation by sharing what you are working on.</p></div> : visiblePosts.length === 0 ? <div className="community-filter-empty"><div>⌕</div><h3>No matching conversations</h3><p>Try a different search or switch the feed filter.</p><button type="button" onClick={() => { setFeedQuery(""); setFeedView("all"); }}>Clear search and filters</button></div> :
+      <div className="community-post-list">{visiblePosts.map(post => <article className="community-post" key={post.id}>
         <div className="community-post-header"><div className="community-avatar">{String(post.author_username || "D").slice(0, 1).toUpperCase()}</div><div className="community-author"><strong>{post.author_username || "Developer"}</strong><span>Developer OS member · {formatTime(post.created_at)}</span></div><span className="community-post-badge">COMMUNITY</span>{post.is_author && <button type="button" className="community-delete" onClick={() => void deletePost(post)} aria-label="Delete your post" title="Delete post">⋯</button>}</div>
         <div className="community-post-body">{post.body}</div>
         <div className="community-post-stats"><span>{post.like_count || 0} {(post.like_count || 0) === 1 ? "like" : "likes"}</span><span>{post.comment_count || 0} {(post.comment_count || 0) === 1 ? "comment" : "comments"}</span></div>
