@@ -78,3 +78,32 @@
 @media(max-width:1150px){.explore-modern .explore-orbit{right:4%;opacity:.45}.explore-modern .explore-command{grid-template-columns:1fr}.explore-modern .explore-tabs{justify-content:flex-start}.explore-modern .explore-controls{display:block}.explore-modern .explore-control-actions{justify-content:flex-start;margin-top:12px}.explore-modern .explore-grid-pro{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.explore-modern .explore-hero{padding:24px 19px;border-radius:14px}.explore-modern .explore-orbit{right:-70px;top:18%;transform:none;opacity:.22}.explore-modern .explore-hero-copy>p{max-width:100%}.explore-modern .explore-insights{grid-template-columns:repeat(2,minmax(0,1fr))}.explore-modern .explore-motto{grid-column:1/-1}.explore-modern .explore-grid-pro{grid-template-columns:1fr}.explore-modern .explore-results-line{align-items:flex-start;flex-direction:column}.explore-modern .explore-categories{flex-wrap:nowrap;overflow-x:auto;padding:3px 2px 8px;scrollbar-width:thin}.explore-modern .explore-categories button{flex:none}.explore-modern .explore-control-actions{justify-content:flex-start}.explore-modern .explore-sort-label{flex:1}.explore-modern .explore-sort-label select{min-width:0;max-width:none;flex:1}.explore-modern .explore-tabs button{flex:1;justify-content:center;padding:9px 7px}.explore-modern .explore-search-wrap{padding:10px 12px}.explore-modern .explore-search-wrap kbd{display:none}}
 @media(prefers-reduced-motion:reduce){.explore-modern *, .explore-modern *:before,.explore-modern *:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+
+/* Explore quality pass: compact density, resilient controls and keyboard access */
+.explore-modern .explore-search-wrap input{flex:1;width:100%}
+.explore-modern .explore-search-wrap button:focus-visible,
+.explore-modern .explore-control-actions button:focus-visible,
+.explore-modern .explore-card button:focus-visible,
+.explore-modern .explore-tabs button:focus-visible,
+.explore-modern .explore-categories button:focus-visible,
+.explore-modern .explore-tags button:focus-visible{outline:2px solid #79eaff;outline-offset:3px}
+.explore-modern .explore-tabs button:disabled,
+.explore-modern .explore-card button:disabled,
+.explore-modern .explore-control-actions button:disabled{opacity:.52;cursor:wait}
+.explore-modern .explore-card-top button[aria-pressed="true"]{color:#ff8cab;border-color:rgba(255,108,154,.3);background:rgba(255,108,154,.07)}
+.explore-modern .explore-control-actions>button{white-space:nowrap}
+.explore-modern .explore-grid-pro.is-compact{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.explore-modern .explore-grid-pro.is-compact .explore-card{min-height:0;padding:13px;border-radius:11px}
+.explore-modern .explore-grid-pro.is-compact .explore-icon{width:31px;height:31px;margin-top:10px;border-radius:8px;font-size:13px}
+.explore-modern .explore-grid-pro.is-compact .explore-card h3{font-size:14px;margin:10px 0 5px}
+.explore-modern .explore-grid-pro.is-compact .explore-card p{font-size:10px;line-height:1.55}
+.explore-modern .explore-grid-pro.is-compact .explore-card-tags{display:none}
+.explore-modern .explore-grid-pro.is-compact .explore-meta{padding-top:10px;font-size:7px}
+.explore-modern .explore-grid-pro.is-compact .explore-card-footer{margin-top:9px;padding-top:9px}
+.explore-modern .explore-grid-pro.is-compact .explore-card-footer button{font-size:8px}
+.explore-modern .explore-results-line{font-variant-numeric:tabular-nums}
+.explore-modern .explore-empty button:focus-visible{outline:2px solid #79eaff;outline-offset:3px}
+@media(max-width:980px){.explore-modern .explore-grid-pro.is-compact{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.explore-modern .explore-grid-pro.is-compact{grid-template-columns:1fr}.explore-modern .explore-control-actions{gap:6px}.explore-modern .explore-control-actions>button{padding:8px 9px}.explore-modern .explore-tabs button{min-width:0}.explore-modern .explore-tabs button b{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.explore-modern .explore-card,.explore-modern .explore-control-actions button{transition:none!important}}
