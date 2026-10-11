@@ -130,6 +130,28 @@ export default function CommunityFeed() {
     }
   };
 
+  const sharePost = async (post) => {
+    const url = new URL(window.location.href);
+    url.hash = `community-post-${post.id}`;
+    const shareData = {
+      title: `${post.author_username || "Developer"} · Developer OS Community`,
+      text: String(post.body || "").slice(0, 220),
+      url: url.toString(),
+    };
+    try {
+      if (typeof navigator.share === "function") {
+        await navigator.share(shareData);
+        setNotice("Post shared successfully.");
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url.toString());
+        setNotice("Post link copied. Share it with the community.");
+      } else {
+        setNotice(`Post link: ${url.toString()}`);
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") setError("This browser could not share the post. Try copying the page URL.");
+    }
+  };
   const deletePost = async (post) => {
     if (!window.confirm("Delete this post permanently?")) return;
     setError("");
@@ -194,11 +216,11 @@ export default function CommunityFeed() {
     <div className="community-result-summary" aria-live="polite"><span>{visiblePosts.length} matching posts</span><span>Search and filters apply to the posts currently loaded</span></div>
 
     {loading && posts.length === 0 ? <div className="community-loading"><i/><i/><i/></div> : posts.length === 0 ? <div className="community-empty"><div>◌</div><h3>The next great idea could be yours.</h3><p>Start the conversation by sharing what you are working on.</p></div> : visiblePosts.length === 0 ? <div className="community-filter-empty"><div>⌕</div><h3>No matching conversations</h3><p>Try a different search or switch the feed filter.</p><button type="button" onClick={() => { setFeedQuery(""); setFeedView("all"); }}>Clear search and filters</button></div> :
-      <div className="community-post-list">{visiblePosts.map(post => <article className="community-post" key={post.id}>
+      <div className="community-post-list">{visiblePosts.map(post => <article className="community-post" id={`community-post-${post.id}`} key={post.id}>
         <div className="community-post-header"><div className="community-avatar">{String(post.author_username || "D").slice(0, 1).toUpperCase()}</div><div className="community-author"><strong>{post.author_username || "Developer"}</strong><span>Developer OS member · {formatTime(post.created_at)}</span></div><span className="community-post-badge">COMMUNITY</span>{post.is_author && <button type="button" className="community-delete" onClick={() => void deletePost(post)} aria-label="Delete your post" title="Delete post">⋯</button>}</div>
         <div className="community-post-body">{post.body}</div>
         <div className="community-post-stats"><span>{post.like_count || 0} {(post.like_count || 0) === 1 ? "like" : "likes"}</span><span>{post.comment_count || 0} {(post.comment_count || 0) === 1 ? "comment" : "comments"}</span></div>
-        <div className="community-post-actions"><button type="button" className={post.liked_by_me ? "is-liked" : ""} onClick={() => void toggleLike(post)} disabled={likeBusy.includes(post.id)} aria-pressed={!!post.liked_by_me}><span>{post.liked_by_me ? "♥" : "♡"}</span> {post.liked_by_me ? "Liked" : "Like"}</button><button type="button" onClick={() => void toggleComments(post.id)} aria-expanded={expanded.includes(post.id)}><span>▤</span> {expanded.includes(post.id) ? "Hide comments" : "Comment"}</button><span className="community-action-spacer"/><span className="community-post-id">POST / {String(post.id).padStart(4, "0")}</span></div>
+        <div className="community-post-actions"><button type="button" className={post.liked_by_me ? "is-liked" : ""} onClick={() => void toggleLike(post)} disabled={likeBusy.includes(post.id)} aria-pressed={!!post.liked_by_me}><span>{post.liked_by_me ? "♥" : "♡"}</span> {post.liked_by_me ? "Liked" : "Like"}</button><button type="button" onClick={() => void toggleComments(post.id)} aria-expanded={expanded.includes(post.id)}><span>▤</span> {expanded.includes(post.id) ? "Hide comments" : "Comment"}</button><button type="button" onClick={() => void sharePost(post)} aria-label={`Share post by ${post.author_username || "developer"}`}><span>↗</span> Share</button><span className="community-action-spacer"/><span className="community-post-id">POST / {String(post.id).padStart(4, "0")}</span></div>
         {expanded.includes(post.id) && <div className="community-comments">
           {commentLoading.includes(post.id) ? <p className="community-comment-hint">Loading conversation…</p> : (comments[post.id] || []).length === 0 ? <p className="community-comment-hint">No comments yet. Start a thoughtful conversation.</p> : (comments[post.id] || []).map(comment => <div className="community-comment" key={comment.id}><div className="community-comment-avatar">{String(comment.author_username || "D").slice(0, 1).toUpperCase()}</div><div className="community-comment-content"><div><strong>{comment.author_username || "Developer"}</strong><time>{formatTime(comment.created_at)}</time></div><p>{comment.body}</p></div>{(comment.is_author || post.is_author) && <button type="button" onClick={() => void deleteComment(post, comment)} aria-label="Delete comment">×</button>}</div>)}
           <form className="community-comment-form" onSubmit={event => void publishComment(event, post)}><input value={commentDrafts[post.id] || ""} onChange={event => setCommentDrafts(previous => ({ ...previous, [post.id]: event.target.value.slice(0, 1200) }))} maxLength={1200} placeholder="Add a useful comment…" aria-label="Write a comment"/><button type="submit" disabled={!(commentDrafts[post.id] || "").trim() || commentPosting.includes(post.id)}>{commentPosting.includes(post.id) ? "…" : "Reply ↗"}</button></form>
