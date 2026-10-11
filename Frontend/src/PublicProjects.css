@@ -1,0 +1,23 @@
+/* Public project gallery and publishing controls */
+.public-project-card{display:flex;flex-direction:column;min-height:100%}
+.public-project-status{font-size:10px;color:#9bd8cb;letter-spacing:.08em;text-transform:uppercase}
+.public-project-owner{display:flex;align-items:center;gap:10px;margin:12px 0 8px;padding-top:12px;border-top:1px solid rgba(130,180,210,.14)}
+.public-project-avatar{display:grid;place-items:center;width:32px;height:32px;border-radius:11px;background:linear-gradient(135deg,#12364a,#1c756e);color:#d7ffff;font-weight:800}
+.public-project-owner>span:last-child{display:grid;gap:3px;min-width:0}
+.public-project-owner small{font-size:9px;letter-spacing:.12em;color:#7693a8}
+.public-project-owner strong{font-size:12px;color:#dceaf4;overflow-wrap:anywhere}
+.public-project-stack{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
+.public-project-stack span{padding:4px 7px;border:1px solid rgba(108,174,202,.18);border-radius:7px;background:rgba(15,39,54,.58);color:#a8c8d8;font-size:10px}
+.public-project-links{margin-top:auto}
+.public-project-links a{color:#86e5ed;text-decoration:none;font-weight:750;font-size:11px;letter-spacing:.06em}
+.public-project-links a:hover{color:#fff}
+.px-card-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.px-public-toggle{border:1px solid #2b4558;background:#0b1d2a;color:#9fb7c8;border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.px-public-toggle.is-public{border-color:#246e64;background:#0e302d;color:#8de4ca}
+.px-public-toggle:disabled{opacity:.6;cursor:wait}
+.px-public-field{display:flex;align-items:flex-start;gap:11px;padding:13px 14px;margin:16px 0;border:1px solid rgba(83,175,198,.24);border-radius:13px;background:rgba(12,34,48,.5);cursor:pointer}
+.px-public-field input{margin-top:3px;accent-color:#42d6c1}
+.px-public-field span{display:grid;gap:4px}
+.px-public-field strong{color:#dff7fa;font-size:13px}
+.px-public-field small{color:#8daabd;font-size:11px;line-height:1.5}
+@media(max-width:520px){.px-card-actions{align-items:stretch;flex-direction:column}.px-card-actions>*{width:100%;justify-content:center;text-align:center}}

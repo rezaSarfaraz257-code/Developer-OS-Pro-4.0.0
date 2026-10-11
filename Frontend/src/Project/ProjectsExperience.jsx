@@ -22,7 +22,7 @@ async function readResponse(response, fallback) {
   return payload;
 }
 
-function ProjectCard({ project, onOpen }) {
+function ProjectCard({ project, onOpen, onTogglePublic, togglingPublic, canManageVisibility }) {
   const progress = Math.max(0, Math.min(100, Number(project.progress) || 0));
   const title = project.title || "Untitled project";
   const status = project.status || "Planning";
@@ -41,12 +41,12 @@ function ProjectCard({ project, onOpen }) {
         <div className="px-progress-track" role="progressbar" aria-label={`${title} progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
         <div className="px-card-footer"><span className={`px-status px-status-${status.toLowerCase().replace(/\s+/g, "-")}`}>{status}</span><span>{project.deadline ? `Due ${project.deadline}` : "No deadline"}</span></div>
       </button>
-      <button className="px-open-link" type="button" onClick={() => onOpen(project)}>Open workspace <span aria-hidden="true">↗</span></button>
+      <div className="px-card-actions"><button className="px-open-link" type="button" onClick={() => onOpen(project)}>Open workspace <span aria-hidden="true">↗</span></button>{canManageVisibility && <button className={`px-public-toggle ${project.is_public ? "is-public" : ""}`} type="button" onClick={() => onTogglePublic(project)} disabled={togglingPublic} title={project.is_public ? "Remove this project from the public gallery" : "Publish this project to the public gallery"}>{togglingPublic ? "Saving…" : project.is_public ? "◉ Public" : "○ Make public"}</button>}</div>
     </article>
   );
 }
 
-export default function ProjectsExperience({ go }) {
+export default function ProjectsExperience({ go, currentUserId }) {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -59,8 +59,9 @@ export default function ProjectsExperience({ go }) {
   const [notice, setNotice] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [togglingPublicId, setTogglingPublicId] = useState(null);
   const [formError, setFormError] = useState("");
-  const [form, setForm] = useState({ title: "", description: "", category: "General", status: "Planning", priority: "medium", deadline: "" });
+  const [form, setForm] = useState({ title: "", description: "", category: "General", status: "Planning", priority: "medium", deadline: "", is_public: false });
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (quiet) setRefreshing(true);
@@ -113,11 +114,11 @@ export default function ProjectsExperience({ go }) {
     setFormError("");
     setError("");
     try {
-      const payload = { title: form.title.trim(), description: form.description.trim(), category: form.category, status: form.status, priority: form.priority, tags: [], stack: [] };
+      const payload = { title: form.title.trim(), description: form.description.trim(), category: form.category, status: form.status, priority: form.priority, is_public: form.is_public, tags: [], stack: [] };
       if (form.deadline) payload.deadline = form.deadline;
       const response = await apiFetch("/projects/", { method: "POST", body: JSON.stringify(payload) });
       const created = await readResponse(response, "Project could not be created.");
-      setForm({ title: "", description: "", category: "General", status: "Planning", priority: "medium", deadline: "" });
+      setForm({ title: "", description: "", category: "General", status: "Planning", priority: "medium", deadline: "", is_public: false });
       setFormOpen(false);
       setNotice("Project created. Your workspace is ready.");
       if (created && created.id) setItems((previous) => [created, ...previous.filter((item) => item.id !== created.id)]);
@@ -126,6 +127,21 @@ export default function ProjectsExperience({ go }) {
       setFormError(err?.message || "Project creation failed. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePublic = async (project) => {
+    setTogglingPublicId(project.id);
+    setError("");
+    try {
+      const response = await apiFetch(`/projects/${project.id}/`, { method: "PATCH", body: JSON.stringify({ is_public: !project.is_public }) });
+      const updated = await readResponse(response, "Project visibility could not be updated.");
+      setItems((previous) => previous.map((item) => item.id === project.id ? { ...item, ...updated } : item));
+      setNotice(updated.is_public ? "Project published to the public gallery." : "Project removed from the public gallery.");
+    } catch (err) {
+      setError(err?.message || "Project visibility could not be updated.");
+    } finally {
+      setTogglingPublicId(null);
     }
   };
 
@@ -168,7 +184,7 @@ export default function ProjectsExperience({ go }) {
       {notice && <div className="px-message px-success" role="status"><span>✓</span><p>{notice}</p><button type="button" onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
 
       {loading ? <div className="px-project-grid" aria-label="Loading projects">{[1, 2, 3].map((n) => <div className="px-skeleton" key={n}><i /><b /><span /><span /><em /></div>)}</div>
-        : filtered.length ? <div className="px-project-grid">{filtered.map((project) => <ProjectCard key={project.id ?? project.title} project={project} onOpen={(p) => go(`/projects/${p.id}`)} />)}</div>
+        : filtered.length ? <div className="px-project-grid">{filtered.map((project) => <ProjectCard key={project.id ?? project.title} project={project} onOpen={(p) => go(`/projects/${p.id}`)} onTogglePublic={togglePublic} togglingPublic={togglingPublicId === project.id} canManageVisibility={currentUserId != null && String(project.owner_id) === String(currentUserId)} />)}</div>
         : <section className="px-empty-state"><div className="px-empty-glyph">◈</div><h3>{items.length ? "No matching projects" : "Your next big thing starts here."}</h3><p>{items.length ? "Try changing the search or filters to find a project." : "Create a project to bring its goals, tasks, and delivery signals into one focused workspace."}</p>{items.length ? <button type="button" className="px-secondary" onClick={clearFilters}>Clear filters</button> : <button type="button" className="px-primary" onClick={() => setFormOpen(true)}>＋ Create your first project</button>}</section>}
 
       {formOpen && <div className="px-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setFormOpen(false); }}>
@@ -177,6 +193,7 @@ export default function ProjectsExperience({ go }) {
           <form onSubmit={createProject}>
             <label className="px-form-field px-field-full"><span>Project name <b>*</b></span><input autoFocus maxLength={255} required value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="e.g. Developer OS 5.0" /></label>
             <label className="px-form-field px-field-full"><span>Description</span><textarea rows={3} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} placeholder="What are you building and why?" /></label>
+            <label className="px-public-field"><input type="checkbox" checked={form.is_public} onChange={(e) => setForm((p) => ({ ...p, is_public: e.target.checked }))} /><span><strong>Publish to public gallery</strong><small>Anyone using Developer OS can discover this project. Only share links and details intended to be public.</small></span></label>
             <div className="px-form-grid">
               <label className="px-form-field"><span>Category</span><select value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}>{CATEGORIES.map((v) => <option key={v}>{v}</option>)}</select></label>
               <label className="px-form-field"><span>Initial status</span><select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>{STATUSES.map((v) => <option key={v}>{v}</option>)}</select></label>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "./ExploreModern.css";
+import "./PublicProjects.css";
 import "./NavigationPolish.css";
 import FullscreenExperience from "./components/FullscreenExperience.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, setAuthTokens, revokeRefreshToken, formatApiError } from "./services/api";
@@ -404,7 +405,7 @@ function Dashboard({ go }) {
   </div>;
 }
 
-function Projects({ go }) { return <ProjectsExperience go={go} />; }
+function Projects({ go, user }) { return <ProjectsExperience go={go} currentUserId={user?.id ?? user?.user?.id} />; }
 
 function ProjectDetail({ id, go }) {
   const [project,setProject]=useState(null); const [tasks,setTasks]=useState([]); const [comments,setComments]=useState([]); const [comment,setComment]=useState(""); const [tab,setTab]=useState("overview");
@@ -527,6 +528,7 @@ function Explore() {
   const [resources,setResources]=useState([]);
   const [favorites,setFavorites]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
+  const [publicProjects,setPublicProjects]=useState([]);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
   const [aiResult,setAiResult]=useState("");
@@ -538,15 +540,16 @@ function Explore() {
   const load=async()=>{
     setBusy(true); setError("");
     try{
-      const [t,w,r,f,ws]=await Promise.all([
+      const [t,w,r,f,ws,publicProjectsPayload]=await Promise.all([
         apiFetch(`/tools/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch(`/workflows/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch(`/resources/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
         apiFetch("/favorites/").then(x=>x.json()),
         apiFetch("/ide/workspaces/").then(x=>x.json()),
+        apiFetch(`/projects/public/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
       ]);
       const arr=x=>Array.isArray(x)?x:(x?.results||[]);
-      setTools(arr(t)); setWorkflows(arr(w)); setResources(arr(r)); setFavorites(arr(f)); setWorkspaces(arr(ws));
+      setTools(arr(t)); setWorkflows(arr(w)); setResources(arr(r)); setFavorites(arr(f)); setWorkspaces(arr(ws)); setPublicProjects(arr(publicProjectsPayload));
     }catch(e){setError(e.message)}
     finally{setBusy(false)}
   };
@@ -606,8 +609,8 @@ function Explore() {
     if(sort==="newest")return new Date(b.created_at||0)-new Date(a.created_at||0);
     return score(b)-score(a);
   });
-  const data=tab==="tools"?sortedTools:tab==="workflows"?workflows:resources;
-  const total=tools.length+workflows.length+resources.length;
+  const data=tab==="tools"?sortedTools:tab==="workflows"?workflows:tab==="resources"?resources:publicProjects;
+  const total=tools.length+workflows.length+resources.length+publicProjects.length;
   const visibleTools=sortedTools.slice(0,pageSize);
   const visibleWorkflows=workflows.slice(0,pageSize);
   const visibleResources=resources.slice(0,pageSize);
@@ -633,7 +636,7 @@ function Explore() {
 
     <section className="explore-command panel">
       <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
-      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
+      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["projects","PUBLIC PROJECTS","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:publicProjects.length}</b></button>)}</div>
     </section>
 
     <div className="explore-insights">
@@ -654,7 +657,7 @@ function Explore() {
 
     {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>{setActiveTag(activeTag===x?"":x);setPageSize(12)}}>#{x}</button>)}</div>}
 
-    <div className="explore-results-line" aria-live="polite"><div><strong>{busy?"Updating catalog…":currentCount.toLocaleString()+" results"}</strong><span>{tab==="tools"?"Developer tools":tab==="workflows"?"Engineering workflows":"Knowledge resources"}{hasFilters?" · filtered":" · full catalog"}</span></div><span>{tab.toUpperCase()} / {Math.min(pageSize,currentCount)} OF {currentCount}</span></div>
+    <div className="explore-results-line" aria-live="polite"><div><strong>{busy?"Updating catalog…":currentCount.toLocaleString()+" results"}</strong><span>{tab==="tools"?"Developer tools":tab==="workflows"?"Engineering workflows":tab==="resources"?"Knowledge resources":"Community-published projects"}{hasFilters?" · filtered":" · full catalog"}</span></div><span>{tab.toUpperCase()} / {Math.min(pageSize,currentCount)} OF {currentCount}</span></div>
     {busy?<section className="explore-grid-pro">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>:
       <section className="explore-grid-pro">
         {tab==="tools"&&visibleTools.map((t,index)=>{
@@ -670,6 +673,13 @@ function Explore() {
         })}
         {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
         {tab==="resources"&&visibleResources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
+        {tab==="projects"&&publicProjects.slice(0,pageSize).map(p=><article className="explore-card public-project-card" key={p.id}>
+          <div className="explore-card-top"><span className="explore-tag">{p.category||"PROJECT"}</span><span className="public-project-status">{p.status||"In Progress"}</span></div>
+          <div className="explore-icon">◈</div><h3>{p.title||"Untitled project"}</h3><p>{p.description||"A community project shared on Developer OS."}</p>
+          <div className="public-project-owner"><span className="public-project-avatar">{String(p.owner_display_name||p.owner_username||"D").slice(0,1).toUpperCase()}</span><span><small>BUILT BY</small><strong>{p.owner_display_name||p.owner_username||"Developer OS member"}</strong></span></div>
+          <div className="public-project-stack">{(Array.isArray(p.stack)?p.stack:[]).slice(0,4).map(x=><span key={x}>{x}</span>)}{(Array.isArray(p.tags)?p.tags:[]).slice(0,3).map(x=><span key={x}>#{x}</span>)}</div>
+          <div className="explore-card-footer public-project-links">{(p.repository_url||p.link)?<a href={p.repository_url||p.link} target="_blank" rel="noopener noreferrer">OPEN PROJECT <b>↗</b></a>:<span>PUBLIC PROJECT</span>}<i>COMMUNITY</i></div>
+        </article>)}
         {!data.length&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
       </section>}
     {!busy&&data.length>pageSize&&<div className="explore-load-more"><span>Showing {Math.min(pageSize,data.length)} of {data.length}</span><button type="button" className="ghost" onClick={()=>setPageSize(v=>Math.min(v+12,data.length))}>LOAD MORE <span>↓</span></button></div>}
@@ -973,7 +983,7 @@ export default function App() {
   if(projectMatch) content=<ProjectDetail id={projectMatch[1]} go={go}/>;
   else if(current==="dashboard") content=<Dashboard go={go}/>;
   else if(current==="explore") content=<Explore/>;
-  else if(current==="projects") content=<Projects go={go}/>;
+  else if(current==="projects") content=<Projects go={go} user={user}/>;
   else if(current==="ide") content=<ProIDE go={go}/>;
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;
