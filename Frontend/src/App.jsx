@@ -586,6 +586,27 @@ function Explore() {
     return () => window.clearTimeout(timer);
   }, [q, load]);
 
+  useEffect(() => {
+    const onKeyDown = event => {
+      const target = event.target;
+      const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+      if (event.key === "/" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape" && target === searchRef.current) {
+        setQ("");
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   useEffect(() => () => {
     requestSequence.current += 1;
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -661,6 +682,13 @@ function Explore() {
   const categories=["All",...new Set(tools.map(t=>t.category||t.tag).filter(Boolean))];
   const tags=[...new Set(tools.flatMap(t=>Array.isArray(t.features)?t.features:[]).filter(Boolean))].slice(0,14);
   const favoriteNames=new Set(favorites.map(f=>f.tool?.name?.toLowerCase()).filter(Boolean));
+  const normalizedQuery=q.trim().toLowerCase();
+  const matchesQuery=item=>{
+    if(!normalizedQuery)return true;
+    const featureText=Array.isArray(item.features)?item.features.join(" "):"";
+    const stepText=Array.isArray(item.steps)?item.steps.map(step=>typeof step==="string"?step:JSON.stringify(step)).join(" "):"";
+    return [item.name,item.title,item.description,item.summary,item.category,item.tag,featureText,stepText].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery);
+  };
   const score=t=>{
     const text=`${t.name} ${t.description||""} ${t.category||""} ${(t.features||[]).join(" ")}`.toLowerCase();
     const queryScore=q?((q.toLowerCase().split(/\s+/).filter(Boolean).filter(x=>text.includes(x)).length)*12):0;
@@ -669,18 +697,20 @@ function Explore() {
     const featureScore=(t.features||[]).length*2;
     return queryScore+favScore+ratingScore+featureScore;
   };
-  const filteredTools=tools.filter(t=>(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(t.features||[]).includes(activeTag))&&(!savedOnly||favoriteNames.has(String(t.name).toLowerCase())));
+  const filteredTools=tools.filter(t=>matchesQuery(t)&&(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(Array.isArray(t.features)&&t.features.includes(activeTag)))&&(!savedOnly||favoriteNames.has(String(t.name).toLowerCase())));
   const sortedTools=[...filteredTools].sort((a,b)=>{
     if(sort==="rating")return Number(b.rating||0)-Number(a.rating||0);
     if(sort==="name")return String(a.name).localeCompare(String(b.name));
     if(sort==="newest")return new Date(b.created_at||0)-new Date(a.created_at||0);
     return score(b)-score(a);
   });
-  const data=tab==="tools"?sortedTools:tab==="workflows"?workflows:resources;
+  const sortedWorkflows=[...workflows].filter(matchesQuery).sort((a,b)=>sort==="newest"?new Date(b.created_at||0)-new Date(a.created_at||0):String(a.title||"").localeCompare(String(b.title||"")));
+  const sortedResources=[...resources].filter(matchesQuery).sort((a,b)=>sort==="newest"?new Date(b.created_at||0)-new Date(a.created_at||0):String(a.title||"").localeCompare(String(b.title||"")));
+  const data=tab==="tools"?sortedTools:tab==="workflows"?sortedWorkflows:sortedResources;
   const total=tools.length+workflows.length+resources.length;
   const visibleTools=sortedTools.slice(0,pageSize);
-  const visibleWorkflows=workflows.slice(0,pageSize);
-  const visibleResources=resources.slice(0,pageSize);
+  const visibleWorkflows=sortedWorkflows.slice(0,pageSize);
+  const visibleResources=sortedResources.slice(0,pageSize);
   const hasFilters=Boolean(q.trim()||category!=="All"||activeTag||savedOnly);
   const currentCount=data.length;
 
