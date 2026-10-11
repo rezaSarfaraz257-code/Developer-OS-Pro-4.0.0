@@ -913,3 +913,34 @@ class WorkspaceCRDTOperation(models.Model):
             models.Index(fields=["workspace", "path", "lamport"], name="api_crdt_path_lam_idx"),
             models.Index(fields=["workspace", "path", "created_at"], name="api_crdt_path_created_idx"),
         ]
+
+class CommunityPost(models.Model):
+    """A public, account-attributed post in the Developer OS community feed."""
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="community_posts")
+    body = models.TextField(max_length=3000)
+    likes = models.ManyToManyField(User, blank=True, related_name="liked_community_posts")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["-created_at"], name="api_comm_post_created_idx")]
+
+    def __str__(self):
+        return f"Community post by {self.author_id}"
+
+
+class CommunityPostComment(models.Model):
+    post = models.ForeignKey(CommunityPost, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="community_post_comments")
+    body = models.CharField(max_length=1200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["post", "created_at"], name="api_comm_comment_idx")]
+
+    def __str__(self):
+        return f"Comment on community post {self.post_id}"
+
