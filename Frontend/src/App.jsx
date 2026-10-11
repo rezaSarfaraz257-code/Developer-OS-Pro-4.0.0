@@ -517,6 +517,16 @@ function AI() {  const [conversations,setConversations]=useState([]);
   </div>;
 }
 
+async function parseExploreResponse(response, label) {
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || payload.detail || label + " could not be loaded (HTTP " + response.status + ").");
+  return payload;
+}
+
+function asExploreArray(value) {
+  return Array.isArray(value) ? value : Array.isArray(value?.results) ? value.results : [];
+}
+
 function Explore() {
   const [tab,setTab]=useState("tools");
   const [q,setQ]=useState("");
@@ -545,12 +555,6 @@ function Explore() {
   const searchRef = useRef(null);
   const toastTimer = useRef(null);
 
-  const parseCatalogResponse = async (response, label) => {
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || payload.detail || label + " could not be loaded (HTTP " + response.status + ").");
-    return payload;
-  };
-  const asArray = value => Array.isArray(value) ? value : Array.isArray(value?.results) ? value.results : [];
   const notify = message => {
     setToast(message);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -563,7 +567,7 @@ function Explore() {
     setError("");
     const encoded = encodeURIComponent(query.trim());
     const results = await Promise.allSettled([
-      apiFetch("/tools/?q=" + encoded).then(response => parseCatalogResponse(response, "Tools")),
+      apiFetch("/tools/?q=" + encoded).then(response => parseExploreResponse(response, "Tools")),
       apiFetch("/workflows/?q=" + encoded).then(response => parseCatalogResponse(response, "Workflows")),
       apiFetch("/resources/?q=" + encoded).then(response => parseCatalogResponse(response, "Resources")),
       apiFetch("/favorites/").then(response => parseCatalogResponse(response, "Favorites")),
@@ -574,7 +578,7 @@ function Explore() {
     const setters = [setTools, setWorkflows, setResources, setFavorites, setWorkspaces];
     const failures = [];
     results.forEach((result, index) => {
-      if (result.status === "fulfilled") setters[index](asArray(result.value));
+      if (result.status === "fulfilled") setters[index](asExploreArray(result.value));
       else failures.push(labels[index] + ": " + (result.reason?.message || "temporarily unavailable"));
     });
     setError(failures.length ? "Some Explore services need attention — " + failures.join("; ") + "." : "");
