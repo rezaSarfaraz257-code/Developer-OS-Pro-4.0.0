@@ -35,15 +35,15 @@ img { display: block; max-width: 100%; }
 
 
 /* Adaptive scrollbars: compact at rest, easier to grab on hover/focus.
-   Keep native scrolling and layout intact; touch devices retain their system behavior. */
-:root {
-  scrollbar-color: rgba(112, 145, 174, 0.58) rgba(9, 15, 24, 0.55);
-  scrollbar-width: thin;
-}
-
-* {
-  scrollbar-color: rgba(112, 145, 174, 0.58) rgba(9, 15, 24, 0.55);
-  scrollbar-width: thin;
+   Keep native scrolling and layout intact; touch devices retain their system behavior.
+   Chromium gives scrollbar-width precedence over ::-webkit-scrollbar sizing, so
+   standardized thin-scrollbar styling is scoped to Firefox to allow hover expansion. */
+@supports (-moz-appearance: none) {
+  :root,
+  * {
+    scrollbar-color: rgba(112, 145, 174, 0.58) rgba(9, 15, 24, 0.55);
+    scrollbar-width: thin;
+  }
 }
 
 *::-webkit-scrollbar {
