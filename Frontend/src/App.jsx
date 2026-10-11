@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "./ExploreModern.css";
 import "./NavigationPolish.css";
@@ -322,7 +322,7 @@ function Auth({ onReady }) {
     setBusy(false);
   }
 };
-  if (path === "/reset-password") return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card"><div className="auth-logo"><span>D</span><div>DEVELOPER OS<small>ACCOUNT RECOVERY</small></div></div><div className="auth-copy"><span>SECURE RESET</span><h1>Set a new password.</h1><p>Use a strong password of at least 12 characters. The reset token is single-use and time-limited.</p></div><form onSubmit={async (e)=>{e.preventDefault();setBusy(true);setError("");try{const params=new URLSearchParams(window.location.search);const r=await fetch(`${API_URL}/auth/password-reset/confirm/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:params.get("uid"),token:params.get("token"),password:resetPassword})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(formatApiError(d, "Password reset failed."));window.location.assign("/")}catch(err){setError(err.message)}finally{setBusy(false)}}}><input required type="password" minLength="12" placeholder="New password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)}/>{error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>void load(q)}>RETRY</button></div>}<button className="primary wide" disabled={busy}>{busy?"UPDATING...":"RESET PASSWORD →"}</button></form></div></div>;
+  if (path === "/reset-password") return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card"><div className="auth-logo"><span>D</span><div>DEVELOPER OS<small>ACCOUNT RECOVERY</small></div></div><div className="auth-copy"><span>SECURE RESET</span><h1>Set a new password.</h1><p>Use a strong password of at least 12 characters. The reset token is single-use and time-limited.</p></div><form onSubmit={async (e)=>{e.preventDefault();setBusy(true);setError("");try{const params=new URLSearchParams(window.location.search);const r=await fetch(`${API_URL}/auth/password-reset/confirm/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:params.get("uid"),token:params.get("token"),password:resetPassword})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(formatApiError(d, "Password reset failed."));window.location.assign("/")}catch(err){setError(err.message)}finally{setBusy(false)}}}><input required type="password" minLength="12" placeholder="New password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)}/>{error&&<div className="error">{error}</div>}<button className="primary wide" disabled={busy}>{busy?"UPDATING...":"RESET PASSWORD →"}</button></form></div></div>;
 
   if (path === "/verify-email") return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card"><div className="auth-logo"><span>{linkState === "verified" ? "✓" : "D"}</span><div>DEVELOPER OS<small>EMAIL SECURITY</small></div></div><div className="auth-copy"><span>VERIFICATION</span><h1>{linkState === "verifying" ? "Verifying your email…" : linkState === "verified" ? "Email verified." : "Verification failed."}</h1><p>{notice || error || "Checking the secure verification link."}</p></div><button className="primary wide" onClick={()=>window.location.assign("/")}>CONTINUE TO SIGN IN →</button></div></div>;
 
@@ -749,7 +749,7 @@ function Explore() {
     </div>
 
     {aiResult&&<section className="explore-ai-panel"><div className="explore-ai-head"><div><span>✦ DOS INTELLIGENCE</span><strong>Discovery Brief</strong></div><button onClick={()=>setAiResult("")}>×</button></div><p>{aiResult}</p></section>}
-    {error&&<div className="error">{error}</div>}
+    {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>void load(q)}>RETRY</button></div>}
     {toast&&<div className="explore-toast" role="status">✓ {toast}</div>}
 
     <section className="explore-controls">
