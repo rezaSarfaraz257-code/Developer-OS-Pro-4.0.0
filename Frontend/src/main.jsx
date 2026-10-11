@@ -4,6 +4,7 @@ import './index.css'
 import './ide/IDEStudio2026.css'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import './ScrollbarBehavior.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
