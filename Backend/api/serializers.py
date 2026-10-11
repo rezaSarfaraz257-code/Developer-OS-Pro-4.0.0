@@ -23,6 +23,7 @@ def validate_http_url(value):
 
 
 class ProjectSerializer(serializers.ModelSerializer):
+    owner_id = serializers.IntegerField(read_only=True)
     task_count = serializers.IntegerField(read_only=True)
     completed_task_count = serializers.IntegerField(read_only=True)
     progress = serializers.SerializerMethodField()
