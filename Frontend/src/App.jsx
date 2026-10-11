@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "./ExploreModern.css";
 import "./NavigationPolish.css";
@@ -517,6 +517,16 @@ function AI() {  const [conversations,setConversations]=useState([]);
   </div>;
 }
 
+async function parseExploreResponse(response, label) {
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || payload.detail || label + " could not be loaded (HTTP " + response.status + ").");
+  return payload;
+}
+
+function asExploreArray(value) {
+  return Array.isArray(value) ? value : Array.isArray(value?.results) ? value.results : [];
+}
+
 function Explore() {
   const [tab,setTab]=useState("tools");
   const [q,setQ]=useState("");
@@ -536,46 +546,143 @@ function Explore() {
   const [savedOnly,setSavedOnly]=useState(false);
   const [pageSize,setPageSize]=useState(12);
 
-  const load=async()=>{
-    setBusy(true); setError("");
-    try{
-      const [t,w,r,f,ws]=await Promise.all([
-        apiFetch(`/tools/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch(`/workflows/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch(`/resources/?q=${encodeURIComponent(q)}`).then(x=>x.json()),
-        apiFetch("/favorites/").then(x=>x.json()),
-        apiFetch("/ide/workspaces/").then(x=>x.json()),
-      ]);
-      const arr=x=>Array.isArray(x)?x:(x?.results||[]);
-      setTools(arr(t)); setWorkflows(arr(w)); setResources(arr(r)); setFavorites(arr(f)); setWorkspaces(arr(ws));
-    }catch(e){setError(e.message)}
-    finally{setBusy(false)}
+  const requestSequence = useRef(0);
+  const favoriteBusyRef = useRef(new Set());
+  const workspaceBusyRef = useRef(new Set());
+  const [favoriteBusy, setFavoriteBusy] = useState([]);
+  const [workspaceBusy, setWorkspaceBusy] = useState([]);
+  const [compact, setCompact] = useState(false);
+  const searchRef = useRef(null);
+  const toastTimer = useRef(null);
+
+  const notify = message => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 3200);
   };
-  useEffect(()=>{const t=setTimeout(()=>load(),220);return()=>clearTimeout(t)},[q]);
-  useEffect(()=>{const fn=e=>{if(e.key==="/"&&!["INPUT","TEXTAREA"].includes(document.activeElement?.tagName)){e.preventDefault();document.querySelector(".explore-search")?.focus()}};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn)},[]);
+
+  const load = useCallback(async (query = q) => {
+    const requestId = ++requestSequence.current;
+    setBusy(true);
+    setError("");
+    const encoded = encodeURIComponent(query.trim());
+    const results = await Promise.allSettled([
+      apiFetch("/tools/?q=" + encoded).then(response => parseExploreResponse(response, "Tools")),
+      apiFetch("/workflows/?q=" + encoded).then(response => parseExploreResponse(response, "Workflows")),
+      apiFetch("/resources/?q=" + encoded).then(response => parseExploreResponse(response, "Resources")),
+    ]);
+    if (requestId !== requestSequence.current) return;
+    const labels = ["tools", "workflows", "resources"];
+    const setters = [setTools, setWorkflows, setResources];
+    const failures = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") setters[index](asExploreArray(result.value));
+      else failures.push(labels[index] + ": " + (result.reason?.message || "temporarily unavailable"));
+    });
+    setError(failures.length ? "Some Explore catalogs need attention — " + failures.join("; ") + "." : "");
+    setBusy(false);
+  }, [q]);
+
+  const loadPersonalData = useCallback(async () => {
+    const results = await Promise.allSettled([
+      apiFetch("/favorites/").then(response => parseExploreResponse(response, "Favorites")),
+      apiFetch("/ide/workspaces/").then(response => parseExploreResponse(response, "Workspaces")),
+    ]);
+    if (results[0].status === "fulfilled") setFavorites(asExploreArray(results[0].value));
+    if (results[1].status === "fulfilled") setWorkspaces(asExploreArray(results[1].value));
+    if (results.some(result => result.status === "rejected")) {
+      setError(previous => previous || "Saved tools or workspace signals are temporarily unavailable.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(q); }, q.trim() ? 260 : 0);
+    return () => window.clearTimeout(timer);
+  }, [q, load]);
+
+  useEffect(() => {
+    const onKeyDown = event => {
+      const target = event.target;
+      const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+      if (event.key === "/" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape" && target === searchRef.current) {
+        setQ("");
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    void loadPersonalData();
+    return () => {
+      requestSequence.current += 1;
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, [loadPersonalData]);
 
   const toggle=async tool=>{
-    const saved=favorites.some(f=>f.tool?.name?.toLowerCase()===tool.name.toLowerCase());
+    const key=String(tool.name||"").toLowerCase();
+    if(favoriteBusyRef.current.has(tool.id))return;
+    favoriteBusyRef.current.add(tool.id);
+    setFavoriteBusy(previous=>[...previous,tool.id]);
+    const saved=favorites.some(item=>item.tool?.name?.toLowerCase()===key);
+    setError("");
     try{
       if(saved){
-        await apiFetch(`/favorites/?tool_name=${encodeURIComponent(tool.name)}`,{method:"DELETE"});
-        setFavorites(favorites.filter(f=>f.tool?.name?.toLowerCase()!==tool.name.toLowerCase()));
+        const response=await apiFetch("/favorites/?tool_name="+encodeURIComponent(tool.name),{method:"DELETE"});
+        if(!response.ok)await parseExploreResponse(response,"Favorite removal");
+        setFavorites(previous=>previous.filter(item=>item.tool?.name?.toLowerCase()!==key));
+        notify(tool.name+" removed from saved tools.");
       }else{
-        const r=await apiFetch("/favorites/",{method:"POST",body:JSON.stringify({tool_name:tool.name})});
-        const d=await r.json(); if(!r.ok)throw Error(d.error||"Favorite failed");
-        setFavorites([...favorites,d]);
+        const response=await apiFetch("/favorites/",{method:"POST",body:JSON.stringify({tool_name:tool.name})});
+        const data=await parseExploreResponse(response,"Favorite save");
+        setFavorites(previous=>previous.some(item=>item.tool?.name?.toLowerCase()===key)?previous:[...previous,data]);
+        notify(tool.name+" saved to your library.");
       }
-    }catch(e){setError(e.message)}
+    }catch(error){setError(error.message||"Favorite could not be updated.");}
+    finally{
+      favoriteBusyRef.current.delete(tool.id);
+      setFavoriteBusy(previous=>previous.filter(id=>id!==tool.id));
+    }
   };
 
   const addToWorkspace=async tool=>{
+    if(workspaceBusyRef.current.has(tool.id))return;
+    workspaceBusyRef.current.add(tool.id);
+    setWorkspaceBusy(previous=>[...previous,tool.id]);
+    setError("");
     try{
-      const name=`${tool.name} Lab`;
-      const body={name,language:"javascript",framework:tool.category||"",runtime:"node",package_manager:"npm",files:{"README.md":`# ${name}\n\nWorkspace created from Developer OS Explore.\n\nTool: ${tool.name}\nCategory: ${tool.category||"General"}\n\n## Next move\nStart building.\n`,"package.json":JSON.stringify({name:name.toLowerCase().replace(/[^a-z0-9]+/g,"-"),private:true,version:"0.1.0",scripts:{dev:"vite",build:"vite build"}},null,2)}};
-      const r=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify(body)});
-      const d=await r.json(); if(!r.ok)throw Error(d.error||"Workspace creation failed");
-      setWorkspaces(x=>[d,...x]); setToast(`Workspace “${name}” created`); setTimeout(()=>setToast(""),2600);
-    }catch(e){setError(e.message)}
+      const name=tool.name+" Lab";
+      const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60)||"developer-lab";
+      const body={
+        name,
+        language:"javascript",
+        framework:tool.category||"",
+        runtime:"node",
+        package_manager:"npm",
+        files:{
+          "README.md":"# "+name+"\n\nWorkspace created from Developer OS Explore.\n\nTool: "+tool.name+"\nCategory: "+(tool.category||"General")+"\n\n## Next move\nStart building.\n",
+          "package.json":JSON.stringify({name:slug,private:true,version:"0.1.0",scripts:{dev:"vite",build:"vite build"}},null,2)
+        }
+      };
+      const response=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify(body)});
+      const data=await parseExploreResponse(response,"Workspace creation");
+      setWorkspaces(previous=>[data,...previous.filter(item=>item.id!==data.id)]);
+      notify("Workspace “"+name+"” created successfully.");
+    }catch(error){setError(error.message||"Workspace creation failed.");}
+    finally{
+      workspaceBusyRef.current.delete(tool.id);
+      setWorkspaceBusy(previous=>previous.filter(id=>id!==tool.id));
+    }
   };
 
   const aiDiscover=async()=>{
@@ -583,7 +690,7 @@ function Explore() {
     try{
       const prompt=`You are the Developer OS Discovery Engine. Based on this catalog and user signal, recommend a concise stack for the next build. Search: "${q||"none"}". Category: ${category}. Favorites: ${favorites.map(f=>f.tool?.name).filter(Boolean).slice(0,12).join(", ")||"none"}. Available tools: ${tools.slice(0,20).map(t=>t.name).join(", ")}. Return 3 practical recommendations with one-line reasons and one next action. Do not invent tools outside the supplied catalog.`;
       const r=await apiFetch("/ai/chat/",{method:"POST",body:JSON.stringify({message:prompt})});
-      const d=await r.json(); if(!r.ok)throw Error(d.error||d.detail||"AI Discovery unavailable");
+      const d=await parseExploreResponse(r,"AI Discovery");
       setAiResult(d.message?.content||d.answer||"No recommendation returned.");
     }catch(e){setError(e.message)}
     finally{setAiBusy(false)}
@@ -592,6 +699,13 @@ function Explore() {
   const categories=["All",...new Set(tools.map(t=>t.category||t.tag).filter(Boolean))];
   const tags=[...new Set(tools.flatMap(t=>Array.isArray(t.features)?t.features:[]).filter(Boolean))].slice(0,14);
   const favoriteNames=new Set(favorites.map(f=>f.tool?.name?.toLowerCase()).filter(Boolean));
+  const normalizedQuery=q.trim().toLowerCase();
+  const matchesQuery=item=>{
+    if(!normalizedQuery)return true;
+    const featureText=Array.isArray(item.features)?item.features.join(" "):"";
+    const stepText=Array.isArray(item.steps)?item.steps.map(step=>typeof step==="string"?step:JSON.stringify(step)).join(" "):"";
+    return [item.name,item.title,item.description,item.summary,item.category,item.tag,featureText,stepText].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery);
+  };
   const score=t=>{
     const text=`${t.name} ${t.description||""} ${t.category||""} ${(t.features||[]).join(" ")}`.toLowerCase();
     const queryScore=q?((q.toLowerCase().split(/\s+/).filter(Boolean).filter(x=>text.includes(x)).length)*12):0;
@@ -600,18 +714,20 @@ function Explore() {
     const featureScore=(t.features||[]).length*2;
     return queryScore+favScore+ratingScore+featureScore;
   };
-  const filteredTools=tools.filter(t=>(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(t.features||[]).includes(activeTag))&&(!savedOnly||favoriteNames.has(String(t.name).toLowerCase())));
+  const filteredTools=tools.filter(t=>matchesQuery(t)&&(category==="All"||(t.category||t.tag)===category)&&(!activeTag||(Array.isArray(t.features)&&t.features.includes(activeTag)))&&(!savedOnly||favoriteNames.has(String(t.name).toLowerCase())));
   const sortedTools=[...filteredTools].sort((a,b)=>{
     if(sort==="rating")return Number(b.rating||0)-Number(a.rating||0);
     if(sort==="name")return String(a.name).localeCompare(String(b.name));
     if(sort==="newest")return new Date(b.created_at||0)-new Date(a.created_at||0);
     return score(b)-score(a);
   });
-  const data=tab==="tools"?sortedTools:tab==="workflows"?workflows:resources;
+  const sortedWorkflows=[...workflows].filter(matchesQuery).sort((a,b)=>sort==="newest"?new Date(b.created_at||0)-new Date(a.created_at||0):String(a.title||"").localeCompare(String(b.title||"")));
+  const sortedResources=[...resources].filter(matchesQuery).sort((a,b)=>sort==="newest"?new Date(b.created_at||0)-new Date(a.created_at||0):String(a.title||"").localeCompare(String(b.title||"")));
+  const data=tab==="tools"?sortedTools:tab==="workflows"?sortedWorkflows:sortedResources;
   const total=tools.length+workflows.length+resources.length;
   const visibleTools=sortedTools.slice(0,pageSize);
-  const visibleWorkflows=workflows.slice(0,pageSize);
-  const visibleResources=resources.slice(0,pageSize);
+  const visibleWorkflows=sortedWorkflows.slice(0,pageSize);
+  const visibleResources=sortedResources.slice(0,pageSize);
   const hasFilters=Boolean(q.trim()||category!=="All"||activeTag||savedOnly);
   const currentCount=data.length;
 
@@ -624,17 +740,17 @@ function Explore() {
         <h1>Explore <span>your next advantage.</span></h1>
         <p>A living developer marketplace that learns your stack, surfaces useful signals and turns discovery into an actual workspace.</p>
         <div className="explore-hero-actions">
-          <button className="primary" onClick={()=>document.querySelector(".explore-search")?.focus()}>⌕ DISCOVER</button>
-          <button className="ghost explore-ai-btn" onClick={aiDiscover}>{aiBusy?"◌ THINKING…":"✦ ASK DOS AI"}</button>
-          <span className="explore-shortcut">Press <kbd>/</kbd> to search</span>
+          <button type="button" className="primary" onClick={()=>searchRef.current?.focus()}>⌕ DISCOVER</button>
+          <button type="button" className="ghost explore-ai-btn" onClick={aiDiscover} disabled={aiBusy||busy}>{aiBusy?"◌ THINKING…":"✦ ASK DOS AI"}</button>
+          <span className="explore-shortcut">Search <kbd>/</kbd> · Focus <kbd>Ctrl K</kbd></span>
         </div>
       </div>
       <div className="explore-orbit" aria-hidden="true"><div className="orbit-core">✦</div><i/><i/><i/></div>
     </section>
 
     <section className="explore-command panel">
-      <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
-      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["community","COMMUNITY","◎"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:"LIVE"}</b></button>)}</div>
+      <div className="explore-search-wrap"><span>⌕</span><input ref={searchRef} className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Search tools, workflows, resources or technologies…" aria-label="Search Explore catalog"/>{q&&<button type="button" className="explore-clear" onClick={()=>{setQ("");searchRef.current?.focus()}} aria-label="Clear search">×</button>}<kbd>/</kbd></div>
+      <div className="explore-tabs" role="tablist" aria-label="Explore collections">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["community","COMMUNITY","◎"]].map(([id,label,icon])=><button type="button" role="tab" aria-selected={tab===id} className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:"LIVE"}</b></button>)}</div>
     </section>
 
     {tab === "community" ? <CommunityFeed /> : <>
@@ -646,32 +762,32 @@ function Explore() {
     </div>
 
     {aiResult&&<section className="explore-ai-panel"><div className="explore-ai-head"><div><span>✦ DOS INTELLIGENCE</span><strong>Discovery Brief</strong></div><button onClick={()=>setAiResult("")}>×</button></div><p>{aiResult}</p></section>}
-    {error&&<div className="error">{error}</div>}
-    {toast&&<div className="explore-toast">✓ {toast}</div>}
+    {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>{void load(q);void loadPersonalData()}}>RETRY</button></div>}
+    {toast&&<div className="explore-toast" role="status">✓ {toast}</div>}
 
     <section className="explore-controls">
       {tab==="tools"&&<div className="explore-categories" role="group" aria-label="Tool category">{categories.map(x=><button type="button" key={x} className={category===x?"active":""} aria-pressed={category===x} onClick={()=>{setCategory(x);setPageSize(12)}}>{x}</button>)}</div>}
-      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>{setSavedOnly(v=>!v);setPageSize(12)}}>♥ Saved only</button>}{tab==="tools"&&<label className="explore-sort-label">SORT <select value={sort} onChange={e=>{setSort(e.target.value);setPageSize(12)}} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label>}<button type="button" className="explore-refresh" onClick={()=>void load()} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended");setPageSize(12)}}>Clear filters</button>}</div>
+      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>{setSavedOnly(v=>!v);setPageSize(12)}}>♥ Saved only</button>}{tab==="tools"&&<label className="explore-sort-label">SORT <select value={sort} onChange={e=>{setSort(e.target.value);setPageSize(12)}} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label>}<button type="button" className={compact?"active":""} aria-pressed={compact} onClick={()=>setCompact(v=>!v)} title={compact?"Switch to comfortable cards":"Switch to compact cards"}>{compact?"▤ Compact":"▦ Comfortable"}</button><button type="button" className="explore-refresh" onClick={()=>{void load(q);void loadPersonalData()}} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended");setPageSize(12)}}>Clear filters</button>}</div>
     </section>
 
     {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>{setActiveTag(activeTag===x?"":x);setPageSize(12)}}>#{x}</button>)}</div>}
 
     <div className="explore-results-line" aria-live="polite"><div><strong>{busy?"Updating catalog…":currentCount.toLocaleString()+" results"}</strong><span>{tab==="tools"?"Developer tools":tab==="workflows"?"Engineering workflows":"Knowledge resources"}{hasFilters?" · filtered":" · full catalog"}</span></div><span>{tab.toUpperCase()} / {Math.min(pageSize,currentCount)} OF {currentCount}</span></div>
-    {busy?<section className="explore-grid-pro">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>:
-      <section className="explore-grid-pro">
+    {busy&&!currentCount?<section className="explore-grid-pro" aria-label="Loading discovery results">{[1,2,3,4,5,6].map(i=><div className="explore-skeleton" key={i}><i/><i/><i/><i/></div>)}</section>:
+      <section className={"explore-grid-pro"+(compact?" is-compact":"")}>
         {tab==="tools"&&visibleTools.map((t,index)=>{
           const saved=favoriteNames.has(String(t.name).toLowerCase());
           return <article className={`explore-card ${index<3?"trending-card":""}`} key={t.id}>
             {index<3&&<div className="trending-badge">↗ TRENDING SIGNAL</div>}
-            <div className="explore-card-top"><span className="explore-tag">{t.category||t.tag||"DEVELOPER TOOL"}</span><button className={saved?"saved":""} onClick={()=>toggle(t)} aria-label={saved?`Remove ${t.name} from favorites`:`Save ${t.name}`}>{saved?"♥":"♡"}</button></div>
+            <div className="explore-card-top"><span className="explore-tag">{t.category||t.tag||"DEVELOPER TOOL"}</span><button type="button" className={saved?"saved":""} disabled={favoriteBusy.includes(t.id)} aria-pressed={saved} onClick={()=>void toggle(t)} aria-label={saved?`Remove ${t.name} from favorites`:`Save ${t.name}`}>{favoriteBusy.includes(t.id)?"…":saved?"♥":"♡"}</button></div>
             <div className="explore-icon">⌘</div><h3>{t.name}</h3><p>{t.description||"A developer capability ready for your next build."}</p>
             <div className="explore-card-tags">{(t.features||[]).slice(0,3).map(x=><span key={x}>#{x}</span>)}</div>
             <div className="explore-meta"><span>★ {t.rating??"—"}</span><span>{saved?"PERSONAL MATCH":"DISCOVERY MATCH"}</span></div>
-            <div className="explore-card-footer"><button onClick={()=>addToWorkspace(t)}>＋ ADD TO WORKSPACE</button><i>→</i></div>
+            <div className="explore-card-footer"><button type="button" disabled={workspaceBusy.includes(t.id)} onClick={()=>void addToWorkspace(t)}>{workspaceBusy.includes(t.id)?"CREATING WORKSPACE…":"＋ ADD TO WORKSPACE"}</button><i aria-hidden="true">→</i></div>
           </article>
         })}
         {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
-        {tab==="resources"&&visibleResources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
+        {tab==="resources"&&visibleResources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noopener noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
         {!data.length&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
       </section>}
     {!busy&&data.length>pageSize&&<div className="explore-load-more"><span>Showing {Math.min(pageSize,data.length)} of {data.length}</span><button type="button" className="ghost" onClick={()=>setPageSize(v=>Math.min(v+12,data.length))}>LOAD MORE <span>↓</span></button></div>}
