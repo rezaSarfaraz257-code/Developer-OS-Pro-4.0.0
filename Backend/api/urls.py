@@ -38,6 +38,7 @@ urlpatterns = [
     path("projects/<int:pk>/collaborators/", views.project_collaborators_api, name="project-collaborators"),
     path("assistant/", views.assistant_api, name="assistant"),
     path("projects/", views.projects_api, name="projects"),
+    path("projects/public/", views.public_projects_api, name="public-projects"),
     path("projects/<int:pk>/", views.project_detail_api, name="detail"),
     path("profile/", views.profile_api, name="profile"),
     path("register/", views.register_api, name="register"),
