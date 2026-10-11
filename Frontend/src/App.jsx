@@ -568,10 +568,10 @@ function Explore() {
     const encoded = encodeURIComponent(query.trim());
     const results = await Promise.allSettled([
       apiFetch("/tools/?q=" + encoded).then(response => parseExploreResponse(response, "Tools")),
-      apiFetch("/workflows/?q=" + encoded).then(response => parseCatalogResponse(response, "Workflows")),
-      apiFetch("/resources/?q=" + encoded).then(response => parseCatalogResponse(response, "Resources")),
-      apiFetch("/favorites/").then(response => parseCatalogResponse(response, "Favorites")),
-      apiFetch("/ide/workspaces/").then(response => parseCatalogResponse(response, "Workspaces")),
+      apiFetch("/workflows/?q=" + encoded).then(response => parseExploreResponse(response, "Workflows")),
+      apiFetch("/resources/?q=" + encoded).then(response => parseExploreResponse(response, "Resources")),
+      apiFetch("/favorites/").then(response => parseExploreResponse(response, "Favorites")),
+      apiFetch("/ide/workspaces/").then(response => parseExploreResponse(response, "Workspaces")),
     ]);
     if (requestId !== requestSequence.current) return;
     const labels = ["tools", "workflows", "resources", "favorites", "workspaces"];
@@ -626,12 +626,12 @@ function Explore() {
     try{
       if(saved){
         const response=await apiFetch("/favorites/?tool_name="+encodeURIComponent(tool.name),{method:"DELETE"});
-        if(!response.ok)await parseCatalogResponse(response,"Favorite removal");
+        if(!response.ok)await parseExploreResponse(response,"Favorite removal");
         setFavorites(previous=>previous.filter(item=>item.tool?.name?.toLowerCase()!==key));
         notify(tool.name+" removed from saved tools.");
       }else{
         const response=await apiFetch("/favorites/",{method:"POST",body:JSON.stringify({tool_name:tool.name})});
-        const data=await parseCatalogResponse(response,"Favorite save");
+        const data=await parseExploreResponse(response,"Favorite save");
         setFavorites(previous=>previous.some(item=>item.tool?.name?.toLowerCase()===key)?previous:[...previous,data]);
         notify(tool.name+" saved to your library.");
       }
@@ -662,7 +662,7 @@ function Explore() {
         }
       };
       const response=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify(body)});
-      const data=await parseCatalogResponse(response,"Workspace creation");
+      const data=await parseExploreResponse(response,"Workspace creation");
       setWorkspaces(previous=>[data,...previous.filter(item=>item.id!==data.id)]);
       notify("Workspace “"+name+"” created successfully.");
     }catch(error){setError(error.message||"Workspace creation failed.");}
@@ -677,7 +677,7 @@ function Explore() {
     try{
       const prompt=`You are the Developer OS Discovery Engine. Based on this catalog and user signal, recommend a concise stack for the next build. Search: "${q||"none"}". Category: ${category}. Favorites: ${favorites.map(f=>f.tool?.name).filter(Boolean).slice(0,12).join(", ")||"none"}. Available tools: ${tools.slice(0,20).map(t=>t.name).join(", ")}. Return 3 practical recommendations with one-line reasons and one next action. Do not invent tools outside the supplied catalog.`;
       const r=await apiFetch("/ai/chat/",{method:"POST",body:JSON.stringify({message:prompt})});
-      const d=await r.json(); if(!r.ok)throw Error(d.error||d.detail||"AI Discovery unavailable");
+      const d=await parseExploreResponse(r,"AI Discovery");
       setAiResult(d.message?.content||d.answer||"No recommendation returned.");
     }catch(e){setError(e.message)}
     finally{setAiBusy(false)}
