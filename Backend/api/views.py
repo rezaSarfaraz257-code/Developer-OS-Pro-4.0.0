@@ -51,7 +51,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution, CommunityPost, CommunityPostComment,
 )
 
 from .serializers import (
@@ -4028,3 +4028,136 @@ def ide_preview_proxy_api(request, pk, preview_path=""):
         return Response({"error":f"Preview unavailable: {exc.__class__.__name__}"},status=502)
     content_type=response.headers.get("Content-Type","text/plain")
     return HttpResponse(response.content,status=response.status_code,content_type=content_type)
+
+# =========================================================
+# PUBLIC COMMUNITY FEED
+# =========================================================
+
+def _community_post_payload(post, user):
+    return {
+        "id": post.id,
+        "body": post.body,
+        "author_id": post.author_id,
+        "author_username": post.author.username,
+        "created_at": post.created_at.isoformat(),
+        "updated_at": post.updated_at.isoformat(),
+        "like_count": int(post.like_count if hasattr(post, "like_count") else post.likes.count()),
+        "comment_count": int(post.comment_count if hasattr(post, "comment_count") else post.comments.count()),
+        "liked_by_me": bool(post.liked_by_me if hasattr(post, "liked_by_me") else post.likes.filter(pk=user.pk).exists()),
+        "is_author": post.author_id == user.pk,
+    }
+
+
+def _community_comment_payload(comment, user):
+    return {
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "body": comment.body,
+        "author_id": comment.author_id,
+        "author_username": comment.author.username,
+        "created_at": comment.created_at.isoformat(),
+        "updated_at": comment.updated_at.isoformat(),
+        "is_author": comment.author_id == user.pk,
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
+def community_posts_api(request):
+    """Authenticated members share and discover public community posts."""
+    if request.method == "GET":
+        query = CommunityPost.objects.select_related("author").annotate(
+            like_count=Count("likes", distinct=True),
+            comment_count=Count("comments", distinct=True),
+            liked_by_me=Count("likes", filter=Q(likes__id=request.user.id), distinct=True),
+        ).order_by("-created_at", "-id")
+        try:
+            before_id = int(request.query_params.get("before_id", "0"))
+        except (TypeError, ValueError):
+            return Response({"error": "before_id must be a positive post ID."}, status=400)
+        if before_id > 0:
+            before = get_object_or_404(CommunityPost, pk=before_id)
+            query = query.filter(Q(created_at__lt=before.created_at) | Q(created_at=before.created_at, id__lt=before.id))
+            query = query.select_related("author").annotate(
+                like_count=Count("likes", distinct=True),
+                comment_count=Count("comments", distinct=True),
+                liked_by_me=Count("likes", filter=Q(likes__id=request.user.id), distinct=True),
+            ).order_by("-created_at", "-id")
+        posts = list(query[:50])
+        return Response({
+            "results": [_community_post_payload(post, request.user) for post in posts],
+            "next_before_id": posts[-1].id if len(posts) == 50 else None,
+        })
+
+    body = request.data.get("body", "")
+    if not isinstance(body, str):
+        return Response({"error": "Post body must be text."}, status=400)
+    body = body.strip()
+    if not body:
+        return Response({"error": "Write something before publishing."}, status=400)
+    if len(body) > 3000:
+        return Response({"error": "Posts are limited to 3,000 characters."}, status=400)
+    post = CommunityPost.objects.create(author=request.user, body=body)
+    post.like_count = 0
+    post.comment_count = 0
+    post.liked_by_me = 0
+    return Response(_community_post_payload(post, request.user), status=201)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def community_post_detail_api(request, pk):
+    post = get_object_or_404(CommunityPost, pk=pk)
+    if post.author_id != request.user.id:
+        return Response({"error": "Only the post author can delete this post."}, status=403)
+    post.delete()
+    return Response(status=204)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
+def community_post_like_api(request, pk):
+    post = get_object_or_404(CommunityPost, pk=pk)
+    if post.likes.filter(pk=request.user.pk).exists():
+        post.likes.remove(request.user)
+        liked = False
+    else:
+        post.likes.add(request.user)
+        liked = True
+    counts = CommunityPost.objects.filter(pk=post.pk).annotate(like_count=Count("likes", distinct=True)).values("like_count").first()
+    return Response({"post_id": post.pk, "liked": liked, "like_count": counts["like_count"] if counts else 0})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
+def community_post_comments_api(request, pk):
+    post = get_object_or_404(CommunityPost, pk=pk)
+    if request.method == "GET":
+        comments = post.comments.select_related("author").order_by("created_at", "id")[:100]
+        return Response({"results": [_community_comment_payload(comment, request.user) for comment in comments]})
+
+    body = request.data.get("body", "")
+    if not isinstance(body, str):
+        return Response({"error": "Comment body must be text."}, status=400)
+    body = body.strip()
+    if not body:
+        return Response({"error": "Write a comment before publishing."}, status=400)
+    if len(body) > 1200:
+        return Response({"error": "Comments are limited to 1,200 characters."}, status=400)
+    comment = CommunityPostComment.objects.create(post=post, author=request.user, body=body)
+    payload = _community_comment_payload(comment, request.user)
+    return Response(payload, status=201)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def community_post_comment_detail_api(request, pk, comment_id):
+    comment = get_object_or_404(CommunityPostComment, pk=comment_id, post_id=pk)
+    if comment.author_id != request.user.id and comment.post.author_id != request.user.id:
+        return Response({"error": "Only the comment author or post author can delete this comment."}, status=403)
+    comment.delete()
+    return Response(status=204)
+

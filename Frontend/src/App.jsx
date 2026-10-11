@@ -9,6 +9,7 @@ import Avatar from "./components/Avatar";
 import { normalizeProfileLink, safeProfileLink } from "./utils/profile.js";
 import Referral from "./Referral";
 import ProjectsExperience from "./Project/ProjectsExperience.jsx";
+import CommunityFeed from "./CommunityFeed.jsx";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
@@ -633,9 +634,10 @@ function Explore() {
 
     <section className="explore-command panel">
       <div className="explore-search-wrap"><span>⌕</span><input className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Find a tool, workflow, stack or idea…" aria-label="Search Explore catalog"/>{q&&<button className="explore-clear" onClick={()=>setQ("")}>×</button>}<kbd>/</kbd></div>
-      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:resources.length}</b></button>)}</div>
+      <div className="explore-tabs">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["community","COMMUNITY","◎"]].map(([id,label,icon])=><button className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:"LIVE"}</b></button>)}</div>
     </section>
 
+    {tab === "community" ? <CommunityFeed /> : <>
     <div className="explore-insights">
       <div><span>DISCOVERY INDEX</span><strong>{total||"—"}</strong><small>catalog signals</small></div>
       <div><span>PERSONAL SIGNAL</span><strong>{favoriteNames.size}</strong><small>saved preferences</small></div>
@@ -673,6 +675,7 @@ function Explore() {
         {!data.length&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
       </section>}
     {!busy&&data.length>pageSize&&<div className="explore-load-more"><span>Showing {Math.min(pageSize,data.length)} of {data.length}</span><button type="button" className="ghost" onClick={()=>setPageSize(v=>Math.min(v+12,data.length))}>LOAD MORE <span>↓</span></button></div>}
+    </> }
   </div>;
 }
 function SearchPage() {
