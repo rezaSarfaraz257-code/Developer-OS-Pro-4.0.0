@@ -36,7 +36,7 @@ export default class ResilientMonacoEditor extends Component {
         </div>
         <textarea
           value={value}
-          onChange={(e) => onChange?.(e.target.value)}
+          onChange={(e) => { if (typeof onChange === "function") onChange(e.target.value); }}
           aria-label={`Developer OS safe editor ${path || "untitled"}`}
           spellCheck={false}
         />

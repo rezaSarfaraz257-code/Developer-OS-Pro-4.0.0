@@ -26,19 +26,20 @@ function reportRuntimeError(error, info = "") {
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, message: "", errorId: "", resetNonce: 0 };
+    this.state = { hasError: false, message: "", errorId: "", stack: "", componentStack: "", resetNonce: 0 };
   }
 
   static getDerivedStateFromError(error) {
     return {
       hasError: true,
       message: error?.message || "Unexpected application error.",
+      stack: String(error?.stack || ""),
     };
   }
 
   componentDidCatch(error, info) {
     const errorId = reportRuntimeError(error, info?.componentStack);
-    this.setState({ errorId });
+    this.setState({ errorId, componentStack: String(info?.componentStack || "") });
     console.error("Developer OS UI error", error, info);
   }
 
@@ -49,6 +50,8 @@ export default class ErrorBoundary extends Component {
       hasError: false,
       message: "",
       errorId: "",
+      stack: "",
+      componentStack: "",
       resetNonce: state.resetNonce + 1,
     }));
   };
@@ -69,6 +72,12 @@ export default class ErrorBoundary extends Component {
           {this.state.errorId && (
             <small className="app-error-id">Incident {this.state.errorId}</small>
           )}
+          <details className="app-error-diagnostics">
+            <summary>Technical diagnostics</summary>
+            <p>Route: {typeof window !== "undefined" ? window.location.pathname : "unknown"}</p>
+            {this.state.stack && <pre>{this.state.stack}</pre>}
+            {this.state.componentStack && <pre>{this.state.componentStack}</pre>}
+          </details>
           <div className="app-error-actions">
             <button type="button" className="primary-button" onClick={this.reset}>
               Try again
