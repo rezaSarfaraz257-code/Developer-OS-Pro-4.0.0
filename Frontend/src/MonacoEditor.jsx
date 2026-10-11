@@ -84,8 +84,8 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  let lspVersion=1,lspTimer=null;
  const syncOpen=()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequest("textDocument/didOpen",{textDocument:{uri:m.uri.toString(),languageId:lang(pathRef.current),version:lspVersion,text:m.getValue()}});};
  syncOpen();
- const c=ed.onDidChangeModelContent(()=>{change.current?.(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
- const p=ed.onDidChangeCursorPosition(e=>cursor.current?.({line:e.position.lineNumber,column:e.position.column,path:pathRef.current}));
+ const c=ed.onDidChangeModelContent(()=>{if(typeof change.current==="function")change.current(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
+ const p=ed.onDidChangeCursorPosition(e=>if(typeof cursor.current==="function")cursor.current({line:e.position.lineNumber,column:e.position.column,path:pathRef.current}));
  const formatRequest=async(pathName,content)=>{
    if(!workspaceId)return null;
    const token=getAccessToken();
