@@ -570,20 +570,30 @@ function Explore() {
       apiFetch("/tools/?q=" + encoded).then(response => parseExploreResponse(response, "Tools")),
       apiFetch("/workflows/?q=" + encoded).then(response => parseExploreResponse(response, "Workflows")),
       apiFetch("/resources/?q=" + encoded).then(response => parseExploreResponse(response, "Resources")),
-      apiFetch("/favorites/").then(response => parseExploreResponse(response, "Favorites")),
-      apiFetch("/ide/workspaces/").then(response => parseExploreResponse(response, "Workspaces")),
     ]);
     if (requestId !== requestSequence.current) return;
-    const labels = ["tools", "workflows", "resources", "favorites", "workspaces"];
-    const setters = [setTools, setWorkflows, setResources, setFavorites, setWorkspaces];
+    const labels = ["tools", "workflows", "resources"];
+    const setters = [setTools, setWorkflows, setResources];
     const failures = [];
     results.forEach((result, index) => {
       if (result.status === "fulfilled") setters[index](asExploreArray(result.value));
       else failures.push(labels[index] + ": " + (result.reason?.message || "temporarily unavailable"));
     });
-    setError(failures.length ? "Some Explore services need attention — " + failures.join("; ") + "." : "");
+    setError(failures.length ? "Some Explore catalogs need attention — " + failures.join("; ") + "." : "");
     setBusy(false);
   }, [q]);
+
+  const loadPersonalData = useCallback(async () => {
+    const results = await Promise.allSettled([
+      apiFetch("/favorites/").then(response => parseExploreResponse(response, "Favorites")),
+      apiFetch("/ide/workspaces/").then(response => parseExploreResponse(response, "Workspaces")),
+    ]);
+    if (results[0].status === "fulfilled") setFavorites(asExploreArray(results[0].value));
+    if (results[1].status === "fulfilled") setWorkspaces(asExploreArray(results[1].value));
+    if (results.some(result => result.status === "rejected")) {
+      setError(previous => previous || "Saved tools or workspace signals are temporarily unavailable.");
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(q); }, q.trim() ? 260 : 0);
@@ -611,10 +621,13 @@ function Explore() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  useEffect(() => () => {
-    requestSequence.current += 1;
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-  }, []);
+  useEffect(() => {
+    void loadPersonalData();
+    return () => {
+      requestSequence.current += 1;
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, [loadPersonalData]);
 
   const toggle=async tool=>{
     const key=String(tool.name||"").toLowerCase();
@@ -737,7 +750,7 @@ function Explore() {
 
     <section className="explore-command panel">
       <div className="explore-search-wrap"><span>⌕</span><input ref={searchRef} className="explore-search" value={q} onChange={e=>{setQ(e.target.value);setPageSize(12)}} placeholder="Search tools, workflows, resources or technologies…" aria-label="Search Explore catalog"/>{q&&<button type="button" className="explore-clear" onClick={()=>{setQ("");searchRef.current?.focus()}} aria-label="Clear search">×</button>}<kbd>/</kbd></div>
-      <div className="explore-tabs" role="tablist" aria-label="Explore collections">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["community","COMMUNITY","◎"]].map(([id,label,icon])=><button type="button" role="tab" aria-selected={tab===id} className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12)}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:"LIVE"}</b></button>)}</div>
+      <div className="explore-tabs" role="tablist" aria-label="Explore collections">{[["tools","TOOLS","⌘"],["workflows","WORKFLOWS","↗"],["resources","RESOURCES","◈"],["community","COMMUNITY","◎"]].map(([id,label,icon])=><button type="button" role="tab" aria-selected={tab===id} className={tab===id?"active":""} onClick={()=>{setTab(id);setPageSize(12);if(id!=="tools"){setCategory("All");setActiveTag("");setSavedOnly(false)}}} key={id}><span>{icon}</span>{label}<b>{id==="tools"?tools.length:id==="workflows"?workflows.length:id==="resources"?resources.length:"LIVE"}</b></button>)}</div>
     </section>
 
     {tab === "community" ? <CommunityFeed /> : <>
@@ -749,12 +762,12 @@ function Explore() {
     </div>
 
     {aiResult&&<section className="explore-ai-panel"><div className="explore-ai-head"><div><span>✦ DOS INTELLIGENCE</span><strong>Discovery Brief</strong></div><button onClick={()=>setAiResult("")}>×</button></div><p>{aiResult}</p></section>}
-    {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>void load(q)}>RETRY</button></div>}
+    {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>{void load(q);void loadPersonalData()}}>RETRY</button></div>}
     {toast&&<div className="explore-toast" role="status">✓ {toast}</div>}
 
     <section className="explore-controls">
       {tab==="tools"&&<div className="explore-categories" role="group" aria-label="Tool category">{categories.map(x=><button type="button" key={x} className={category===x?"active":""} aria-pressed={category===x} onClick={()=>{setCategory(x);setPageSize(12)}}>{x}</button>)}</div>}
-      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>{setSavedOnly(v=>!v);setPageSize(12)}}>♥ Saved only</button>}{tab==="tools"&&<label className="explore-sort-label">SORT <select value={sort} onChange={e=>{setSort(e.target.value);setPageSize(12)}} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label>}<button type="button" className={compact?"active":""} aria-pressed={compact} onClick={()=>setCompact(v=>!v)} title={compact?"Switch to comfortable cards":"Switch to compact cards"}>{compact?"▤ Compact":"▦ Comfortable"}</button><button type="button" className="explore-refresh" onClick={()=>void load(q)} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended");setPageSize(12)}}>Clear filters</button>}</div>
+      <div className="explore-control-actions">{tab==="tools"&&<button type="button" className={savedOnly?"active":""} aria-pressed={savedOnly} onClick={()=>{setSavedOnly(v=>!v);setPageSize(12)}}>♥ Saved only</button>}{tab==="tools"&&<label className="explore-sort-label">SORT <select value={sort} onChange={e=>{setSort(e.target.value);setPageSize(12)}} aria-label="Sort results"><option value="recommended">✦ Recommended</option><option value="rating">★ Highest rated</option><option value="newest">◷ Newest</option><option value="name">A–Z</option></select></label>}<button type="button" className={compact?"active":""} aria-pressed={compact} onClick={()=>setCompact(v=>!v)} title={compact?"Switch to comfortable cards":"Switch to compact cards"}>{compact?"▤ Compact":"▦ Comfortable"}</button><button type="button" className="explore-refresh" onClick={()=>{void load(q);void loadPersonalData()}} disabled={busy} aria-label="Refresh catalog" title="Refresh catalog">{busy?"◌":"↻"} <span>{busy?"Loading":"Refresh"}</span></button>{hasFilters&&<button type="button" className="explore-reset" onClick={()=>{setQ("");setCategory("All");setActiveTag("");setSavedOnly(false);setSort("recommended");setPageSize(12)}}>Clear filters</button>}</div>
     </section>
 
     {tab==="tools"&&tags.length>0&&<div className="explore-tags"><span>TAGS</span>{tags.map(x=><button key={x} className={activeTag===x?"active":""} onClick={()=>{setActiveTag(activeTag===x?"":x);setPageSize(12)}}>#{x}</button>)}</div>}
