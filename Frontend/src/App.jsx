@@ -8,6 +8,7 @@ import ProIDE from "./ProIDE";
 import Avatar from "./components/Avatar";
 import { normalizeProfileLink, safeProfileLink } from "./utils/profile.js";
 import Referral from "./Referral";
+import ProjectsExperience from "./Project/ProjectsExperience.jsx";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
@@ -403,17 +404,7 @@ function Dashboard({ go }) {
   </div>;
 }
 
-function Projects({ go }) {
-  const [items,setItems]=useState([]); const [q,setQ]=useState(""); const [form,setForm]=useState(""); const [busy,setBusy]=useState(false);
-  const load=()=>apiFetch("/projects/").then(r=>r.json()).then(d=>setItems(Array.isArray(d)?d:d.results||[]));
-  useEffect(load,[]);
-  const filtered=useMemo(()=>items.filter(p=>(p.title||"").toLowerCase().includes(q.toLowerCase())),[items,q]);
-  const create=async()=>{if(!form.trim())return;setBusy(true);await apiFetch("/projects/",{method:"POST",body:JSON.stringify({title:form,category:"General",status:"Planning",priority:"medium",tags:[],stack:[]})});setForm("");setBusy(false);load();};
-  return <div className="page"><div className="hero-row"><div><div className="eyebrow">WORKSPACE / PROJECTS</div><h1>Projects</h1><p>Projects are the source of truth for execution, context and collaboration.</p></div></div>
-    <div className="toolbar"><div className="global-search large"><span>⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Filter projects..." /></div><div className="inline-create"><input value={form} onChange={e=>setForm(e.target.value)} placeholder="Create project..." onKeyDown={e=>e.key==="Enter"&&create()}/><button className="primary" onClick={create}>{busy?"...":"CREATE"}</button></div></div>
-    <div className="cards-grid projects-grid">{filtered.map(p=><button className="project-card large-card" key={p.id} onClick={()=>go(`/projects/${p.id}`)}><div className="card-top"><span>{p.category}</span><i>{p.priority}</i></div><b>{p.title}</b><small>{p.description||"Workspace ready for context."}</small><div className="bar"><i style={{width:`${p.progress||0}%`}} /></div><div className="card-meta"><span>{p.status}</span><strong>{p.progress||0}%</strong></div></button>)}</div>
-  </div>;
-}
+function Projects({ go }) { return <ProjectsExperience go={go} />; }
 
 function ProjectDetail({ id, go }) {
   const [project,setProject]=useState(null); const [tasks,setTasks]=useState([]); const [comments,setComments]=useState([]); const [comment,setComment]=useState(""); const [tab,setTab]=useState("overview");
