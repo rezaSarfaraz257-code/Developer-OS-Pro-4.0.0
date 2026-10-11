@@ -592,27 +592,59 @@ function Explore() {
   }, []);
 
   const toggle=async tool=>{
-    const saved=favorites.some(f=>f.tool?.name?.toLowerCase()===tool.name.toLowerCase());
+    const key=String(tool.name||"").toLowerCase();
+    if(favoriteBusyRef.current.has(tool.id))return;
+    favoriteBusyRef.current.add(tool.id);
+    setFavoriteBusy(previous=>[...previous,tool.id]);
+    const saved=favorites.some(item=>item.tool?.name?.toLowerCase()===key);
+    setError("");
     try{
       if(saved){
-        await apiFetch(`/favorites/?tool_name=${encodeURIComponent(tool.name)}`,{method:"DELETE"});
-        setFavorites(favorites.filter(f=>f.tool?.name?.toLowerCase()!==tool.name.toLowerCase()));
+        const response=await apiFetch("/favorites/?tool_name="+encodeURIComponent(tool.name),{method:"DELETE"});
+        if(!response.ok)await parseCatalogResponse(response,"Favorite removal");
+        setFavorites(previous=>previous.filter(item=>item.tool?.name?.toLowerCase()!==key));
+        notify(tool.name+" removed from saved tools.");
       }else{
-        const r=await apiFetch("/favorites/",{method:"POST",body:JSON.stringify({tool_name:tool.name})});
-        const d=await r.json(); if(!r.ok)throw Error(d.error||"Favorite failed");
-        setFavorites([...favorites,d]);
+        const response=await apiFetch("/favorites/",{method:"POST",body:JSON.stringify({tool_name:tool.name})});
+        const data=await parseCatalogResponse(response,"Favorite save");
+        setFavorites(previous=>previous.some(item=>item.tool?.name?.toLowerCase()===key)?previous:[...previous,data]);
+        notify(tool.name+" saved to your library.");
       }
-    }catch(e){setError(e.message)}
+    }catch(error){setError(error.message||"Favorite could not be updated.");}
+    finally{
+      favoriteBusyRef.current.delete(tool.id);
+      setFavoriteBusy(previous=>previous.filter(id=>id!==tool.id));
+    }
   };
 
   const addToWorkspace=async tool=>{
+    if(workspaceBusyRef.current.has(tool.id))return;
+    workspaceBusyRef.current.add(tool.id);
+    setWorkspaceBusy(previous=>[...previous,tool.id]);
+    setError("");
     try{
-      const name=`${tool.name} Lab`;
-      const body={name,language:"javascript",framework:tool.category||"",runtime:"node",package_manager:"npm",files:{"README.md":`# ${name}\n\nWorkspace created from Developer OS Explore.\n\nTool: ${tool.name}\nCategory: ${tool.category||"General"}\n\n## Next move\nStart building.\n`,"package.json":JSON.stringify({name:name.toLowerCase().replace(/[^a-z0-9]+/g,"-"),private:true,version:"0.1.0",scripts:{dev:"vite",build:"vite build"}},null,2)}};
-      const r=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify(body)});
-      const d=await r.json(); if(!r.ok)throw Error(d.error||"Workspace creation failed");
-      setWorkspaces(x=>[d,...x]); setToast(`Workspace “${name}” created`); setTimeout(()=>setToast(""),2600);
-    }catch(e){setError(e.message)}
+      const name=tool.name+" Lab";
+      const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60)||"developer-lab";
+      const body={
+        name,
+        language:"javascript",
+        framework:tool.category||"",
+        runtime:"node",
+        package_manager:"npm",
+        files:{
+          "README.md":"# "+name+"\n\nWorkspace created from Developer OS Explore.\n\nTool: "+tool.name+"\nCategory: "+(tool.category||"General")+"\n\n## Next move\nStart building.\n",
+          "package.json":JSON.stringify({name:slug,private:true,version:"0.1.0",scripts:{dev:"vite",build:"vite build"}},null,2)
+        }
+      };
+      const response=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify(body)});
+      const data=await parseCatalogResponse(response,"Workspace creation");
+      setWorkspaces(previous=>[data,...previous.filter(item=>item.id!==data.id)]);
+      notify("Workspace “"+name+"” created successfully.");
+    }catch(error){setError(error.message||"Workspace creation failed.");}
+    finally{
+      workspaceBusyRef.current.delete(tool.id);
+      setWorkspaceBusy(previous=>previous.filter(id=>id!==tool.id));
+    }
   };
 
   const aiDiscover=async()=>{
