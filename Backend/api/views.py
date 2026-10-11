@@ -188,6 +188,30 @@ def readiness_api(request):
     return Response({"status": "ready" if ready else "not_ready", "checks": checks, "version": os.environ.get("RELEASE_VERSION", "1.0.0")}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def public_projects_api(request):
+    """Return only projects explicitly published by their owners."""
+    query = str(request.query_params.get("q") or "").strip()[:120]
+    projects = Project.objects.filter(is_public=True).select_related("owner", "owner__profile").annotate(
+        task_count=Count("tasks"),
+        completed_task_count=Count("tasks", filter=Q(tasks__status="done")),
+    )
+    if query:
+        projects = projects.filter(
+            Q(title__icontains=query) |
+            Q(description__icontains=query) |
+            Q(category__icontains=query)
+        )
+    projects = projects.order_by("-uploaded_at", "-created_at")[:100]
+    serialized = ProjectSerializer(projects, many=True).data
+    for item, project in zip(serialized, projects):
+        profile = getattr(project.owner, "profile", None)
+        item["owner_username"] = project.owner.username
+        item["owner_display_name"] = (profile.full_name if profile and profile.full_name else project.owner.username)
+    return Response(serialized)
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def projects_api(request):
