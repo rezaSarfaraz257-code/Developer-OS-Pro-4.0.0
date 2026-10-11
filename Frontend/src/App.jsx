@@ -405,7 +405,7 @@ function Dashboard({ go }) {
   </div>;
 }
 
-function Projects({ go }) { return <ProjectsExperience go={go} />; }
+function Projects({ go, user }) { return <ProjectsExperience go={go} currentUserId={user?.id ?? user?.user?.id} />; }
 
 function ProjectDetail({ id, go }) {
   const [project,setProject]=useState(null); const [tasks,setTasks]=useState([]); const [comments,setComments]=useState([]); const [comment,setComment]=useState(""); const [tab,setTab]=useState("overview");
@@ -983,7 +983,7 @@ export default function App() {
   if(projectMatch) content=<ProjectDetail id={projectMatch[1]} go={go}/>;
   else if(current==="dashboard") content=<Dashboard go={go}/>;
   else if(current==="explore") content=<Explore/>;
-  else if(current==="projects") content=<Projects go={go}/>;
+  else if(current==="projects") content=<Projects go={go} user={user}/>;
   else if(current==="ide") content=<ProIDE go={go}/>;
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;
