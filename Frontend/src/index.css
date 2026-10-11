@@ -77,12 +77,7 @@ img { display: block; max-width: 100%; }
 /* Increase the hit target only while a scroll container is interacted with.
    Overlay scrollbars on macOS/mobile remain controlled by the operating system. */
 @media (hover: hover) and (pointer: fine) {
-  *:hover {
-    scrollbar-width: auto;
-    scrollbar-color: rgba(103, 232, 249, 0.78) rgba(9, 15, 24, 0.55);
-  }
-
-  *:hover::-webkit-scrollbar {
+  *::-webkit-scrollbar:hover {
     width: 14px;
     height: 14px;
   }
