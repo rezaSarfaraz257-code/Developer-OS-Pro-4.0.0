@@ -193,7 +193,7 @@ def readiness_api(request):
 def public_projects_api(request):
     """Return only projects explicitly published by their owners."""
     query = str(request.query_params.get("q") or "").strip()[:120]
-    projects = Project.objects.filter(is_public=True).select_related("owner", "owner__profile").annotate(
+    projects = Project.objects.filter(is_public=True).select_related("owner").annotate(
         task_count=Count("tasks"),
         completed_task_count=Count("tasks", filter=Q(tasks__status="done")),
     )
@@ -206,9 +206,9 @@ def public_projects_api(request):
     projects = projects.order_by("-uploaded_at", "-created_at")[:100]
     serialized = ProjectSerializer(projects, many=True).data
     for item, project in zip(serialized, projects):
-        profile = getattr(project.owner, "profile", None)
+        # Use the account username only; do not expose private profile fields in the public gallery.
         item["owner_username"] = project.owner.username
-        item["owner_display_name"] = (profile.full_name if profile and profile.full_name else project.owner.username)
+        item["owner_display_name"] = project.owner.username
     return Response(serialized)
 
 
