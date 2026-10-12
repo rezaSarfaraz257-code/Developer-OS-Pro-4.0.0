@@ -122,6 +122,25 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{},"command":"python -c \"print(42)\""}'             | tee process-result.json
           grep -q '"id"' process-result.json
 
+      - name: Verify strict mode fails closed in the actual runner container
+        env:
+          RUNNER_SECURITY_LEVEL: strict
+          IDE_RUNNER_TOKEN: ci-runner-strict-token
+        run: |
+          docker run -d --name developer-os-runner-strict-ci -e IDE_RUNNER_TOKEN="$IDE_RUNNER_TOKEN" -e RUNNER_SECURITY_LEVEL=strict -e RUNNER_SANDBOX_MODE=container -p 18081:8080 developer-os-runner:ci
+          trap 'docker rm -f developer-os-runner-strict-ci >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18081/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18081/health >/dev/null
+          status="$(curl -sS -o strict-result.json -w '%{http_code}' -X POST http://127.0.0.1:18081/exec \
+            -H "Authorization: Bearer $IDE_RUNNER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"998","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python3 main.py"}')"
+          test "$status" = "503"
+          grep -q 'per-execution isolation' strict-result.json
+
 
   backup-restore:
     name: PostgreSQL backup and restore
