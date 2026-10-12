@@ -1,6 +1,7 @@
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../services/api";
+import { buildReplacementPreview } from "./replacePreview.js";
 
 export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved }) {
   const [query,setQuery]=useState("");
@@ -8,10 +9,37 @@ export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved })
   const [caseSensitive,setCaseSensitive]=useState(false);
   const [regex,setRegex]=useState(false);
   const [replaceMode,setReplaceMode]=useState(false);
+  const [replacePreview,setReplacePreview]=useState([]);
+  const [replacePreviewError,setReplacePreviewError]=useState("");
+  const [replaceBusy,setReplaceBusy]=useState(false);
   const escapeRegex=(value)=>String(value??"").split("").map(char=>"\\^$.*+?()[]{}|".includes(char)?"\\"+char:char).join("");
+
   const results=useMemo(()=>{if(!workspace||!query)return [];let re;try{re=regex?new RegExp(query,caseSensitive?"g":"gi"):new RegExp(escapeRegex(query),caseSensitive?"g":"gi")}catch{return []}const out=[];Object.entries(files||{}).forEach(([path,text])=>String(text).split("\n").forEach((line,i)=>{re.lastIndex=0;let m;while((m=re.exec(line))){out.push({path,line:i+1,text:line.trim(),column:m.index+1,match:m[0]});if(!re.global)break;if(m[0]==="")re.lastIndex++}}));return out.slice(0,500);  },[files,query,regex,caseSensitive,workspace]);
-  async function applyReplace(all=false){if(!query||!results.length||!workspace)return;let rx;try{rx=regex?new RegExp(query,caseSensitive?"g":"gi"):new RegExp(escapeRegex(query),caseSensitive?"g":"gi")}catch(e){alert(e.message||"Invalid regular expression");return}const targets=all?[...new Set(results.map(r=>r.path))]:[results[0].path];if(all&&!window.confirm(`Replace ${results.length} matches in ${targets.length} files?`))return;let revision=Number(workspace.revision??0);const next={...files};try{for(const path of targets){const content=String(next[path]||"").replace(rx,replace);const resp=await apiFetch(`/ide/workspaces/${workspace.id}/files/`,{method:"POST",body:JSON.stringify({path,content,revision})});const d=await resp.json();if(!resp.ok)throw Error(d.error||d.detail||("Replace failed for "+path));next[path]=content;revision=Number(d.revision??revision);onFileSaved?.(path,content,revision)}setQuery("");}catch(e){alert(e.message||"Replace failed");}}
-  return <div className="dos-search-panel"><div className="dos-search-head"><strong>SEARCH</strong><span className="dos-search-count">{results.length}</span><button onClick={onClose}>×</button></div><div className="dos-search-input"><span>⌕</span><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search in workspace…"/><button className={caseSensitive?"on":""} onClick={()=>setCaseSensitive(x=>!x)}>Aa</button><button className={regex?"on":""} onClick={()=>setRegex(x=>!x)}>.*</button></div><div className="dos-search-tabs"><button className={!replaceMode?"active":""} onClick={()=>setReplaceMode(false)}>Find</button><button className={replaceMode?"active":""} onClick={()=>setReplaceMode(true)}>Replace</button></div>{replaceMode&&<div className="dos-search-input"><span>↪</span><input value={replace} onChange={e=>setReplace(e.target.value)} placeholder="Replace with…"/><button onClick={()=>applyReplace(false)}>Replace</button><button onClick={()=>applyReplace(true)}>All</button></div>}<div className="dos-search-meta">{results.length} result{results.length===1?"":"s"}</div><div className="dos-search-results">{results.map((r,i)=><button key={`${r.path}:${r.line}:${i}`} onClick={()=>onOpen(r.path,r.line,r.column)}><strong>{r.path}</strong><span><b>{r.line}</b> {r.text||"(empty line)"}</span></button>)}</div></div>
+  function applyReplace(all=false){
+    if(!query||!results.length||!workspace)return;
+    try{
+      const changes=buildReplacementPreview({files,query,replacement:replace,regex,caseSensitive,replaceAll:all,firstMatch:results[0]});
+      setReplacePreview(changes);
+      setReplacePreviewError(changes.length?"":"No matching text would change. Search again if the workspace changed.");
+    }catch(e){setReplacePreview([]);setReplacePreviewError(e.message||"Invalid regular expression");}
+  }
+  async function applyReplacePreview(){
+    if(!workspace||!replacePreview.length||replaceBusy)return;
+    setReplaceBusy(true);setReplacePreviewError("");
+    let revision=Number(workspace.revision??0);
+    try{
+      for(const change of replacePreview){
+        const resp=await apiFetch(`/ide/workspaces/${workspace.id}/files/`,{method:"POST",body:JSON.stringify({path:change.path,content:change.after,revision})});
+        const d=await resp.json().catch(()=>({}));
+        if(!resp.ok)throw Error(d.error||d.detail||(`Replace failed for ${change.path}`));
+        revision=Number(d.revision??revision);
+        onFileSaved?.(change.path,change.after,revision);
+      }
+      setQuery("");setReplacePreview([]);setReplacePreviewError("");
+    }catch(e){setReplacePreviewError((e.message||"Replace failed")+" Earlier files may already have been saved; inspect the workspace before retrying.");}
+    finally{setReplaceBusy(false);}
+  }
+  return <div className="dos-search-panel"><div className="dos-search-head"><strong>SEARCH</strong><span className="dos-search-count">{results.length}</span><button onClick={onClose}>×</button></div><div className="dos-search-input"><span>⌕</span><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search in workspace…"/><button className={caseSensitive?"on":""} onClick={()=>setCaseSensitive(x=>!x)}>Aa</button><button className={regex?"on":""} onClick={()=>setRegex(x=>!x)}>.*</button></div><div className="dos-search-tabs"><button className={!replaceMode?"active":""} onClick={()=>setReplaceMode(false)}>Find</button><button className={replaceMode?"active":""} onClick={()=>setReplaceMode(true)}>Replace</button></div>{replaceMode&&<div className="dos-search-input"><span>↪</span><input value={replace} onChange={e=>setReplace(e.target.value)} placeholder="Replace with…"/><button disabled={!query||!results.length} onClick={()=>applyReplace(false)}>Preview</button><button disabled={!query||!results.length} onClick={()=>applyReplace(true)}>Preview All</button></div>}<div className="dos-search-meta">{results.length} result{results.length===1?"":"s"}</div><div className="dos-search-results">{results.map((r,i)=><button key={`${r.path}:${r.line}:${i}`} onClick={()=>onOpen(r.path,r.line,r.column)}><strong>{r.path}</strong><span><b>{r.line}</b> {r.text||"(empty line)"}</span></button>)}</div>{replacePreview.length>0&&<div className="dos-replace-preview-backdrop"><section className="dos-replace-preview" role="dialog" aria-modal="true" aria-label="Review replacements"><header><div><strong>REPLACE PREVIEW</strong><small>{replacePreview.reduce((sum,item)=>sum+item.matches,0)} replacement(s) across {replacePreview.length} file(s)</small></div><button type="button" onClick={()=>{setReplacePreview([]);setReplacePreviewError("")}} disabled={replaceBusy}>×</button></header><div className="dos-replace-preview-list">{replacePreview.map(change=><article key={change.path}><strong>{change.path}</strong><div><label>Before</label><pre>{change.before}</pre></div><div><label>After</label><pre>{change.after}</pre></div></article>)}</div>{replacePreviewError&&<p role="alert">{replacePreviewError}</p>}<footer><button type="button" onClick={()=>{setReplacePreview([]);setReplacePreviewError("")}} disabled={replaceBusy}>Cancel</button><button type="button" onClick={applyReplacePreview} disabled={replaceBusy||!replacePreview.length}>{replaceBusy?"Applying…":"Apply replacements"}</button></footer></section></div>}{replacePreviewError&&!replacePreview.length&&<p className="dos-replace-preview-error" role="alert">{replacePreviewError}</p>}</div>
 }
 
 export function ProblemsPanel({ diagnostics=[], onClose, onOpen }) {
