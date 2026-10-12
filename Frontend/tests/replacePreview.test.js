@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildReplacementPreview } from "../src/ide/replacePreview.js";
+import { buildReplacementPreview, findStaleReplacementChanges } from "../src/ide/replacePreview.js";
 
 test("literal preview escapes regex metacharacters",()=>{
  const changes=buildReplacementPreview({files:{"src/a.js":"const x = a.b; a.b;"},query:"a.b",replacement:"value",replaceAll:true});
@@ -24,4 +24,14 @@ test("invalid regular expressions are rejected",()=>{
 test("stale selected match produces no unsafe replacement",()=>{
  const changes=buildReplacementPreview({files:{"a.txt":"changed"},query:"old",replacement:"new",firstMatch:{path:"a.txt",line:1,column:1,match:"old"}});
  assert.deepEqual(changes,[]);
+});
+
+test("stale preview preflight detects changed target files before writes",()=>{
+ const changes=[{path:"a.txt",before:"old",after:"new"},{path:"b.txt",before:"stable",after:"changed"}];
+ assert.deepEqual(findStaleReplacementChanges(changes,{"a.txt":"newer","b.txt":"stable"}),[changes[0]]);
+});
+
+test("stale preview preflight accepts unchanged target files",()=>{
+ const changes=[{path:"a.txt",before:"old",after:"new"}];
+ assert.deepEqual(findStaleReplacementChanges(changes,{"a.txt":"old"}),[]);
 });
