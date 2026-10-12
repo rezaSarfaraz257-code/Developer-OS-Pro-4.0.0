@@ -9,8 +9,8 @@ export function buildReplacementPreview({files={},query,replacement="",regex=fal
   const changes=[];
   for(const path of [...new Set(paths)]){
     const before=String(files[path]??"");
-    let after=before;
-    let matches=0;
+    let after;
+    let matches;
     if(replaceAll){
       matches=(before.match(pattern)||[]).length;
       after=before.replace(pattern,replacement);
