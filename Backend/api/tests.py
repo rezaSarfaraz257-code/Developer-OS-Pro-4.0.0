@@ -850,3 +850,39 @@ class BillingEntitlementSafetyTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["plan"], "pro")
         self.assertEqual(Subscription.objects.get(user=self.user).plan, "pro")
+
+
+class IDEWorkspaceLifecycleRegressionTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
+        self.client.force_authenticate(user=self.owner)
+
+    def test_workspace_delete_endpoint_deletes_only_the_owners_workspace(self):
+        from .models import CodeWorkspace
+
+        created = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Delete regression", "files": {"README.md": "# Test"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        workspace_id = created.data["id"]
+
+        deleted = self.client.delete(
+            "/api/ide/workspaces/", {"id": workspace_id}, format="json"
+        )
+        self.assertEqual(deleted.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(CodeWorkspace.objects.filter(pk=workspace_id).exists())
+
+    def test_workspace_delete_does_not_delete_another_users_workspace(self):
+        from .models import CodeWorkspace
+
+        other = User.objects.create_user(username="workspace-delete-other", password="long-test-password-123")
+        workspace = CodeWorkspace.objects.create(
+            owner=other, name="Private workspace", files={"README.md": "# Private"}
+        )
+        response = self.client.delete(
+            "/api/ide/workspaces/", {"id": workspace.pk}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(CodeWorkspace.objects.filter(pk=workspace.pk, owner=other).exists())
