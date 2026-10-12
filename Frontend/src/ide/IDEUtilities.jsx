@@ -27,6 +27,14 @@ export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved })
   }
   async function applyReplacePreview(){
     if(!workspace||!replacePreview.length||replaceBusy)return;
+    // Preflight every target before the first write. If a file changed after
+    // preview generation, abort the whole operation rather than applying a
+    // stale preview or partially overwriting newer editor content.
+    const staleChanges=replacePreview.filter(change=>String(files?.[change.path]??"")!==change.before);
+    if(staleChanges.length){
+      setReplacePreviewError("Preview is stale: "+staleChanges.map(change=>change.path).join(", ")+" changed after preview. Re-run Preview before applying.");
+      return;
+    }
     setReplaceBusy(true);setReplacePreviewError("");
     let revision=Number(workspace.revision??0);
     try{
