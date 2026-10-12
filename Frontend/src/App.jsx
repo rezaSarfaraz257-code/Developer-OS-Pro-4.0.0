@@ -366,7 +366,6 @@ function Dashboard({ go }) {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [focusMode, setFocusMode] = useState(false);
-  const [activeMission, setActiveMission] = useState("build");
 
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -518,7 +517,7 @@ function Dashboard({ go }) {
 
     <section className="cc-section-heading cc-actions-heading"><div><span className="cc-section-eyebrow">CHOOSE YOUR MISSION</span><h2>What are we doing today?</h2><p>Three direct paths from intent to execution.</p></div></section>
     <div className="cc-mission-grid">
-      {missionCards.map((item, index) => <button className={"cc-mission-card cc-mission-" + item.tone} key={item.id} onClick={() => { setActiveMission(item.id); go(item.path); }}>
+      {missionCards.map((item, index) => <button className={"cc-mission-card cc-mission-" + item.tone} key={item.id} onClick={() => go(item.path)}>
         <span className="cc-mission-index">0{index + 1} <i> / MISSION</i></span><span className="cc-mission-icon">{item.icon}</span><b>{item.title}</b><p>{item.text}</p><span className="cc-mission-cta">{item.detail} <i>↗</i></span><span className="cc-mission-watermark" aria-hidden="true">{item.icon}</span>
       </button>)}
     </div>
