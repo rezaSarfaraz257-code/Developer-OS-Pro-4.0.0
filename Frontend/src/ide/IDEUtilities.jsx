@@ -12,6 +12,7 @@ export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved })
   const [replacePreview,setReplacePreview]=useState([]);
   const [replacePreviewError,setReplacePreviewError]=useState("");
   const [replaceBusy,setReplaceBusy]=useState(false);
+  const escapeRegex=(value)=>String(value??"").split("").map(char=>"\\^$.*+?()[]{}|".includes(char)?"\\"+char:char).join("");
 
   const results=useMemo(()=>{if(!workspace||!query)return [];let re;try{re=regex?new RegExp(query,caseSensitive?"g":"gi"):new RegExp(escapeRegex(query),caseSensitive?"g":"gi")}catch{return []}const out=[];Object.entries(files||{}).forEach(([path,text])=>String(text).split("\n").forEach((line,i)=>{re.lastIndex=0;let m;while((m=re.exec(line))){out.push({path,line:i+1,text:line.trim(),column:m.index+1,match:m[0]});if(!re.global)break;if(m[0]==="")re.lastIndex++}}));return out.slice(0,500);  },[files,query,regex,caseSensitive,workspace]);
   function applyReplace(all=false){
