@@ -10,10 +10,15 @@ export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
   smoothCaret: true,
   renderWhitespace: "selection",
   codeLens: true,
+  smoothScrolling: true,
+  bracketPairGuides: true,
+  mouseWheelZoom: false,
+  renderLineHighlight: "line",
   theme: "developer-os-dark"
 });
 const THEMES = new Set(["developer-os-dark", "vs-dark", "vs", "hc-black"]);
 const WHITESPACE_MODES = new Set(["none", "selection", "all"]);
+const LINE_HIGHLIGHT_MODES = new Set(["none", "gutter", "line", "all"]);
 
 export function normalizeEditorPreferences(value) {
   const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -31,6 +36,10 @@ export function normalizeEditorPreferences(value) {
     smoothCaret: input.smoothCaret !== false,
     renderWhitespace: WHITESPACE_MODES.has(input.renderWhitespace) ? input.renderWhitespace : DEFAULT_EDITOR_PREFERENCES.renderWhitespace,
     codeLens: input.codeLens !== false,
+    smoothScrolling: input.smoothScrolling !== false,
+    bracketPairGuides: input.bracketPairGuides !== false,
+    mouseWheelZoom: input.mouseWheelZoom === true,
+    renderLineHighlight: LINE_HIGHLIGHT_MODES.has(input.renderLineHighlight) ? input.renderLineHighlight : DEFAULT_EDITOR_PREFERENCES.renderLineHighlight,
     theme: THEMES.has(input.theme) ? input.theme : DEFAULT_EDITOR_PREFERENCES.theme
   };
 }
