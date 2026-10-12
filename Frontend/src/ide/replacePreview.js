@@ -31,3 +31,7 @@ export function buildReplacementPreview({files={},query,replacement="",regex=fal
   }
   return changes;
 }
+
+export function findStaleReplacementChanges(changes=[],files={}){
+  return changes.filter(change=>String(files?.[change.path]??"")!==change.before);
+}
