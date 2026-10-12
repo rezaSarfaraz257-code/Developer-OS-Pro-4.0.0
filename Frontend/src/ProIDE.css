@@ -4101,3 +4101,7 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
  .dos-debug-variable-value{max-width:40%}
 }
 @media(prefers-reduced-motion:reduce){.dos-debugger-pro *{animation:none!important;transition:none!important}}
+
+/* Global Search selected-result focus: keep keyboard and pointer selection visible. */
+.dos-ide-pro .dos-search-results button.selected{background:#103149;box-shadow:inset 2px 0 #55dcff}
+.dos-ide-pro .dos-search-results button:focus-visible{outline:2px solid #55dcff;outline-offset:-2px;background:#10263a}
