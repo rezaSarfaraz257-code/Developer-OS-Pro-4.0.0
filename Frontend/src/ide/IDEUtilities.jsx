@@ -1,7 +1,7 @@
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../services/api";
-import { buildReplacementPreview } from "./replacePreview.js";
+import { buildReplacementPreview, findStaleReplacementChanges } from "./replacePreview.js";
 
 export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved }) {
   const [query,setQuery]=useState("");
@@ -30,7 +30,7 @@ export function GlobalSearch({ workspace, files, onOpen, onClose, onFileSaved })
     // Preflight every target before the first write. If a file changed after
     // preview generation, abort the whole operation rather than applying a
     // stale preview or partially overwriting newer editor content.
-    const staleChanges=replacePreview.filter(change=>String(files?.[change.path]??"")!==change.before);
+    const staleChanges=findStaleReplacementChanges(replacePreview,files);
     if(staleChanges.length){
       setReplacePreviewError("Preview is stale: "+staleChanges.map(change=>change.path).join(", ")+" changed after preview. Re-run Preview before applying.");
       return;
