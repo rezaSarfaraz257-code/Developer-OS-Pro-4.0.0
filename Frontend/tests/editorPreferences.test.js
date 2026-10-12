@@ -1,0 +1,7 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { DEFAULT_EDITOR_PREFERENCES, normalizeEditorPreferences } from "../src/ide/editorPreferences.js";
+test("malformed settings safely use defaults",()=>{assert.deepEqual(normalizeEditorPreferences(null),{...DEFAULT_EDITOR_PREFERENCES});assert.deepEqual(normalizeEditorPreferences([]),{...DEFAULT_EDITOR_PREFERENCES});});
+test("font size is clamped and rounded",()=>{assert.equal(normalizeEditorPreferences({fontSize:8}).fontSize,11);assert.equal(normalizeEditorPreferences({fontSize:28}).fontSize,24);assert.equal(normalizeEditorPreferences({fontSize:17.6}).fontSize,18);assert.equal(normalizeEditorPreferences({fontSize:"bad"}).fontSize,13);});
+test("themes and indentation are allowlisted",()=>{assert.equal(normalizeEditorPreferences({theme:"hc-black",tabSize:4}).theme,"hc-black");assert.equal(normalizeEditorPreferences({theme:"remote-url",tabSize:8}).theme,"developer-os-dark");assert.equal(normalizeEditorPreferences({tabSize:"4"}).tabSize,4);});
+test("boolean settings are normalized",()=>{const s=normalizeEditorPreferences({wordWrap:1,minimap:false,lineNumbers:false,stickyScroll:false,formatOnType:false});assert.equal(s.wordWrap,false);assert.equal(s.minimap,false);assert.equal(s.lineNumbers,false);assert.equal(s.stickyScroll,false);assert.equal(s.formatOnType,false);});
