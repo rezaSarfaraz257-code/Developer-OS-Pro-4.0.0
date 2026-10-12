@@ -24,3 +24,20 @@ test("advanced editor preferences allow only supported values",()=>{
  const invalid=normalizeEditorPreferences({renderWhitespace:"sometimes"});
  assert.equal(invalid.renderWhitespace,"selection");
 });
+
+test("editor ergonomics preferences normalize safe defaults and explicit choices",()=>{
+ const defaults=normalizeEditorPreferences({});
+ assert.equal(defaults.smoothScrolling,true);
+ assert.equal(defaults.bracketPairGuides,true);
+ assert.equal(defaults.mouseWheelZoom,false);
+ assert.equal(defaults.renderLineHighlight,"line");
+ const chosen=normalizeEditorPreferences({smoothScrolling:false,bracketPairGuides:false,mouseWheelZoom:true,renderLineHighlight:"gutter"});
+ assert.equal(chosen.smoothScrolling,false);
+ assert.equal(chosen.bracketPairGuides,false);
+ assert.equal(chosen.mouseWheelZoom,true);
+ assert.equal(chosen.renderLineHighlight,"gutter");
+});
+test("line highlight mode is allowlisted",()=>{
+ assert.equal(normalizeEditorPreferences({renderLineHighlight:"all"}).renderLineHighlight,"all");
+ assert.equal(normalizeEditorPreferences({renderLineHighlight:"script"}).renderLineHighlight,"line");
+});
