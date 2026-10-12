@@ -947,3 +947,140 @@ html body #root .dos-ide-pro.dos-focus-mode .dos-body > .dos-editor-shell .dos-e
   .dos-ide-pro *::before,
   .dos-ide-pro *::after{transition:none!important;animation:none!important}
 }
+
+
+/* WEB IDE 4.8 — adaptive viewport and interaction polish.
+   CSS-only and scoped to the IDE. No application state, API, or Runner behavior changes. */
+.dos-ide-pro {
+  color-scheme: dark;
+  scrollbar-gutter: stable;
+}
+.dos-ide-pro .dos-body,
+.dos-ide-pro .dos-editor-shell,
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-editors,
+.dos-ide-pro .dos-editor-pane {
+  min-width: 0;
+  min-height: 0;
+}
+.dos-ide-pro .dos-editor-shell {
+  contain: layout paint;
+}
+.dos-ide-pro .dos-file-list,
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-terminal-body {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.dos-ide-pro .dos-workbench-actions button:active,
+.dos-ide-pro .dos-explorer-actions button:active,
+.dos-ide-pro .dos-explorer-create button:active,
+.dos-ide-pro .dos-top-actions button:active {
+  transform: translateY(1px);
+}
+.dos-ide-pro .dos-file:focus-visible,
+.dos-ide-pro .dos-folder:focus-visible,
+.dos-ide-pro .dos-tab:focus-visible,
+.dos-ide-pro .dos-dock-tabs button:focus-visible {
+  position: relative;
+  z-index: 2;
+  outline-offset: -2px;
+}
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-editor-shell {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.012);
+}
+.dos-ide-pro .dos-tree-search input::placeholder,
+.dos-ide-pro .dos-workspace-select select:invalid {
+  color: #71869a;
+}
+.dos-ide-pro .dos-top-actions button,
+.dos-ide-pro .dos-workbench-actions button,
+.dos-ide-pro .dos-editor-toolbar button,
+.dos-ide-pro .dos-explorer-create button {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-height: 700px) and (min-width: 821px) {
+  .dos-ide-pro {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+    min-height: 0;
+    border-radius: 10px;
+  }
+  .dos-ide-pro .dos-topbar {
+    min-height: 46px;
+    padding-block: 5px;
+  }
+  .dos-ide-pro .dos-commandbar {
+    min-height: 25px;
+    padding-block: 3px;
+  }
+  .dos-ide-pro .dos-pane-title,
+  .dos-ide-pro .dos-inspector-title {
+    min-height: 34px;
+    padding-block: 5px;
+  }
+  .dos-ide-pro .dos-workbench-strip {
+    min-height: 32px;
+    padding-block: 3px;
+  }
+  .dos-ide-pro .dos-tabs,
+  .dos-ide-pro .dos-tab {
+    min-height: 32px;
+    height: 32px;
+  }
+  .dos-ide-pro .dos-editor-toolbar {
+    min-height: 31px;
+    padding-block: 2px;
+  }
+  .dos-ide-pro .dos-dock-tabs,
+  .dos-ide-pro .dos-dock-tabs button {
+    min-height: 29px;
+  }
+  .dos-ide-pro .dos-statusbar {
+    min-height: 21px;
+    padding-block: 2px;
+  }
+  .dos-ide-pro .dos-terminal {
+    max-height: 48%;
+    min-height: 120px;
+  }
+}
+@media (max-width: 820px) {
+  .dos-ide-pro {
+    min-height: 0;
+  }
+  .dos-ide-pro .dos-activity button {
+    min-height: 36px;
+    min-width: 34px;
+  }
+  .dos-ide-pro .dos-editor-shell {
+    contain: none;
+  }
+}
+@media (max-width: 520px) {
+  .dos-ide-pro .dos-workbench-actions button,
+  .dos-ide-pro .dos-dock-tabs button {
+    min-height: 32px;
+  }
+  .dos-ide-pro .dos-editor-toolbar {
+    overscroll-behavior-x: contain;
+  }
+}
+@media (prefers-contrast: more) {
+  .dos-ide-pro {
+    --workbench-border: rgba(190,218,238,.34);
+    --workbench-border-strong: rgba(112,226,255,.72);
+    --workbench-muted: #b4c5d4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dos-ide-pro .dos-workbench-actions button:active,
+  .dos-ide-pro .dos-explorer-actions button:active,
+  .dos-ide-pro .dos-explorer-create button:active,
+  .dos-ide-pro .dos-top-actions button:active {
+    transform: none;
+  }
+}
