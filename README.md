@@ -2,7 +2,7 @@
 
 Developer OS is a developer operating environment: one workspace for projects, tasks, knowledge, tools, workflows, GitHub context, AI assistance, collaboration, activity and delivery intelligence.
 
-This repository is the **unified 3.0.0 production release line**, merged from the supplied SaaS Mature and Production Validation Ready artifacts. It is not an MVP/demo repository.
+This repository is the **Developer OS 4.0.0 unified product line**. It brings together the SaaS workspace, Web IDE, repository workflows, AI assistance, collaboration, and production-validation tooling. A version label describes the product line; it does not by itself certify that every deployment integration has passed live production acceptance.
 
 ## Product surface
 
