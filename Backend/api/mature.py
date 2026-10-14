@@ -172,15 +172,92 @@ def _email(subject, to, text, html=None):
     message.send(fail_silently=False)
 
 
+def _deliver_email_job_inline(job_id):
+    """Deliver one queued email after commit, without requiring a worker service.
+
+    This opt-in mode trades asynchronous delivery for a request-time SMTP attempt.
+    Failures are recorded on the durable job and never turn a committed signup
+    into a misleading HTTP 500 response.
+    """
+    worker_id = "inline-request"
+    try:
+        with transaction.atomic():
+            job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id, kind="email", status="queued"
+            ).first()
+            if job is None:
+                return
+            job.status = "running"
+            job.locked_at = timezone.now()
+            job.locked_by = worker_id
+            job.attempts += 1
+            job.save(update_fields=["status", "locked_at", "locked_by", "attempts"])
+            payload = job.payload
+    except Exception:
+        # The account/parent transaction has already committed. Do not make the
+        # HTTP request fail because a best-effort post-commit delivery callback
+        # could not claim its job.
+        return
+
+    try:
+        message = EmailMultiAlternatives(
+            payload["subject"],
+            payload["text"],
+            getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"),
+            [payload["to"]],
+        )
+        if payload.get("html"):
+            message.attach_alternative(payload["html"], "text/html")
+        message.send(fail_silently=False)
+    except Exception as exc:
+        try:
+            now = timezone.now()
+            BackgroundJob.objects.filter(
+                pk=job_id, status="running", locked_by=worker_id
+            ).update(
+                status="failed",
+                error=str(exc)[:1000],
+                last_error_at=now,
+                dead_lettered_at=now,
+                finished_at=now,
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        now = timezone.now()
+        BackgroundJob.objects.filter(
+            pk=job_id, status="running", locked_by=worker_id
+        ).update(
+            status="succeeded",
+            result={"sent": True, "delivery_mode": "inline"},
+            error="",
+            finished_at=now,
+            locked_at=None,
+            locked_by="",
+        )
+    except Exception:
+        # Leave the durable row for operational inspection if finalization fails.
+        return
+
+
 def queue_email(kind, to, subject, text, html=None, *, idempotency_key=""):
     payload = {"template": kind, "to": to, "subject": subject, "text": text, "html": html or ""}
     if idempotency_key:
-        job, _ = BackgroundJob.objects.get_or_create(
+        job, created = BackgroundJob.objects.get_or_create(
             kind="email", idempotency_key=idempotency_key,
             defaults={"payload": payload},
         )
-        return job
-    return BackgroundJob.objects.create(kind="email", payload=payload)
+    else:
+        job = BackgroundJob.objects.create(kind="email", payload=payload)
+        created = True
+
+    # Only newly-created jobs are dispatched. Repeated idempotent requests must
+    # not resend the same verification link or security notification.
+    if created and getattr(settings, "EMAIL_DELIVERY_MODE", "queued") == "inline":
+        transaction.on_commit(lambda job_id=job.pk: _deliver_email_job_inline(job_id))
+    return job
 
 
 def absolute_frontend(path):

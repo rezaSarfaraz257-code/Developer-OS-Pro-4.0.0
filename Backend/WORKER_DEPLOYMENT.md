@@ -42,3 +42,12 @@ Do not switch production to the console email backend. It prints email content t
 4. If it fails, inspect the worker's server-side error for SMTP authentication, connection, sender-domain, or provider rejection errors. Never expose the verification token or SMTP password in logs or screenshots.
 5. Confirm the email arrives and that the link verifies once; reusing the same link must fail.
 6. Check spam/junk and the provider's delivery logs if the job succeeds but the mailbox remains empty. A successful SMTP handoff is not a guarantee of inbox placement.
+
+
+## No-worker alternative: inline email delivery
+
+For small deployments that cannot run an always-on Background Worker, the API can send newly queued email jobs synchronously after the database transaction commits. Set `EMAIL_DELIVERY_MODE=inline` on the existing Django API service to opt in. The default remains `queued`, preserving the worker-based behavior.
+
+This mode requires a real, working SMTP provider configured with `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, TLS/SSL settings, and a permitted `DEFAULT_FROM_EMAIL`. It does not provide an email service or SMTP credentials for free. SMTP latency occurs during the request, so use it only for low-volume deployments and monitor failed `BackgroundJob` rows. A delivery failure is recorded as `failed`; it is not silently reported as delivered. Only newly created idempotent jobs are attempted, avoiding duplicate sends on a repeated request.
+
+After deploying the code and setting the environment variable, register with a mailbox you control. Confirm the corresponding email job is `succeeded` and the email actually arrives. If the job is `failed`, inspect the stored error securely and fix SMTP configuration before retrying.
