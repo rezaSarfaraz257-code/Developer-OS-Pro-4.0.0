@@ -580,7 +580,6 @@ def organization_billing_checkout_api(request, pk):
     price = prices.get(plan, {}).get(billing_cycle, "")
     if not secret or not price:
         return Response({"error": "Stripe organization billing is not configured for this plan."}, status=503)
-    sub, _ = OrganizationSubscription.objects.get_or_create(organization=org, defaults={"plan": org.plan})
     raw_quantity = request.data.get("quantity", 1)
     try:
         if isinstance(raw_quantity, bool):
@@ -599,6 +598,8 @@ def organization_billing_checkout_api(request, pk):
     quantity = requested_quantity
     if quantity < active_members:
         return Response({"error": f"Team seats ({quantity}) cannot be lower than active members ({active_members}).", "quantity": quantity, "active_members": active_members}, status=400)
+
+    sub, _ = OrganizationSubscription.objects.get_or_create(organization=org, defaults={"plan": org.plan})
 
     # Validate seat quantity before calling Stripe so malformed requests cannot
     # create orphaned customer records or silently charge a clamped quantity.
