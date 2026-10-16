@@ -808,3 +808,13 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 @media(max-width:780px){.cc-hero-v2{grid-template-columns:minmax(0,1fr);min-height:0;padding-bottom:62px}.cc-hero-visual-v2{width:220px;right:-20px;top:30px;opacity:.22}.cc-hero-bottomline{right:17px;left:17px;font-size:.45rem;letter-spacing:.1em}.cc-command-strip{gap:10px}.cc-command-shortcuts{gap:4px}.cc-command-shortcuts button{padding:8px}.cc-command-shortcuts kbd{display:none}.cc-mission-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cc-mission-card{min-height:220px;padding:13px}.cc-mission-icon{width:38px;height:38px;margin:15px 0 12px}.cc-mission-card>b{font-size:.89rem}.cc-mission-card>p{font-size:.67rem}.cc-mission-index{font-size:.52rem}}
 @media(max-width:520px){.cc-hero-v2{padding:21px 17px 60px}.cc-hero-v2 h1{font-size:2.65rem}.cc-version-chip{display:none}.cc-hero-bottomline span:last-child{display:none}.cc-command-strip{grid-template-columns:minmax(0,1fr);padding:11px}.cc-command-strip-label{display:none}.cc-command-shortcuts{grid-row:auto;grid-column:auto;justify-content:space-between;flex-wrap:nowrap;border:0;padding:0;gap:2px}.cc-command-shortcuts button{flex-direction:column;gap:4px;padding:7px 4px;font-size:.59rem}.cc-command-shortcuts button>span{font-size:1rem}.cc-focus-toggle{justify-self:stretch}.cc-mission-grid{grid-template-columns:minmax(0,1fr)}.cc-mission-card{min-height:190px;padding:16px}.cc-mission-icon{margin:12px 0}.cc-mission-card>p{font-size:.73rem}.cc-focus-mode .cc-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.cc-hero-visual-v2,.cc-hero-visual-v2 .cc-visual-core{animation:none!important}.cc-mission-card:hover{transform:none}}
+
+/* Transparent per-seat billing totals */
+.team-price-estimate{display:flex;flex-direction:column;gap:6px;margin:12px 0;padding:14px 16px;border:1px solid var(--border,rgba(148,163,184,.25));border-radius:12px;background:rgba(15,23,42,.28)}
+.team-price-estimate>span{font-size:.78rem;color:var(--muted,#94a3b8)}
+.team-price-estimate>strong{font-size:1.35rem;letter-spacing:-.02em;color:var(--text,#e2e8f0)}
+.team-price-estimate>small{font-size:.75rem;color:var(--muted,#94a3b8)}
+.team-billing-panel .team-seat-field{display:grid;gap:7px;margin:12px 0}
+.team-billing-panel .team-seat-field>span{font-size:.72rem;letter-spacing:.08em;color:var(--muted,#94a3b8)}
+.team-billing-panel .team-seat-field input{width:100%;min-width:0}
+@media(max-width:520px){.team-price-estimate>strong{font-size:1.15rem}}
