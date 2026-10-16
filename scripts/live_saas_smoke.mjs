@@ -52,7 +52,22 @@ async function check(name, url, validate, timeoutMs = 12000) {
 const isHtml = ({ response, body, result }) =>
   response.ok && result.contentType.toLowerCase().includes("text/html") && body.length > 100
     ? true : `expected non-empty HTML; received HTTP ${response.status} (${result.contentType || "no content-type"})`;
-const isApiSuccess = ({ response }) => response.ok ? true : `HTTP ${response.status}`;
+const isApiSuccess = ({ response, body }) => response.ok ? true : `HTTP ${response.status}`;
+const isHealthy = ({ response, body }) => {
+  if (!response.ok) return `HTTP ${response.status}`;
+  let json;
+  try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
+  return json.status === "ok" && json.database === "ok"
+    ? true : "health contract reports a degraded service or database";
+};
+const isReady = ({ response, body }) => {
+  if (!response.ok) return `HTTP ${response.status}`;
+  let json;
+  try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
+  const checks = json.checks || {};
+  return json.status === "ready" && Object.keys(checks).length > 0 && Object.values(checks).every(value => value === true)
+    ? true : "readiness contract has failed or missing checks";
+};
 
 await check("frontend-root", `${frontendBase}/`, isHtml);
 await check("web-ide-route", `${frontendBase}/ide`, ({ response, body, result }) =>
@@ -63,8 +78,8 @@ await check("web-ide-trailing-slash", `${frontendBase}/ide/`, ({ response, body,
   isHtml({ response, body, result }) === true &&
   /<div[^>]+id=["'](?:root|app)["']/i.test(body)
     ? true : `IDE trailing-slash route did not return a valid SPA shell (HTTP ${response.status})`);
-await check("api-health", `${apiBase}/api/health/`, isApiSuccess);
-await check("api-readiness", `${apiBase}/api/health/ready/`, isApiSuccess);
+await check("api-health", `${apiBase}/api/health/`, isHealthy);
+await check("api-readiness", `${apiBase}/api/health/ready/`, isReady);
 await check("api-pricing-contract", `${apiBase}/api/pricing/`, ({ response, body }) => {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
@@ -72,13 +87,20 @@ await check("api-pricing-contract", `${apiBase}/api/pricing/`, ({ response, body
   return json?.plans?.free && json?.plans?.pro && json?.plans?.team && json?.plans?.enterprise
     ? true : "pricing response is missing one or more plan definitions";
 }, 15000);
+await check("billing-provider-config", `${apiBase}/api/pricing/`, ({ response, body }) => {
+  if (!response.ok) return `HTTP ${response.status}`;
+  let json;
+  try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
+  return json?.stripe_configured?.pro === true && json?.stripe_configured?.team === true
+    ? true : "Stripe price IDs for Pro and Team are not configured in the deployed API";
+}, 15000);
 
 const report = {
   schemaVersion: 1,
   timestamp: new Date().toISOString(),
   frontendBase,
   apiBase,
-  ok: checks.length === 6 && checks.every(item => item.ok),
+  ok: checks.length === 7 && checks.every(item => item.ok),
   checks,
 };
 fs.writeFileSync("live-saas-smoke.json", JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
