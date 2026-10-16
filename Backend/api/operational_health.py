@@ -1,8 +1,7 @@
-"""Operational health endpoints kept independent from application business logic.
+"""Dependency-free operational liveness endpoint.
 
-Liveness answers one question only: is the Python/ASGI process alive enough to
-serve an HTTP response? It deliberately performs no database, Redis, email or
-external-service checks. Readiness remains the traffic-gating probe.
+Liveness deliberately avoids database, cache, email and external-service calls.
+It is safe for orchestrators to use as a process-health signal.
 """
 from __future__ import annotations
 
@@ -14,12 +13,15 @@ from django.views.decorators.http import require_GET
 
 @require_GET
 def liveness_api(request):
-    """Cheap process liveness probe suitable for container orchestrators."""
-    return JsonResponse(
+    """Return minimal immutable release/process identity for liveness probes."""
+    response = JsonResponse(
         {
             "status": "alive",
             "service": "developer-os-api",
-            "version": os.environ.get("RELEASE_VERSION", "1.0.0"),
+            "version": os.environ.get("RELEASE_VERSION", "4.0.0"),
+            "release_sha": os.environ.get("RELEASE_SHA", "unknown"),
         },
         status=200,
     )
+    response["Cache-Control"] = "no-store, max-age=0"
+    return response
