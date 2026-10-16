@@ -44,14 +44,30 @@ if "RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}" not in compose:
 if "SEED_CATALOG_ON_STARTUP: ${SEED_CATALOG_ON_STARTUP:-false}" not in compose:
     errors.append("Production Compose must not mutate catalog data by default at startup")
 
-for rel in (
+required_files = (
     ".github/workflows/ci.yml",
     ".github/workflows/security.yml",
     ".github/workflows/dependency-review.yml",
+    ".github/workflows/scorecard.yml",
     ".github/dependabot.yml",
-):
+    "SECURITY.md",
+)
+for rel in required_files:
     if not (ROOT / rel).exists():
         errors.append(f"required operational supply-chain control missing: {rel}")
+
+security_workflow = (ROOT / ".github/workflows/security.yml").read_text(encoding="utf-8", errors="replace")
+for marker in ("actions/checkout@v7", "actions/setup-python@v7", "actions/setup-node@v7", "github/codeql-action/init@v4", "github/codeql-action/analyze@v4"):
+    if marker not in security_workflow:
+        errors.append(f"security workflow is not using the current hardened action baseline: {marker}")
+
+scorecard_workflow = (ROOT / ".github/workflows/scorecard.yml").read_text(encoding="utf-8", errors="replace") if (ROOT / ".github/workflows/scorecard.yml").exists() else ""
+if "publish_results: true" not in scorecard_workflow or "id-token: write" not in scorecard_workflow:
+    errors.append("OpenSSF Scorecard must publish authenticated supply-chain results using OIDC")
+
+dep_review = (ROOT / ".github/workflows/dependency-review.yml").read_text(encoding="utf-8", errors="replace")
+if "actions/dependency-review-action@v5" not in dep_review:
+    errors.append("Dependency Review must use the current Node 24 action major")
 
 if errors:
     print("OPERATIONAL POLICY GATE: FAIL")
