@@ -116,8 +116,14 @@ DB_POOL_ENABLED = env_bool("DB_POOL_ENABLED", IS_PRODUCTION)
 DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
 DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "4"))
 DB_POOL_TIMEOUT = float(os.getenv("DB_POOL_TIMEOUT", "10"))
-if DB_POOL_MIN_SIZE < 0 or DB_POOL_MAX_SIZE < max(1, DB_POOL_MIN_SIZE):
-    raise ImproperlyConfigured("DB_POOL_MIN_SIZE/DB_POOL_MAX_SIZE are invalid.")
+# Keep the per-process pool deliberately bounded. With horizontal web/worker
+# scaling, an accidental large value multiplies directly into PostgreSQL
+# connection pressure. Operators can still scale the service horizontally
+# without allowing one process to monopolize the database.
+if DB_POOL_MIN_SIZE < 0 or DB_POOL_MAX_SIZE < max(1, DB_POOL_MIN_SIZE) or DB_POOL_MAX_SIZE > 32:
+    raise ImproperlyConfigured("DB_POOL_MIN_SIZE/DB_POOL_MAX_SIZE are invalid; DB_POOL_MAX_SIZE must be between 1 and 32.")
+if not 0 < DB_POOL_TIMEOUT <= 60:
+    raise ImproperlyConfigured("DB_POOL_TIMEOUT must be greater than 0 and no more than 60 seconds.")
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
     if parsed.scheme.startswith("postgres"):
