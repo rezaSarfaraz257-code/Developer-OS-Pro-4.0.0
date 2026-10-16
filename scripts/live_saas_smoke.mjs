@@ -14,6 +14,7 @@ if (!/^https:\/\//i.test(frontendBase) || !/^https:\/\//i.test(apiBase)) {
 const checks = [];
 async function check(name, url, validate, timeoutMs = 12000) {
   const started = Date.now();
+  let lastError = "request failed";
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,8 +34,10 @@ async function check(name, url, validate, timeoutMs = 12000) {
         checks.push({ ...result, ok: true });
         return;
       }
+      lastError = typeof validation === "string" ? validation : `HTTP ${response.status}`;
       if (attempt === 2) checks.push({ ...result, ok: false, error: lastError });
     } catch (error) {
+      lastError = error?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : String(error?.message || error);
       if (attempt === 2) checks.push({
         name, url, status: null, durationMs: Date.now() - started,
         attempt, ok: false, error: lastError,
