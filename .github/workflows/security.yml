@@ -2,7 +2,7 @@ name: Security
 
 on:
   push:
-    branches: [ main, master, production-complete-2026-10-06 ]
+    branches: [ main, master, production-complete-2026-10-06, ops/production-hardening-2026-10-16 ]
   pull_request:
     branches: [ main, master ]
   schedule:
