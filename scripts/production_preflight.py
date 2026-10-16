@@ -8,7 +8,8 @@ required = [
 ]
 stripe_keys = [
     "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO",
-    "STRIPE_PRICE_TEAM", "STRIPE_PRICE_ENTERPRISE",
+    "STRIPE_PRICE_PRO_ANNUAL", "STRIPE_PRICE_TEAM", "STRIPE_PRICE_TEAM_ANNUAL",
+    "STRIPE_PRICE_ENTERPRISE",
 ]
 conditional = {
     "Stripe": stripe_keys,
@@ -50,7 +51,7 @@ if all(stripe_configured):
         malformed.append("STRIPE_SECRET_KEY (expected sk_test_ or sk_live_ prefix)")
     if not os.getenv("STRIPE_WEBHOOK_SECRET", "").startswith("whsec_"):
         malformed.append("STRIPE_WEBHOOK_SECRET (expected whsec_ prefix)")
-    for key in ("STRIPE_PRICE_PRO", "STRIPE_PRICE_TEAM", "STRIPE_PRICE_ENTERPRISE"):
+    for key in ("STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_ANNUAL", "STRIPE_PRICE_TEAM", "STRIPE_PRICE_TEAM_ANNUAL", "STRIPE_PRICE_ENTERPRISE"):
         if not os.getenv(key, "").startswith("price_"):
             malformed.append(f"{key} (expected price_ prefix)")
     if malformed:
