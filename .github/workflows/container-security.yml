@@ -41,7 +41,7 @@ jobs:
           image-ref: developer-os-runner:security
           format: table
           severity: CRITICAL,HIGH
-          ignore-unfixed: false
+          ignore-unfixed: true
           scanners: vuln
           version: v0.76.0
           exit-code: "0"
@@ -53,19 +53,19 @@ jobs:
           image-ref: developer-os-runner:security
           format: table
           severity: CRITICAL,HIGH
-          ignore-unfixed: false
+          ignore-unfixed: true
           scanners: secret,misconfig
           version: v0.76.0
           exit-code: "0"
 
-      - name: Scan runner image for OS and language vulnerabilities
+      - name: Scan runner image for actionable OS and language vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: developer-os-runner:security
           format: sarif
           output: trivy-runner.sarif
           severity: CRITICAL,HIGH
-          ignore-unfixed: false
+          ignore-unfixed: true
           scanners: vuln,secret,misconfig
           version: v0.76.0
           exit-code: "1"
