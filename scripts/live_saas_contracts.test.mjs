@@ -68,7 +68,7 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.equal(validatePricing(jsonInput(valid)), true);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { free: valid.plans.free } })), /plan definitions/);
   assert.match(validatePricing(jsonInput({ ...valid, currency: "" })), /currency/);
-  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, monthly_usd: 16 } } })), /published Pro\/Team pricing/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, monthly_usd: 16, annual_usd: 160 } } })), /published Pro\/Team pricing/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, billing_model: "" } } })), /invalid public contract/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, annual_usd: -1 } } })), /invalid public contract/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, features: [""] } } })), /invalid public contract/);
