@@ -77,9 +77,11 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.match(validatePricing({ response: response(false), body: "{}" }), /HTTP 503/);
 });
 
-test("billing readiness requires configured Pro and Team price IDs", () => {
-  assert.equal(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true } })), true);
-  assert.match(validateBillingConfig(jsonInput({ stripe_configured: { pro: false, team: true } })), /not configured/);
+test("billing readiness requires configured price IDs for every paid plan", () => {
+  assert.equal(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true, enterprise: true } })), true);
+  for (const missing of ["pro", "team", "enterprise"]) {
+    assert.match(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true, enterprise: true, [missing]: false } })), /Pro, Team, and Enterprise/);
+  }
   assert.match(validateBillingConfig({ response: response(), body: "not-json" }), /valid JSON/);
 });
 
