@@ -24,8 +24,6 @@ RUN useradd --create-home --uid 10001 appuser \
 
 USER appuser
 
-# Render supplies PORT; Docker Compose keeps the existing 8000 default.
-# Migrations are intentionally not part of the image command: production
-# deployments should run schema migrations as a controlled release step rather
-# than racing multiple web replicas during process startup.
-CMD ["gunicorn", "x.asgi:application", "-c", "gunicorn.conf.py"]
+# The entrypoint serializes PostgreSQL migrations with an advisory lock so
+# horizontally scaled web replicas cannot race schema changes at startup.
+CMD ["python", "entrypoint.py"]
