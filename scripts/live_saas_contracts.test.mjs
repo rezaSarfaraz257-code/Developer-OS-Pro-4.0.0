@@ -14,6 +14,8 @@ function validPricing() {
     billing_model: ({ free: "free", pro: "per_user", team: "per_seat", enterprise: "custom" })[name],
     features: ["Web IDE"],
     monthly_usd: index === 0 ? 0 : index * 10,
+    ...(name === "pro" ? { annual_usd: 290 } : {}),
+    ...(name === "team" ? { annual_usd: 150 } : {}),
   }]));
   const entitlements = Object.fromEntries(PLAN_NAMES.map((name, index) => [name, {
     ide_runs_month: index * 100,
@@ -24,7 +26,7 @@ function validPricing() {
   ]));
   return {
     currency: "USD", plans, entitlements, feature_matrix,
-    stripe_configured: { pro: true, team: true, enterprise: false },
+    stripe_configured: { pro: true, team: true, enterprise: false, pro_annual: true, team_annual: true },
   };
 }
 
@@ -72,15 +74,18 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.match(validatePricing(jsonInput({ ...valid, entitlements: { ...valid.entitlements, pro: { ide_runs_month: -1, ai_messages_month: 10 } } })), /entitlements/);
   assert.match(validatePricing(jsonInput({ ...valid, entitlements: { ...valid.entitlements, pro: { ide_runs_month: 1.5, ai_messages_month: 10 } } })), /entitlements/);
   assert.match(validatePricing(jsonInput({ ...valid, feature_matrix: { ...valid.feature_matrix, team: { web_ide: true } } })), /feature flags/);
-  assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { pro: "yes", team: true, enterprise: false } })), /Stripe configuration/);
+  assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, pro: "yes" } })), /Stripe configuration/);
+  assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, team_annual: undefined } })), /monthly\/annual Stripe configuration/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, annual_usd: 0 } } })), /invalid public contract/);
   assert.match(validatePricing({ response: response(), body: "not-json" }), /valid JSON/);
   assert.match(validatePricing({ response: response(false), body: "{}" }), /HTTP 503/);
 });
 
 test("billing readiness requires configured price IDs for every paid plan", () => {
-  assert.equal(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true, enterprise: true } })), true);
-  for (const missing of ["pro", "team", "enterprise"]) {
-    assert.match(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true, enterprise: true, [missing]: false } })), /Pro, Team, and Enterprise/);
+  const configured = { pro: true, team: true, enterprise: true, pro_annual: true, team_annual: true };
+  assert.equal(validateBillingConfig(jsonInput({ stripe_configured: configured })), true);
+  for (const missing of Object.keys(configured)) {
+    assert.match(validateBillingConfig(jsonInput({ stripe_configured: { ...configured, [missing]: false } })), /Pro, Team \(monthly and annual\), and Enterprise/);
   }
   assert.match(validateBillingConfig({ response: response(), body: "not-json" }), /valid JSON/);
 });
