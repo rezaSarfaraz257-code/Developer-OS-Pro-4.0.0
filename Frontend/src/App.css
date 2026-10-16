@@ -818,3 +818,5 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .team-billing-panel .team-seat-field>span{font-size:.72rem;letter-spacing:.08em;color:var(--muted,#94a3b8)}
 .team-billing-panel .team-seat-field input{width:100%;min-width:0}
 @media(max-width:520px){.team-price-estimate>strong{font-size:1.15rem}}
+
+.plan-period-note{display:block;margin-top:-8px;margin-bottom:8px;font-size:.75rem;line-height:1.4;color:var(--muted,#94a3b8)}
