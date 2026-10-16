@@ -60,22 +60,26 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-# Trivy inspects package metadata throughout the final filesystem, not only the
-# active venv. Remove any stale vulnerable metadata/wheels inherited from the OS
-# packaging/bootstrap layer, while preserving the patched venv installations.
-RUN find /usr /opt/venv -type d \( \
-        -name 'msgpack-1.1.2.dist-info' -o -name 'msgpack-1.1.2.egg-info' -o \
-        -name 'setuptools-70.3.0.dist-info' -o -name 'setuptools-70.3.0.egg-info' -o \
-        -name 'urllib3-2.7.0.dist-info' -o -name 'urllib3-2.7.0.egg-info' \
-    \) -prune -exec rm -rf '{}' + \
-    && find /usr/share /usr/local -type f \( \
+# Trivy scans package metadata by its contents as well as directory names.
+# Remove stale vulnerable distribution records regardless of their parent path.
+RUN find /usr /opt/venv /root /app -type f \\( -name METADATA -o -name PKG-INFO \\) -exec sh -c ' \
+    for f do \
+        if { grep -qx "Name: msgpack" "$f" && grep -qx "Version: 1.1.2" "$f"; } \
+        || { grep -qx "Name: setuptools" "$f" && grep -qx "Version: 70.3.0" "$f"; } \
+        || { grep -qx "Name: urllib3" "$f" && grep -qx "Version: 2.7.0" "$f"; }; then \
+            echo "Removing stale vulnerable package metadata: $f"; \
+            rm -rf "$(dirname "$f")"; \
+        fi; \
+    done' sh '{}' + \
+    && find /usr/share /usr/local /opt/venv -type f \\( \
         -name 'msgpack-1.1.2*.whl' -o -name 'setuptools-70.3.0*.whl' -o -name 'urllib3-2.7.0*.whl' \
-    \) -delete \
-    && ! find /usr /opt/venv -type d \( \
-        -name 'msgpack-1.1.2.dist-info' -o -name 'msgpack-1.1.2.egg-info' -o \
-        -name 'setuptools-70.3.0.dist-info' -o -name 'setuptools-70.3.0.egg-info' -o \
-        -name 'urllib3-2.7.0.dist-info' -o -name 'urllib3-2.7.0.egg-info' \
-    \) -print -quit | grep -q . \
+    \\) -delete \
+    && ! find /usr /opt/venv /root /app -type f \\( -name METADATA -o -name PKG-INFO \\) -exec sh -c ' \
+        for f do \
+            if { grep -qx "Name: msgpack" "$f" && grep -qx "Version: 1.1.2" "$f"; } \
+            || { grep -qx "Name: setuptools" "$f" && grep -qx "Version: 70.3.0" "$f"; } \
+            || { grep -qx "Name: urllib3" "$f" && grep -qx "Version: 2.7.0" "$f"; }; then exit 0; fi; \
+        done; exit 1' sh '{}' + | grep -q . \
     && python3 -m compileall -q . \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
