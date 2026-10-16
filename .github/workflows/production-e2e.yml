@@ -29,10 +29,13 @@ jobs:
       PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
       PRODUCTION_TARGET: ${{ inputs.target }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          package-manager-cache: false
       - name: Fail closed when production configuration is missing
         run: |
           test -n "$PRODUCTION_BASE_URL" || { echo "::error::PRODUCTION_BASE_URL is missing from the protected production environment."; exit 1; }
