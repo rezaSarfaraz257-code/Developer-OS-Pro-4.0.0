@@ -3265,7 +3265,11 @@ def pricing_api(request):
         "currency": "USD",
         "plans": PRODUCT_PRICING,
         "feature_matrix": PLAN_FEATURES,
-        "stripe_configured": {plan: bool(STRIPE_PLANS.get(plan)) for plan in ("pro", "team", "enterprise")},
+        "stripe_configured": {
+            **{plan: bool(STRIPE_PLANS.get(plan)) for plan in ("pro", "team", "enterprise")},
+            "pro_annual": bool(STRIPE_ANNUAL_PLANS.get("pro")),
+            "team_annual": bool(STRIPE_ANNUAL_PLANS.get("team")),
+        },
         "entitlements": PLAN_LIMITS,
     })
 
