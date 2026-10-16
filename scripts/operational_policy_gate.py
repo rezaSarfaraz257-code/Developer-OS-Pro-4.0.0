@@ -31,6 +31,11 @@ if 'path("health/live/", operational_health.liveness_api' not in urls:
 if 'from . import operational_health' not in urls:
     errors.append("Operational health module must be explicitly imported")
 
+slo_doc = (ROOT / "docs/RELIABILITY_SLO.md").read_text(encoding="utf-8", errors="replace") if (ROOT / "docs/RELIABILITY_SLO.md").exists() else ""
+for marker in ("Service-level objectives", "Error-budget policy", "Recovery point objective", "Recovery time objective"):
+    if marker not in slo_doc:
+        errors.append(f"reliability contract missing required section: {marker}")
+
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8", errors="replace")
 if "runner_internal:" not in compose or "internal: true" not in compose:
     errors.append("Runner network must remain internal-only")
