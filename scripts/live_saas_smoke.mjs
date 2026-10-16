@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders } from "./live_saas_contracts.mjs";
 
 const frontendBase = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
 const apiBase = (process.env.API_URL || "").replace(/\/$/, "");
@@ -29,6 +29,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
       const result = {
         name, url, status: response.status, durationMs: Date.now() - started,
         attempt, contentType: response.headers.get("content-type") || "",
+        securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(name => [name, response.headers.get(name) || ""])),
       };
       const validation = validate({ response, body, result });
       if (validation === true) {
@@ -51,6 +52,8 @@ async function check(name, url, validate, timeoutMs = 12000) {
 }
 
 await check("frontend-root", `${frontendBase}/`, isHtml);
+await check("frontend-security-headers", `${frontendBase}/`, validateSecurityHeaders);
+await check("api-security-headers", `${apiBase}/api/health/`, validateSecurityHeaders);
 await check("web-ide-route", `${frontendBase}/ide`, isSpaShell);
 await check("web-ide-trailing-slash", `${frontendBase}/ide/`, isSpaShell);
 await check("api-health", `${apiBase}/api/health/`, isHealthy);
@@ -63,7 +66,7 @@ const report = {
   timestamp: new Date().toISOString(),
   frontendBase,
   apiBase,
-  ok: checks.length === 7 && checks.every(item => item.ok),
+  ok: checks.length === 9 && checks.every(item => item.ok),
   checks,
 };
 fs.writeFileSync("live-saas-smoke.json", JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
