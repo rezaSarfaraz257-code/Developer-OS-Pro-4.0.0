@@ -31,17 +31,20 @@ jobs:
         with:
           image: developer-os-runner:security
           format: spdx-json
-          artifact-name: developer-os-runner-sbom.spdx.json
+          upload-artifact: false
           output-file: developer-os-runner-sbom.spdx.json
+
+      - name: Publish runner image SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: developer-os-runner-sbom
+          path: developer-os-runner-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Report high and critical vulnerabilities
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
-        env:
-          # Scan the image filesystem directly. The SBOM action exports a prior
-          # third-party SBOM that can carry stale Python package metadata into
-          # Trivy and produce false positives for already-patched packages.
-          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: table
@@ -54,8 +57,6 @@ jobs:
       - name: Report high and critical secrets and misconfigurations
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
-        env:
-          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: table
@@ -67,8 +68,6 @@ jobs:
 
       - name: Scan runner image for actionable OS and language vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
-        env:
-          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: sarif
