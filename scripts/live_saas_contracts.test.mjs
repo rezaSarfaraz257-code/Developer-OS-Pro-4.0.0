@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig,
+  isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders,
   PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS,
 } from "./live_saas_contracts.mjs";
 
@@ -81,4 +81,24 @@ test("billing readiness requires configured Pro and Team price IDs", () => {
   assert.equal(validateBillingConfig(jsonInput({ stripe_configured: { pro: true, team: true } })), true);
   assert.match(validateBillingConfig(jsonInput({ stripe_configured: { pro: false, team: true } })), /not configured/);
   assert.match(validateBillingConfig({ response: response(), body: "not-json" }), /valid JSON/);
+});
+
+test("security header monitor rejects weak browser-facing headers", () => {
+  const secure = {
+    response: response(),
+    result: { securityHeaders: {
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "strict-origin-when-cross-origin",
+    } },
+  };
+  assert.equal(validateSecurityHeaders(secure), true);
+  assert.match(validateSecurityHeaders({ ...secure, result: { securityHeaders: {
+    ...secure.result.securityHeaders, "x-frame-options": "ALLOWALL",
+  } } }), /x-frame-options/);
+  assert.match(validateSecurityHeaders({ ...secure, result: { securityHeaders: {
+    ...secure.result.securityHeaders, "strict-transport-security": "max-age=60",
+  } } }), /strict-transport-security/);
+  assert.match(validateSecurityHeaders({ response: response(false), result: secure.result }), /HTTP 503/);
 });
