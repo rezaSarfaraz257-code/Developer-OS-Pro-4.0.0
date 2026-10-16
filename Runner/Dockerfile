@@ -13,13 +13,13 @@ WORKDIR /build
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
-    && (/opt/venv/bin/python -m pip uninstall -y setuptools urllib3 msgpack || true) \
-    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade 'setuptools==84.0.0' urllib3==2.8.0 msgpack==1.2.1 \
-    && find /opt/venv/lib/python3.11/site-packages -type d \( -name 'msgpack-*.dist-info' ! -name 'msgpack-1.2.1.dist-info' -o -name 'msgpack-*.egg-info' ! -name 'msgpack-1.2.1.egg-info' -o -name 'setuptools-*.dist-info' ! -name 'setuptools-84.0.0.dist-info' -o -name 'setuptools-*.egg-info' ! -name 'setuptools-84.0.0.egg-info' -o -name 'urllib3-*.dist-info' ! -name 'urllib3-2.8.0.dist-info' -o -name 'urllib3-*.egg-info' ! -name 'urllib3-2.8.0.egg-info' -o -name 'jaraco.context-*.dist-info' ! -name 'jaraco.context-6.1.0.dist-info' -o -name 'wheel-*.dist-info' ! -name 'wheel-0.46.3.dist-info' \) -prune -exec rm -rf '{}' + \
-    && /opt/venv/bin/python -c 'from importlib.metadata import distributions; expected={"msgpack":"1.2.1","setuptools":"84.0.0","urllib3":"2.8.0"}; found={k:[] for k in expected}; [(found[d.metadata["Name"].lower().replace("_","-")].append(d.version)) for d in distributions() if d.metadata.get("Name","").lower().replace("_","-") in found]; assert found == {"msgpack":["1.2.1"],"setuptools":["84.0.0"],"urllib3":["2.8.0"]}, found' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt 'urllib3==2.8.0' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade 'setuptools==84.0.0' \
     && /opt/venv/bin/python -m pip check \
-    && /opt/venv/bin/python -c 'from importlib.metadata import version; assert version("setuptools") >= "78.1.1"; assert version("urllib3") == "2.8.0"; assert version("msgpack") == "1.2.1"'
+    && /opt/venv/bin/python -m pip uninstall -y setuptools msgpack \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"'
 FROM node:22-bookworm-slim
 
 # Keep Debian security packages current, then remove package metadata/cache.
@@ -59,28 +59,10 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
-
-# Trivy scans package metadata by its contents as well as directory names.
-# Remove stale vulnerable distribution records regardless of their parent path.
-RUN mkdir -p /usr/lib/python3 /usr/lib/python3.11 /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages \
-    && find /usr/lib/python3 /usr/lib/python3.11 /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages -type f \( -name METADATA -o -name PKG-INFO \) -exec sh -c ' \
-    for f do \
-        if { grep -qx "Name: msgpack" "$f" && grep -qx "Version: 1.1.2" "$f"; } \
-        || { grep -qx "Name: setuptools" "$f" && grep -qx "Version: 70.3.0" "$f"; } \
-        || { grep -qx "Name: urllib3" "$f" && grep -qx "Version: 2.7.0" "$f"; }; then \
-            echo "Removing stale vulnerable package metadata: $f"; \
-            rm -rf "$(dirname "$f")"; \
-        fi; \
-    done' sh '{}' + \
-    && find /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages -type f \( \
-        -name 'msgpack-1.1.2*.whl' -o -name 'setuptools-70.3.0*.whl' -o -name 'urllib3-2.7.0*.whl' \
-    \) -delete \
-    && python3 -m compileall -q . \
-    && /opt/venv/bin/python -m pip check \
-    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
+RUN python3 -m compileall -q . \
+    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
     && mkdir -p /workspaces \
     && chown -R runner:runner /workspaces /app /opt/venv
-
 USER runner
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"
