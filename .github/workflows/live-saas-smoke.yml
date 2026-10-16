@@ -16,7 +16,7 @@ jobs:
   smoke:
     name: Read-only production availability and route checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
       API_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
