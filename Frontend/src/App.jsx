@@ -981,7 +981,7 @@ function Billing() {
       <span>{p.label?.toUpperCase()||id.toUpperCase()}</span><h2>{price}</h2>
       {annual&&p.annual_usd>0&&<small className="plan-period-note">Equivalent to {display}, billed annually.</small>}
       <strong>{p.audience||"Developer OS plan"}</strong>
-      <p>{p.billing_model==="per_seat"?"$15 per member, per month":p.billing_model==="per_user"?"$29 per month for one developer":p.billing_model==="custom"?"Custom organization contract":id==="free"?"No payment required":"Developer OS plan"}</p>
+      <p>{p.billing_model==="per_seat"?(annual&&p.annual_usd?"$"+p.annual_usd+" per member, per year":"$"+p.monthly_usd+" per member, per month"):p.billing_model==="per_user"?(annual&&p.annual_usd?"$"+p.annual_usd+" per year for one developer":"$"+p.monthly_usd+" per month for one developer"):p.billing_model==="custom"?"Custom organization contract":id==="free"?"No payment required":"Developer OS plan"}</p>
       {Array.isArray(p.features)&&<ul className="plan-features">{p.features.map(feature=><li key={feature}>✓ {feature}</li>)}</ul>}
       <button className={sub?.plan===id?"ghost":"primary"} onClick={()=>upgrade(id)}>{sub?.plan===id?"ACTIVE":id==="team"?"MANAGE TEAM":id==="enterprise"?"REQUEST ENTERPRISE":id==="free"?"USE FREE":"UPGRADE TO PRO"}</button>
     </div>)}</div>
