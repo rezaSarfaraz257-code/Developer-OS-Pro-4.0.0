@@ -23,11 +23,13 @@ This runbook defines the operational baseline for a real production deployment.
 
 Operational targets should be measured from real production telemetry rather than declared as source-level guarantees:
 
-- API availability target: **99.9% monthly** for the production API surface.
-- API latency target: **p95 < 500 ms** for ordinary authenticated CRUD requests, excluding long-running AI/runner jobs.
-- API server-error budget: **< 0.1% HTTP 5xx** over a rolling 30-day window.
-- Readiness recovery target: restore healthy capacity within **10 minutes** for a normal single-service incident.
-- Backup recovery objective: maintain a documented RPO/RTO appropriate to the chosen infrastructure and verify it through scheduled restore exercises.
+- API availability target: **99.95% rolling 28-day window**.
+- Readiness availability target: **99.95% rolling 28-day window**.
+- API latency target: **p95 < 500 ms** for ordinary authenticated CRUD requests, excluding long-running AI/runner jobs; **p99 < 1.5 s** for the same scope.
+- API server-error budget: **aligned to the 99.95% availability SLO and measured from customer-impacting traffic**, rather than using an unrelated fixed percentage.
+- Recovery point objective: **<= 15 minutes**.
+- Recovery time objective: **<= 60 minutes** for a P1 incident.
+- Backup recovery verification: **100% of the production backup policy** must have a tested restore path.
 
 These are service objectives, not claims that the source code alone can guarantee them. Capacity, provider availability, database sizing, networking and external integrations must be included in the measurement.
 
