@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONHASHSEED=random
 
 WORKDIR /app
 
@@ -24,4 +25,7 @@ RUN useradd --create-home --uid 10001 appuser \
 USER appuser
 
 # Render supplies PORT; Docker Compose keeps the existing 8000 default.
-CMD ["sh", "-c", "python manage.py migrate --noinput && exec uvicorn x.asgi:application --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1}"]
+# Migrations are intentionally not part of the image command: production
+# deployments should run schema migrations as a controlled release step rather
+# than racing multiple web replicas during process startup.
+CMD ["gunicorn", "x.asgi:application", "-c", "gunicorn.conf.py"]
