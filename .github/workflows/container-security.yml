@@ -54,6 +54,11 @@ jobs:
           version: v0.76.0
           exit-code: "0"
 
+      - name: Trace Python vulnerability package locations
+        if: always()
+        continue-on-error: true
+        run: trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format json developer-os-runner:security | grep -E '"Target"|"Type"|"PkgName"|"InstalledVersion"|"VulnerabilityID"|"Digest"'
+      
       - name: Report high and critical secrets and misconfigurations
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
