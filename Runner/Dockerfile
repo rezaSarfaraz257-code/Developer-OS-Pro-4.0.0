@@ -59,7 +59,24 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
-RUN python3 -m compileall -q . \
+
+# Trivy inspects package metadata throughout the final filesystem, not only the
+# active venv. Remove any stale vulnerable metadata/wheels inherited from the OS
+# packaging/bootstrap layer, while preserving the patched venv installations.
+RUN find /usr /opt/venv -type d \( \
+        -name 'msgpack-1.1.2.dist-info' -o -name 'msgpack-1.1.2.egg-info' -o \
+        -name 'setuptools-70.3.0.dist-info' -o -name 'setuptools-70.3.0.egg-info' -o \
+        -name 'urllib3-2.7.0.dist-info' -o -name 'urllib3-2.7.0.egg-info' \
+    \) -prune -exec rm -rf '{}' + \
+    && find /usr/share /usr/local -type f \( \
+        -name 'msgpack-1.1.2*.whl' -o -name 'setuptools-70.3.0*.whl' -o -name 'urllib3-2.7.0*.whl' \
+    \) -delete \
+    && ! find /usr /opt/venv -type d \( \
+        -name 'msgpack-1.1.2.dist-info' -o -name 'msgpack-1.1.2.egg-info' -o \
+        -name 'setuptools-70.3.0.dist-info' -o -name 'setuptools-70.3.0.egg-info' -o \
+        -name 'urllib3-2.7.0.dist-info' -o -name 'urllib3-2.7.0.egg-info' \
+    \) -print -quit | grep -q . \
+    && python3 -m compileall -q . \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
     && mkdir -p /workspaces \
