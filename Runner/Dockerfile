@@ -40,7 +40,8 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
     && /opt/venv/bin/python -m pip check \
-    && /opt/venv/bin/python -m pip uninstall --yes setuptools
+    && /opt/venv/bin/python -m pip uninstall --yes setuptools \
+    && test ! -e /opt/venv/lib/python3.11/site-packages/setuptools
 
 COPY . .
 RUN python3 -m compileall -q .
