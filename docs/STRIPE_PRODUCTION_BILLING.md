@@ -45,7 +45,7 @@ With **REQUIRE_STRIPE_BILLING=true**, the preflight fails closed if any advertis
 
 After deploy, verify:
 
-1. **GET /api/pricing/** reports **stripe_configured.pro**, **team**, and **enterprise** as **true**.
+1. **GET /api/pricing/** reports **stripe_configured.pro**, **team**, **enterprise**, **pro_annual**, and **team_annual** as **true**.
 2. An authenticated checkout request for each paid plan returns a Stripe-hosted Checkout URL (do not count a UI button as proof).
 3. Stripe test-mode checkout completes and the signed webhook updates subscription state exactly once.
 4. Replayed webhook events are idempotent and invalid signatures are rejected.
