@@ -48,12 +48,13 @@ if not health_tests.exists():
     errors.append("liveness endpoint regression tests must remain present")
 else:
     health_test_source = health_tests.read_text(encoding="utf-8", errors="replace")
-    if "test_liveness_returns_process_contract_and_no_store_cache" not in health_test_source:
-        errors.append("liveness regression test must verify the release/cache contract")
-    if "test_liveness_has_safe_defaults" not in health_test_source:
-        errors.append("liveness regression test must verify safe release defaults")
-    if "test_liveness_rejects_non_get_requests" not in health_test_source:
-        errors.append("liveness regression test must verify the HTTP method contract")
+    for marker in (
+        "test_liveness_returns_process_contract_and_no_store_cache",
+        "test_liveness_has_safe_defaults",
+        "test_liveness_rejects_non_get_requests",
+    ):
+        if marker not in health_test_source:
+            errors.append(f"liveness regression test missing: {marker}")
 
 env_example = (ROOT / ".env.example").read_text(encoding="utf-8", errors="replace")
 for marker in ("RELEASE_VERSION=", "RELEASE_SHA="):
@@ -64,6 +65,11 @@ slo_doc = (ROOT / "docs/RELIABILITY_SLO.md").read_text(encoding="utf-8", errors=
 for marker in ("Service-level objectives", "Error-budget policy", "Recovery point objective", "Recovery time objective"):
     if marker not in slo_doc:
         errors.append(f"reliability contract missing required section: {marker}")
+
+operations_doc = (ROOT / "docs/OPERATIONS.md").read_text(encoding="utf-8", errors="replace") if (ROOT / "docs/OPERATIONS.md").exists() else ""
+for marker in ("release", "backup", "rollback", "runner"):
+    if marker.lower() not in operations_doc.lower():
+        errors.append(f"operations runbook missing required operational topic: {marker}")
 
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8", errors="replace")
 if "runner_internal:" not in compose or "internal: true" not in compose:
@@ -88,6 +94,7 @@ required_files = (
     ".github/workflows/dependency-review.yml",
     ".github/workflows/scorecard.yml",
     ".github/workflows/node-compatibility.yml",
+    ".github/workflows/production-e2e.yml",
     ".github/dependabot.yml",
     "SECURITY.md",
 )
@@ -120,11 +127,18 @@ for marker in ('node: ["22", "24"]', "npm ci", "npm run lint", "npm run build", 
     if marker not in node_compatibility:
         errors.append(f"Node LTS compatibility workflow missing required validation: {marker}")
 
+production_e2e = (ROOT / ".github/workflows/production-e2e.yml").read_text(encoding="utf-8", errors="replace")
+for marker in ("PRODUCTION_BASE_URL", "PRODUCTION_BILLING_WEBHOOK_SECRET", "environment:", "production_validate.mjs"):
+    if marker not in production_e2e:
+        errors.append(f"production black-box workflow missing fail-closed control: {marker}")
+
 ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8", errors="replace")
 if "python scripts/operational_policy_gate.py" not in ci_workflow:
     errors.append("main CI must execute the operational policy gate")
 if "python scripts/release_gate.py" not in ci_workflow:
     errors.append("main CI must execute the static release gate")
+if "sha256sum -c" not in ci_workflow:
+    errors.append("backup restore CI must verify the backup checksum before restore")
 
 if errors:
     print("OPERATIONAL POLICY GATE: FAIL")
