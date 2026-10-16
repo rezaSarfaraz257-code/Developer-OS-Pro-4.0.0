@@ -978,7 +978,8 @@ function Billing() {
     <div className="billing-switch"><button className={!annual?"active":""} onClick={()=>setAnnual(false)}>MONTHLY</button><button className={annual?"active":""} onClick={()=>setAnnual(true)}>ANNUAL <small>SAVE 2 MONTHS</small></button></div>
     <div className="plan-grid">{plans.map(({id,p,price,display})=><div className={"plan "+(sub?.plan===id?"current ":"")+(p.recommended?"recommended":"")} key={id}>
       {p.recommended&&<span className="plan-badge">RECOMMENDED</span>}
-      <span>{p.label?.toUpperCase()||id.toUpperCase()}</span><h2>{annual&&p.annual_usd?display:price}</h2>
+      <span>{p.label?.toUpperCase()||id.toUpperCase()}</span><h2>{price}</h2>
+      {annual&&p.annual_usd>0&&<small className="plan-period-note">Equivalent to {display}, billed annually.</small>}
       <strong>{p.audience||"Developer OS plan"}</strong>
       <p>{p.billing_model==="per_seat"?"$15 per member, per month":p.billing_model==="per_user"?"$29 per month for one developer":p.billing_model==="custom"?"Custom organization contract":id==="free"?"No payment required":"Developer OS plan"}</p>
       {Array.isArray(p.features)&&<ul className="plan-features">{p.features.map(feature=><li key={feature}>✓ {feature}</li>)}</ul>}
