@@ -17,7 +17,7 @@ def _request_id_from_header(value):
 
 
 class RequestObservabilityMiddleware:
-    """Attach a validated correlation ID and server timing to every response."""
+    """Attach correlation, timing and structured request telemetry to responses."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -26,16 +26,38 @@ class RequestObservabilityMiddleware:
         request_id = _request_id_from_header(request.headers.get("X-Request-ID"))
         request.request_id = request_id
         started = time.perf_counter()
+        response = None
         try:
             response = self.get_response(request)
+            return response
         except Exception:
-            logger.exception("Unhandled request request_id=%s method=%s path=%s", request_id, request.method, request.path)
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            logger.exception(
+                "Unhandled request",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.path,
+                    "duration_ms": duration_ms,
+                },
+            )
             raise
-        duration_ms = round((time.perf_counter() - started) * 1000, 2)
-        response["X-Request-ID"] = request_id
-        response["Server-Timing"] = f"app;dur={duration_ms}"
-        response["X-Content-Type-Options"] = "nosniff"
-        return response
+        finally:
+            if response is not None:
+                duration_ms = round((time.perf_counter() - started) * 1000, 2)
+                response["X-Request-ID"] = request_id
+                response["Server-Timing"] = f"app;dur={duration_ms}"
+                response["X-Content-Type-Options"] = "nosniff"
+                logger.info(
+                    "HTTP request",
+                    extra={
+                        "request_id": request_id,
+                        "method": request.method,
+                        "path": request.path,
+                        "status_code": response.status_code,
+                        "duration_ms": duration_ms,
+                    },
+                )
 
 
 class ApiSecurityHeadersMiddleware:
