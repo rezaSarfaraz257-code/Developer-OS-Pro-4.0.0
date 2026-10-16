@@ -22,24 +22,6 @@ from .models import AuditLog, Project
 
 logger = logging.getLogger("developer_os.security")
 
-
-class JsonLogFormatter(logging.Formatter):
-    """Small dependency-free JSON formatter for production logs."""
-    def format(self, record):
-        import json
-        payload = {
-            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        request_id = getattr(record, "request_id", None)
-        if request_id:
-            payload["request_id"] = request_id
-        if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False)
-
 # Public probes are deliberately excluded. All other API traffic gets a
 # conservative fixed-window limit before it reaches application code.
 RATE_WINDOWS = {
@@ -89,6 +71,7 @@ def rate_bucket(path: str) -> str:
     if "/referrals/" in p:
         return "referral"
     return "api"
+
 
 def _principal(request):
     user = getattr(request, "user", None)
