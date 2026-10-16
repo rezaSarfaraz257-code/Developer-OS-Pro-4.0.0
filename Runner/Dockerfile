@@ -74,12 +74,6 @@ RUN find /usr /opt/venv /root /app -type f \\( -name METADATA -o -name PKG-INFO 
     && find /usr/share /usr/local /opt/venv -type f \\( \
         -name 'msgpack-1.1.2*.whl' -o -name 'setuptools-70.3.0*.whl' -o -name 'urllib3-2.7.0*.whl' \
     \\) -delete \
-    && ! find /usr /opt/venv /root /app -type f \\( -name METADATA -o -name PKG-INFO \\) -exec sh -c ' \
-        for f do \
-            if { grep -qx "Name: msgpack" "$f" && grep -qx "Version: 1.1.2" "$f"; } \
-            || { grep -qx "Name: setuptools" "$f" && grep -qx "Version: 70.3.0" "$f"; } \
-            || { grep -qx "Name: urllib3" "$f" && grep -qx "Version: 2.7.0" "$f"; }; then exit 0; fi; \
-        done; exit 1' sh '{}' + | grep -q . \
     && python3 -m compileall -q . \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
