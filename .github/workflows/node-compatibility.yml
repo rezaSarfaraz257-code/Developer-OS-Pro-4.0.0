@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, master]
   push:
-    branches: [main, master]
+    branches: [main, master, ops/production-hardening-2026-10-16]
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
