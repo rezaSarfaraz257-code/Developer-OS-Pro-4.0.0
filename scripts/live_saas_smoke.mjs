@@ -64,8 +64,10 @@ const isReady = ({ response, body }) => {
   let json;
   try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
   const checks = json.checks || {};
-  return json.status === "ready" && Object.keys(checks).length > 0 && Object.values(checks).every(value => value === true)
-    ? true : "readiness contract has failed or missing checks";
+  const requiredChecks = ["database", "secret_key", "allowed_hosts", "email", "cache", "worker"];
+  const missing = requiredChecks.filter(name => checks[name] !== true);
+  return json.status === "ready" && missing.length === 0
+    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "status is not ready"}`;
 };
 
 await check("frontend-root", `${frontendBase}/`, isHtml);
@@ -100,9 +102,20 @@ await check("api-pricing-contract", `${apiBase}/api/pricing/`, ({ response, body
   }
   const entitlements = json.entitlements;
   if (!entitlements || planNames.some(name => !entitlements[name] ||
-      !Number.isFinite(entitlements[name].ide_runs_month) ||
-      !Number.isFinite(entitlements[name].ai_messages_month))) {
+      !Number.isFinite(entitlements[name].ide_runs_month) || entitlements[name].ide_runs_month < 0 ||
+      !Number.isFinite(entitlements[name].ai_messages_month) || entitlements[name].ai_messages_month < 0)) {
     return "pricing response is missing valid per-plan IDE/AI entitlements";
+  }
+  const featureMatrix = json.feature_matrix;
+  const featureKeys = ["web_ide", "ai_assistant", "api_keys", "organizations", "collaboration",
+    "governance", "audit_log", "seat_billing", "enterprise_controls"];
+  if (!featureMatrix || planNames.some(name => !featureMatrix[name] ||
+      featureKeys.some(key => typeof featureMatrix[name][key] !== "boolean"))) {
+    return "pricing response is missing boolean feature flags for one or more plans";
+  }
+  const stripe = json.stripe_configured;
+  if (!stripe || ["pro", "team", "enterprise"].some(name => typeof stripe[name] !== "boolean")) {
+    return "pricing response is missing valid Stripe configuration status flags";
   }
   return true;
 }, 15000);
