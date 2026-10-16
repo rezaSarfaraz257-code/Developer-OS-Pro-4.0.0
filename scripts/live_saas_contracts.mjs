@@ -91,7 +91,7 @@ export function validateSecurityHeaders({ response, result }) {
   const headers = result.securityHeaders || {};
   const missing = [];
   const hsts = headers["strict-transport-security"] || "";
-  const maxAge = Number(hsts.match(/max-age=(\\d+)/i)?.[1] || 0);
+  const maxAge = Number(hsts.match(/max-age=(\d+)/i)?.[1] || 0);
   if (maxAge < 15552000) missing.push("strict-transport-security (max-age >= 15552000)");
   if ((headers["x-content-type-options"] || "").toLowerCase() !== "nosniff") {
     missing.push("x-content-type-options: nosniff");
