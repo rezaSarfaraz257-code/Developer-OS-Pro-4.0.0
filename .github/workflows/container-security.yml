@@ -37,6 +37,11 @@ jobs:
       - name: Report high and critical vulnerabilities
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          # Scan the image filesystem directly. The SBOM action exports a prior
+          # third-party SBOM that can carry stale Python package metadata into
+          # Trivy and produce false positives for already-patched packages.
+          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: table
@@ -49,6 +54,8 @@ jobs:
       - name: Report high and critical secrets and misconfigurations
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: table
@@ -60,6 +67,8 @@ jobs:
 
       - name: Scan runner image for actionable OS and language vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          ANCHORE_SBOM_ACTION_PRIOR_ARTIFACT: ""
         with:
           image-ref: developer-os-runner:security
           format: sarif
