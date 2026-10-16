@@ -7,8 +7,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python
 
 WORKDIR /build
 COPY requirements.txt .
@@ -25,8 +24,9 @@ FROM node:22-bookworm-slim
 # Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends python3 python3-venv python3-pip git curl ca-certificates build-essential bubblewrap tini \
+    && apt-get install -y --no-install-recommends python3 python3-venv git curl ca-certificates bubblewrap tini \
     && apt-get upgrade -y \
+    && apt-get purge -y python3-setuptools python3-urllib3 python3-msgpack \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
