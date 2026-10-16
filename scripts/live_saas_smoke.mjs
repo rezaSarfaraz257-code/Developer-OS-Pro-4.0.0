@@ -52,7 +52,6 @@ async function check(name, url, validate, timeoutMs = 12000) {
 const isHtml = ({ response, body, result }) =>
   response.ok && result.contentType.toLowerCase().includes("text/html") && body.length > 100
     ? true : `expected non-empty HTML; received HTTP ${response.status} (${result.contentType || "no content-type"})`;
-const isApiSuccess = ({ response, body }) => response.ok ? true : `HTTP ${response.status}`;
 const isHealthy = ({ response, body }) => {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
