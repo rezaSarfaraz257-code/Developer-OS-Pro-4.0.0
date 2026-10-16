@@ -1,7 +1,53 @@
+FROM node:22-bookworm-slim AS builder
+
+# Build the Python runtime separately; build tools and pip are not shipped in
+# the final runner image.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+
+WORKDIR /build
+COPY requirements.txt .
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"'
+
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-pip git curl ca-certificates build-essential bubblewrap tini && rm -rf /var/lib/apt/lists/*
-RUN ln -sf /usr/bin/python3 /usr/local/bin/python && ln -sf /usr/bin/pip3 /usr/local/bin/pip || true
-RUN npm install -g pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1
+
+# Keep runtime OS packages patched. Do not install system pip/build tools:
+# app dependencies are isolated in /opt/venv from the builder stage.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends python3 python3-venv git curl ca-certificates bubblewrap tini \
+    && apt-get upgrade -y \
+    && apt-get purge -y python3-setuptools python3-urllib3 python3-msgpack \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+
+# Pin developer tooling and remove npm's transient cache from the shipped layer.
+RUN npm install -g npm@12.2.0 pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1 \
+    && npm cache clean --force
+
+# Replace vulnerable bundled copies in npm without changing the npm runtime contract.
+RUN mkdir -p /tmp/runtime-fixes \
+    && cd /tmp/runtime-fixes \
+    && npm install --no-save --no-package-lock --ignore-scripts brace-expansion@5.0.12 undici@6.28.1 \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && cp -a node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/ \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/undici \
+    && cp -a node_modules/undici /usr/local/lib/node_modules/npm/node_modules/ \
+    && rm -rf /tmp/runtime-fixes
+
 RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
 
@@ -9,12 +55,17 @@ WORKDIR /app
 ENV RUNNER_SECURITY_LEVEL=strict \
     RUNNER_SANDBOX_MODE=container \
     RUNNER_ALLOW_NETWORK=false
-COPY requirements.txt .
-RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+COPY --from=builder /opt/venv /opt/venv
 COPY . .
-RUN python3 -m compileall -q .
-RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
+RUN python3 -m compileall -q . \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1" ' \
+    && mkdir -p /workspaces \
+    && chown -R runner:runner /workspaces /app /opt/venv
+
 USER runner
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"
 ENTRYPOINT ["/usr/bin/tini","--"]
 CMD ["/bin/sh","-c","exec /opt/venv/bin/uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers"]
