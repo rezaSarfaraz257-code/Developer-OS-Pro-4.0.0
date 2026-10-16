@@ -1,8 +1,7 @@
 FROM node:22-bookworm-slim
 
-# Keep the runner image current at build time and remove package metadata/cache.
+# Install only the runtime/build tooling the runner needs and clear package metadata.
 RUN apt-get update \
-    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends python3 python3-venv python3-pip git curl ca-certificates build-essential bubblewrap tini \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
@@ -32,5 +31,6 @@ RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
 
 USER runner
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"
 ENTRYPOINT ["/usr/bin/tini","--"]
 CMD ["/bin/sh","-c","exec /opt/venv/bin/uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers"]
