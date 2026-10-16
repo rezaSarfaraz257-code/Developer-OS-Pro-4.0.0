@@ -4,6 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
+import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig } from "./live_saas_contracts.mjs";
 
 const frontendBase = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
 const apiBase = (process.env.API_URL || "").replace(/\/$/, "");
@@ -49,83 +50,13 @@ async function check(name, url, validate, timeoutMs = 12000) {
   }
 }
 
-const isHtml = ({ response, body, result }) =>
-  response.ok && result.contentType.toLowerCase().includes("text/html") && body.length > 100
-    ? true : `expected non-empty HTML; received HTTP ${response.status} (${result.contentType || "no content-type"})`;
-const isHealthy = ({ response, body }) => {
-  if (!response.ok) return `HTTP ${response.status}`;
-  let json;
-  try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
-  return json.status === "ok" && json.database === "ok"
-    ? true : "health contract reports a degraded service or database";
-};
-const isReady = ({ response, body }) => {
-  if (!response.ok) return `HTTP ${response.status}`;
-  let json;
-  try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
-  const checks = json.checks || {};
-  const requiredChecks = ["database", "secret_key", "allowed_hosts", "email", "cache", "worker"];
-  const missing = requiredChecks.filter(name => checks[name] !== true);
-  return json.status === "ready" && missing.length === 0
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "status is not ready"}`;
-};
-
 await check("frontend-root", `${frontendBase}/`, isHtml);
-await check("web-ide-route", `${frontendBase}/ide`, ({ response, body, result }) =>
-  isHtml({ response, body, result }) === true &&
-  /<div[^>]+id=["'](?:root|app)["']/i.test(body)
-    ? true : `IDE route did not return a valid SPA shell (HTTP ${response.status})`);
-await check("web-ide-trailing-slash", `${frontendBase}/ide/`, ({ response, body, result }) =>
-  isHtml({ response, body, result }) === true &&
-  /<div[^>]+id=["'](?:root|app)["']/i.test(body)
-    ? true : `IDE trailing-slash route did not return a valid SPA shell (HTTP ${response.status})`);
+await check("web-ide-route", `${frontendBase}/ide`, isSpaShell);
+await check("web-ide-trailing-slash", `${frontendBase}/ide/`, isSpaShell);
 await check("api-health", `${apiBase}/api/health/`, isHealthy);
 await check("api-readiness", `${apiBase}/api/health/ready/`, isReady);
-await check("api-pricing-contract", `${apiBase}/api/pricing/`, ({ response, body }) => {
-  if (!response.ok) return `HTTP ${response.status}`;
-  let json;
-  try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
-  const planNames = ["free", "pro", "team", "enterprise"];
-  const plans = json?.plans;
-  if (!plans || planNames.some(name => !plans[name])) {
-    return "pricing response is missing one or more plan definitions";
-  }
-  if (typeof json.currency !== "string" || !json.currency.trim()) {
-    return "pricing response is missing its currency";
-  }
-  for (const name of planNames) {
-    const plan = plans[name];
-    if (typeof plan.label !== "string" || !Array.isArray(plan.features) ||
-        !Number.isFinite(plan.monthly_usd) || plan.monthly_usd < 0) {
-      return `pricing plan '${name}' has an invalid public contract`;
-    }
-  }
-  const entitlements = json.entitlements;
-  if (!entitlements || planNames.some(name => !entitlements[name] ||
-      !Number.isFinite(entitlements[name].ide_runs_month) || entitlements[name].ide_runs_month < 0 ||
-      !Number.isFinite(entitlements[name].ai_messages_month) || entitlements[name].ai_messages_month < 0)) {
-    return "pricing response is missing valid per-plan IDE/AI entitlements";
-  }
-  const featureMatrix = json.feature_matrix;
-  const featureKeys = ["web_ide", "ai_assistant", "api_keys", "organizations", "collaboration",
-    "governance", "audit_log", "seat_billing", "enterprise_controls"];
-  if (!featureMatrix || planNames.some(name => !featureMatrix[name] ||
-      featureKeys.some(key => typeof featureMatrix[name][key] !== "boolean"))) {
-    return "pricing response is missing boolean feature flags for one or more plans";
-  }
-  const stripe = json.stripe_configured;
-  if (!stripe || ["pro", "team", "enterprise"].some(name => typeof stripe[name] !== "boolean")) {
-    return "pricing response is missing valid Stripe configuration status flags";
-  }
-  return true;
-}, 15000);
-await check("billing-provider-config", `${apiBase}/api/pricing/`, ({ response, body }) => {
-  if (!response.ok) return `HTTP ${response.status}`;
-  let json;
-  try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
-  return json?.stripe_configured?.pro === true && json?.stripe_configured?.team === true
-    ? true : "Stripe price IDs for Pro and Team are not configured in the deployed API";
-}, 15000);
+await check("api-pricing-contract", `${apiBase}/api/pricing/`, validatePricing, 15000);
+await check("billing-provider-config", `${apiBase}/api/pricing/`, validateBillingConfig, 15000);
 
 const report = {
   schemaVersion: 1,
