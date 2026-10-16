@@ -1,3 +1,25 @@
+FROM node:22-bookworm-slim AS builder
+
+# Build the Python runtime in an isolated stage so vulnerable build-time package
+# layers cannot survive in the shipped runner image.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+
+WORKDIR /build
+COPY requirements.txt .
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"'
+
 FROM node:22-bookworm-slim
 
 # Keep Debian security packages current, then remove package metadata/cache.
@@ -33,19 +55,13 @@ ENV RUNNER_SECURITY_LEVEL=strict \
     RUNNER_SANDBOX_MODE=container \
     RUNNER_ALLOW_NETWORK=false
 
-COPY requirements.txt .
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' \
-    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
-    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
-    && /opt/venv/bin/python -m pip check \
-    && /opt/venv/bin/python -m pip uninstall --yes setuptools \
-    && test ! -e /opt/venv/lib/python3.11/site-packages/setuptools
-
+COPY --from=builder /opt/venv /opt/venv
 COPY . .
-RUN python3 -m compileall -q .
-RUN mkdir -p /workspaces && chown -R runner:runner /workspaces /app
+RUN python3 -m compileall -q . \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
+    && mkdir -p /workspaces \
+    && chown -R runner:runner /workspaces /app /opt/venv
 
 USER runner
 EXPOSE 8080
