@@ -104,7 +104,11 @@ jobs:
           cache: npm
           cache-dependency-path: Frontend/package-lock.json
       - name: Validate live SaaS smoke monitor syntax
-        run: node --check scripts/live_saas_smoke.mjs
+        run: |
+          node --check scripts/live_saas_smoke.mjs
+          node --check scripts/live_saas_contracts.mjs
+      - name: Test live SaaS contract validators
+        run: node --test scripts/live_saas_contracts.test.mjs
       - name: Install frontend dependencies
         working-directory: Frontend
         run: npm ci
