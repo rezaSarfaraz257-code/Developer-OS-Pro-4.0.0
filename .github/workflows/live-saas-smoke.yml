@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      FRONTEND_URL: \${{ vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
-      API_URL: \${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
+      FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
+      API_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,14 +63,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-saas-observability-\${{ github.run_id }}
+          name: live-saas-observability-${{ github.run_id }}
           path: live-saas-smoke.json
           if-no-files-found: warn
           retention-days: 30
       - name: Fail if any live check failed
         if: always()
         run: |
-          if [ "\${{ steps.smoke.outcome }}" != "success" ]; then
+          if [ "${{ steps.smoke.outcome }}" != "success" ]; then
             echo "::error::One or more live SaaS checks failed. Inspect the summary and JSON artifact."
             exit 1
           fi
