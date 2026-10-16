@@ -11,6 +11,7 @@ const jsonInput = (value, ok = true) => ({ response: response(ok), body: JSON.st
 function validPricing() {
   const plans = Object.fromEntries(PLAN_NAMES.map((name, index) => [name, {
     label: name[0].toUpperCase() + name.slice(1),
+    billing_model: ({ free: "free", pro: "per_user", team: "per_seat", enterprise: "custom" })[name],
     features: ["Web IDE"],
     monthly_usd: index === 0 ? 0 : index * 10,
   }]));
