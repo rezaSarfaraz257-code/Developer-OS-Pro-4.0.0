@@ -1,0 +1,54 @@
+name: Live SaaS Smoke Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17,47 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-saas-smoke-monitor
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Read-only production availability and route checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
+      API_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run read-only smoke checks
+        id: smoke
+        continue-on-error: true
+        run: node scripts/live_saas_smoke.mjs
+      - name: Publish run summary
+        if: always()
+        run: |
+          if [ -f live-saas-smoke.json ]; then
+            node -e "const r=require('./live-saas-smoke.json'); console.log('# Live SaaS Smoke Monitor\\n'); console.log('Target: '+r.frontendBase+' | '+r.apiBase); console.log('Timestamp: '+r.timestamp); console.log('Result: '+(r.ok?'PASS':'FAIL')); console.log('\\n| Check | HTTP | Duration | Result |\\n|---|---:|---:|---|'); for(const c of r.checks) console.log('| '+c.name+' | '+(c.status??'—')+' | '+c.durationMs+' ms | '+(c.ok?'PASS':c.error||'FAIL')+' |'); console.log('\\nThis is a read-only smoke check, not full SaaS acceptance.');" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Smoke script did not produce a report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload machine-readable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-saas-smoke-${{ github.run_id }}
+          path: live-saas-smoke.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Fail if any live check failed
+        if: always()
+        run: |
+          if [ "${{ steps.smoke.outcome }}" != "success" ]; then
+            echo "::error::One or more live SaaS smoke checks failed. Inspect the run summary and artifact."
+            exit 1
+          fi

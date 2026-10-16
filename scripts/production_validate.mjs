@@ -14,11 +14,45 @@
 import crypto from "node:crypto";
 
 const base = (process.env.PRODUCTION_BASE_URL || "").replace(/\/$/, "");
+const frontendBase = (process.env.PRODUCTION_FRONTEND_URL || "").replace(/\/$/, "");
 const webhookSecret = process.env.PRODUCTION_BILLING_WEBHOOK_SECRET || "";
 if (!base) throw new Error("PRODUCTION_BASE_URL is required.");
+if (!frontendBase) throw new Error("PRODUCTION_FRONTEND_URL is required.");
 if (!webhookSecret) throw new Error("PRODUCTION_BILLING_WEBHOOK_SECRET is required.");
+if (!/^https:\/\//i.test(base)) throw new Error("PRODUCTION_BASE_URL must use HTTPS.");
+if (!/^https:\/\//i.test(frontendBase)) throw new Error("PRODUCTION_FRONTEND_URL must use HTTPS.");
 
 const api = `${base}/api`;
+const timings = {};
+async function timed(name, operation) {
+  const started = performance.now();
+  try {
+    const result = await operation();
+    timings[name] = Math.round(performance.now() - started);
+    return result;
+  } catch (error) {
+    timings[name] = Math.round(performance.now() - started);
+    throw error;
+  }
+}
+async function checkFrontendRoutes() {
+  const routes = ["/", "/ide", "/ide/"];
+  for (const route of routes) {
+    const response = await fetch(`${frontendBase}${route}`, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000),
+      headers: { "User-Agent": "DeveloperOS-ProductionAcceptance/1.0" },
+    });
+    assert(response.ok, `Frontend route ${route} failed: HTTP ${response.status}`);
+    const type = response.headers.get("content-type") || "";
+    assert(type.includes("text/html"), `Frontend route ${route} did not return HTML (content-type: ${type}).`);
+    const html = await response.text();
+    assert(html.length > 100, `Frontend route ${route} returned an unexpectedly small HTML document.`);
+    if (route !== "/") {
+      assert(/<div[^>]+id=["']root["']|<div[^>]+id=["']app["']/i.test(html), `Frontend route ${route} did not return the SPA application shell.`);
+    }
+  }
+}
 const suffix = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
 const password = "Production-E2E-Strong-12345!";
 const referrer = {username:`e2e_ref_${suffix}`, email:`e2e_ref_${suffix}@example.test`};
@@ -59,6 +93,8 @@ const health = await fetch(`${api}/health/`, {signal: AbortSignal.timeout(10000)
 assert(health.ok, `Health failed: HTTP ${health.status}`);
 const ready = await fetch(`${api}/health/ready/`, {signal: AbortSignal.timeout(10000)});
 assert(ready.ok, `Readiness failed: HTTP ${ready.status}`);
+await timed("frontend-routes", checkFrontendRoutes);
+
 const securityHeaders = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "same-origin",
@@ -188,8 +224,10 @@ const usage = await request("/usage/", {headers:auth});
 assert(usage.plan === "pro", "Verified billing webhook did not change entitlement to Pro.");
 
 console.log("PRODUCTION VALIDATION PASS", JSON.stringify({
-  base,
-  checks:["health","readiness","pricing","referral-attribution","free-plan-enforcement","workspace-file-create","runner-execute","process-start-stop","billing-signature","billing-idempotency","pro-plan-entitlement"],
+  apiBase: base,
+  frontendBase,
+  checks:["frontend-root","frontend-ide-route","frontend-ide-trailing-slash","health","readiness","pricing","referral-attribution","free-plan-enforcement","workspace-file-create","runner-execute","process-start-stop","billing-signature","billing-idempotency","pro-plan-entitlement"],
+  timingsMs: timings,
   workspace:workspace.id,
   account:referred.username,
 }));

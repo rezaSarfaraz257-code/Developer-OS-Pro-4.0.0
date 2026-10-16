@@ -103,6 +103,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: Frontend/package-lock.json
+      - name: Validate live SaaS smoke monitor syntax
+        run: node --check scripts/live_saas_smoke.mjs
       - name: Install frontend dependencies
         working-directory: Frontend
         run: npm ci
