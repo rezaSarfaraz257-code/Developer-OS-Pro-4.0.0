@@ -25,6 +25,12 @@ if "USER appuser" not in dockerfile:
 if 'CMD ["python", "entrypoint.py"]' not in dockerfile:
     errors.append("Backend container must use the serialized production entrypoint")
 
+settings = (ROOT / "Backend/x/settings.py").read_text(encoding="utf-8", errors="replace")
+if "DB_POOL_MAX_SIZE > 32" not in settings:
+    errors.append("Production DB pool must have a hard per-process maximum of 32 connections")
+if "DB_POOL_TIMEOUT <= 60" not in settings:
+    errors.append("Production DB pool timeout must have a hard upper bound of 60 seconds")
+
 urls = (ROOT / "Backend/api/urls.py").read_text(encoding="utf-8", errors="replace")
 if 'path("health/live/", operational_health.liveness_api' not in urls:
     errors.append("Dedicated dependency-free liveness probe must be registered")
