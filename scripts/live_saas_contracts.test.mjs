@@ -65,9 +65,9 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.equal(validatePricing(jsonInput(valid)), true);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { free: valid.plans.free } })), /plan definitions/);
   assert.match(validatePricing(jsonInput({ ...valid, currency: "" })), /currency/);
-  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, billing_model: "" } })), /invalid public contract/);
-  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, annual_usd: -1 } })), /invalid public contract/);
-  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, features: [""] } })), /invalid public contract/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, billing_model: "" } } })), /invalid public contract/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, annual_usd: -1 } } })), /invalid public contract/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, pro: { ...valid.plans.pro, features: [""] } } })), /invalid public contract/);
   assert.match(validatePricing(jsonInput({ ...valid, entitlements: { ...valid.entitlements, pro: { ide_runs_month: -1, ai_messages_month: 10 } } })), /entitlements/);
   assert.match(validatePricing(jsonInput({ ...valid, entitlements: { ...valid.entitlements, pro: { ide_runs_month: 1.5, ai_messages_month: 10 } } })), /entitlements/);
   assert.match(validatePricing(jsonInput({ ...valid, feature_matrix: { ...valid.feature_matrix, team: { web_ide: true } } })), /feature flags/);
