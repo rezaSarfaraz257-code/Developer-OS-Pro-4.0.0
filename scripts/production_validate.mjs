@@ -14,9 +14,10 @@
 import crypto from "node:crypto";
 
 const base = (process.env.PRODUCTION_BASE_URL || "").replace(/\/$/, "");
-const frontendBase = (process.env.PRODUCTION_FRONTEND_URL || base).replace(/\/$/, "");
+const frontendBase = (process.env.PRODUCTION_FRONTEND_URL || "").replace(/\/$/, "");
 const webhookSecret = process.env.PRODUCTION_BILLING_WEBHOOK_SECRET || "";
 if (!base) throw new Error("PRODUCTION_BASE_URL is required.");
+if (!frontendBase) throw new Error("PRODUCTION_FRONTEND_URL is required.");
 if (!webhookSecret) throw new Error("PRODUCTION_BILLING_WEBHOOK_SECRET is required.");
 if (!/^https:\/\//i.test(base)) throw new Error("PRODUCTION_BASE_URL must use HTTPS.");
 if (!/^https:\/\//i.test(frontendBase)) throw new Error("PRODUCTION_FRONTEND_URL must use HTTPS.");
