@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders,
+  isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
   PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS,
 } from "./live_saas_contracts.mjs";
 
@@ -101,4 +101,12 @@ test("security header monitor rejects weak browser-facing headers", () => {
     ...secure.result.securityHeaders, "strict-transport-security": "max-age=60",
   } } }), /strict-transport-security/);
   assert.match(validateSecurityHeaders({ response: response(false), result: secure.result }), /HTTP 503/);
+});
+
+
+test("final destination must remain HTTPS and contain no embedded credentials", () => {
+  assert.equal(validateFinalUrl({ response: response(), result: { finalUrl: "https://example.test/health" } }), true);
+  assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "http://example.test/health" } }), /non-HTTPS/);
+  assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "https://user:pass@example.test/health" } }), /credentials/);
+  assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "not a url" } }), /invalid/);
 });
