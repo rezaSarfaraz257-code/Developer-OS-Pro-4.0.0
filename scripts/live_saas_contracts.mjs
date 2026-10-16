@@ -60,6 +60,10 @@ export function validatePricing({ response, body }) {
       return `pricing plan '${name}' has an invalid public contract`;
     }
   }
+  if (plans.pro.monthly_usd !== 29 || plans.pro.annual_usd !== 290 ||
+      plans.team.monthly_usd !== 15 || plans.team.annual_usd !== 150) {
+    return "published Pro/Team pricing must be Pro $29/month or $290/year and Team $15/seat/month or $150/seat/year";
+  }
   const entitlements = json.entitlements;
   if (!entitlements || PLAN_NAMES.some(name => !entitlements[name] ||
       !Number.isSafeInteger(entitlements[name].ide_runs_month) || entitlements[name].ide_runs_month < 0 ||
