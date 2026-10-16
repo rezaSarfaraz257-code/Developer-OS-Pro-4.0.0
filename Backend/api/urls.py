@@ -5,6 +5,7 @@ from . import repository
 from . import repository_engine
 from . import ai_engine
 from . import ai_recovery
+from . import operational_health
 
 urlpatterns = [
     path("auth/verify-email/", mature.verify_email_api, name="verify-email"),
@@ -34,6 +35,7 @@ urlpatterns = [
     path("admin/operations/metrics/", mature.operational_metrics_api, name="operational-metrics"),
     path("health/", views.health_api, name="health"),
     path("health/ready/", views.readiness_api, name="readiness"),
+    path("health/live/", operational_health.liveness_api, name="liveness"),
     path("workspace/summary/", views.workspace_summary_api, name="workspace-summary"),
     path("projects/<int:pk>/collaborators/", views.project_collaborators_api, name="project-collaborators"),
     path("assistant/", views.assistant_api, name="assistant"),
