@@ -17,7 +17,7 @@ jobs:
   runner-image:
     name: Scan hardened runner image
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,6 +43,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: false
           scanners: vuln,secret,misconfig
+          version: v0.76.0
           exit-code: "1"
 
       - name: Upload container findings
