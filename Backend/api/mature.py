@@ -581,24 +581,37 @@ def organization_billing_checkout_api(request, pk):
     if not secret or not price:
         return Response({"error": "Stripe organization billing is not configured for this plan."}, status=503)
     sub, _ = OrganizationSubscription.objects.get_or_create(organization=org, defaults={"plan": org.plan})
+    raw_quantity = request.data.get("quantity", 1)
+    try:
+        if isinstance(raw_quantity, bool):
+            raise ValueError
+        if isinstance(raw_quantity, float) and not raw_quantity.is_integer():
+            raise ValueError
+        if isinstance(raw_quantity, str) and not raw_quantity.strip().isdigit():
+            raise ValueError
+        requested_quantity = int(raw_quantity)
+    except (TypeError, ValueError):
+        return Response({"error": "quantity must be a positive integer between 1 and 5000."}, status=400)
+    if not 1 <= requested_quantity <= 5000:
+        return Response({"error": "quantity must be between 1 and 5000 seats."}, status=400)
+
+    active_members = OrganizationMembership.objects.filter(organization=org).count()
+    quantity = requested_quantity
+    if quantity < active_members:
+        return Response({"error": f"Team seats ({quantity}) cannot be lower than active members ({active_members}).", "quantity": quantity, "active_members": active_members}, status=400)
+
+    # Validate seat quantity before calling Stripe so malformed requests cannot
+    # create orphaned customer records or silently charge a clamped quantity.
     customer_id = sub.provider_customer_id
     if not customer_id:
         r = requests.post("https://api.stripe.com/v1/customers", auth=(secret, ""), data={"name": org.name, "metadata[organization_id]": org.id, "metadata[owner_id]": org.owner_id}, timeout=(3.05, 20))
         if r.status_code >= 400:
             return Response({"error": "Unable to create the billing customer."}, status=502)
         customer_id = r.json().get("id", "")
+        if not customer_id:
+            return Response({"error": "Billing provider did not return a customer ID."}, status=502)
         sub.provider_customer_id = customer_id
         sub.save(update_fields=["provider_customer_id", "updated_at"])
-    try:
-        requested_quantity = max(1, min(5000, int(request.data.get("quantity") or 1)))
-    except (TypeError, ValueError):
-        return Response({"error": "quantity must be a positive integer."}, status=400)
-    active_members = OrganizationMembership.objects.filter(organization=org).count()
-    # Only Team is seat-metered. Pro and Enterprise are organization-level plans;
-    # Enterprise remains a starting price and can be handled through custom sales.
-    quantity = requested_quantity if plan == "team" else 1
-    if plan == "team" and quantity < active_members:
-        return Response({"error": f"Team seats ({quantity}) cannot be lower than active members ({active_members}).", "quantity": quantity, "active_members": active_members}, status=400)
     if sub.provider_subscription_id and sub.status in {"active", "trialing", "past_due"}:
         r = requests.get(f"https://api.stripe.com/v1/subscriptions/{sub.provider_subscription_id}", auth=(secret, ""), timeout=(3.05, 20))
         if r.ok:
