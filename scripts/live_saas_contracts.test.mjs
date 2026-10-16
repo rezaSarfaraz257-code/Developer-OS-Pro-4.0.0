@@ -13,7 +13,7 @@ function validPricing() {
     label: name[0].toUpperCase() + name.slice(1),
     billing_model: ({ free: "free", pro: "per_user", team: "per_seat", enterprise: "custom" })[name],
     features: ["Web IDE"],
-    monthly_usd: index === 0 ? 0 : index * 10,
+    monthly_usd: name === "pro" ? 29 : name === "team" ? 15 : index === 0 ? 0 : index * 10,
     ...(name === "pro" ? { annual_usd: 290 } : {}),
     ...(name === "team" ? { annual_usd: 150 } : {}),
   }]));
@@ -77,6 +77,7 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, pro: "yes" } })), /Stripe configuration/);
   assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, team_annual: undefined } })), /monthly\/annual Stripe configuration/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, annual_usd: 0 } } })), /invalid public contract/);
+  assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, annual_usd: 149 } } })), /invalid public contract/);
   assert.match(validatePricing({ response: response(), body: "not-json" }), /valid JSON/);
   assert.match(validatePricing({ response: response(false), body: "{}" }), /HTTP 503/);
 });
