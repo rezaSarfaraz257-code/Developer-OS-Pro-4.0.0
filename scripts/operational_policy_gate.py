@@ -24,6 +24,8 @@ if "USER appuser" not in dockerfile:
     errors.append("Backend container must run as a non-root user")
 if 'CMD ["python", "entrypoint.py"]' not in dockerfile:
     errors.append("Backend container must use the serialized production entrypoint")
+if "PYTHONHASHSEED=random" not in dockerfile:
+    errors.append("Backend container must randomize Python hash seeds for process-level hardening")
 
 settings = (ROOT / "Backend/x/settings.py").read_text(encoding="utf-8", errors="replace")
 if "DB_POOL_MAX_SIZE > 32" not in settings:
@@ -49,6 +51,14 @@ if "RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}" not in compose:
     errors.append("Runner outbound network must default to disabled")
 if "SEED_CATALOG_ON_STARTUP: ${SEED_CATALOG_ON_STARTUP:-false}" not in compose:
     errors.append("Production Compose must not mutate catalog data by default at startup")
+
+logging_module = (ROOT / "Backend/api/logging.py").read_text(encoding="utf-8", errors="replace")
+for marker in ("_SECRET_PATTERNS", "[REDACTED]", "record.exc_info"):
+    if marker not in logging_module:
+        errors.append(f"structured logging must retain secret redaction and exception handling: {marker}")
+logging_tests = ROOT / "Backend/api/test_logging.py"
+if not logging_tests.exists():
+    errors.append("structured logging redaction tests must remain present")
 
 required_files = (
     ".github/workflows/ci.yml",
