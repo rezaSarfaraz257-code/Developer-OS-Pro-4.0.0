@@ -57,7 +57,9 @@ jobs:
       - name: Trace Python vulnerability package locations
         if: always()
         continue-on-error: true
-        run: trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format json developer-os-runner:security | grep -E '"Target"|"Type"|"PkgName"|"InstalledVersion"|"VulnerabilityID"|"Digest"'
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format json --output trivy-runner-vulnerabilities.json developer-os-runner:security
+          python3 -c 'import json; d=json.load(open("trivy-runner-vulnerabilities.json")); [print(json.dumps({"target": r.get("Target"), "type": r.get("Type"), "vulnerability": v}, sort_keys=True)) for r in d.get("Results", []) for v in (r.get("Vulnerabilities") or []) if v.get("PkgName") in {"msgpack", "setuptools", "urllib3"}]'
       
       - name: Report high and critical secrets and misconfigurations
         continue-on-error: true
