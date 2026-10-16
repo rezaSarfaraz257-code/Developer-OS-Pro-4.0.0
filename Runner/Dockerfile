@@ -35,10 +35,12 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
-    && /opt/venv/bin/pip check
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -m pip uninstall --yes setuptools
 
 COPY . .
 RUN python3 -m compileall -q .
