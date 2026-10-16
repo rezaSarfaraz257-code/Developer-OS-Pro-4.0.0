@@ -3,7 +3,7 @@ name: Live SaaS Smoke Monitor
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17,47 * * * *"
+    - cron: "*/10 * * * *"
 
 permissions:
   contents: read
@@ -27,23 +27,43 @@ jobs:
           node-version: "22"
       - name: Test live SaaS contract validators
         run: node --test scripts/live_saas_contracts.test.mjs
-      - name: Run read-only smoke checks
+      - name: Run read-only live observability checks
         id: smoke
         continue-on-error: true
         run: node scripts/live_saas_smoke.mjs
-      - name: Publish run summary
+      - name: Publish live health summary
         if: always()
         run: |
           if [ -f live-saas-smoke.json ]; then
-            node -e "const r=require('./live-saas-smoke.json'); console.log('# Live SaaS Smoke Monitor\\n'); console.log('Target: '+r.frontendBase+' | '+r.apiBase); console.log('Timestamp: '+r.timestamp); console.log('Result: '+(r.ok?'PASS':'FAIL')); console.log('\\n| Check | HTTP | Duration | Result |\\n|---|---:|---:|---|'); for(const c of r.checks) console.log('| '+c.name+' | '+(c.status??'—')+' | '+c.durationMs+' ms | '+(c.ok?'PASS':c.error||'FAIL')+' |'); console.log('\\nThis is a read-only smoke check, not full SaaS acceptance.');" >> "$GITHUB_STEP_SUMMARY"
+            node --input-type=commonjs -e '
+              const r=require("./live-saas-smoke.json");
+              console.log("# Developer OS — Live SaaS Observability\n");
+              console.log("**Result:** "+(r.ok?"PASS":"FAIL")+" · **Timestamp:** "+r.timestamp+" · **Duration:** "+r.durationMs+" ms\n");
+              console.log("| Signal | Result |");
+              console.log("|---|---:|");
+              console.log("| Checks passed | "+r.summary.passed+"/"+r.summary.total+" |");
+              console.log("| Failed checks | "+r.summary.failed+" |");
+              console.log("| Recovered after retry | "+r.summary.recovered+" |");
+              console.log("| Frontend | "+r.frontendBase+" |");
+              console.log("| API | "+r.apiBase+" |");
+              console.log("\n| Check | HTTP | Attempts | Duration | Status | Details |");
+              console.log("|---|---:|---:|---:|---|---|");
+              for(const c of r.checks) {
+                const status=c.ok?(c.recovered?"RECOVERED":"PASS"):"FAIL";
+                const detail=c.ok?"—":String(c.error||"failed").replace(/[|\n\r]/g," ");
+                console.log("| "+c.name+" | "+(c.status??"—")+" | "+c.attempts+" | "+c.durationMs+" ms | "+status+" | "+detail+" |");
+              }
+              console.log("\n> Read-only external smoke monitoring only. This does not authenticate, mutate production data, execute user code, or replace full release acceptance.");
+            ' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Smoke script did not produce a report." >> "$GITHUB_STEP_SUMMARY"
+            echo "# Developer OS — Live SaaS Observability" >> "$GITHUB_STEP_SUMMARY"
+            echo "Smoke script did not produce a report. Check origin configuration and runner logs." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload machine-readable evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-saas-smoke-${{ github.run_id }}
+          name: live-saas-observability-${{ github.run_id }}
           path: live-saas-smoke.json
           if-no-files-found: warn
           retention-days: 30
@@ -51,6 +71,6 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.smoke.outcome }}" != "success" ]; then
-            echo "::error::One or more live SaaS smoke checks failed. Inspect the run summary and artifact."
+            echo "::error::One or more live SaaS checks failed. Inspect the summary and JSON artifact."
             exit 1
           fi
