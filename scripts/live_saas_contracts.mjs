@@ -104,3 +104,14 @@ export function validateSecurityHeaders({ response, result }) {
   }
   return missing.length ? `missing or weak security headers: ${missing.join(", ")}` : true;
 }
+
+/** Reject HTTPS checks that finish on an insecure or credential-bearing URL. */
+export function validateFinalUrl({ response, result }) {
+  const finalUrl = result.finalUrl || response.url;
+  if (!finalUrl) return "final response URL is unavailable";
+  let parsed;
+  try { parsed = new URL(finalUrl); } catch { return "final response URL is invalid"; }
+  if (parsed.protocol !== "https:") return "request ended on a non-HTTPS URL";
+  if (parsed.username || parsed.password) return "final response URL contains embedded credentials";
+  return true;
+}
