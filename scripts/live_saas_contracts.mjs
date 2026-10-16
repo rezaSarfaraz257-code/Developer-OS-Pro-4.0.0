@@ -55,7 +55,8 @@ export function validatePricing({ response, body }) {
         !Array.isArray(plan.features) ||
         plan.features.some(feature => typeof feature !== "string" || !feature.trim()) ||
         !Number.isFinite(plan.monthly_usd) || plan.monthly_usd < 0 ||
-        (plan.annual_usd !== undefined && (!Number.isFinite(plan.annual_usd) || plan.annual_usd < 0))) {
+        (plan.annual_usd !== undefined && (!Number.isFinite(plan.annual_usd) || plan.annual_usd < 0)) ||
+        (["pro", "team"].includes(name) && (!Number.isFinite(plan.annual_usd) || plan.annual_usd <= 0))) {
       return `pricing plan '${name}' has an invalid public contract`;
     }
   }
