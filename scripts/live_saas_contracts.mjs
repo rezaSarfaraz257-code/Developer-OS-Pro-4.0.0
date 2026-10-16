@@ -50,15 +50,19 @@ export function validatePricing({ response, body }) {
   }
   for (const name of PLAN_NAMES) {
     const plan = plans[name];
-    if (typeof plan.label !== "string" || !Array.isArray(plan.features) ||
-        !Number.isFinite(plan.monthly_usd) || plan.monthly_usd < 0) {
+    if (typeof plan.label !== "string" || !plan.label.trim() ||
+        typeof plan.billing_model !== "string" || !plan.billing_model.trim() ||
+        !Array.isArray(plan.features) ||
+        plan.features.some(feature => typeof feature !== "string" || !feature.trim()) ||
+        !Number.isFinite(plan.monthly_usd) || plan.monthly_usd < 0 ||
+        (plan.annual_usd !== undefined && (!Number.isFinite(plan.annual_usd) || plan.annual_usd < 0))) {
       return `pricing plan '${name}' has an invalid public contract`;
     }
   }
   const entitlements = json.entitlements;
   if (!entitlements || PLAN_NAMES.some(name => !entitlements[name] ||
-      !Number.isFinite(entitlements[name].ide_runs_month) || entitlements[name].ide_runs_month < 0 ||
-      !Number.isFinite(entitlements[name].ai_messages_month) || entitlements[name].ai_messages_month < 0)) {
+      !Number.isSafeInteger(entitlements[name].ide_runs_month) || entitlements[name].ide_runs_month < 0 ||
+      !Number.isSafeInteger(entitlements[name].ai_messages_month) || entitlements[name].ai_messages_month < 0)) {
     return "pricing response is missing valid per-plan IDE/AI entitlements";
   }
   const featureMatrix = json.feature_matrix;
