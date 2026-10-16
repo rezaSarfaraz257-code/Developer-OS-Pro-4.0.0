@@ -62,7 +62,8 @@ COPY . .
 
 # Trivy scans package metadata by its contents as well as directory names.
 # Remove stale vulnerable distribution records regardless of their parent path.
-RUN find /usr/lib/python3 /usr/lib/python3.11 /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages -type f \( -name METADATA -o -name PKG-INFO \) -exec sh -c ' \
+RUN mkdir -p /usr/lib/python3 /usr/lib/python3.11 /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages \
+    && find /usr/lib/python3 /usr/lib/python3.11 /usr/share/python-wheels /usr/local/lib/python3.11 /opt/venv/lib/python3.11/site-packages -type f \( -name METADATA -o -name PKG-INFO \) -exec sh -c ' \
     for f do \
         if { grep -qx "Name: msgpack" "$f" && grep -qx "Version: 1.1.2" "$f"; } \
         || { grep -qx "Name: setuptools" "$f" && grep -qx "Version: 70.3.0" "$f"; } \
