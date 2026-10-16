@@ -26,7 +26,7 @@ RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends python3 git curl ca-certificates bubblewrap tini \
     && apt-get upgrade -y \
-    && dpkg-query -W -f='\${binary:Package}\\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' | xargs -r apt-get purge -y \
+    && dpkg-query -W -f='${binary:Package}\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' | xargs -r apt-get purge -y \
     && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
