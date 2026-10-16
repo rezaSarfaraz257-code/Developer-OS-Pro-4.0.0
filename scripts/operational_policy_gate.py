@@ -46,6 +46,14 @@ for marker in ('RELEASE_VERSION', 'RELEASE_SHA', 'Cache-Control', 'no-store'):
 health_tests = ROOT / "Backend/api/test_health.py"
 if not health_tests.exists():
     errors.append("liveness endpoint regression tests must remain present")
+else:
+    health_test_source = health_tests.read_text(encoding="utf-8", errors="replace")
+    if "test_liveness_returns_process_contract_and_no_store_cache" not in health_test_source:
+        errors.append("liveness regression test must verify the release/cache contract")
+    if "test_liveness_has_safe_defaults" not in health_test_source:
+        errors.append("liveness regression test must verify safe release defaults")
+    if "test_liveness_rejects_non_get_requests" not in health_test_source:
+        errors.append("liveness regression test must verify the HTTP method contract")
 
 env_example = (ROOT / ".env.example").read_text(encoding="utf-8", errors="replace")
 for marker in ("RELEASE_VERSION=", "RELEASE_SHA="):
@@ -111,6 +119,12 @@ node_compatibility = (ROOT / ".github/workflows/node-compatibility.yml").read_te
 for marker in ('node: ["22", "24"]', "npm ci", "npm run lint", "npm run build", "npm test"):
     if marker not in node_compatibility:
         errors.append(f"Node LTS compatibility workflow missing required validation: {marker}")
+
+ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8", errors="replace")
+if "python scripts/operational_policy_gate.py" not in ci_workflow:
+    errors.append("main CI must execute the operational policy gate")
+if "python scripts/release_gate.py" not in ci_workflow:
+    errors.append("main CI must execute the static release gate")
 
 if errors:
     print("OPERATIONAL POLICY GATE: FAIL")
