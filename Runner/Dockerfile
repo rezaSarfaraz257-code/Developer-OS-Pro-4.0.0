@@ -24,13 +24,11 @@ FROM node:22-bookworm-slim
 # Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends python3 python3-venv git curl ca-certificates bubblewrap tini \
+    && apt-get install -y --no-install-recommends python3 git curl ca-certificates bubblewrap tini \
     && apt-get upgrade -y \
-    && apt-get purge -y python3-setuptools python3-urllib3 python3-msgpack \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python
 
 # Keep the runtime language tooling current and avoid shipping npm's transient cache.
 RUN npm install -g npm@12.2.0 pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1 \
