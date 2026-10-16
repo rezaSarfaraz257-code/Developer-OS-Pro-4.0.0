@@ -1,3 +1,4 @@
+import json
 import os
 from unittest import TestCase
 from unittest.mock import patch
@@ -18,7 +19,7 @@ class LivenessApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
-        self.assertEqual(response.json(), {
+        self.assertEqual(json.loads(response.content), {
             "status": "alive",
             "service": "developer-os-api",
             "version": "4.0.0",
@@ -30,9 +31,10 @@ class LivenessApiTests(TestCase):
         with patch.dict(os.environ, {}, clear=True):
             response = liveness_api(request)
 
+        payload = json.loads(response.content)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "4.0.0")
-        self.assertEqual(response.json()["release_sha"], "unknown")
+        self.assertEqual(payload["version"], "4.0.0")
+        self.assertEqual(payload["release_sha"], "unknown")
 
     def test_liveness_rejects_non_get_requests(self):
         request = self.factory.post("/api/health/live/")
