@@ -69,9 +69,9 @@ for marker in ("actions/checkout@v7", "actions/setup-python@v7", "actions/setup-
         errors.append(f"security workflow is not using the current hardened action baseline: {marker}")
 
 container_workflow = (ROOT / ".github/workflows/container-security.yml").read_text(encoding="utf-8", errors="replace") if (ROOT / ".github/workflows/container-security.yml").exists() else ""
-for marker in ("aquasecurity/trivy-action@v0.36.0", "severity: CRITICAL,HIGH", "scanners: vuln,secret,misconfig", "exit-code: \"1\""):
+for marker in ("anchore/sbom-action@v0.24.0", "format: spdx-json", "aquasecurity/trivy-action@v0.36.0", "severity: CRITICAL,HIGH", "scanners: vuln,secret,misconfig", "exit-code: \"1\""):
     if marker not in container_workflow:
-        errors.append(f"container security workflow missing required blocking control: {marker}")
+        errors.append(f"container security workflow missing required blocking/evidence control: {marker}")
 if "if: always()" not in container_workflow:
     errors.append("container security findings must still be uploaded when the blocking scan fails")
 
