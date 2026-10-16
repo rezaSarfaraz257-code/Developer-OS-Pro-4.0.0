@@ -39,6 +39,19 @@ if 'path("health/live/", operational_health.liveness_api' not in urls:
 if 'from . import operational_health' not in urls:
     errors.append("Operational health module must be explicitly imported")
 
+health = (ROOT / "Backend/api/operational_health.py").read_text(encoding="utf-8", errors="replace")
+for marker in ('RELEASE_VERSION', 'RELEASE_SHA', 'Cache-Control', 'no-store'):
+    if marker not in health:
+        errors.append(f"liveness endpoint missing release/cache contract marker: {marker}")
+health_tests = ROOT / "Backend/api/test_health.py"
+if not health_tests.exists():
+    errors.append("liveness endpoint regression tests must remain present")
+
+env_example = (ROOT / ".env.example").read_text(encoding="utf-8", errors="replace")
+for marker in ("RELEASE_VERSION=", "RELEASE_SHA="):
+    if marker not in env_example:
+        errors.append(f".env.example must document release identity: {marker}")
+
 slo_doc = (ROOT / "docs/RELIABILITY_SLO.md").read_text(encoding="utf-8", errors="replace") if (ROOT / "docs/RELIABILITY_SLO.md").exists() else ""
 for marker in ("Service-level objectives", "Error-budget policy", "Recovery point objective", "Recovery time objective"):
     if marker not in slo_doc:
