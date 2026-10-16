@@ -55,9 +55,14 @@ export function validatePricing({ response, body }) {
         !Array.isArray(plan.features) ||
         plan.features.some(feature => typeof feature !== "string" || !feature.trim()) ||
         !Number.isFinite(plan.monthly_usd) || plan.monthly_usd < 0 ||
-        (plan.annual_usd !== undefined && (!Number.isFinite(plan.annual_usd) || plan.annual_usd < 0))) {
+        (plan.annual_usd !== undefined && (!Number.isFinite(plan.annual_usd) || plan.annual_usd < 0)) ||
+        (["pro", "team"].includes(name) && (!Number.isFinite(plan.annual_usd) || plan.annual_usd <= 0 || Math.abs(plan.annual_usd - plan.monthly_usd * 10) > 0.001))) {
       return `pricing plan '${name}' has an invalid public contract`;
     }
+  }
+  if (plans.pro.monthly_usd !== 29 || plans.pro.annual_usd !== 290 ||
+      plans.team.monthly_usd !== 15 || plans.team.annual_usd !== 150) {
+    return "published Pro/Team pricing must be Pro $29/month or $290/year and Team $15/seat/month or $150/seat/year";
   }
   const entitlements = json.entitlements;
   if (!entitlements || PLAN_NAMES.some(name => !entitlements[name] ||
@@ -71,8 +76,8 @@ export function validatePricing({ response, body }) {
     return "pricing response is missing boolean feature flags for one or more plans";
   }
   const stripe = json.stripe_configured;
-  if (!stripe || ["pro", "team", "enterprise"].some(name => typeof stripe[name] !== "boolean")) {
-    return "pricing response is missing valid Stripe configuration status flags";
+  if (!stripe || ["pro", "team", "enterprise", "pro_annual", "team_annual"].some(name => typeof stripe[name] !== "boolean")) {
+    return "pricing response is missing valid monthly/annual Stripe configuration status flags";
   }
   return true;
 }
@@ -81,8 +86,8 @@ export function validateBillingConfig({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
-  return ["pro", "team", "enterprise"].every(name => json?.stripe_configured?.[name] === true)
-    ? true : "Stripe price IDs for Pro, Team, and Enterprise are not all configured in the deployed API";
+  return ["pro", "team", "enterprise", "pro_annual", "team_annual"].every(name => json?.stripe_configured?.[name] === true)
+    ? true : "Stripe price IDs for Pro, Team (monthly and annual), and Enterprise are not all configured in the deployed API";
 }
 
 /** Validate the security headers visible to an unauthenticated browser. */

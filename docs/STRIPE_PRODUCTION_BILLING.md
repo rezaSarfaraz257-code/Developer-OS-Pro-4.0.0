@@ -4,10 +4,12 @@ This checklist is intentionally separate from application code: live Stripe cred
 
 ## 1. Create the Stripe catalog
 
-In the Stripe Dashboard, select the intended mode (Test while validating, Live only when ready for real payments). Create three recurring Prices that match the product's billing cadence and currency:
+In the Stripe Dashboard, select the intended mode (Test while validating, Live only when ready for real payments). Create the five recurring Prices advertised by the product, matching each billing cadence and currency:
 
 - Pro — USD 29/month: copy its **price_...** identifier into **STRIPE_PRICE_PRO**.
+- Pro annual — USD 290/year: copy its annual recurring **price_...** identifier into **STRIPE_PRICE_PRO_ANNUAL**.
 - Team — USD 15 per seat/month: copy its **price_...** identifier into **STRIPE_PRICE_TEAM**.
+- Team annual — USD 150 per seat/year: copy its annual recurring **price_...** identifier into **STRIPE_PRICE_TEAM_ANNUAL**.
 - Enterprise — starting at USD 299/month: create a recurring Price that matches the configured offer and copy its **price_...** identifier into **STRIPE_PRICE_ENTERPRISE**.
 
 Do not use Product IDs (**prod_...**) where a Price ID (**price_...**) is required. Price IDs are mode-specific: test-mode IDs do not replace live-mode IDs.
@@ -18,8 +20,8 @@ On the backend web service, add these values using Render's Environment settings
 
 - **STRIPE_SECRET_KEY**: secret key from the same Stripe mode as the Prices (**sk_test_...** for test, **sk_live_...** for live).
 - **STRIPE_WEBHOOK_SECRET**: signing secret generated for the webhook endpoint below (**whsec_...**).
-- **STRIPE_PRICE_PRO**
-- **STRIPE_PRICE_TEAM**
+- **STRIPE_PRICE_PRO** and **STRIPE_PRICE_PRO_ANNUAL**
+- **STRIPE_PRICE_TEAM** and **STRIPE_PRICE_TEAM_ANNUAL**
 - **STRIPE_PRICE_ENTERPRISE**
 - **REQUIRE_STRIPE_BILLING=true**
 
@@ -39,11 +41,11 @@ Run the repository's preflight with the same environment as the backend:
 
     python scripts/production_preflight.py
 
-With **REQUIRE_STRIPE_BILLING=true**, the preflight fails closed if any required Stripe variable is absent, incomplete, or has an unexpected identifier prefix. The preflight validates presence and basic shape; it cannot prove that a Price exists in the selected Stripe account or that webhook delivery succeeds.
+With **REQUIRE_STRIPE_BILLING=true**, the preflight fails closed if any advertised monthly or annual Stripe Price ID, secret, or other required Stripe variable is absent, incomplete, or has an unexpected identifier prefix. The preflight validates presence and basic shape; it cannot prove that a Price exists in the selected Stripe account or that webhook delivery succeeds.
 
 After deploy, verify:
 
-1. **GET /api/pricing/** reports **stripe_configured.pro**, **team**, and **enterprise** as **true**.
+1. **GET /api/pricing/** reports **stripe_configured.pro**, **team**, **enterprise**, **pro_annual**, and **team_annual** as **true**.
 2. An authenticated checkout request for each paid plan returns a Stripe-hosted Checkout URL (do not count a UI button as proof).
 3. Stripe test-mode checkout completes and the signed webhook updates subscription state exactly once.
 4. Replayed webhook events are idempotent and invalid signatures are rejected.
