@@ -4,7 +4,7 @@ This checklist is intentionally separate from application code: live Stripe cred
 
 ## 1. Create the Stripe catalog
 
-In the Stripe Dashboard, select the intended mode (Test while validating, Live only when ready for real payments). Create three recurring Prices that match the product's billing cadence and currency:
+In the Stripe Dashboard, select the intended mode (Test while validating, Live only when ready for real payments). Create the five recurring Prices advertised by the product, matching each billing cadence and currency:
 
 - Pro — USD 29/month: copy its **price_...** identifier into **STRIPE_PRICE_PRO**.
 - Pro annual — USD 290/year: copy its annual recurring **price_...** identifier into **STRIPE_PRICE_PRO_ANNUAL**.
