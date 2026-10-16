@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-fast checks for the production/operational contract.
 
-These checks intentionally validate only the operational boundary owned by the
+These checks validate only the operational boundary owned by the
 production-hardening layer. They do not replace runtime CI or application tests.
 """
 from __future__ import annotations
@@ -25,6 +25,12 @@ if "USER appuser" not in dockerfile:
 if 'CMD ["python", "entrypoint.py"]' not in dockerfile:
     errors.append("Backend container must use the serialized production entrypoint")
 
+urls = (ROOT / "Backend/api/urls.py").read_text(encoding="utf-8", errors="replace")
+if 'path("health/live/", operational_health.liveness_api' not in urls:
+    errors.append("Dedicated dependency-free liveness probe must be registered")
+if 'from . import operational_health' not in urls:
+    errors.append("Operational health module must be explicitly imported")
+
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8", errors="replace")
 if "runner_internal:" not in compose or "internal: true" not in compose:
     errors.append("Runner network must remain internal-only")
@@ -33,7 +39,12 @@ if "RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}" not in compose:
 if "SEED_CATALOG_ON_STARTUP: ${SEED_CATALOG_ON_STARTUP:-false}" not in compose:
     errors.append("Production Compose must not mutate catalog data by default at startup")
 
-for rel in (".github/workflows/ci.yml", ".github/workflows/security.yml", ".github/workflows/dependency-review.yml", ".github/dependabot.yml"):
+for rel in (
+    ".github/workflows/ci.yml",
+    ".github/workflows/security.yml",
+    ".github/workflows/dependency-review.yml",
+    ".github/dependabot.yml",
+):
     if not (ROOT / rel).exists():
         errors.append(f"required operational supply-chain control missing: {rel}")
 
