@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl } from "./live_saas_contracts.mjs";
 
 const frontendBase = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
 const apiBase = (process.env.API_URL || "").replace(/\/$/, "");
@@ -30,8 +30,10 @@ async function check(name, url, validate, timeoutMs = 12000) {
         name, url, status: response.status, durationMs: Date.now() - started,
         attempt, contentType: response.headers.get("content-type") || "",
         securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(name => [name, response.headers.get(name) || ""])),
+        finalUrl: response.url,
       };
-      const validation = validate({ response, body, result });
+      const destinationValidation = validateFinalUrl({ response, body, result });
+      const validation = destinationValidation === true ? validate({ response, body, result }) : destinationValidation;
       if (validation === true) {
         checks.push({ ...result, ok: true });
         return;
