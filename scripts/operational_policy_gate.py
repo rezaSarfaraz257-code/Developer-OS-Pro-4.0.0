@@ -47,6 +47,7 @@ if "SEED_CATALOG_ON_STARTUP: ${SEED_CATALOG_ON_STARTUP:-false}" not in compose:
 required_files = (
     ".github/workflows/ci.yml",
     ".github/workflows/security.yml",
+    ".github/workflows/container-security.yml",
     ".github/workflows/dependency-review.yml",
     ".github/workflows/scorecard.yml",
     ".github/dependabot.yml",
@@ -60,6 +61,11 @@ security_workflow = (ROOT / ".github/workflows/security.yml").read_text(encoding
 for marker in ("actions/checkout@v7", "actions/setup-python@v7", "actions/setup-node@v7", "github/codeql-action/init@v4", "github/codeql-action/analyze@v4"):
     if marker not in security_workflow:
         errors.append(f"security workflow is not using the current hardened action baseline: {marker}")
+
+container_workflow = (ROOT / ".github/workflows/container-security.yml").read_text(encoding="utf-8", errors="replace") if (ROOT / ".github/workflows/container-security.yml").exists() else ""
+for marker in ("aquasecurity/trivy-action@v0.36.0", "severity: CRITICAL,HIGH", "scanners: vuln,secret,misconfig"):
+    if marker not in container_workflow:
+        errors.append(f"container security workflow missing required hardened scan control: {marker}")
 
 scorecard_workflow = (ROOT / ".github/workflows/scorecard.yml").read_text(encoding="utf-8", errors="replace") if (ROOT / ".github/workflows/scorecard.yml").exists() else ""
 if "publish_results: true" not in scorecard_workflow or "id-token: write" not in scorecard_workflow:
