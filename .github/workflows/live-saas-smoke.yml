@@ -16,7 +16,7 @@ jobs:
   smoke:
     name: Read-only production availability and route checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
       API_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Test live SaaS contract validators
+        run: node --test scripts/live_saas_contracts.test.mjs
       - name: Run read-only smoke checks
         id: smoke
         continue-on-error: true

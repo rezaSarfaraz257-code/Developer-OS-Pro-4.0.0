@@ -81,8 +81,8 @@ export function validateBillingConfig({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
-  return json?.stripe_configured?.pro === true && json?.stripe_configured?.team === true
-    ? true : "Stripe price IDs for Pro and Team are not configured in the deployed API";
+  return ["pro", "team", "enterprise"].every(name => json?.stripe_configured?.[name] === true)
+    ? true : "Stripe price IDs for Pro, Team, and Enterprise are not all configured in the deployed API";
 }
 
 /** Validate the security headers visible to an unauthenticated browser. */
