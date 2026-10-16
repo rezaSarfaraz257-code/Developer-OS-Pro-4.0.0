@@ -15,6 +15,8 @@ def migrate_with_postgres_lock() -> None:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url or not database_url.startswith(("postgres://", "postgresql://")):
         run(sys.executable, "manage.py", "migrate", "--noinput")
+        if os.getenv("SEED_CATALOG_ON_STARTUP", "false").lower() in {"1", "true", "yes", "on"}:
+            run(sys.executable, "manage.py", "seed_catalog")
         return
 
     import psycopg
@@ -30,6 +32,8 @@ def migrate_with_postgres_lock() -> None:
                 if locked:
                     try:
                         run(sys.executable, "manage.py", "migrate", "--noinput")
+                        if os.getenv("SEED_CATALOG_ON_STARTUP", "false").lower() in {"1", "true", "yes", "on"}:
+                            run(sys.executable, "manage.py", "seed_catalog")
                     finally:
                         cursor.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
                     return
