@@ -14,6 +14,17 @@ RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
 RUN npm install -g npm@12.2.0 pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1 \
     && npm cache clean --force
 
+# npm 12.2.0 still bundles vulnerable transitive copies. Replace only the bundled
+# copies with patched releases; this keeps the npm major/runtime contract intact.
+RUN mkdir -p /tmp/runtime-fixes \
+    && cd /tmp/runtime-fixes \
+    && npm install --no-save --no-package-lock --ignore-scripts brace-expansion@5.0.12 undici@6.28.1 \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && cp -a node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/ \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/undici \
+    && cp -a node_modules/undici /usr/local/lib/node_modules/npm/node_modules/ \
+    && rm -rf /tmp/runtime-fixes
+
 RUN useradd --create-home --uid 10001 runner
 WORKDIR /app
 
@@ -25,7 +36,9 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
+    && /opt/venv/bin/pip check
 
 COPY . .
 RUN python3 -m compileall -q .
