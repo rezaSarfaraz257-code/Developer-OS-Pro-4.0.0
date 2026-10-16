@@ -84,6 +84,8 @@ jobs:
       - name: Unit tests
         working-directory: Frontend
         run: npm test
+      - name: Live SaaS contract validator tests
+        run: node --test scripts/live_saas_contracts.test.mjs
 
   runner:
     name: Secure runner tests
