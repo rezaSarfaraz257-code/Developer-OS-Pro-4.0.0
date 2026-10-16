@@ -50,7 +50,7 @@ jobs:
               console.log("|---|---:|---:|---:|---|---|");
               for(const c of r.checks) {
                 const status=c.ok?(c.recovered?"RECOVERED":"PASS"):"FAIL";
-                const detail=c.ok?"—":String(c.error||"failed").replace(/[|\\n\\r]/g," ");
+                const detail=c.ok?"—":String(c.error||"failed").replace(/[|\n\r]/g," ");
                 console.log("| "+c.name+" | "+(c.status??"—")+" | "+c.attempts+" | "+c.durationMs+" ms | "+status+" | "+detail+" |");
               }
               console.log("\n> Read-only external smoke monitoring only. This does not authenticate, mutate production data, execute user code, or replace full release acceptance.");
