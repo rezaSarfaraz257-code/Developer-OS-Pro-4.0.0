@@ -26,6 +26,14 @@ jobs:
       - name: Build runner image
         run: docker build --pull -t developer-os-runner:security ./Runner
 
+      - name: Generate runner image SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: developer-os-runner:security
+          format: spdx-json
+          artifact-name: developer-os-runner-sbom.spdx.json
+          output-file: developer-os-runner-sbom.spdx.json
+
       - name: Scan runner image for OS and language vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
