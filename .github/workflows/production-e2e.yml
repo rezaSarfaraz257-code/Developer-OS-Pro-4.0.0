@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 20
     env:
       PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+      PRODUCTION_FRONTEND_URL: ${{ secrets.PRODUCTION_FRONTEND_URL }}
       PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
       PRODUCTION_TARGET: ${{ inputs.target }}
     steps:
@@ -36,6 +37,7 @@ jobs:
       - name: Fail closed when production configuration is missing
         run: |
           test -n "$PRODUCTION_BASE_URL" || { echo "::error::PRODUCTION_BASE_URL is missing from the protected production environment."; exit 1; }
+          test -n "$PRODUCTION_FRONTEND_URL" || { echo "::error::PRODUCTION_FRONTEND_URL is missing from the protected production environment."; exit 1; }
           test -n "$PRODUCTION_BILLING_WEBHOOK_SECRET" || { echo "::error::PRODUCTION_BILLING_WEBHOOK_SECRET is missing from the protected production environment."; exit 1; }
       - name: Validate deployed production
         run: node scripts/production_validate.mjs
