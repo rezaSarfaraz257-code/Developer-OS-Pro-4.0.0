@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from .models import Organization, OrganizationMembership, OrganizationSubscription, Subscription
@@ -32,6 +33,33 @@ class BillingEntitlementTests(TestCase):
         self.assertEqual(data["plans"]["enterprise"]["monthly_usd"], 299)
         self.assertEqual(set(data["entitlements"]), set(PLAN_LIMITS))
         self.assertEqual(data["feature_matrix"], PLAN_FEATURES)
+
+    def test_team_checkout_rejects_invalid_or_underfunded_seat_counts_before_stripe(self):
+        org = Organization.objects.create(owner=self.user, name="Seat Validation", slug="seat-validation", plan="free")
+        OrganizationMembership.objects.create(organization=org, user=self.user, role="owner")
+        other = User.objects.create_user(
+            username="billing-member",
+            email="member@example.com",
+            password="StrongPass123!",
+        )
+        OrganizationMembership.objects.create(organization=org, user=other, role="developer")
+
+        env = {
+            "STRIPE_SECRET_KEY": "sk_test_unit_test",
+            "STRIPE_PRICE_TEAM": "price_team_monthly_test",
+            "STRIPE_PRICE_TEAM_ANNUAL": "price_team_annual_test",
+        }
+        with patch.dict("os.environ", env), patch("api.mature.requests.post") as stripe_post:
+            for quantity in (0, 5001, 1.5, "1.5", "not-a-number", True, 1):
+                with self.subTest(quantity=quantity):
+                    response = self.client.post(
+                        f"/api/organizations/{org.id}/billing/checkout/",
+                        {"plan": "team", "quantity": quantity},
+                        format="json",
+                    )
+                    self.assertEqual(response.status_code, 400, response.json())
+
+            stripe_post.assert_not_called()
 
     def test_free_is_default(self):
         plan, _ = _plan_for(self.user)
