@@ -221,12 +221,13 @@ jobs:
             unset PGPASSWORD
             export PGHOST=127.0.0.1
             sh /repo/scripts/backup_postgres.sh
+            BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
+            CHECKSUM_FILE="$BACKUP_FILE.sha256"
+            test -n "$BACKUP_FILE"
+            test -f "$CHECKSUM_FILE"
+            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")
             export PGPASSWORD="$POSTGRES_PASSWORD"
             psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
-            unset PGPASSWORD
-            BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
-            test -n "$BACKUP_FILE"
-            export PGPASSWORD="$POSTGRES_PASSWORD"
             pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
             test "$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
             unset PGPASSWORD
