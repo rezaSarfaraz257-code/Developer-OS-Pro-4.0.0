@@ -16,6 +16,7 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && (/opt/venv/bin/python -m pip uninstall -y setuptools urllib3 msgpack || true) \
     && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' urllib3==2.8.0 msgpack==1.2.1 \
+    && find /opt/venv -type d \( -name 'msgpack-1.1.2.dist-info' -o -name 'msgpack-1.1.2.egg-info' -o -name 'setuptools-70.3.0.dist-info' -o -name 'setuptools-70.3.0.egg-info' -o -name 'urllib3-2.7.0.dist-info' -o -name 'urllib3-2.7.0.egg-info' \) -prune -exec rm -rf '{}' + \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
     && /opt/venv/bin/python -c 'from importlib.metadata import version; assert version("setuptools") >= "78.1.1"; assert version("urllib3") == "2.8.0"; assert version("msgpack") == "1.2.1"'
