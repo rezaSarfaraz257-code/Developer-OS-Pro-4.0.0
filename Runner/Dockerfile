@@ -16,8 +16,10 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir 'setuptools>=78.1.1' \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade urllib3==2.8.0 msgpack==1.2.1 \
+    && find /opt/venv/lib/python*/site-packages -maxdepth 1 -type d \\( -name 'msgpack-1.1.2.dist-info' -o -name 'setuptools-70.3.0.dist-info' -o -name 'urllib3-2.7.0.dist-info' \\) -prune -exec rm -rf '{}' + \
     && /opt/venv/bin/python -m pip check \
-    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"'
+    && /opt/venv/bin/python -c 'import setuptools, urllib3, msgpack; assert tuple(map(int, setuptools.__version__.split(".")[:2])) >= (78, 1); assert urllib3.__version__ == "2.8.0"; assert msgpack.__version__ == "1.2.1"' \
+    && ! find /opt/venv/lib/python*/site-packages -maxdepth 1 -type d \\( -name 'msgpack-1.1.2.dist-info' -o -name 'setuptools-70.3.0.dist-info' -o -name 'urllib3-2.7.0.dist-info' \\) -print -quit | grep -q .
 
 FROM node:22-bookworm-slim
 
