@@ -84,3 +84,23 @@ export function validateBillingConfig({ response, body }) {
   return json?.stripe_configured?.pro === true && json?.stripe_configured?.team === true
     ? true : "Stripe price IDs for Pro and Team are not configured in the deployed API";
 }
+
+/** Validate the security headers visible to an unauthenticated browser. */
+export function validateSecurityHeaders({ response, result }) {
+  if (!response.ok) return `HTTP ${response.status}`;
+  const headers = result.securityHeaders || {};
+  const missing = [];
+  const hsts = headers["strict-transport-security"] || "";
+  const maxAge = Number(hsts.match(/max-age=(\\d+)/i)?.[1] || 0);
+  if (maxAge < 15552000) missing.push("strict-transport-security (max-age >= 15552000)");
+  if ((headers["x-content-type-options"] || "").toLowerCase() !== "nosniff") {
+    missing.push("x-content-type-options: nosniff");
+  }
+  if (!/^(deny|sameorigin)$/i.test(headers["x-frame-options"] || "")) {
+    missing.push("x-frame-options: DENY or SAMEORIGIN");
+  }
+  if (!/^(no-referrer|strict-origin|strict-origin-when-cross-origin)$/i.test(headers["referrer-policy"] || "")) {
+    missing.push("referrer-policy");
+  }
+  return missing.length ? `missing or weak security headers: ${missing.join(", ")}` : true;
+}
