@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Build runner image
-        run: docker build --pull -t developer-os-runner:security ./Runner
+        run: docker build --pull --provenance=false --sbom=false -t developer-os-runner:security ./Runner
 
       - name: Generate runner image SBOM
         uses: anchore/sbom-action@v0.24.0
