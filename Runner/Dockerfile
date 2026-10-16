@@ -1,16 +1,17 @@
 FROM node:22-bookworm-slim
 
-# Install only the runtime/build tooling the runner needs and clear package metadata.
+# Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends python3 python3-venv python3-pip git curl ca-certificates build-essential bubblewrap tini \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
     && ln -sf /usr/bin/pip3 /usr/local/bin/pip
 
-# Install the language tooling globally, then remove npm's root cache so scanners do not
-# inspect transient package archives that are not needed at runtime.
-RUN npm install -g pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1 \
+# Keep the runtime language tooling current and avoid shipping npm's transient cache.
+RUN npm install -g npm@12.2.0 pyright@1.1.404 typescript@5.9.3 typescript-language-server@5.0.1 \
     && npm cache clean --force
 
 RUN useradd --create-home --uid 10001 runner
@@ -23,6 +24,7 @@ ENV RUNNER_SECURITY_LEVEL=strict \
 
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 \
     && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 COPY . .
