@@ -16,7 +16,7 @@ const checks = [];
 async function check(name, url, validate, timeoutMs = 12000) {
   const started = Date.now();
   let lastError = "request failed";
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -39,17 +39,17 @@ async function check(name, url, validate, timeoutMs = 12000) {
         return;
       }
       lastError = typeof validation === "string" ? validation : `HTTP ${response.status}`;
-      if (attempt === 2) checks.push({ ...result, ok: false, error: lastError });
+      if (attempt === 3) checks.push({ ...result, ok: false, error: lastError });
     } catch (error) {
       lastError = error?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : String(error?.message || error);
-      if (attempt === 2) checks.push({
+      if (attempt === 3) checks.push({
         name, url, status: null, durationMs: Date.now() - started,
         attempt, ok: false, error: lastError,
       });
     } finally {
       clearTimeout(timer);
     }
-    if (attempt === 1) await new Promise(resolve => setTimeout(resolve, 700));
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, [900, 2200][attempt - 1]));
   }
 }
 
