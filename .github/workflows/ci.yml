@@ -285,7 +285,7 @@ jobs:
           docker compose ps
 
   release-gate:
-    name: Static release gate
+    name: Static release and operational gates
     runs-on: ubuntu-latest
     needs: [backend, frontend, runner, backup-restore, docker-stack]
     steps:
@@ -294,3 +294,5 @@ jobs:
           persist-credentials: false
       - name: Release gate
         run: python scripts/release_gate.py
+      - name: Operational policy gate
+        run: python scripts/operational_policy_gate.py
