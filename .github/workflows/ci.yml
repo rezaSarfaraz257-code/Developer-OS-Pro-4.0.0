@@ -106,6 +106,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: Frontend
         run: npm ci
+      - name: Syntax-check live SaaS monitor
+        run: node --check scripts/live_saas_smoke.mjs
+      - name: Live SaaS contract validator tests
+        run: node --test scripts/live_saas_contracts.test.mjs
       - name: Dependency audit
         working-directory: Frontend
         run: npm audit --omit=dev --audit-level=high
