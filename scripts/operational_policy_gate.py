@@ -66,6 +66,7 @@ required_files = (
     ".github/workflows/container-security.yml",
     ".github/workflows/dependency-review.yml",
     ".github/workflows/scorecard.yml",
+    ".github/workflows/node-compatibility.yml",
     ".github/dependabot.yml",
     "SECURITY.md",
 )
@@ -91,7 +92,12 @@ if "publish_results: true" not in scorecard_workflow or "id-token: write" not in
 
 dep_review = (ROOT / ".github/workflows/dependency-review.yml").read_text(encoding="utf-8", errors="replace")
 if "actions/dependency-review-action@v5" not in dep_review:
-    errors.append("Dependency Review must use the current Node 24 action major")
+    errors.append("Dependency Review must use the current action major")
+
+node_compatibility = (ROOT / ".github/workflows/node-compatibility.yml").read_text(encoding="utf-8", errors="replace")
+for marker in ('node: ["22", "24"]', "npm ci", "npm run lint", "npm run build", "npm test"):
+    if marker not in node_compatibility:
+        errors.append(f"Node LTS compatibility workflow missing required validation: {marker}")
 
 if errors:
     print("OPERATIONAL POLICY GATE: FAIL")
