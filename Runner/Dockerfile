@@ -15,7 +15,7 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && (/opt/venv/bin/python -m pip uninstall -y setuptools urllib3 msgpack || true) \
-    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade 'setuptools>=78.1.1' urllib3==2.8.0 msgpack==1.2.1 \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade 'setuptools==78.1.1' urllib3==2.8.0 msgpack==1.2.1 \
     && find /opt/venv/lib/python3.11/site-packages -maxdepth 1 -type d \( -name 'msgpack-*.dist-info' ! -name 'msgpack-1.2.1.dist-info' -o -name 'msgpack-*.egg-info' ! -name 'msgpack-1.2.1.egg-info' -o -name 'setuptools-*.dist-info' ! -name 'setuptools-78.1.1.dist-info' -o -name 'setuptools-*.egg-info' ! -name 'setuptools-78.1.1.egg-info' -o -name 'urllib3-*.dist-info' ! -name 'urllib3-2.8.0.dist-info' -o -name 'urllib3-*.egg-info' ! -name 'urllib3-2.8.0.egg-info' \) -prune -exec rm -rf '{}' + \
     && /opt/venv/bin/python -c 'from importlib.metadata import distributions; expected={"msgpack":"1.2.1","setuptools":"78.1.1","urllib3":"2.8.0"}; found={k:[] for k in expected}; [(found[d.metadata["Name"].lower().replace("_","-")].append(d.version)) for d in distributions() if d.metadata.get("Name","").lower().replace("_","-") in found]; assert found == {"msgpack":["1.2.1"],"setuptools":["78.1.1"],"urllib3":["2.8.0"]}, found' \
     && /opt/venv/bin/python -m pip check \
