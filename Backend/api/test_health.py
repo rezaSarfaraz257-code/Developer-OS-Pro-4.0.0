@@ -4,6 +4,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from django.test import RequestFactory
+from django.urls import reverse
 
 from .operational_health import liveness_api
 
@@ -11,6 +12,10 @@ from .operational_health import liveness_api
 class LivenessApiTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
+
+    def test_liveness_route_is_registered_in_the_public_urlconf(self):
+        # View-unit tests alone cannot catch a missing Django URL registration.
+        self.assertEqual(reverse("liveness"), "/api/health/live/")
 
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
