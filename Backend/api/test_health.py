@@ -21,6 +21,21 @@ class LivenessApiTests(TestCase):
         # Keep a root URLconf alias for production routers/orchestrators to audit.
         self.assertEqual(reverse("liveness-root"), "/api/health/live/")
 
+
+    def test_public_liveness_url_is_reachable_through_django_client(self):
+        # Integration coverage: verify URL routing and response contract together.
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "integration-test"}, clear=False):
+            response = self.client.get("/api/health/live/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+        self.assertEqual(response.json(), {
+            "status": "alive",
+            "service": "developer-os-api",
+            "version": "4.0.0",
+            "release_sha": "integration-test",
+        })
+
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
         with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123"}, clear=False):
