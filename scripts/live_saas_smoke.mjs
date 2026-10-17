@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -38,8 +38,9 @@ async function check(name, url, validate, timeoutMs = 12000) {
       });
       const body = await response.text();
       const result = {
-        name, url, status: response.status, durationMs: Date.now() - attemptStarted,
+        name, url, status: response.status, statusText: response.statusText, durationMs: Date.now() - attemptStarted,
         attempt, contentType: response.headers.get("content-type") || "",
+        platformHeaders: Object.fromEntries(["server", "retry-after", "x-render-routing", "x-request-id"].map(header => [header, response.headers.get(header) || ""])) ,
         securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(header => [header, response.headers.get(header) || ""])),
         finalUrl: response.url,
       };
@@ -116,6 +117,7 @@ const report = {
     recovered: checks.filter(item => item.recovered).length,
   },
   ok: checks.length === 10 && checks.every(item => item.ok),
+  diagnostics: diagnoseChecks(checks),
   checks,
 };
 fs.writeFileSync("live-saas-smoke.json", JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
