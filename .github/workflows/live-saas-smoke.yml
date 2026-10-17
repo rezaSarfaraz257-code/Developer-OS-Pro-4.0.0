@@ -1,6 +1,12 @@
 name: Live SaaS Smoke Monitor
 
 on:
+  pull_request:
+    paths:
+      - "scripts/live_saas_contracts.mjs"
+      - "scripts/live_saas_contracts.test.mjs"
+      - "scripts/live_saas_smoke.mjs"
+      - ".github/workflows/live-saas-smoke.yml"
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
@@ -29,6 +35,7 @@ jobs:
         run: node --test scripts/live_saas_contracts.test.mjs
       - name: Run read-only live observability checks
         id: smoke
+        if: github.event_name != 'pull_request'
         continue-on-error: true
         run: node scripts/live_saas_smoke.mjs
       - name: Publish live health summary
@@ -60,7 +67,7 @@ jobs:
             echo "Smoke script did not produce a report. Check origin configuration and runner logs." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload machine-readable evidence
-        if: always()
+        if: always() && hashFiles('live-saas-smoke.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: live-saas-observability-${{ github.run_id }}
@@ -68,7 +75,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Fail if any live check failed
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           if [ "${{ steps.smoke.outcome }}" != "success" ]; then
             echo "::error::One or more live SaaS checks failed. Inspect the summary and JSON artifact."
