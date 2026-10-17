@@ -7,6 +7,14 @@ on:
       - "scripts/live_saas_contracts.test.mjs"
       - "scripts/live_saas_smoke.mjs"
       - ".github/workflows/live-saas-smoke.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "scripts/live_saas_contracts.mjs"
+      - "scripts/live_saas_contracts.test.mjs"
+      - "scripts/live_saas_smoke.mjs"
+      - ".github/workflows/live-saas-smoke.yml"
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
@@ -51,8 +59,8 @@ jobs:
           if [ -f live-saas-smoke.json ]; then
             node --input-type=commonjs -e '
               const r=require("./live-saas-smoke.json");
-              console.log("# Developer OS — Live SaaS Observability\n");
-              console.log("**Result:** "+(r.ok?"PASS":"FAIL")+" · **Timestamp:** "+r.timestamp+" · **Duration:** "+r.durationMs+" ms\n");
+              console.log("# Developer OS — Live SaaS Observability\\n");
+              console.log("**Result:** "+(r.ok?"PASS":"FAIL")+" · **Timestamp:** "+r.timestamp+" · **Duration:** "+r.durationMs+" ms\\n");
               console.log("| Signal | Result |");
               console.log("|---|---:|");
               console.log("| Checks passed | "+r.summary.passed+"/"+r.summary.total+" |");
@@ -61,17 +69,17 @@ jobs:
               console.log("| Frontend | "+r.frontendBase+" |");
               console.log("| API | "+r.apiBase+" |");
               if (r.diagnostics?.length) {
-                console.log("\n## Diagnostics\n");
+                console.log("\\n## Diagnostics\\n");
                 for (const d of r.diagnostics) console.log("- **"+d.severity.toUpperCase()+" / "+d.code+":** "+d.message+" Action: "+d.action);
               }
-              console.log("\n| Check | HTTP | Attempts | Duration | Status | Details |");
+              console.log("\\n| Check | HTTP | Attempts | Duration | Status | Details |");
               console.log("|---|---:|---:|---:|---|---|");
               for(const c of r.checks) {
                 const status=c.ok?(c.recovered?"RECOVERED":"PASS"):"FAIL";
-                const detail=c.ok?"—":String(c.error||"failed").replace(/[|\n\r]/g," ");
+                const detail=c.ok?"—":String(c.error||"failed").replace(/[|\\n\\r]/g," ");
                 console.log("| "+c.name+" | "+(c.status??"—")+" | "+c.attempts+" | "+c.durationMs+" ms | "+status+" | "+detail+" |");
               }
-              console.log("\n> Read-only external smoke monitoring only. This does not authenticate, mutate production data, execute user code, or replace full release acceptance.");
+              console.log("\\n> Read-only external smoke monitoring only. This does not authenticate, mutate production data, execute user code, or replace full release acceptance.");
             ' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "# Developer OS — Live SaaS Observability" >> "$GITHUB_STEP_SUMMARY"
