@@ -60,8 +60,9 @@ export function isReady({ response, body }) {
   const checks = json.checks || {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
+  const statusProblem = json.status === "ready" ? "" : "status is not ready";
   return json.status === "ready" && missing.length === 0 && versionMatches
-    ? true : `readiness contract has failed/missing checks: ${missing.join(", ") || "none"}; release version must be ${EXPECTED_RELEASE_VERSION}`;
+    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION}`;
 }
 
 export function validatePricing({ response, body }) {
