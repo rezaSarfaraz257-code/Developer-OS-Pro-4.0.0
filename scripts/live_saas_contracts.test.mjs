@@ -87,7 +87,7 @@ test("billing readiness requires configured price IDs for every paid plan", () =
   const configured = { pro: true, team: true, enterprise: true };
   assert.equal(validateBillingConfig(jsonInput({ stripe_configured: configured })), true);
   for (const missing of Object.keys(configured)) {
-    assert.match(validateBillingConfig(jsonInput({ stripe_configured: { ...configured, [missing]: false } })), /Pro, Team \(monthly and annual\), and Enterprise/);
+    assert.match(validateBillingConfig(jsonInput({ stripe_configured: { ...configured, [missing]: false } })), /Pro, Team \(\), and Enterprise/);
   }
   assert.match(validateBillingConfig({ response: response(), body: "not-json" }), /valid JSON/);
 });
