@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -96,6 +96,7 @@ await check("frontend-security-headers", frontendBase + "/", validateSecurityHea
 await check("api-security-headers", apiBase + "/api/health/", validateSecurityHeaders);
 await check("web-ide-route", frontendBase + "/ide", isSpaShell);
 await check("web-ide-trailing-slash", frontendBase + "/ide/", isSpaShell);
+await check("api-liveness", apiBase + "/api/health/live/", isLive);
 await check("api-health", apiBase + "/api/health/", isHealthy);
 await check("api-readiness", apiBase + "/api/health/ready/", isReady);
 await check("api-pricing-contract", apiBase + "/api/pricing/", validatePricing, 15000);
@@ -114,7 +115,7 @@ const report = {
     failed: checks.filter(item => !item.ok).length,
     recovered: checks.filter(item => item.recovered).length,
   },
-  ok: checks.length === 9 && checks.every(item => item.ok),
+  ok: checks.length === 10 && checks.every(item => item.ok),
   checks,
 };
 fs.writeFileSync("live-saas-smoke.json", JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
