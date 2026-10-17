@@ -35,6 +35,15 @@ export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 const hasReleaseSha = value => typeof value === "string" && RELEASE_SHA_PATTERN.test(value);
 
+function matchesExpectedReleaseSha(json, result = {}) {
+  const expectedSha = typeof result.expectedReleaseSha === "string"
+    ? result.expectedReleaseSha.trim().toLowerCase() : "";
+  if (!expectedSha) return true;
+  return /^[0-9a-f]{40}$/.test(expectedSha) &&
+    typeof json?.release_sha === "string" &&
+    json.release_sha.toLowerCase() === expectedSha;
+}
+
 export function isLive({ response, body, result = {} }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
@@ -45,28 +54,28 @@ export function isLive({ response, body, result = {} }) {
   if (!validIdentity) {
     return "liveness contract requires an alive API, expected release version, and a real 7–40 character hexadecimal release SHA";
   }
-  // On scheduled/manual CI runs, compare the deployed API's own identity to
-  // the exact repository revision being monitored. A well-formed but stale
-  // SHA must not be reported as a current-release pass.
-  const expectedSha = typeof result.expectedReleaseSha === "string"
-    ? result.expectedReleaseSha.trim().toLowerCase() : "";
-  if (expectedSha && (!/^[0-9a-f]{40}$/.test(expectedSha) ||
-      json.release_sha.toLowerCase() !== expectedSha)) {
+  // Every public health endpoint is checked against the same expected release
+  // revision on scheduled/manual runs; a well-formed stale SHA is not a pass.
+  if (!matchesExpectedReleaseSha(json, result)) {
     return "deployed release SHA does not match the expected repository revision";
   }
   return true;
 }
 
-export function isHealthy({ response, body }) {
+export function isHealthy({ response, body, result = {} }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
-  return json.status === "ok" && json.database === "ok" &&
-    json.version === EXPECTED_RELEASE_VERSION && hasReleaseSha(json.release_sha)
-    ? true : `health contract reports a degraded service/database or requires release version ${EXPECTED_RELEASE_VERSION} and a real release SHA`;
+  const healthy = json.status === "ok" && json.database === "ok" &&
+    json.version === EXPECTED_RELEASE_VERSION && hasReleaseSha(json.release_sha);
+  if (!healthy) {
+    return `health contract reports a degraded service/database or requires release version ${EXPECTED_RELEASE_VERSION} and a real release SHA`;
+  }
+  return matchesExpectedReleaseSha(json, result)
+    ? true : "health release SHA does not match the expected repository revision";
 }
 
-export function isReady({ response, body }) {
+export function isReady({ response, body, result = {} }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
@@ -75,8 +84,11 @@ export function isReady({ response, body }) {
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
   const shaMatches = hasReleaseSha(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
-  return json.status === "ready" && missing.length === 0 && versionMatches && shaMatches
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be real`;
+  if (!(json.status === "ready" && missing.length === 0 && versionMatches && shaMatches)) {
+    return `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be real`;
+  }
+  return matchesExpectedReleaseSha(json, result)
+    ? true : "readiness release SHA does not match the expected repository revision";
 }
 
 export function validatePricing({ response, body }) {
