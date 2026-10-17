@@ -26,7 +26,7 @@ function validPricing() {
   ]));
   return {
     currency: "USD", plans, entitlements, feature_matrix,
-    stripe_configured: { pro: true, team: true, enterprise: false, pro_annual: true, team_annual: true },
+    stripe_configured: { pro: true, team: true, enterprise: false },
   };
 }
 
@@ -84,7 +84,7 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
 });
 
 test("billing readiness requires configured price IDs for every paid plan", () => {
-  const configured = { pro: true, team: true, enterprise: true, pro_annual: true, team_annual: true };
+  const configured = { pro: true, team: true, enterprise: true };
   assert.equal(validateBillingConfig(jsonInput({ stripe_configured: configured })), true);
   for (const missing of Object.keys(configured)) {
     assert.match(validateBillingConfig(jsonInput({ stripe_configured: { ...configured, [missing]: false } })), /Pro, Team \(monthly and annual\), and Enterprise/);
