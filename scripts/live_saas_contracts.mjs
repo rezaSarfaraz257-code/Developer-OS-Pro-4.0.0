@@ -9,6 +9,18 @@ export const FEATURE_KEYS = Object.freeze([
 ]);
 
 /** Backoff for transient responses only; permanent contract failures are never retried. */
+/** A newly pushed release may need time to propagate to the production host. */
+export function isRetryableReleaseMismatch(validation) {
+  return typeof validation === "string" && /release SHA does not match the expected repository revision/.test(validation);
+}
+
+/** Bounded rollout wait for a healthy old release; unrelated contract failures stay fail-fast. */
+export function releaseMismatchRetryDelayMs(completedAttempt) {
+  const schedule = [10000, 20000, 30000];
+  const attempt = Math.max(1, Math.min(schedule.length, Number(completedAttempt) || 1));
+  return schedule[attempt - 1];
+}
+
 export function retryDelayMs(status, completedAttempt) {
   const attempt = Math.max(1, Math.min(3, Number(completedAttempt) || 1));
   const schedules = status === 503

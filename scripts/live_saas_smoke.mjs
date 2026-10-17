@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, isRetryableReleaseMismatch, releaseMismatchRetryDelayMs } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -61,9 +61,10 @@ async function check(name, url, validate, timeoutMs = 12000) {
       finalResult = { ...result, ok: validation === true, error: validation === true ? null : String(validation) };
       if (validation === true) break;
 
-      // Retry only transient HTTP failures. Contract failures (for example missing
-      // Stripe configuration on HTTP 200) are deterministic and should fail fast.
-      if (!retryableHttpStatus(response.status) || attempt === maxAttempts) break;
+      // Retry transient HTTP failures and a healthy-but-stale release identity
+      // during rollout. Other contract failures (for example missing Stripe
+      // configuration on HTTP 200) remain deterministic and fail fast.
+      if ((!retryableHttpStatus(response.status) && !isRetryableReleaseMismatch(validation)) || attempt === maxAttempts) break;
     } catch (error) {
       const errorText = error?.name === "AbortError" ? "timeout after " + timeoutMs + "ms" : String(error?.message || error);
       attempts.push({
@@ -82,8 +83,11 @@ async function check(name, url, validate, timeoutMs = 12000) {
     } finally {
       clearTimeout(timer);
     }
-    const retryStatus = attempts.at(-1)?.status ?? null;
-    const delayMs = retryDelayMs(retryStatus, attempt);
+    const lastAttempt = attempts.at(-1);
+    const retryStatus = lastAttempt?.status ?? null;
+    const delayMs = isRetryableReleaseMismatch(lastAttempt?.error)
+      ? releaseMismatchRetryDelayMs(attempt)
+      : retryDelayMs(retryStatus, attempt);
     if (delayMs > 0) await sleep(delayMs);
   }
 
