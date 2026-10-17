@@ -68,7 +68,7 @@ jobs:
           fi
       - name: Upload machine-readable evidence
         if: always() && hashFiles('live-saas-smoke.json') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-saas-observability-${{ github.run_id }}
           path: live-saas-smoke.json
