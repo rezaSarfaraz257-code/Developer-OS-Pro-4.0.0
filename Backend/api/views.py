@@ -144,7 +144,7 @@ def health_api(request):
             "status": "ok",
             "database": "ok",
             "service": "developer-os-api",
-            "version": os.environ.get("RELEASE_VERSION", "1.0.0"),
+            "version": os.environ.get("RELEASE_VERSION", "4.0.0"),
         })
     except Exception:
         return Response({"status": "degraded", "database": "unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -185,7 +185,7 @@ def readiness_api(request):
         checks["worker"] = False
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
     ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
-    return Response({"status": "ready" if ready else "not_ready", "checks": checks, "version": os.environ.get("RELEASE_VERSION", "1.0.0")}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"status": "ready" if ready else "not_ready", "checks": checks, "version": os.environ.get("RELEASE_VERSION", "4.0.0")}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @api_view(["GET", "POST"])
