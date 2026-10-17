@@ -1,4 +1,4 @@
-﻿asgiref==3.12.1
+asgiref==3.12.1
 Django==5.2.17
 django-cors-headers==4.9.0
 djangorestframework==3.18.0
@@ -10,7 +10,7 @@ tzdata==2026.3
 requests==2.33.0
 cryptography==50.0.1
 Pillow==12.3.0
-gunicorn==23.0.0
+gunicorn==26.2.0
 psycopg[binary,pool]==3.2.10
 whitenoise==6.9.0
 channels>=4.2,<5
