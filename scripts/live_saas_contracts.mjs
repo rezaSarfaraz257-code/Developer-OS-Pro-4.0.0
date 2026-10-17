@@ -181,7 +181,13 @@ export function validateNoStoreCacheHeaders({ response, result }) {
   if (!response.ok) return `HTTP ${response.status}`;
   const headers = result.cacheHeaders || {};
   const cacheControl = (headers["cache-control"] || "").toLowerCase();
-  const directives = cacheControl.split(",").map(value => value.trim());
+  // Some proxies/framework middleware expose duplicate Cache-Control fields as
+  // a comma-joined value that repeats the field name (for example,
+  // "no-store, cache-control: max-age=0"). Normalize that representation
+  // without weakening the required no-store and max-age=0 directives.
+  const directives = cacheControl.split(",")
+    .map(value => value.trim().replace(/^cache-control\\s*:\\s*/i, ""))
+    .filter(Boolean);
   const missing = [];
   if (!directives.includes("no-store")) missing.push("cache-control: no-store");
   if (!directives.some(value => /^max-age=0$/.test(value))) missing.push("cache-control: max-age=0");
