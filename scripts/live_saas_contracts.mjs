@@ -144,7 +144,7 @@ export function validateSecurityHeaders({ response, result }) {
   if (!/^(deny|sameorigin)$/i.test(headers["x-frame-options"] || "")) {
     missing.push("x-frame-options: DENY or SAMEORIGIN");
   }
-  if (!/^(no-referrer|strict-origin|strict-origin-when-cross-origin)$/i.test(headers["referrer-policy"] || "")) {
+  if (!/^(no-referrer|same-origin|strict-origin|strict-origin-when-cross-origin)$/i.test(headers["referrer-policy"] || "")) {
     missing.push("referrer-policy");
   }
   return missing.length ? `missing or weak security headers: ${missing.join(", ")}` : true;
