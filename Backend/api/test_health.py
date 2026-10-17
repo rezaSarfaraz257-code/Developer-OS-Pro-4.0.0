@@ -3,7 +3,7 @@ import os
 from unittest import TestCase
 from unittest.mock import patch
 
-from django.test import RequestFactory
+from django.test import Client as DjangoTestClient, RequestFactory
 from django.urls import reverse
 
 from .operational_health import liveness_api
@@ -25,7 +25,7 @@ class LivenessApiTests(TestCase):
     def test_public_liveness_url_is_reachable_through_django_client(self):
         # Integration coverage: verify URL routing and response contract together.
         with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "integration-test"}, clear=False):
-            response = self.client.get("/api/health/live/")
+            response = DjangoTestClient().get("/api/health/live/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
