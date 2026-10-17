@@ -24,6 +24,8 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse
+from django.views.decorators.cache import never_cache
+from .operational_health import release_identity
 from django.shortcuts import get_object_or_404
 
 class StaleWorkspaceError(Exception):
@@ -133,6 +135,7 @@ def github_service_unavailable():
 # PROJECTS
 # =========================================================
 
+@never_cache
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health_api(request):
@@ -144,12 +147,13 @@ def health_api(request):
             "status": "ok",
             "database": "ok",
             "service": "developer-os-api",
-            "version": os.environ.get("RELEASE_VERSION", "4.0.0"),
+            **release_identity(),
         })
     except Exception:
-        return Response({"status": "degraded", "database": "unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"status": "degraded", "database": "unavailable", **release_identity()}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
+@never_cache
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -185,7 +189,7 @@ def readiness_api(request):
         checks["worker"] = False
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
     ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
-    return Response({"status": "ready" if ready else "not_ready", "checks": checks, "version": os.environ.get("RELEASE_VERSION", "4.0.0")}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @api_view(["GET", "POST"])
