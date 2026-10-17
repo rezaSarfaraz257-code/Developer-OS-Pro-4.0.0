@@ -37,7 +37,7 @@ class ProductionOperationalContractTests(unittest.TestCase):
             'request(\"/ide/capabilities/\"',
             'request(`/ide/workspaces/${workspace.id}/execute/`',
             'customer.subscription.updated',
-            "Invalid webhook signature was not rejected",
+            "Invalid billing signature was not rejected",
             "Billing webhook idempotency failed",
             'usage.plan === \"pro\"',
         ):
