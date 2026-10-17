@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -195,4 +195,15 @@ test("diagnostics distinguish isolated liveness, health, readiness, and pricing 
     "PRICING_CONTRACT_INVALID",
   ]);
   assert.ok(contractFailures.every(item => item.severity === "critical"));
+});
+
+
+test("transient 503 responses receive longer bounded retries while permanent failures fail fast", () => {
+  assert.equal(retryDelayMs(503, 1), 5000);
+  assert.equal(retryDelayMs(503, 2), 12000);
+  assert.equal(retryDelayMs(503, 3), 20000);
+  assert.equal(retryDelayMs(null, 1), 1500);
+  assert.equal(retryDelayMs(429, 2), 2500);
+  assert.equal(retryDelayMs(404, 1), 0);
+  assert.equal(retryDelayMs(200, 1), 0);
 });
