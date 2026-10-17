@@ -2,7 +2,7 @@ name: Production Validation
 
 on:
   push:
-    branches: [main, master, production-complete-2026-10-06]
+    branches: [main, master, production-complete-2026-10-06, ops/production-hardening-2026-10-16]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -33,8 +33,10 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -42,6 +44,9 @@ jobs:
       - name: Install backend dependencies
         working-directory: Backend
         run: python3 -m pip install -r requirements.txt
+      - name: Verify dependency consistency
+        working-directory: Backend
+        run: python3 -m pip check
       - name: Django checks and tests
         working-directory: Backend
         env:
@@ -61,20 +66,53 @@ jobs:
           python3 manage.py makemigrations --check --dry-run
           python3 manage.py migrate --noinput
           python3 manage.py test --verbosity 1
+      - name: Validate production configuration contract
+        working-directory: Backend
+        env:
+          DEBUG: "False"
+          DJANGO_SECRET_KEY: ci-production-config-secret-key-with-enough-entropy-123456789
+          ENVIRONMENT: production
+          ALLOWED_HOSTS: api.example.com
+          FRONTEND_URL: https://app.example.com
+          CORS_ALLOWED_ORIGINS: https://app.example.com
+          CSRF_TRUSTED_ORIGINS: https://app.example.com
+          DATABASE_URL: postgresql://developeros:test-password@127.0.0.1:5432/developeros_test
+          CACHE_URL: redis://127.0.0.1:6379/0
+          EMAIL_HOST: smtp.example.com
+          EMAIL_PORT: "587"
+          EMAIL_HOST_USER: ci@example.com
+          EMAIL_HOST_PASSWORD: ci-password
+          EMAIL_USE_TLS: "true"
+          GITHUB_TOKEN_ENCRYPTION_KEY: ci-only-encryption-key
+          IDE_RUNNER_TOKEN: ci-runner-token
+          SECURE_SSL_REDIRECT: "false"
+        run: |
+          python3 manage.py check --deploy
+          python3 manage.py shell -c 'from django.conf import settings; assert settings.IS_PRODUCTION; assert settings.DB_POOL_ENABLED; print("production configuration contract: OK")'
 
   frontend:
     name: Frontend lint build and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: Frontend/package-lock.json
+          package-manager-cache: false
       - name: Install frontend dependencies
         working-directory: Frontend
         run: npm ci
+      - name: Syntax-check live SaaS monitor
+        run: node --check scripts/live_saas_smoke.mjs
+      - name: Live SaaS contract validator tests
+        run: node --test scripts/live_saas_contracts.test.mjs
+      - name: Dependency audit
+        working-directory: Frontend
+        run: npm audit --omit=dev --audit-level=high
       - name: Lint
         working-directory: Frontend
         run: npm run lint
@@ -84,17 +122,15 @@ jobs:
       - name: Unit tests
         working-directory: Frontend
         run: npm test
-      - name: Syntax-check live SaaS monitor
-        run: node --check scripts/live_saas_smoke.mjs
-      - name: Live SaaS contract validator tests
-        run: node --test scripts/live_saas_contracts.test.mjs
 
   runner:
     name: Secure runner tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -102,6 +138,9 @@ jobs:
       - name: Install runner dependencies
         working-directory: Runner
         run: python3 -m pip install -r requirements.txt
+      - name: Runner dependency consistency
+        working-directory: Runner
+        run: python3 -m pip check
       - name: Runner unit tests
         working-directory: Runner
         env:
@@ -120,12 +159,19 @@ jobs:
           done
           curl -fsS http://127.0.0.1:18080/health
           curl -fsS http://127.0.0.1:18080/ready -H 'Authorization: Bearer ci-runner-token'
-          curl -fsS -X POST http://127.0.0.1:18080/exec             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python3 main.py"}'             | tee runner-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/exec \
+            -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"999","files":{"main.py":"print(42)"},"active_file":"main.py","command":"python3 main.py"}' \
+            | tee runner-result.json
           grep -q '"exit_code":0' runner-result.json
           grep -q '42' runner-result.json
-          curl -fsS -X POST http://127.0.0.1:18080/process/start             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"workspace_id":"999","files":{},"command":"python -c \"print(42)\""}'             | tee process-result.json
+          curl -fsS -X POST http://127.0.0.1:18080/process/start \
+            -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"workspace_id":"999","files":{},"command":"python -c \"print(42)\""}' \
+            | tee process-result.json
           grep -q '"id"' process-result.json
-
       - name: Verify strict mode fails closed in the actual runner container
         env:
           RUNNER_SECURITY_LEVEL: strict
@@ -145,7 +191,6 @@ jobs:
           test "$status" = "503"
           grep -q 'per-execution isolation' strict-result.json
 
-
   backup-restore:
     name: PostgreSQL backup and restore
     runs-on: ubuntu-latest
@@ -164,7 +209,9 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Backup, destroy, restore and verify
         env:
           POSTGRES_DB: developeros_recovery
@@ -178,12 +225,13 @@ jobs:
             unset PGPASSWORD
             export PGHOST=127.0.0.1
             sh /repo/scripts/backup_postgres.sh
+            BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
+            CHECKSUM_FILE="$BACKUP_FILE.sha256"
+            test -n "$BACKUP_FILE"
+            test -f "$CHECKSUM_FILE"
+            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")
             export PGPASSWORD="$POSTGRES_PASSWORD"
             psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
-            unset PGPASSWORD
-            BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
-            test -n "$BACKUP_FILE"
-            export PGPASSWORD="$POSTGRES_PASSWORD"
             pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
             test "$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
             unset PGPASSWORD
@@ -194,7 +242,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend, frontend, runner, backup-restore]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Validate Compose configuration
         env:
           POSTGRES_PASSWORD: ci-compose-password
@@ -240,10 +290,14 @@ jobs:
           docker compose ps
 
   release-gate:
-    name: Static release gate
+    name: Static release and operational gates
     runs-on: ubuntu-latest
     needs: [backend, frontend, runner, backup-restore, docker-stack]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Release gate
         run: python scripts/release_gate.py
+      - name: Operational policy gate
+        run: python scripts/operational_policy_gate.py

@@ -1,0 +1,86 @@
+name: Container Security
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master, ops/production-hardening-2026-10-16]
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  runner-image:
+    name: Scan hardened runner image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build runner image
+        run: docker build --pull --provenance=false --sbom=false -t developer-os-runner:security ./Runner
+
+      - name: Generate runner image SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: developer-os-runner:security
+          format: spdx-json
+          upload-artifact: false
+          output-file: developer-os-runner-sbom.spdx.json
+
+      - name: Publish runner image SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: developer-os-runner-sbom
+          path: developer-os-runner-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report high and critical vulnerabilities
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: developer-os-runner:security
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+          version: v0.76.0
+          exit-code: "0"
+
+      - name: Report high and critical secrets and misconfigurations
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: developer-os-runner:security
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: secret,misconfig
+          version: v0.76.0
+          exit-code: "0"
+
+      - name: Scan runner image for actionable OS and language vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: developer-os-runner:security
+          format: sarif
+          output: trivy-runner.sarif
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          scanners: vuln,secret,misconfig
+          version: v0.76.0
+          exit-code: "1"
+
+      - name: Upload container findings
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-runner.sarif

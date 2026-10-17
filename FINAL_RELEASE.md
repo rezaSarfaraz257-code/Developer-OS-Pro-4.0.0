@@ -55,22 +55,25 @@ docker compose logs --tail=100 backend
 Verify:
 
 1. `/api/health/`
-2. public tools/resources/workflows
-3. account registration
-4. login
-5. token refresh
-6. logout and refresh-token revocation
-7. profile update and avatar upload
-8. project creation/edit/delete
-9. task creation/update/delete
-10. notes
-11. snippets
-12. favorites
-13. collaboration permissions
-14. AI assistant
-15. GitHub connect/repository listing/activity sync
-16. responsive navigation
-17. direct browser refresh on application routes
+2. `/api/health/ready/`
+3. public tools/resources/workflows
+4. account registration
+5. login
+6. token refresh
+7. logout and refresh-token revocation
+8. profile update and avatar upload
+9. project creation/edit/delete
+10. task creation/update/delete
+11. notes
+12. snippets
+13. favorites
+14. collaboration permissions
+15. AI assistant
+16. GitHub connect/repository listing/activity sync
+17. responsive navigation
+18. direct browser refresh on application routes
+19. Web IDE runner execution and process lifecycle
+20. billing webhook signature verification and idempotency
 
 ## Production environment
 
@@ -82,6 +85,8 @@ Required:
 - `CORS_ALLOWED_ORIGINS`
 - `CSRF_TRUSTED_ORIGINS`
 - `FRONTEND_URL`
+- `CACHE_URL`
+- production SMTP configuration
 
 Required for GitHub:
 
@@ -102,6 +107,12 @@ Never commit `.env`.
 
 A production release is not considered complete until the actual deployment environment passes the commands above. Local source inspection alone is not proof of production readiness.
 
+## Production startup hardening — 2026-10-16
+
+The production container now uses an ASGI Gunicorn policy and a serialized database migration entrypoint. PostgreSQL advisory locking prevents concurrent web replicas from racing migrations during deployment. Readiness is HTTP-based and validates the real database, cache and production configuration instead of relying only on an open TCP socket.
+
+The production server configuration supports explicit concurrency, graceful shutdown, keep-alive, request recycling and bounded timeouts. The deployment runbook is documented in `docs/OPERATIONS.md`.
+
 ## Final hardening pass — 2026-09-24
 
 The release package includes an additional production hardening pass:
@@ -118,7 +129,6 @@ The release package includes an additional production hardening pass:
 - Live catalog data is now used on the public home experience instead of stale hard-coded workflow/resource counts.
 
 The package is considered release-complete for the defined product scope after static validation. Final deployment acceptance still requires the target environment to execute the repository CI pipeline, backend tests, frontend build, HTTPS/proxy validation, and real-user end-to-end smoke test.
-
 
 ## 3.0 Global SaaS Maturity Layer
 

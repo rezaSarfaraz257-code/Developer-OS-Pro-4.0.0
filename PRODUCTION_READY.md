@@ -62,7 +62,6 @@ The release includes additional production safeguards:
 - CodeQL and dependency-review workflows are included for the repository security gate.
 - Frontend error recovery and runtime health indicators use the live readiness endpoint.
 
-
 ## 3.0 Global SaaS Maturity Layer
 
 This release hardens the product around real SaaS lifecycle requirements:
@@ -79,7 +78,6 @@ This release hardens the product around real SaaS lifecycle requirements:
 
 A release is considered operationally complete only after CI, migrations, build, deployment health checks and real payment-provider webhook delivery have passed in the target environment.
 
-
 ## 3.0.0 FINAL HARDENING GATE
 
 The release is not considered production-ready from documentation alone. The following are mandatory CI gates:
@@ -95,3 +93,9 @@ The release is not considered production-ready from documentation alone. The fol
 - Operations: request IDs, readiness endpoint, container healthchecks, database migrations before startup
 
 A green CI run is the release authority. This document intentionally does not claim that a source archive is 100% bug-free without executing the target environment's complete CI and production smoke tests.
+
+## Final verification rule
+
+Production hardening is implemented on the dedicated `ops/production-hardening-2026-10-16` branch and is intentionally not merged into `master` by this workflow. The final release authority is evidence, not documentation: the branch must have a current green CI/security run, successful deployment readiness checks, and successful production black-box validation before it is declared fully verified.
+
+No production secret or credential belongs in this repository. Runtime credentials must be supplied through the deployment platform's protected environment configuration.
