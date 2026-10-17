@@ -24,7 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:
-      name: production
+      # PR runs only execute unit tests and must not wait for production-environment approval.
+      # Scheduled/manual live probes still use the protected production environment.
+      name: ${{ github.event_name == 'pull_request' && 'ci' || 'production' }}
       deployment: false
     env:
       # Read the same protected production targets used by the black-box acceptance workflow.
