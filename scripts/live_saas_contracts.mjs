@@ -33,6 +33,7 @@ export function isSpaShell({ response, body, result }) {
 
 export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
+const hasReleaseSha = value => typeof value === "string" && RELEASE_SHA_PATTERN.test(value);
 
 export function isLive({ response, body, result = {} }) {
   if (!response.ok) return `HTTP ${response.status}`;
@@ -61,8 +62,8 @@ export function isHealthy({ response, body }) {
   let json;
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
   return json.status === "ok" && json.database === "ok" &&
-    json.version === EXPECTED_RELEASE_VERSION
-    ? true : `health contract reports a degraded service/database or unexpected release version (expected ${EXPECTED_RELEASE_VERSION})`;
+    json.version === EXPECTED_RELEASE_VERSION && hasReleaseSha(json.release_sha)
+    ? true : `health contract reports a degraded service/database or requires release version ${EXPECTED_RELEASE_VERSION} and a real release SHA`;
 }
 
 export function isReady({ response, body }) {
@@ -72,9 +73,10 @@ export function isReady({ response, body }) {
   const checks = json.checks || {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
+  const shaMatches = hasReleaseSha(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
-  return json.status === "ready" && missing.length === 0 && versionMatches
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION}`;
+  return json.status === "ready" && missing.length === 0 && versionMatches && shaMatches
+    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be real`;
 }
 
 export function validatePricing({ response, body }) {
