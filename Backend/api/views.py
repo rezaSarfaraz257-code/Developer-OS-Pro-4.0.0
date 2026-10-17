@@ -143,7 +143,6 @@ def _no_store_health_response(response):
     return response
 
 
-@never_cache
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health_api(request):
@@ -164,7 +163,6 @@ def health_api(request):
         ))
 
 
-@never_cache
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
