@@ -8,6 +8,18 @@ export const FEATURE_KEYS = Object.freeze([
   "governance", "audit_log", "seat_billing", "enterprise_controls",
 ]);
 
+/** Backoff for transient responses only; permanent contract failures are never retried. */
+export function retryDelayMs(status, completedAttempt) {
+  const attempt = Math.max(1, Math.min(3, Number(completedAttempt) || 1));
+  const schedules = status === 503
+    ? [5000, 12000, 20000]
+    : status === null || status === undefined
+      ? [1500, 3500, 7000]
+      : [1000, 2500, 6000];
+  const retryable = status === null || status === undefined || status === 408 || status === 425 || status === 429 || status >= 500;
+  return retryable ? schedules[attempt - 1] : 0;
+}
+
 export function isHtml({ response, body, result }) {
   return response.ok && result.contentType.toLowerCase().includes("text/html") && body.length > 100
     ? true : `expected non-empty HTML; received HTTP ${response.status} (${result.contentType || "no content-type"})`;
