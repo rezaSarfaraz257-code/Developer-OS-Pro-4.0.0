@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs, isRetryableReleaseMismatch, releaseMismatchRetryDelayMs,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -246,6 +246,15 @@ test("diagnostics distinguish isolated liveness, health, readiness, and pricing 
   assert.ok(contractFailures.every(item => item.severity === "critical"));
 });
 
+
+test("release SHA mismatch gets bounded rollout retries without retrying unrelated contract failures", () => {
+  assert.equal(isRetryableReleaseMismatch("health release SHA does not match the expected repository revision"), true);
+  assert.equal(isRetryableReleaseMismatch("deployed release SHA does not match the expected repository revision"), true);
+  assert.equal(isRetryableReleaseMismatch("pricing response is missing currency"), false);
+  assert.equal(releaseMismatchRetryDelayMs(1), 10000);
+  assert.equal(releaseMismatchRetryDelayMs(2), 20000);
+  assert.equal(releaseMismatchRetryDelayMs(3), 30000);
+});
 
 test("transient 503 responses receive longer bounded retries while permanent failures fail fast", () => {
   assert.equal(retryDelayMs(503, 1), 5000);
