@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs, validateReleaseConsistency,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -46,23 +46,38 @@ test("IDE route validator requires an SPA root element", () => {
   assert.match(isSpaShell({ ...valid, body: "<html>" + "x".repeat(110) }), /valid SPA shell/);
 });
 
+test("release identity contract rejects mixed, stale, or unknown deployments", () => {
+  const same = [
+    { version: "4.0.0", sha: "abcdef1234567" },
+    { version: "4.0.0", sha: "abcdef1234567" },
+    { version: "4.0.0", sha: "abcdef1234567" },
+  ];
+  assert.equal(validateReleaseConsistency(same), true);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "4.0.0", sha: "fedcba9876543" }]), /mixed release identities/);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "1.0.0", sha: "abcdef1234567" }]), /expected version/);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "4.0.0", sha: "unknown" }]), /real hexadecimal release SHA/);
+  assert.match(validateReleaseConsistency(same.slice(0, 2)), /all three health endpoints/);
+});
+
 test("health contract fails closed for invalid JSON or degraded database", () => {
-  assert.equal(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0" })), true);
-  assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "1.0.0" })), /unexpected release version/);
-  assert.match(isHealthy(jsonInput({ status: "ok", database: "error" })), /degraded/);
+  assert.equal(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "abc1234" })), true);
+  assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "1.0.0", release_sha: "abc1234" })), /unexpected release version/);
+  assert.match(isHealthy(jsonInput({ status: "ok", database: "error", version: "4.0.0", release_sha: "abc1234" })), /degraded/);
+  assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "unknown" })), /invalid release SHA/);
   assert.match(isHealthy({ response: response(), body: "not-json" }), /valid JSON/);
   assert.match(isHealthy({ response: response(false), body: "{}" }), /HTTP 503/);
 });
 
 test("readiness contract requires every named production check", () => {
   const checks = Object.fromEntries(REQUIRED_READINESS_CHECKS.map(name => [name, true]));
-  assert.equal(isReady(jsonInput({ status: "ready", checks, version: "4.0.0" })), true);
-  assert.match(isReady(jsonInput({ status: "ready", checks, version: "1.0.0" })), /release version must be 4.0.0/);
+  assert.equal(isReady(jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "abc1234" })), true);
+  assert.match(isReady(jsonInput({ status: "ready", checks, version: "1.0.0", release_sha: "abc1234" })), /release version must be 4.0.0/);
   for (const missing of REQUIRED_READINESS_CHECKS) {
     const incomplete = { ...checks, [missing]: false };
     assert.match(isReady(jsonInput({ status: "ready", checks: incomplete })), new RegExp(missing));
   }
-  assert.match(isReady(jsonInput({ status: "degraded", checks })), /status is not ready/);
+  assert.match(isReady(jsonInput({ status: "degraded", checks, version: "4.0.0", release_sha: "abc1234" })), /status is not ready/);
+  assert.match(isReady(jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "unknown" })), /release SHA must be valid/);
 });
 
 test("pricing contract accepts complete plans and rejects missing or invalid contracts", () => {

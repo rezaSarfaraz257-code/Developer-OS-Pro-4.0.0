@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, validateReleaseConsistency } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -38,8 +38,19 @@ async function check(name, url, validate, timeoutMs = 12000) {
         headers: { "User-Agent": "DeveloperOS-LiveSmoke/2.0", "Accept": "application/json, text/html;q=0.9, */*;q=0.8" },
       });
       const body = await response.text();
+      let releaseIdentity = {};
+      if (["api-liveness", "api-health", "api-readiness"].includes(name)) {
+        try {
+          const payload = JSON.parse(body);
+          releaseIdentity = {
+            releaseVersion: typeof payload.version === "string" ? payload.version : null,
+            releaseSha: typeof payload.release_sha === "string" ? payload.release_sha : null,
+          };
+        } catch { /* the endpoint validator records invalid JSON */ }
+      }
       const result = {
         name, url, status: response.status, statusText: response.statusText, durationMs: Date.now() - attemptStarted,
+        ...releaseIdentity,
         attempt, contentType: response.headers.get("content-type") || "",
         platformHeaders: Object.fromEntries(["server", "retry-after", "x-render-routing", "x-request-id"].map(header => [header, response.headers.get(header) || ""])) ,
         securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(header => [header, response.headers.get(header) || ""])),
@@ -105,6 +116,17 @@ await check("api-health", apiBase + "/api/health/", isHealthy);
 await check("api-readiness", apiBase + "/api/health/ready/", isReady);
 await check("api-pricing-contract", apiBase + "/api/pricing/", validatePricing, 15000);
 await check("billing-provider-config", apiBase + "/api/pricing/", validateBillingConfig, 15000);
+
+// A release is not healthy if separate routes are served by mixed deployments.
+const releaseChecks = checks.filter(item => ["api-liveness", "api-health", "api-readiness"].includes(item.name));
+const releaseIdentities = releaseChecks.map(item => ({ version: item.releaseVersion, sha: item.releaseSha }));
+const releaseConsistency = validateReleaseConsistency(releaseIdentities);
+if (releaseConsistency !== true) {
+  for (const item of releaseChecks) {
+    item.ok = false;
+    item.error = [item.error, releaseConsistency].filter(Boolean).join("; ");
+  }
+}
 
 const report = {
   schemaVersion: 2,

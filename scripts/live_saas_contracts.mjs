@@ -34,6 +34,21 @@ export function isSpaShell({ response, body, result }) {
 export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
+/** Fail closed if the public health endpoints disagree on the running release. */
+export function validateReleaseConsistency(identities) {
+  if (!Array.isArray(identities) || identities.length !== 3) {
+    return "expected release identity from all three health endpoints";
+  }
+  const valid = identities.every(item =>
+    item && item.version === EXPECTED_RELEASE_VERSION &&
+    typeof item.sha === "string" && RELEASE_SHA_PATTERN.test(item.sha)
+  );
+  if (!valid) return "health endpoints must report the expected version and a real hexadecimal release SHA";
+  const first = identities[0];
+  return identities.every(item => item.version === first.version && item.sha === first.sha)
+    ? true : "health endpoints report mixed release identities";
+}
+
 export function isLive({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
@@ -48,9 +63,10 @@ export function isHealthy({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
+  const validSha = typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha);
   return json.status === "ok" && json.database === "ok" &&
-    json.version === EXPECTED_RELEASE_VERSION
-    ? true : `health contract reports a degraded service/database or unexpected release version (expected ${EXPECTED_RELEASE_VERSION})`;
+    json.version === EXPECTED_RELEASE_VERSION && validSha
+    ? true : `health contract reports a degraded service/database, unexpected release version (expected ${EXPECTED_RELEASE_VERSION}), or invalid release SHA`;
 }
 
 export function isReady({ response, body }) {
@@ -60,9 +76,10 @@ export function isReady({ response, body }) {
   const checks = json.checks || {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
+  const validSha = typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
-  return json.status === "ready" && missing.length === 0 && versionMatches
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION}`;
+  return json.status === "ready" && missing.length === 0 && versionMatches && validSha
+    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be valid`;
 }
 
 export function validatePricing({ response, body }) {
