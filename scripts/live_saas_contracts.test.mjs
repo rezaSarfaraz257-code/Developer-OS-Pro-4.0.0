@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -127,4 +127,16 @@ test("liveness contract validates process identity without requiring dependencie
   assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "", release_sha: "abc123" })), /liveness contract/);
   assert.match(isLive({ response: response(false, 404), body: "{}" }), /HTTP 404/);
   assert.match(isLive({ response: response(), body: "not-json" }), /valid JSON/);
+});
+
+
+test("origin-level diagnosis appears only when all API probes fail at the origin", () => {
+  const apiNames = ["api-security-headers", "api-liveness", "api-health", "api-readiness", "api-pricing-contract", "billing-provider-config"];
+  const outage = apiNames.map(name => ({ name, ok: false, status: 503 }));
+  const diagnosis = diagnoseChecks(outage);
+  assert.equal(diagnosis.length, 1);
+  assert.equal(diagnosis[0].code, "API_ORIGIN_UNAVAILABLE");
+  assert.match(diagnosis[0].action, /Render API service/);
+  assert.deepEqual(diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]), []);
+  assert.deepEqual(diagnoseChecks(apiNames.map(name => ({ name, ok: false, status: 404 }))), []);
 });
