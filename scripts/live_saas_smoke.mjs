@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -43,6 +43,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
         attempt, contentType: response.headers.get("content-type") || "",
         platformHeaders: Object.fromEntries(["server", "retry-after", "x-render-routing", "x-request-id"].map(header => [header, response.headers.get(header) || ""])) ,
         securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(header => [header, response.headers.get(header) || ""])),
+        cacheHeaders: Object.fromEntries(["cache-control", "pragma"].map(header => [header, response.headers.get(header) || ""])),
         finalUrl: response.url,
         expectedReleaseSha: process.env.EXPECTED_RELEASE_SHA || "",
       };
@@ -104,6 +105,9 @@ await check("web-ide-trailing-slash", frontendBase + "/ide/", isSpaShell);
 await check("api-liveness", apiBase + "/api/health/live/", isLive);
 await check("api-health", apiBase + "/api/health/", isHealthy);
 await check("api-readiness", apiBase + "/api/health/ready/", isReady);
+await check("api-liveness-cache-policy", apiBase + "/api/health/live/", validateNoStoreCacheHeaders);
+await check("api-health-cache-policy", apiBase + "/api/health/", validateNoStoreCacheHeaders);
+await check("api-readiness-cache-policy", apiBase + "/api/health/ready/", validateNoStoreCacheHeaders);
 await check("api-pricing-contract", apiBase + "/api/pricing/", validatePricing, 15000);
 await check("billing-provider-config", apiBase + "/api/pricing/", validateBillingConfig, 15000);
 
@@ -120,7 +124,7 @@ const report = {
     failed: checks.filter(item => !item.ok).length,
     recovered: checks.filter(item => item.recovered).length,
   },
-  ok: checks.length === 10 && checks.every(item => item.ok),
+  ok: checks.length === 13 && checks.every(item => item.ok),
   diagnostics: diagnoseChecks(checks),
   checks,
 };
