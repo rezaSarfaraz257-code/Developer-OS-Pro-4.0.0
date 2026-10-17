@@ -51,7 +51,7 @@ export function isHealthy({ response, body }) {
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
   return json.status === "ok" && json.database === "ok" &&
     json.version === EXPECTED_RELEASE_VERSION && hasReleaseSha(json.release_sha)
-    ? true : `health contract requires a healthy database, release version ${EXPECTED_RELEASE_VERSION}, and a real release SHA`;
+    ? true : `health contract reports a degraded service/database or requires release version ${EXPECTED_RELEASE_VERSION} and a real release SHA`;
 }
 
 export function isReady({ response, body }) {
