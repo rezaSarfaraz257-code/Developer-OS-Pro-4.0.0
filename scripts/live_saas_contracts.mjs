@@ -130,3 +130,22 @@ export function validateFinalUrl({ response, result }) {
   if (parsed.username || parsed.password) return "final response URL contains embedded credentials";
   return true;
 }
+
+
+/** Explain broad origin-level failures without exposing response bodies or secrets. */
+export function diagnoseChecks(checks) {
+  const apiNames = new Set([
+    "api-security-headers", "api-liveness", "api-health", "api-readiness",
+    "api-pricing-contract", "billing-provider-config",
+  ]);
+  const apiChecks = checks.filter(item => apiNames.has(item.name));
+  const originUnavailable = apiChecks.length > 0 && apiChecks.every(item =>
+    !item.ok && (item.status === null || item.status >= 500));
+  if (!originUnavailable) return [];
+  return [{
+    severity: "critical",
+    code: "API_ORIGIN_UNAVAILABLE",
+    message: "Every API probe failed with an HTTP 5xx response or connection timeout. This points to API-origin/service availability rather than a single route contract.",
+    action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep the smoke checks strict.",
+  }];
+}
