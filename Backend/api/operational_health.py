@@ -19,7 +19,7 @@ def liveness_api(request):
             "status": "alive",
             "service": "developer-os-api",
             "version": os.environ.get("RELEASE_VERSION", "4.0.0"),
-            "release_sha": os.environ.get("RELEASE_SHA", "unknown"),
+            "release_sha": os.environ.get("RELEASE_SHA") or os.environ.get("RENDER_GIT_COMMIT", "unknown"),
         },
         status=200,
     )
