@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs, validateReleaseConsistency,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -44,6 +44,19 @@ test("IDE route validator requires an SPA root element", () => {
     result: { contentType: "text/html" } };
   assert.equal(isSpaShell(valid), true);
   assert.match(isSpaShell({ ...valid, body: "<html>" + "x".repeat(110) }), /valid SPA shell/);
+});
+
+test("release identity contract rejects mixed, stale, or unknown deployments", () => {
+  const same = [
+    { version: "4.0.0", sha: "abcdef1234567" },
+    { version: "4.0.0", sha: "abcdef1234567" },
+    { version: "4.0.0", sha: "abcdef1234567" },
+  ];
+  assert.equal(validateReleaseConsistency(same), true);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "4.0.0", sha: "fedcba9876543" }]), /mixed release identities/);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "1.0.0", sha: "abcdef1234567" }]), /expected version/);
+  assert.match(validateReleaseConsistency([...same.slice(0, 2), { version: "4.0.0", sha: "unknown" }]), /real hexadecimal release SHA/);
+  assert.match(validateReleaseConsistency(same.slice(0, 2)), /all three health endpoints/);
 });
 
 test("health contract fails closed for invalid JSON or degraded database", () => {
