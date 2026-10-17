@@ -158,8 +158,9 @@ export function diagnoseChecks(checks) {
     "api-pricing-contract", "billing-provider-config",
   ];
   const apiChecks = apiNames.map(name => byName.get(name)).filter(Boolean);
-  const originUnavailable = apiChecks.length > 0 && apiChecks.every(item =>
+  const originFailures = apiChecks.filter(item =>
     !item.ok && (item.status === null || item.status >= 500));
+  const originUnavailable = apiChecks.length > 0 && originFailures.length === apiChecks.length;
   if (originUnavailable) {
     diagnostics.push({
       severity: "critical",
@@ -168,6 +169,19 @@ export function diagnoseChecks(checks) {
       action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep the smoke checks strict.",
     });
     return diagnostics;
+  }
+  // A single 404 can coexist with an origin-wide incident (for example, a
+  // stale route on the deployed release). Do not let that one response hide
+  // a broad service outage in the remaining independent API probes.
+  const broadOriginFailure = apiChecks.length >= 4 &&
+    originFailures.length >= Math.ceil(apiChecks.length * 0.67);
+  if (broadOriginFailure) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_ORIGIN_DEGRADED",
+      message: `${originFailures.length} of ${apiChecks.length} independent API probes failed with HTTP 5xx responses or connection timeouts. A route-specific response elsewhere does not rule out a broader API-origin incident.`,
+      action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep individual route failures visible and do not weaken the smoke checks.",
+    });
   }
 
   const liveness = byName.get("api-liveness");
