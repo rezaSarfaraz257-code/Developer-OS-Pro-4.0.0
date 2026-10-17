@@ -22,6 +22,7 @@ class ProductionPreflightEmailTests(unittest.TestCase):
             "IDE_RUNNER_TOKEN": "preflight-test-runner-token",
             "FRONTEND_URL": "https://example.test",
             "DEFAULT_FROM_EMAIL": "no-reply@example.test",
+            "ENVIRONMENT": "staging",
         })
         for key in (
             "EMAIL_HOST", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD", "EMAIL_BACKEND",
@@ -66,6 +67,17 @@ class ProductionPreflightEmailTests(unittest.TestCase):
         self.assertIn("STRIPE_PRICE_PRO_ANNUAL", result.stdout)
         self.assertIn("STRIPE_PRICE_TEAM", result.stdout)
         self.assertIn("STRIPE_PRICE_TEAM_ANNUAL", result.stdout)
+        self.assertIn("STRIPE_PRICE_ENTERPRISE", result.stdout)
+
+
+    def test_production_defaults_to_required_stripe_billing(self):
+        env = self._environment()
+        env["ENVIRONMENT"] = "production"
+        env.pop("REQUIRE_STRIPE_BILLING", None)
+        env["EMAIL_VERIFICATION_REQUIRED"] = "false"
+        result = self._run(env)
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn("MISSING REQUIRED STRIPE BILLING CONFIG", result.stdout)
         self.assertIn("STRIPE_PRICE_ENTERPRISE", result.stdout)
 
     def test_partial_stripe_configuration_fails_closed(self):
