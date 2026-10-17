@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, validateReleaseConsistency } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -120,13 +120,11 @@ await check("billing-provider-config", apiBase + "/api/pricing/", validateBillin
 // A release is not healthy if separate routes are served by mixed deployments.
 const releaseChecks = checks.filter(item => ["api-liveness", "api-health", "api-readiness"].includes(item.name));
 const releaseIdentities = releaseChecks.map(item => ({ version: item.releaseVersion, sha: item.releaseSha }));
-const releaseIdentityValid = releaseIdentities.length === 3 &&
-  releaseIdentities.every(item => item.version === "4.0.0" && typeof item.sha === "string" && /^[0-9a-f]{7,40}$/i.test(item.sha)) &&
-  releaseIdentities.every(item => item.version === releaseIdentities[0].version && item.sha === releaseIdentities[0].sha);
-if (!releaseIdentityValid) {
+const releaseConsistency = validateReleaseConsistency(releaseIdentities);
+if (releaseConsistency !== true) {
   for (const item of releaseChecks) {
     item.ok = false;
-    item.error = [item.error, "health endpoints do not share one valid release version and commit SHA"].filter(Boolean).join("; ");
+    item.error = [item.error, releaseConsistency].filter(Boolean).join("; ");
   }
 }
 
