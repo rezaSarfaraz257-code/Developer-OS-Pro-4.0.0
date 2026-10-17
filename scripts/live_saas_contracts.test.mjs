@@ -222,3 +222,32 @@ test("transient 503 responses receive longer bounded retries while permanent fai
   assert.equal(retryDelayMs(404, 1), 0);
   assert.equal(retryDelayMs(200, 1), 0);
 });
+
+
+test("diagnostics classify frontend availability, SPA shell, and liveness identity failures", () => {
+  const frontendUnavailable = diagnoseChecks([
+    { name: "frontend-root", ok: false, status: 503 },
+  ]);
+  assert.equal(frontendUnavailable[0].code, "FRONTEND_ORIGIN_UNAVAILABLE");
+  assert.match(frontendUnavailable[0].action, /frontend host/);
+
+  const frontendTimeout = diagnoseChecks([
+    { name: "frontend-root", ok: false, status: null },
+  ]);
+  assert.ok(frontendTimeout.some(item => item.code === "FRONTEND_ORIGIN_UNAVAILABLE"));
+
+  const spaFailure = diagnoseChecks([
+    { name: "web-ide-route", ok: false, status: 200 },
+    { name: "web-ide-trailing-slash", ok: true, status: 200 },
+  ]);
+  assert.equal(spaFailure.length, 1);
+  assert.equal(spaFailure[0].code, "FRONTEND_ROUTE_CONTRACT_FAILED");
+  assert.match(spaFailure[0].message, /SPA-shell contract/);
+
+  const livenessContractFailure = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 200 },
+    { name: "api-health", ok: true, status: 200 },
+  ]);
+  assert.ok(livenessContractFailure.some(item => item.code === "API_LIVENESS_CONTRACT_FAILED"));
+  assert.equal(livenessContractFailure.some(item => item.code === "API_LIVENESS_UNHEALTHY"), false);
+});
