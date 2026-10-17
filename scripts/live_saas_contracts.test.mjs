@@ -106,6 +106,9 @@ test("security header monitor rejects weak browser-facing headers", () => {
     } },
   };
   assert.equal(validateSecurityHeaders(secure), true);
+  assert.equal(validateSecurityHeaders({ ...secure, result: { securityHeaders: {
+    ...secure.result.securityHeaders, "referrer-policy": "same-origin",
+  } } }), true);
   assert.match(validateSecurityHeaders({ ...secure, result: { securityHeaders: {
     ...secure.result.securityHeaders, "x-frame-options": "ALLOWALL",
   } } }), /x-frame-options/);
