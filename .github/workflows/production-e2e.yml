@@ -23,12 +23,15 @@ jobs:
       name: production
       deployment: false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
       PRODUCTION_FRONTEND_URL: ${{ secrets.PRODUCTION_FRONTEND_URL }}
       PRODUCTION_BILLING_WEBHOOK_SECRET: ${{ secrets.PRODUCTION_BILLING_WEBHOOK_SECRET }}
       PRODUCTION_TARGET: ${{ inputs.target }}
+      PRODUCTION_HEALTH_BUDGET_MS: "2000"
+      PRODUCTION_FRONTEND_BUDGET_MS: "3000"
+      PRODUCTION_MIN_TLS_DAYS: "14"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,8 +42,21 @@ jobs:
           package-manager-cache: false
       - name: Fail closed when production configuration is missing
         run: |
+          set -euo pipefail
           test -n "$PRODUCTION_BASE_URL" || { echo "::error::PRODUCTION_BASE_URL is missing from the protected production environment."; exit 1; }
           test -n "$PRODUCTION_FRONTEND_URL" || { echo "::error::PRODUCTION_FRONTEND_URL is missing from the protected production environment."; exit 1; }
           test -n "$PRODUCTION_BILLING_WEBHOOK_SECRET" || { echo "::error::PRODUCTION_BILLING_WEBHOOK_SECRET is missing from the protected production environment."; exit 1; }
+      - name: Read-only DNS TLS latency preflight
+        run: node scripts/production_ops_preflight.mjs | tee production-preflight.json
       - name: Validate deployed production
-        run: node scripts/production_validate.mjs
+        run: node scripts/production_validate.mjs | tee production-validation.log
+      - name: Publish production acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-acceptance-${{ github.run_id }}
+          path: |
+            production-preflight.json
+            production-validation.log
+          if-no-files-found: warn
+          retention-days: 14
