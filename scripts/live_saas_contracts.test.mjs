@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
+  isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl,
   PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
 } from "./live_saas_contracts.mjs";
 
@@ -126,6 +126,21 @@ test("security header monitor rejects weak browser-facing headers", () => {
   assert.match(validateSecurityHeaders({ response: response(false), result: secure.result }), /HTTP 503/);
 });
 
+
+test("health endpoints must explicitly disable browser and intermediary caching", () => {
+  const secure = {
+    response: response(),
+    result: { cacheHeaders: { "cache-control": "no-store, max-age=0", pragma: "no-cache" } },
+  };
+  assert.equal(validateNoStoreCacheHeaders(secure), true);
+  assert.match(validateNoStoreCacheHeaders({ ...secure, result: { cacheHeaders: {
+    "cache-control": "max-age=14400", pragma: "",
+  } } }), /cacheable or incomplete cache policy/);
+  assert.match(validateNoStoreCacheHeaders({ ...secure, result: { cacheHeaders: {
+    "cache-control": "no-store", pragma: "no-cache",
+  } } }), /max-age=0/);
+  assert.match(validateNoStoreCacheHeaders({ response: response(false), result: secure.result }), /HTTP 503/);
+});
 
 test("final destination must remain HTTPS and contain no embedded credentials", () => {
   assert.equal(validateFinalUrl({ response: response(), result: { finalUrl: "https://example.test/health" } }), true);

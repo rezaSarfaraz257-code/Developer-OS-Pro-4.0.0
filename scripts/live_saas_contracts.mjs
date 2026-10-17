@@ -164,6 +164,19 @@ export function validateSecurityHeaders({ response, result }) {
   return missing.length ? `missing or weak security headers: ${missing.join(", ")}` : true;
 }
 
+/** Health endpoints must not be cached by browsers or intermediary proxies. */
+export function validateNoStoreCacheHeaders({ response, result }) {
+  if (!response.ok) return `HTTP ${response.status}`;
+  const headers = result.cacheHeaders || {};
+  const cacheControl = (headers["cache-control"] || "").toLowerCase();
+  const directives = cacheControl.split(",").map(value => value.trim());
+  const missing = [];
+  if (!directives.includes("no-store")) missing.push("cache-control: no-store");
+  if (!directives.some(value => /^max-age=0$/.test(value))) missing.push("cache-control: max-age=0");
+  if ((headers.pragma || "").toLowerCase() !== "no-cache") missing.push("pragma: no-cache");
+  return missing.length ? `health response has a cacheable or incomplete cache policy: ${missing.join(", ")}` : true;
+}
+
 /** Reject HTTPS checks that finish on an insecure or credential-bearing URL. */
 export function validateFinalUrl({ response, result }) {
   const finalUrl = result.finalUrl || response.url;
