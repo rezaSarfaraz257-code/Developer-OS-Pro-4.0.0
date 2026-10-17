@@ -29,6 +29,8 @@ class LivenessApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+        self.assertEqual(response["Pragma"], "no-cache")
+        self.assertEqual(response["Expires"], "0")
         self.assertEqual(response.json(), {
             "status": "alive",
             "service": "developer-os-api",
@@ -59,6 +61,20 @@ class LivenessApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["version"], "4.0.0")
         self.assertEqual(payload["release_sha"], "unknown")
+
+
+    def test_health_response_is_not_cached_and_shares_release_identity(self):
+        # Health responses must not be cached independently of liveness.
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc1234"}, clear=False):
+            with patch("api.views.connection.cursor") as cursor_factory:
+                cursor = cursor_factory.return_value.__enter__.return_value
+                cursor.fetchone.return_value = (1,)
+                response = DjangoTestClient().get("/api/health/?format=json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response.json()["version"], "4.0.0")
+        self.assertEqual(response.json()["release_sha"], "abc1234")
 
     def test_liveness_rejects_non_get_requests(self):
         request = self.factory.post("/api/health/live/")
