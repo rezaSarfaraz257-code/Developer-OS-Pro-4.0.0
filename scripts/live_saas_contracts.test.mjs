@@ -143,7 +143,9 @@ test("origin-level diagnosis appears only when all API probes fail at the origin
   assert.equal(diagnosis.length, 1);
   assert.equal(diagnosis[0].code, "API_ORIGIN_UNAVAILABLE");
   assert.match(diagnosis[0].action, /Render API service/);
-  assert.deepEqual(diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]), []);
+  const partialOriginRecovery = diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]);
+  assert.ok(partialOriginRecovery.some(item => item.code === "API_ORIGIN_DEGRADED"));
+  assert.equal(partialOriginRecovery.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
   const routeFailures = diagnoseChecks(apiNames.map(name => ({ name, ok: false, status: 404 })));
   assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
   assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_DEGRADED"), false);
