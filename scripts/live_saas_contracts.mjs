@@ -184,7 +184,38 @@ export function diagnoseChecks(checks) {
     });
   }
 
+  const frontendRoot = byName.get("frontend-root");
+  if (frontendRoot && !frontendRoot.ok &&
+      (frontendRoot.status === null || frontendRoot.status >= 500)) {
+    diagnostics.push({
+      severity: "critical",
+      code: "FRONTEND_ORIGIN_UNAVAILABLE",
+      message: "The public frontend root timed out or returned a server error.",
+      action: "Check the configured frontend origin and the frontend host's latest deployment, service events, and runtime/build logs. Keep the route check failing until a real public response succeeds.",
+    });
+  }
+
+  for (const name of ["web-ide-route", "web-ide-trailing-slash"]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+      diagnostics.push({
+        severity: "critical",
+        code: "FRONTEND_ROUTE_CONTRACT_FAILED",
+        message: `The ${name} URL returned a successful HTTP status but did not satisfy the expected SPA-shell contract.`,
+        action: "Inspect the deployed frontend routing and returned HTML shell. Do not accept HTTP 200 as proof that the Web IDE route loads correctly.",
+      });
+    }
+  }
+
   const liveness = byName.get("api-liveness");
+  if (liveness && !liveness.ok && liveness.status !== null && liveness.status >= 200 && liveness.status < 300) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_CONTRACT_FAILED",
+      message: "The liveness endpoint returned a successful HTTP status, but its JSON process-identity contract failed.",
+      action: "Verify that the deployed liveness handler returns status=alive, service identity, version, and release SHA without depending on database or worker health. Keep the validator fail-closed.",
+    });
+  }
   if (liveness && !liveness.ok && liveness.status === 404) {
     diagnostics.push({
       severity: "critical",
