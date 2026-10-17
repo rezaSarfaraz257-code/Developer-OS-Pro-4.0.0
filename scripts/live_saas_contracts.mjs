@@ -134,18 +134,57 @@ export function validateFinalUrl({ response, result }) {
 
 /** Explain broad origin-level failures without exposing response bodies or secrets. */
 export function diagnoseChecks(checks) {
-  const apiNames = new Set([
+  const diagnostics = [];
+  const byName = new Map(checks.map(item => [item.name, item]));
+  const apiNames = [
     "api-security-headers", "api-liveness", "api-health", "api-readiness",
     "api-pricing-contract", "billing-provider-config",
-  ]);
-  const apiChecks = checks.filter(item => apiNames.has(item.name));
+  ];
+  const apiChecks = apiNames.map(name => byName.get(name)).filter(Boolean);
   const originUnavailable = apiChecks.length > 0 && apiChecks.every(item =>
     !item.ok && (item.status === null || item.status >= 500));
-  if (!originUnavailable) return [];
-  return [{
-    severity: "critical",
-    code: "API_ORIGIN_UNAVAILABLE",
-    message: "Every API probe failed with an HTTP 5xx response or connection timeout. This points to API-origin/service availability rather than a single route contract.",
-    action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep the smoke checks strict.",
-  }];
+  if (originUnavailable) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_ORIGIN_UNAVAILABLE",
+      message: "Every API probe failed with an HTTP 5xx response or connection timeout. This points to API-origin/service availability rather than a single route contract.",
+      action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep the smoke checks strict.",
+    });
+    return diagnostics;
+  }
+
+  const liveness = byName.get("api-liveness");
+  if (liveness && !liveness.ok && liveness.status === 404) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_ROUTE_MISSING",
+      message: "The configured API origin responded, but the required liveness route returned HTTP 404.",
+      action: "Verify the deployed API route map and release version. Restore or configure the intended liveness endpoint in the owning runtime change; do not weaken this monitor to accept 404.",
+    });
+  }
+
+  const billing = byName.get("billing-provider-config");
+  if (billing && !billing.ok && billing.status !== null && billing.status < 500) {
+    diagnostics.push({
+      severity: "critical",
+      code: "BILLING_PROVIDER_CONFIG_INCOMPLETE",
+      message: "The pricing endpoint is reachable, but the required paid-plan billing configuration contract is not satisfied.",
+      action: "Check the production Stripe price-ID configuration and the deployed pricing response using authorized configuration access. Never print secret values or guess IDs.",
+    });
+  }
+
+  for (const name of ["api-security-headers", "frontend-security-headers"]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status < 500) {
+      diagnostics.push({
+        severity: "warning",
+        code: "SECURITY_HEADERS_INCOMPLETE",
+        message: `The ${name} probe found missing or weak browser-facing security headers.`,
+        action: "Review the relevant host/proxy security-header policy and verify the resulting public response headers.",
+      });
+      break;
+    }
+  }
+
+  return diagnostics;
 }
