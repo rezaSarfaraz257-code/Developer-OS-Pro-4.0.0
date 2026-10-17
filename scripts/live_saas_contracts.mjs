@@ -161,6 +161,38 @@ export function diagnoseChecks(checks) {
       message: "The configured API origin responded, but the required liveness route returned HTTP 404.",
       action: "Verify the deployed API route map and release version. Restore or configure the intended liveness endpoint in the owning runtime change; do not weaken this monitor to accept 404.",
     });
+  } else if (liveness && !liveness.ok && (liveness.status === null || liveness.status >= 500)) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_UNHEALTHY",
+      message: "The liveness probe timed out or returned a server error while other API probes did not establish a total origin outage.",
+      action: "Compare the liveness failure timestamp with deployment and runtime events. Confirm the route responds independently of database and worker dependencies, and keep the monitor fail-closed.",
+    });
+  }
+
+  for (const [name, code, label] of [
+    ["api-health", "API_HEALTH_CONTRACT_FAILED", "health"],
+    ["api-readiness", "API_READINESS_CONTRACT_FAILED", "readiness"],
+  ]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+      diagnostics.push({
+        severity: "critical",
+        code,
+        message: `The API ${label} endpoint responded successfully at HTTP level, but its required response contract failed.`,
+        action: `Inspect the sanitized ${label} failure and authorized service diagnostics. Do not treat HTTP 2xx alone as proof of operational ${label}.`,
+      });
+    }
+  }
+
+  const pricing = byName.get("api-pricing-contract");
+  if (pricing && !pricing.ok && pricing.status !== null && pricing.status >= 200 && pricing.status < 300) {
+    diagnostics.push({
+      severity: "critical",
+      code: "PRICING_CONTRACT_INVALID",
+      message: "The public pricing endpoint returned a successful HTTP status, but the published plan, entitlement, feature, or billing-status contract is incomplete or invalid.",
+      action: "Compare the sanitized validation error with the intended public pricing contract. Correct the owning API/configuration change; do not weaken the validator or expose secret values.",
+    });
   }
 
   const billing = byName.get("billing-provider-config");
