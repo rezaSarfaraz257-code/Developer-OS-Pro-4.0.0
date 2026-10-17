@@ -128,6 +128,11 @@ export function validateFinalUrl({ response, result }) {
   try { parsed = new URL(finalUrl); } catch { return "final response URL is invalid"; }
   if (parsed.protocol !== "https:") return "request ended on a non-HTTPS URL";
   if (parsed.username || parsed.password) return "final response URL contains embedded credentials";
+  if (result.url) {
+    let requested;
+    try { requested = new URL(result.url); } catch { return "requested URL is invalid"; }
+    if (parsed.origin !== requested.origin) return "request redirected to an unexpected origin";
+  }
   return true;
 }
 
