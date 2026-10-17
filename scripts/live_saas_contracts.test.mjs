@@ -47,7 +47,8 @@ test("IDE route validator requires an SPA root element", () => {
 });
 
 test("health contract fails closed for invalid JSON or degraded database", () => {
-  assert.equal(isHealthy(jsonInput({ status: "ok", database: "ok" })), true);
+  assert.equal(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0" })), true);
+  assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "1.0.0" })), /unexpected release version/);
   assert.match(isHealthy(jsonInput({ status: "ok", database: "error" })), /degraded/);
   assert.match(isHealthy({ response: response(), body: "not-json" }), /valid JSON/);
   assert.match(isHealthy({ response: response(false), body: "{}" }), /HTTP 503/);
@@ -55,7 +56,8 @@ test("health contract fails closed for invalid JSON or degraded database", () =>
 
 test("readiness contract requires every named production check", () => {
   const checks = Object.fromEntries(REQUIRED_READINESS_CHECKS.map(name => [name, true]));
-  assert.equal(isReady(jsonInput({ status: "ready", checks })), true);
+  assert.equal(isReady(jsonInput({ status: "ready", checks, version: "4.0.0" })), true);
+  assert.match(isReady(jsonInput({ status: "ready", checks, version: "1.0.0" })), /release version must be 4.0.0/);
   for (const missing of REQUIRED_READINESS_CHECKS) {
     const incomplete = { ...checks, [missing]: false };
     assert.match(isReady(jsonInput({ status: "ready", checks: incomplete })), new RegExp(missing));
@@ -129,9 +131,11 @@ test("final destination must remain HTTPS and contain no embedded credentials", 
 
 
 test("liveness contract validates process identity without requiring dependencies", () => {
-  assert.equal(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "abc123" })), true);
+  assert.equal(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "abc1234" })), true);
+  assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "unknown" })), /real 7–40 character hexadecimal release SHA/);
+  assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "1.0.0", release_sha: "abc1234" })), /expected release version/);
   assert.match(isLive(jsonInput({ status: "ok", database: "ok" })), /liveness contract/);
-  assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "", release_sha: "abc123" })), /liveness contract/);
+  assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "", release_sha: "abc1234" })), /liveness contract/);
   assert.match(isLive({ response: response(false, 404), body: "{}" }), /HTTP 404/);
   assert.match(isLive({ response: response(), body: "not-json" }), /valid JSON/);
 });
