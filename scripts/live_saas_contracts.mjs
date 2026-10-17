@@ -48,9 +48,10 @@ export function isHealthy({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
+  const validSha = typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha);
   return json.status === "ok" && json.database === "ok" &&
-    json.version === EXPECTED_RELEASE_VERSION
-    ? true : `health contract reports a degraded service/database or unexpected release version (expected ${EXPECTED_RELEASE_VERSION})`;
+    json.version === EXPECTED_RELEASE_VERSION && validSha
+    ? true : `health contract reports a degraded service/database, unexpected release version (expected ${EXPECTED_RELEASE_VERSION}), or invalid release SHA`;
 }
 
 export function isReady({ response, body }) {
@@ -60,9 +61,10 @@ export function isReady({ response, body }) {
   const checks = json.checks || {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
+  const validSha = typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
-  return json.status === "ready" && missing.length === 0 && versionMatches
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION}`;
+  return json.status === "ready" && missing.length === 0 && versionMatches && validSha
+    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be valid`;
 }
 
 export function validatePricing({ response, body }) {
