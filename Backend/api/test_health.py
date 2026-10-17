@@ -17,6 +17,10 @@ class LivenessApiTests(TestCase):
         # View-unit tests alone cannot catch a missing Django URL registration.
         self.assertEqual(reverse("liveness"), "/api/health/live/")
 
+    def test_explicit_project_level_liveness_route_uses_same_public_path(self):
+        # Keep a root URLconf alias for production routers/orchestrators to audit.
+        self.assertEqual(reverse("liveness-root"), "/api/health/live/")
+
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
         with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123"}, clear=False):
