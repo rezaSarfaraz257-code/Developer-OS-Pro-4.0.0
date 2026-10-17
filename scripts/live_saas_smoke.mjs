@@ -4,7 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -20,13 +20,14 @@ const frontendBase = requireHttpsOrigin("FRONTEND_URL", process.env.FRONTEND_URL
 const apiBase = requireHttpsOrigin("API_URL", process.env.API_URL || "");
 const checks = [];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const maxAttempts = 4;
 const retryableHttpStatus = status => status === 408 || status === 425 || status === 429 || status >= 500;
 
 async function check(name, url, validate, timeoutMs = 12000) {
   const started = Date.now();
   const attempts = [];
   let finalResult = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStarted = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -60,7 +61,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
 
       // Retry only transient HTTP failures. Contract failures (for example missing
       // Stripe configuration on HTTP 200) are deterministic and should fail fast.
-      if (!retryableHttpStatus(response.status) || attempt === 3) break;
+      if (!retryableHttpStatus(response.status) || attempt === maxAttempts) break;
     } catch (error) {
       const errorText = error?.name === "AbortError" ? "timeout after " + timeoutMs + "ms" : String(error?.message || error);
       attempts.push({
@@ -75,11 +76,13 @@ async function check(name, url, validate, timeoutMs = 12000) {
         name, url, status: null, durationMs: Date.now() - started,
         attempt, ok: false, error: errorText,
       };
-      if (attempt === 3) break;
+      if (attempt === maxAttempts) break;
     } finally {
       clearTimeout(timer);
     }
-    await sleep(attempt === 1 ? 900 : 2200);
+    const retryStatus = attempts.at(-1)?.status ?? null;
+    const delayMs = retryDelayMs(retryStatus, attempt);
+    if (delayMs > 0) await sleep(delayMs);
   }
 
   const recovered = finalResult?.ok === true && attempts.length > 1;
