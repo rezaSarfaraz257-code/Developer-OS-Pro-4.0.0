@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isHtml, isSpaShell, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
+  isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
   PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS,
 } from "./live_saas_contracts.mjs";
 
@@ -118,4 +118,13 @@ test("final destination must remain HTTPS and contain no embedded credentials", 
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "http://example.test/health" } }), /non-HTTPS/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "https://user:pass@example.test/health" } }), /credentials/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "not a url" } }), /invalid/);
+});
+
+
+test("liveness contract validates process identity without requiring dependencies", () => {
+  assert.equal(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "abc123" })), true);
+  assert.match(isLive(jsonInput({ status: "ok", database: "ok" })), /liveness contract/);
+  assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "", release_sha: "abc123" })), /liveness contract/);
+  assert.match(isLive({ response: response(false, 404), body: "{}" }), /HTTP 404/);
+  assert.match(isLive({ response: response(), body: "not-json" }), /valid JSON/);
 });
