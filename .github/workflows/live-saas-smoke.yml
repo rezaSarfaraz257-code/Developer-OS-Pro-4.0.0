@@ -73,7 +73,12 @@ jobs:
             ' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "# Developer OS — Live SaaS Observability" >> "$GITHUB_STEP_SUMMARY"
-            echo "Smoke script did not produce a report. Check origin configuration and runner logs." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "**Production probe status: NOT RUN.** Pull-request runs validate the monitor's unit tests only; a green job here is not evidence that production is healthy." >> "$GITHUB_STEP_SUMMARY"
+              echo "Run the scheduled/manual monitor on the default branch to generate live JSON evidence." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "**Production probe status: NO REPORT.** Smoke script did not produce a report. Check origin configuration and runner logs." >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
       - name: Upload machine-readable evidence
         if: always() && hashFiles('live-saas-smoke.json') != ''
