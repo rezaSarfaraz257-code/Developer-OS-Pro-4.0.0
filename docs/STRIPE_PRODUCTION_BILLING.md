@@ -41,7 +41,7 @@ Run the repository's preflight with the same environment as the backend:
 
     python scripts/production_preflight.py
 
-With **REQUIRE_STRIPE_BILLING=true**, the preflight fails closed if any advertised monthly or annual Stripe Price ID, secret, or other required Stripe variable is absent, incomplete, or has an unexpected identifier prefix. The preflight validates presence and basic shape; it cannot prove that a Price exists in the selected Stripe account or that webhook delivery succeeds.
+When **ENVIRONMENT=production** (or `prod`), the preflight now requires Stripe billing by default and fails closed if any advertised monthly or annual Stripe Price ID, secret, or other required Stripe variable is absent, incomplete, or has an unexpected identifier prefix. `REQUIRE_STRIPE_BILLING=true` can also enforce this contract explicitly in any environment. A deliberate `REQUIRE_STRIPE_BILLING=false` is only for a deployment that is intentionally not accepting paid subscriptions; it must not be used to claim production billing is ready. The preflight validates presence and basic shape; it cannot prove that a Price exists in the selected Stripe account or that webhook delivery succeeds.
 
 After deploy, verify:
 

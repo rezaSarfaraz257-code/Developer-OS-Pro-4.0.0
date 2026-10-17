@@ -8,6 +8,18 @@ export const FEATURE_KEYS = Object.freeze([
   "governance", "audit_log", "seat_billing", "enterprise_controls",
 ]);
 
+/** Backoff for transient responses only; permanent contract failures are never retried. */
+export function retryDelayMs(status, completedAttempt) {
+  const attempt = Math.max(1, Math.min(3, Number(completedAttempt) || 1));
+  const schedules = status === 503
+    ? [5000, 12000, 20000]
+    : status === null || status === undefined
+      ? [1500, 3500, 7000]
+      : [1000, 2500, 6000];
+  const retryable = status === null || status === undefined || status === 408 || status === 425 || status === 429 || status >= 500;
+  return retryable ? schedules[attempt - 1] : 0;
+}
+
 export function isHtml({ response, body, result }) {
   return response.ok && result.contentType.toLowerCase().includes("text/html") && body.length > 100
     ? true : `expected non-empty HTML; received HTTP ${response.status} (${result.contentType || "no content-type"})`;
@@ -128,5 +140,145 @@ export function validateFinalUrl({ response, result }) {
   try { parsed = new URL(finalUrl); } catch { return "final response URL is invalid"; }
   if (parsed.protocol !== "https:") return "request ended on a non-HTTPS URL";
   if (parsed.username || parsed.password) return "final response URL contains embedded credentials";
+  if (result.url) {
+    let requested;
+    try { requested = new URL(result.url); } catch { return "requested URL is invalid"; }
+    if (parsed.origin !== requested.origin) return "request redirected to an unexpected origin";
+  }
   return true;
+}
+
+
+/** Explain broad origin-level failures without exposing response bodies or secrets. */
+export function diagnoseChecks(checks) {
+  const diagnostics = [];
+  const byName = new Map(checks.map(item => [item.name, item]));
+  const apiNames = [
+    "api-security-headers", "api-liveness", "api-health", "api-readiness",
+    "api-pricing-contract", "billing-provider-config",
+  ];
+  const apiChecks = apiNames.map(name => byName.get(name)).filter(Boolean);
+  const originFailures = apiChecks.filter(item =>
+    !item.ok && (item.status === null || item.status >= 500));
+  const originUnavailable = apiChecks.length > 0 && originFailures.length === apiChecks.length;
+  if (originUnavailable) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_ORIGIN_UNAVAILABLE",
+      message: "Every API probe failed with an HTTP 5xx response or connection timeout. This points to API-origin/service availability rather than a single route contract.",
+      action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep the smoke checks strict.",
+    });
+    return diagnostics;
+  }
+  // A single 404 can coexist with an origin-wide incident (for example, a
+  // stale route on the deployed release). Do not let that one response hide
+  // a broad service outage in the remaining independent API probes.
+  const broadOriginFailure = apiChecks.length >= 4 &&
+    originFailures.length >= Math.ceil(apiChecks.length * 0.67);
+  if (broadOriginFailure) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_ORIGIN_DEGRADED",
+      message: `${originFailures.length} of ${apiChecks.length} independent API probes failed with HTTP 5xx responses or connection timeouts. A route-specific response elsewhere does not rule out a broader API-origin incident.`,
+      action: "Confirm the configured production API origin, then inspect the Render API service's latest deploy, service events, runtime logs, health checks, and suspension/resource state. Keep individual route failures visible and do not weaken the smoke checks.",
+    });
+  }
+
+  const frontendRoot = byName.get("frontend-root");
+  if (frontendRoot && !frontendRoot.ok &&
+      (frontendRoot.status === null || frontendRoot.status >= 500)) {
+    diagnostics.push({
+      severity: "critical",
+      code: "FRONTEND_ORIGIN_UNAVAILABLE",
+      message: "The public frontend root timed out or returned a server error.",
+      action: "Check the configured frontend origin and the frontend host's latest deployment, service events, and runtime/build logs. Keep the route check failing until a real public response succeeds.",
+    });
+  }
+
+  for (const name of ["web-ide-route", "web-ide-trailing-slash"]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+      diagnostics.push({
+        severity: "critical",
+        code: "FRONTEND_ROUTE_CONTRACT_FAILED",
+        message: `The ${name} URL returned a successful HTTP status but did not satisfy the expected SPA-shell contract.`,
+        action: "Inspect the deployed frontend routing and returned HTML shell. Do not accept HTTP 200 as proof that the Web IDE route loads correctly.",
+      });
+    }
+  }
+
+  const liveness = byName.get("api-liveness");
+  if (liveness && !liveness.ok && liveness.status !== null && liveness.status >= 200 && liveness.status < 300) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_CONTRACT_FAILED",
+      message: "The liveness endpoint returned a successful HTTP status, but its JSON process-identity contract failed.",
+      action: "Verify that the deployed liveness handler returns status=alive, service identity, version, and release SHA without depending on database or worker health. Keep the validator fail-closed.",
+    });
+  }
+  if (liveness && !liveness.ok && liveness.status === 404) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_ROUTE_MISSING",
+      message: "The configured API origin responded, but the required liveness route returned HTTP 404.",
+      action: "Verify the deployed API route map and release version. Restore or configure the intended liveness endpoint in the owning runtime change; do not weaken this monitor to accept 404.",
+    });
+  } else if (liveness && !liveness.ok && (liveness.status === null || liveness.status >= 500)) {
+    diagnostics.push({
+      severity: "critical",
+      code: "API_LIVENESS_UNHEALTHY",
+      message: "The liveness probe timed out or returned a server error while other API probes did not establish a total origin outage.",
+      action: "Compare the liveness failure timestamp with deployment and runtime events. Confirm the route responds independently of database and worker dependencies, and keep the monitor fail-closed.",
+    });
+  }
+
+  for (const [name, code, label] of [
+    ["api-health", "API_HEALTH_CONTRACT_FAILED", "health"],
+    ["api-readiness", "API_READINESS_CONTRACT_FAILED", "readiness"],
+  ]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+      diagnostics.push({
+        severity: "critical",
+        code,
+        message: `The API ${label} endpoint responded successfully at HTTP level, but its required response contract failed.`,
+        action: `Inspect the sanitized ${label} failure and authorized service diagnostics. Do not treat HTTP 2xx alone as proof of operational ${label}.`,
+      });
+    }
+  }
+
+  const pricing = byName.get("api-pricing-contract");
+  if (pricing && !pricing.ok && pricing.status !== null && pricing.status >= 200 && pricing.status < 300) {
+    diagnostics.push({
+      severity: "critical",
+      code: "PRICING_CONTRACT_INVALID",
+      message: "The public pricing endpoint returned a successful HTTP status, but the published plan, entitlement, feature, or billing-status contract is incomplete or invalid.",
+      action: "Compare the sanitized validation error with the intended public pricing contract. Correct the owning API/configuration change; do not weaken the validator or expose secret values.",
+    });
+  }
+
+  const billing = byName.get("billing-provider-config");
+  if (billing && !billing.ok && billing.status !== null && billing.status >= 200 && billing.status < 300) {
+    diagnostics.push({
+      severity: "critical",
+      code: "BILLING_PROVIDER_CONFIG_INCOMPLETE",
+      message: "The pricing endpoint is reachable, but the required paid-plan billing configuration contract is not satisfied.",
+      action: "Check the production Stripe price-ID configuration and the deployed pricing response using authorized configuration access. Never print secret values or guess IDs.",
+    });
+  }
+
+  for (const name of ["api-security-headers", "frontend-security-headers"]) {
+    const item = byName.get(name);
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+      diagnostics.push({
+        severity: "warning",
+        code: "SECURITY_HEADERS_INCOMPLETE",
+        message: `The ${name} probe found missing or weak browser-facing security headers.`,
+        action: "Review the relevant host/proxy security-header policy and verify the resulting public response headers.",
+      });
+      break;
+    }
+  }
+
+  return diagnostics;
 }

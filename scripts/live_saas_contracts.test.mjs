@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateFinalUrl,
-  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS,
+  PLAN_NAMES, REQUIRED_READINESS_CHECKS, FEATURE_KEYS, diagnoseChecks, retryDelayMs,
 } from "./live_saas_contracts.mjs";
 
 const response = (ok = true, status = ok ? 200 : 503) => ({ ok, status });
@@ -76,6 +76,7 @@ test("pricing contract accepts complete plans and rejects missing or invalid con
   assert.match(validatePricing(jsonInput({ ...valid, entitlements: { ...valid.entitlements, pro: { ide_runs_month: 1.5, ai_messages_month: 10 } } })), /entitlements/);
   assert.match(validatePricing(jsonInput({ ...valid, feature_matrix: { ...valid.feature_matrix, team: { web_ide: true } } })), /feature flags/);
   assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, pro: "yes" } })), /Stripe configuration/);
+  assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { pro: true, team: true, enterprise: true } })), /monthly\/annual Stripe configuration/);
   assert.match(validatePricing(jsonInput({ ...valid, stripe_configured: { ...valid.stripe_configured, team_annual: undefined } })), /monthly\/annual Stripe configuration/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, annual_usd: 0 } } })), /invalid public contract/);
   assert.match(validatePricing(jsonInput({ ...valid, plans: { ...valid.plans, team: { ...valid.plans.team, annual_usd: 149 } } })), /invalid public contract/);
@@ -118,6 +119,12 @@ test("final destination must remain HTTPS and contain no embedded credentials", 
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "http://example.test/health" } }), /non-HTTPS/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "https://user:pass@example.test/health" } }), /credentials/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "not a url" } }), /invalid/);
+  assert.equal(validateFinalUrl({ response: response(), result: {
+    url: "https://example.test/ide", finalUrl: "https://example.test/ide/",
+  } }), true);
+  assert.match(validateFinalUrl({ response: response(), result: {
+    url: "https://example.test/ide", finalUrl: "https://untrusted.example/ide",
+  } }), /unexpected origin/);
 });
 
 
@@ -127,4 +134,121 @@ test("liveness contract validates process identity without requiring dependencie
   assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "", release_sha: "abc123" })), /liveness contract/);
   assert.match(isLive({ response: response(false, 404), body: "{}" }), /HTTP 404/);
   assert.match(isLive({ response: response(), body: "not-json" }), /valid JSON/);
+});
+
+
+test("origin-level diagnosis appears only when all API probes fail at the origin", () => {
+  const apiNames = ["api-security-headers", "api-liveness", "api-health", "api-readiness", "api-pricing-contract", "billing-provider-config"];
+  const outage = apiNames.map(name => ({ name, ok: false, status: 503 }));
+  const diagnosis = diagnoseChecks(outage);
+  assert.equal(diagnosis.length, 1);
+  assert.equal(diagnosis[0].code, "API_ORIGIN_UNAVAILABLE");
+  assert.match(diagnosis[0].action, /Render API service/);
+  const partialOriginRecovery = diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]);
+  assert.ok(partialOriginRecovery.some(item => item.code === "API_ORIGIN_DEGRADED"));
+  assert.equal(partialOriginRecovery.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
+  const routeFailures = diagnoseChecks(apiNames.map(name => ({ name, ok: false, status: 404 })));
+  assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
+  assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_DEGRADED"), false);
+  assert.ok(routeFailures.some(item => item.code === "API_LIVENESS_ROUTE_MISSING"));
+
+  // One stale/missing route must not hide a broad outage in independent probes.
+  const mixedIncident = diagnoseChecks([
+    { name: "api-security-headers", ok: false, status: 503 },
+    { name: "api-liveness", ok: false, status: 404 },
+    { name: "api-health", ok: false, status: 503 },
+    { name: "api-readiness", ok: false, status: 503 },
+    { name: "api-pricing-contract", ok: false, status: 503 },
+    { name: "billing-provider-config", ok: false, status: 503 },
+  ]);
+  assert.ok(mixedIncident.some(item => item.code === "API_ORIGIN_DEGRADED"));
+  assert.ok(mixedIncident.some(item => item.code === "API_LIVENESS_ROUTE_MISSING"));
+});
+
+test("diagnostics identify missing liveness route and incomplete billing configuration", () => {
+  const diagnostics = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 404 },
+    { name: "billing-provider-config", ok: false, status: 200 },
+  ]);
+  assert.deepEqual(diagnostics.map(item => item.code), [
+    "API_LIVENESS_ROUTE_MISSING",
+    "BILLING_PROVIDER_CONFIG_INCOMPLETE",
+  ]);
+  assert.match(diagnostics[0].action, /do not weaken/);
+  assert.match(diagnostics[1].action, /Never print secret values or guess IDs/);
+  assert.deepEqual(diagnoseChecks([
+    { name: "api-liveness", ok: true, status: 200 },
+    { name: "billing-provider-config", ok: true, status: 200 },
+  ]), []);
+});
+
+
+test("diagnostics distinguish isolated liveness, health, readiness, and pricing contract failures", () => {
+  const liveness = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 503 },
+    { name: "api-health", ok: true, status: 200 },
+    { name: "api-readiness", ok: true, status: 200 },
+    { name: "api-pricing-contract", ok: true, status: 200 },
+    { name: "billing-provider-config", ok: true, status: 200 },
+  ]);
+  assert.ok(liveness.some(item => item.code === "API_LIVENESS_UNHEALTHY"));
+  assert.equal(liveness.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
+
+  const timeout = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: null },
+    { name: "api-health", ok: true, status: 200 },
+  ]);
+  assert.ok(timeout.some(item => item.code === "API_LIVENESS_UNHEALTHY"));
+
+  const contractFailures = diagnoseChecks([
+    { name: "api-health", ok: false, status: 200 },
+    { name: "api-readiness", ok: false, status: 200 },
+    { name: "api-pricing-contract", ok: false, status: 200 },
+  ]);
+  assert.deepEqual(contractFailures.map(item => item.code), [
+    "API_HEALTH_CONTRACT_FAILED",
+    "API_READINESS_CONTRACT_FAILED",
+    "PRICING_CONTRACT_INVALID",
+  ]);
+  assert.ok(contractFailures.every(item => item.severity === "critical"));
+});
+
+
+test("transient 503 responses receive longer bounded retries while permanent failures fail fast", () => {
+  assert.equal(retryDelayMs(503, 1), 5000);
+  assert.equal(retryDelayMs(503, 2), 12000);
+  assert.equal(retryDelayMs(503, 3), 20000);
+  assert.equal(retryDelayMs(null, 1), 1500);
+  assert.equal(retryDelayMs(429, 2), 2500);
+  assert.equal(retryDelayMs(404, 1), 0);
+  assert.equal(retryDelayMs(200, 1), 0);
+});
+
+
+test("diagnostics classify frontend availability, SPA shell, and liveness identity failures", () => {
+  const frontendUnavailable = diagnoseChecks([
+    { name: "frontend-root", ok: false, status: 503 },
+  ]);
+  assert.equal(frontendUnavailable[0].code, "FRONTEND_ORIGIN_UNAVAILABLE");
+  assert.match(frontendUnavailable[0].action, /frontend host/);
+
+  const frontendTimeout = diagnoseChecks([
+    { name: "frontend-root", ok: false, status: null },
+  ]);
+  assert.ok(frontendTimeout.some(item => item.code === "FRONTEND_ORIGIN_UNAVAILABLE"));
+
+  const spaFailure = diagnoseChecks([
+    { name: "web-ide-route", ok: false, status: 200 },
+    { name: "web-ide-trailing-slash", ok: true, status: 200 },
+  ]);
+  assert.equal(spaFailure.length, 1);
+  assert.equal(spaFailure[0].code, "FRONTEND_ROUTE_CONTRACT_FAILED");
+  assert.match(spaFailure[0].message, /SPA-shell contract/);
+
+  const livenessContractFailure = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 200 },
+    { name: "api-health", ok: true, status: 200 },
+  ]);
+  assert.ok(livenessContractFailure.some(item => item.code === "API_LIVENESS_CONTRACT_FAILED"));
+  assert.equal(livenessContractFailure.some(item => item.code === "API_LIVENESS_UNHEALTHY"), false);
 });

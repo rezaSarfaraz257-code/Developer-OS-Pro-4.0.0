@@ -9,9 +9,13 @@ from rest_framework_simplejwt.views import (
 )
 from api.views import AuthRateThrottle
 from api.mature import MatureTokenObtainPairView, MatureTokenRefreshView
+from api.operational_health import liveness_api
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Keep the orchestrator probe explicit at the project URLconf level as well
+    # as in api.urls. This makes the public production path easy to audit.
+    path('api/health/live/', liveness_api, name='liveness-root'),
     path('api/', include('api.urls')),
 
     path(
