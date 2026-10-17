@@ -34,14 +34,26 @@ export function isSpaShell({ response, body, result }) {
 export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
-export function isLive({ response, body }) {
+export function isLive({ response, body, result = {} }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "liveness response was not valid JSON"; }
-  return json.status === "alive" && json.service === "developer-os-api" &&
+  const validIdentity = json.status === "alive" && json.service === "developer-os-api" &&
     json.version === EXPECTED_RELEASE_VERSION &&
-    typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha)
-    ? true : "liveness contract requires an alive API, expected release version, and a real 7–40 character hexadecimal release SHA";
+    typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha);
+  if (!validIdentity) {
+    return "liveness contract requires an alive API, expected release version, and a real 7–40 character hexadecimal release SHA";
+  }
+  // On scheduled/manual CI runs, compare the deployed API's own identity to
+  // the exact repository revision being monitored. A well-formed but stale
+  // SHA must not be reported as a current-release pass.
+  const expectedSha = typeof result.expectedReleaseSha === "string"
+    ? result.expectedReleaseSha.trim().toLowerCase() : "";
+  if (expectedSha && (!/^[0-9a-f]{40}$/.test(expectedSha) ||
+      json.release_sha.toLowerCase() !== expectedSha)) {
+    return "deployed release SHA does not match the expected repository revision";
+  }
+  return true;
 }
 
 export function isHealthy({ response, body }) {
