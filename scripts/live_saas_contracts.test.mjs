@@ -146,7 +146,20 @@ test("origin-level diagnosis appears only when all API probes fail at the origin
   assert.deepEqual(diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]), []);
   const routeFailures = diagnoseChecks(apiNames.map(name => ({ name, ok: false, status: 404 })));
   assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
+  assert.equal(routeFailures.some(item => item.code === "API_ORIGIN_DEGRADED"), false);
   assert.ok(routeFailures.some(item => item.code === "API_LIVENESS_ROUTE_MISSING"));
+
+  // One stale/missing route must not hide a broad outage in independent probes.
+  const mixedIncident = diagnoseChecks([
+    { name: "api-security-headers", ok: false, status: 503 },
+    { name: "api-liveness", ok: false, status: 404 },
+    { name: "api-health", ok: false, status: 503 },
+    { name: "api-readiness", ok: false, status: 503 },
+    { name: "api-pricing-contract", ok: false, status: 503 },
+    { name: "billing-provider-config", ok: false, status: 503 },
+  ]);
+  assert.ok(mixedIncident.some(item => item.code === "API_ORIGIN_DEGRADED"));
+  assert.ok(mixedIncident.some(item => item.code === "API_LIVENESS_ROUTE_MISSING"));
 });
 
 test("diagnostics identify missing liveness route and incomplete billing configuration", () => {
