@@ -61,7 +61,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY . .
 RUN python3 -m compileall -q . \
     && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
-    && /opt/venv/bin/python -c "exec(\"from importlib import metadata\\nassert metadata.version('urllib3') == '2.8.0'\\nfor name in ('pip', 'setuptools', 'msgpack'):\\n try: metadata.version(name)\\n except metadata.PackageNotFoundError: pass\\n else: raise AssertionError('unexpected vulnerable package remains: ' + name)\")" \
+    && /opt/venv/bin/python -c "from importlib import metadata; assert metadata.version('urllib3') == '2.8.0'; assert not any((d.metadata.get('Name') or '').lower() in {'pip', 'setuptools', 'msgpack'} for d in metadata.distributions())" \
     && ! dpkg-query -W -f='${binary:Package}\\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' \
     && mkdir -p /workspaces \
     && chown -R runner:runner /workspaces /app /opt/venv
