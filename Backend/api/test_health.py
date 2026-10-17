@@ -24,7 +24,7 @@ class LivenessApiTests(TestCase):
 
     def test_public_liveness_url_is_reachable_through_django_client(self):
         # Integration coverage: verify URL routing and response contract together.
-        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "integration-test"}, clear=False):
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "", "RENDER_GIT_COMMIT": "integration-test"}, clear=False):
             response = DjangoTestClient().get("/api/health/live/")
 
         self.assertEqual(response.status_code, 200)
@@ -38,7 +38,7 @@ class LivenessApiTests(TestCase):
 
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
-        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123"}, clear=False):
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123", "RENDER_GIT_COMMIT": "render-commit"}, clear=False):
             response = liveness_api(request)
 
         self.assertEqual(response.status_code, 200)
