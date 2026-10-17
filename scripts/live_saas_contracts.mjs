@@ -98,8 +98,8 @@ export function validatePricing({ response, body }) {
     return "pricing response is missing boolean feature flags for one or more plans";
   }
   const stripe = json.stripe_configured;
-  if (!stripe || ["pro", "team", "enterprise"].some(name => typeof stripe[name] !== "boolean")) {
-    return "pricing response is missing valid Stripe configuration status flags for Pro, Team, or Enterprise";
+  if (!stripe || ["pro", "team", "enterprise", "pro_annual", "team_annual"].some(name => typeof stripe[name] !== "boolean")) {
+    return "pricing response is missing valid monthly/annual Stripe configuration status flags";
   }
   return true;
 }
@@ -108,8 +108,8 @@ export function validateBillingConfig({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "response was not valid JSON"; }
-  return ["pro", "team", "enterprise"].every(name => json?.stripe_configured?.[name] === true)
-    ? true : "Stripe price IDs for Pro, Team, and Enterprise are not all configured in the deployed API";
+  return ["pro", "team", "enterprise", "pro_annual", "team_annual"].every(name => json?.stripe_configured?.[name] === true)
+    ? true : "Stripe price IDs for Pro, Team (monthly and annual), and Enterprise are not all configured in the deployed API";
 }
 
 /** Validate the security headers visible to an unauthenticated browser. */
