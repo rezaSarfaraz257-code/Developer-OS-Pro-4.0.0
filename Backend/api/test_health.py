@@ -63,7 +63,7 @@ class LivenessApiTests(TestCase):
             response = liveness_api(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["release_sha"], render_sha)
+        self.assertEqual(json.loads(response.content)["release_sha"], render_sha)
 
     def test_configured_release_sha_is_fallback_when_render_sha_is_invalid(self):
         request = self.factory.get("/api/health/live/")
@@ -74,7 +74,7 @@ class LivenessApiTests(TestCase):
         }, clear=False):
             response = liveness_api(request)
 
-        self.assertEqual(response.json()["release_sha"], "abc1234")
+        self.assertEqual(json.loads(response.content)["release_sha"], "abc1234")
 
     def test_liveness_has_safe_defaults(self):
         request = self.factory.get("/api/health/live/")
