@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS builder
+FROM node:25-bookworm-slim AS builder
 
 # Build the Python runtime in an isolated stage so vulnerable build-time package
 # layers cannot survive in the shipped runner image.
@@ -20,7 +20,7 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -m pip uninstall -y pip \
     && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"'
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 
 # Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
