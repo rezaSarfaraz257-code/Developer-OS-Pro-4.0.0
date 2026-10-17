@@ -31,22 +31,26 @@ export function isSpaShell({ response, body, result }) {
     ? true : `route did not return a valid SPA shell (HTTP ${response.status})`;
 }
 
+export const EXPECTED_RELEASE_VERSION = "4.0.0";
+const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
+
 export function isLive({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "liveness response was not valid JSON"; }
   return json.status === "alive" && json.service === "developer-os-api" &&
-    typeof json.version === "string" && json.version.length > 0 &&
-    typeof json.release_sha === "string" && json.release_sha.length > 0
-    ? true : "liveness contract is missing process identity or reports a non-alive service";
+    json.version === EXPECTED_RELEASE_VERSION &&
+    typeof json.release_sha === "string" && RELEASE_SHA_PATTERN.test(json.release_sha)
+    ? true : "liveness contract requires an alive API, expected release version, and a real 7–40 character hexadecimal release SHA";
 }
 
 export function isHealthy({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
   try { json = JSON.parse(body); } catch { return "health response was not valid JSON"; }
-  return json.status === "ok" && json.database === "ok"
-    ? true : "health contract reports a degraded service or database";
+  return json.status === "ok" && json.database === "ok" &&
+    json.version === EXPECTED_RELEASE_VERSION
+    ? true : `health contract reports a degraded service/database or unexpected release version (expected ${EXPECTED_RELEASE_VERSION})`;
 }
 
 export function isReady({ response, body }) {
@@ -55,8 +59,9 @@ export function isReady({ response, body }) {
   try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
   const checks = json.checks || {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
-  return json.status === "ready" && missing.length === 0
-    ? true : `readiness contract has failed or missing required checks: ${missing.join(", ") || "status is not ready"}`;
+  const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
+  return json.status === "ready" && missing.length === 0 && versionMatches
+    ? true : `readiness contract has failed/missing checks: ${missing.join(", ") || "none"}; release version must be ${EXPECTED_RELEASE_VERSION}`;
 }
 
 export function validatePricing({ response, body }) {
