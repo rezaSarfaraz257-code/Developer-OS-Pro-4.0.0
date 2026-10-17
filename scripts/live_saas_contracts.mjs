@@ -34,6 +34,21 @@ export function isSpaShell({ response, body, result }) {
 export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
+/** Fail closed if the public health endpoints disagree on the running release. */
+export function validateReleaseConsistency(identities) {
+  if (!Array.isArray(identities) || identities.length !== 3) {
+    return "expected release identity from all three health endpoints";
+  }
+  const valid = identities.every(item =>
+    item && item.version === EXPECTED_RELEASE_VERSION &&
+    typeof item.sha === "string" && RELEASE_SHA_PATTERN.test(item.sha)
+  );
+  if (!valid) return "health endpoints must report the expected version and a real hexadecimal release SHA";
+  const first = identities[0];
+  return identities.every(item => item.version === first.version && item.sha === first.sha)
+    ? true : "health endpoints report mixed release identities";
+}
+
 export function isLive({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
