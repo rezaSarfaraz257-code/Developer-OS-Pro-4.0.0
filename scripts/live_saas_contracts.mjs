@@ -186,7 +186,7 @@ export function validateNoStoreCacheHeaders({ response, result }) {
   // "no-store, cache-control: max-age=0"). Normalize that representation
   // without weakening the required no-store and max-age=0 directives.
   const directives = cacheControl.split(",")
-    .map(value => value.trim().replace(/^cache-control\\s*:\\s*/i, ""))
+    .map(value => value.trim().replace(/^cache-control\s*:\s*/i, ""))
     .filter(Boolean);
   const missing = [];
   if (!directives.includes("no-store")) missing.push("cache-control: no-store");
