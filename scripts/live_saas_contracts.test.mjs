@@ -118,6 +118,12 @@ test("final destination must remain HTTPS and contain no embedded credentials", 
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "http://example.test/health" } }), /non-HTTPS/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "https://user:pass@example.test/health" } }), /credentials/);
   assert.match(validateFinalUrl({ response: response(), result: { finalUrl: "not a url" } }), /invalid/);
+  assert.equal(validateFinalUrl({ response: response(), result: {
+    url: "https://example.test/ide", finalUrl: "https://example.test/ide/",
+  } }), true);
+  assert.match(validateFinalUrl({ response: response(), result: {
+    url: "https://example.test/ide", finalUrl: "https://untrusted.example/ide",
+  } }), /unexpected origin/);
 });
 
 
