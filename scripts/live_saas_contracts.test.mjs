@@ -140,3 +140,20 @@ test("origin-level diagnosis appears only when all API probes fail at the origin
   assert.deepEqual(diagnoseChecks([...outage.slice(1), { name: "api-liveness", ok: true, status: 200 }]), []);
   assert.deepEqual(diagnoseChecks(apiNames.map(name => ({ name, ok: false, status: 404 }))), []);
 });
+
+test("diagnostics identify missing liveness route and incomplete billing configuration", () => {
+  const diagnostics = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 404 },
+    { name: "billing-provider-config", ok: false, status: 200 },
+  ]);
+  assert.deepEqual(diagnostics.map(item => item.code), [
+    "API_LIVENESS_ROUTE_MISSING",
+    "BILLING_PROVIDER_CONFIG_INCOMPLETE",
+  ]);
+  assert.match(diagnostics[0].action, /do not weaken/);
+  assert.match(diagnostics[1].action, /Never print secret values or guess IDs/);
+  assert.deepEqual(diagnoseChecks([
+    { name: "api-liveness", ok: true, status: 200 },
+    { name: "billing-provider-config", ok: true, status: 200 },
+  ]), []);
+});
