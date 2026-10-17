@@ -33,6 +33,7 @@ jobs:
       # Public repository variables and documented defaults remain fallback options.
       FRONTEND_URL: ${{ secrets.PRODUCTION_FRONTEND_URL || vars.PRODUCTION_FRONTEND_URL || 'https://developer-os-version-3-0-5.onrender.com' }}
       API_URL: ${{ secrets.PRODUCTION_BASE_URL || vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
+      EXPECTED_RELEASE_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

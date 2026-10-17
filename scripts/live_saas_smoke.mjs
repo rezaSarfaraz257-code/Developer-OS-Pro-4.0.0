@@ -44,6 +44,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
         platformHeaders: Object.fromEntries(["server", "retry-after", "x-render-routing", "x-request-id"].map(header => [header, response.headers.get(header) || ""])) ,
         securityHeaders: Object.fromEntries(["strict-transport-security", "x-content-type-options", "x-frame-options", "referrer-policy"].map(header => [header, response.headers.get(header) || ""])),
         finalUrl: response.url,
+        expectedReleaseSha: process.env.EXPECTED_RELEASE_SHA || "",
       };
       const destinationValidation = validateFinalUrl({ response, body, result });
       const validation = destinationValidation === true ? validate({ response, body, result }) : destinationValidation;
