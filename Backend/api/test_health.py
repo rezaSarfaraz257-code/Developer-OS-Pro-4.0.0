@@ -64,3 +64,37 @@ class LivenessApiTests(TestCase):
         request = self.factory.post("/api/health/live/")
         response = liveness_api(request)
         self.assertEqual(response.status_code, 405)
+
+
+
+class SharedReleaseIdentityTests(TestCase):
+    def test_all_health_routes_expose_the_same_release_identity_without_caching(self):
+        expected = {"version": "4.0.0", "release_sha": "abcdef1234567"}
+        env = {"RELEASE_VERSION": expected["version"], "RELEASE_SHA": expected["release_sha"]}
+        with patch.dict(os.environ, env, clear=False):
+            client = DjangoTestClient()
+            responses = [
+                client.get("/api/health/live/"),
+                client.get("/api/health/?format=json"),
+                client.get("/api/health/ready/?format=json"),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+            payload = response.json()
+            self.assertEqual(payload["version"], expected["version"])
+            self.assertEqual(payload["release_sha"], expected["release_sha"])
+
+    def test_release_sha_uses_render_commit_fallback_across_health_routes(self):
+        env = {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "", "RENDER_GIT_COMMIT": "fedcba987654321"}
+        with patch.dict(os.environ, env, clear=False):
+            responses = [
+                DjangoTestClient().get("/api/health/live/"),
+                DjangoTestClient().get("/api/health/?format=json"),
+                DjangoTestClient().get("/api/health/ready/?format=json"),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["release_sha"], "fedcba987654321")
