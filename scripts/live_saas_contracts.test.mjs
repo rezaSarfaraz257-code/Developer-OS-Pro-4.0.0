@@ -159,3 +159,34 @@ test("diagnostics identify missing liveness route and incomplete billing configu
     { name: "billing-provider-config", ok: true, status: 200 },
   ]), []);
 });
+
+
+test("diagnostics distinguish isolated liveness, health, readiness, and pricing contract failures", () => {
+  const liveness = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 503 },
+    { name: "api-health", ok: true, status: 200 },
+    { name: "api-readiness", ok: true, status: 200 },
+    { name: "api-pricing-contract", ok: true, status: 200 },
+    { name: "billing-provider-config", ok: true, status: 200 },
+  ]);
+  assert.ok(liveness.some(item => item.code === "API_LIVENESS_UNHEALTHY"));
+  assert.equal(liveness.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
+
+  const timeout = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: null },
+    { name: "api-health", ok: true, status: 200 },
+  ]);
+  assert.ok(timeout.some(item => item.code === "API_LIVENESS_UNHEALTHY"));
+
+  const contractFailures = diagnoseChecks([
+    { name: "api-health", ok: false, status: 200 },
+    { name: "api-readiness", ok: false, status: 200 },
+    { name: "api-pricing-contract", ok: false, status: 200 },
+  ]);
+  assert.deepEqual(contractFailures.map(item => item.code), [
+    "API_HEALTH_CONTRACT_FAILED",
+    "API_READINESS_CONTRACT_FAILED",
+    "PRICING_CONTRACT_INVALID",
+  ]);
+  assert.ok(contractFailures.every(item => item.severity === "critical"));
+});
