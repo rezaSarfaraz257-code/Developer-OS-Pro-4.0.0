@@ -7,6 +7,14 @@ on:
       - "scripts/live_saas_contracts.test.mjs"
       - "scripts/live_saas_smoke.mjs"
       - ".github/workflows/live-saas-smoke.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "scripts/live_saas_contracts.mjs"
+      - "scripts/live_saas_contracts.test.mjs"
+      - "scripts/live_saas_smoke.mjs"
+      - ".github/workflows/live-saas-smoke.yml"
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
