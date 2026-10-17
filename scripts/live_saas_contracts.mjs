@@ -19,6 +19,16 @@ export function isSpaShell({ response, body, result }) {
     ? true : `route did not return a valid SPA shell (HTTP ${response.status})`;
 }
 
+export function isLive({ response, body }) {
+  if (!response.ok) return `HTTP ${response.status}`;
+  let json;
+  try { json = JSON.parse(body); } catch { return "liveness response was not valid JSON"; }
+  return json.status === "alive" && json.service === "developer-os-api" &&
+    typeof json.version === "string" && json.version.length > 0 &&
+    typeof json.release_sha === "string" && json.release_sha.length > 0
+    ? true : "liveness contract is missing process identity or reports a non-alive service";
+}
+
 export function isHealthy({ response, body }) {
   if (!response.ok) return `HTTP ${response.status}`;
   let json;
