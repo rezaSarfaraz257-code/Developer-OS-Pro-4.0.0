@@ -164,7 +164,7 @@ export function diagnoseChecks(checks) {
   }
 
   const billing = byName.get("billing-provider-config");
-  if (billing && !billing.ok && billing.status !== null && billing.status < 500) {
+  if (billing && !billing.ok && billing.status !== null && billing.status >= 200 && billing.status < 300) {
     diagnostics.push({
       severity: "critical",
       code: "BILLING_PROVIDER_CONFIG_INCOMPLETE",
@@ -175,7 +175,7 @@ export function diagnoseChecks(checks) {
 
   for (const name of ["api-security-headers", "frontend-security-headers"]) {
     const item = byName.get(name);
-    if (item && !item.ok && item.status !== null && item.status < 500) {
+    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
       diagnostics.push({
         severity: "warning",
         code: "SECURITY_HEADERS_INCOMPLETE",
