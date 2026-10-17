@@ -33,7 +33,12 @@ else:
         print("INVALID PRODUCTION EMAIL_BACKEND: console email delivery is not production-safe.")
         sys.exit(4)
 
-stripe_required = os.getenv("REQUIRE_STRIPE_BILLING", "false").lower() in {"1", "true", "yes", "on"}
+# Production billing is required by default so a deployment cannot silently
+# pass preflight while every paid plan is unavailable. Non-production checks
+# remain opt-in; an explicit false is reserved for deliberate no-billing
+# deployments and must not be used for a release intended to accept payments.
+stripe_default = "true" if os.getenv("ENVIRONMENT", "").strip().lower() in {"production", "prod"} else "false"
+stripe_required = os.getenv("REQUIRE_STRIPE_BILLING", stripe_default).strip().lower() in {"1", "true", "yes", "on"}
 stripe_configured = [bool(os.getenv(key, "").strip()) for key in stripe_keys]
 if stripe_required and not all(stripe_configured):
     absent = [key for key, configured in zip(stripe_keys, stripe_configured) if not configured]
