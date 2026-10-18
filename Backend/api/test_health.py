@@ -40,7 +40,7 @@ class LivenessApiTests(TestCase):
 
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
-        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123", "RENDER_GIT_COMMIT": ""}, clear=False):
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc1234", "RENDER_GIT_COMMIT": ""}, clear=False):
             response = liveness_api(request)
 
         self.assertEqual(response.status_code, 200)
@@ -49,7 +49,7 @@ class LivenessApiTests(TestCase):
             "status": "alive",
             "service": "developer-os-api",
             "version": "4.0.0",
-            "release_sha": "abc123",
+            "release_sha": "abc1234",
         })
 
     def test_render_commit_overrides_stale_configured_release_sha(self):
@@ -100,9 +100,45 @@ class LivenessApiTests(TestCase):
         self.assertEqual(response["Pragma"], "no-cache")
         self.assertEqual(response["Expires"], "0")
         self.assertEqual(response.json()["version"], "4.0.0")
-        self.assertEqual(response.json()["release_sha"], "abc1234")
+        self.assertEqual(json.loads(response.content)["release_sha"], "abc1234")
 
     def test_liveness_rejects_non_get_requests(self):
         request = self.factory.post("/api/health/live/")
         response = liveness_api(request)
         self.assertEqual(response.status_code, 405)
+
+    def test_invalid_configured_release_sha_falls_back_to_unknown(self):
+        request = self.factory.get("/api/health/live/")
+        with patch.dict(os.environ, {
+            "RELEASE_VERSION": "4.0.0",
+            "RELEASE_SHA": "not-a-commit",
+            "RENDER_GIT_COMMIT": "",
+        }, clear=False):
+            response = liveness_api(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)["release_sha"], "unknown")
+
+    def test_short_or_non_hex_configured_release_sha_is_rejected(self):
+        request = self.factory.get("/api/health/live/")
+        for invalid_sha in ("", "abc", "123456g", "a" * 41, "unknown"):
+            with self.subTest(release_sha=invalid_sha):
+                with patch.dict(os.environ, {
+                    "RELEASE_VERSION": "4.0.0",
+                    "RELEASE_SHA": invalid_sha,
+                    "RENDER_GIT_COMMIT": "",
+                }, clear=False):
+                    response = liveness_api(request)
+                self.assertEqual(json.loads(response.content)["release_sha"], "unknown")
+
+    def test_valid_configured_release_sha_is_normalized_by_whitespace(self):
+        request = self.factory.get("/api/health/live/")
+        configured_sha = "a" * 40
+        with patch.dict(os.environ, {
+            "RELEASE_VERSION": "4.0.0",
+            "RELEASE_SHA": f"  {configured_sha}  ",
+            "RENDER_GIT_COMMIT": "",
+        }, clear=False):
+            response = liveness_api(request)
+
+        self.assertEqual(json.loads(response.content)["release_sha"], configured_sha)

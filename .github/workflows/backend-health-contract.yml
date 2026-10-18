@@ -1,0 +1,58 @@
+name: Backend Health Contract Tests
+
+on:
+  pull_request:
+    paths:
+      - "Backend/api/operational_health.py"
+      - "Backend/api/test_health.py"
+      - "Backend/api/urls.py"
+      - "Backend/x/urls.py"
+      - "Backend/x/settings.py"
+      - "Backend/requirements.txt"
+      - ".github/workflows/backend-health-contract.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "Backend/api/operational_health.py"
+      - "Backend/api/test_health.py"
+      - "Backend/api/urls.py"
+      - "Backend/x/urls.py"
+      - "Backend/x/settings.py"
+      - "Backend/requirements.txt"
+      - ".github/workflows/backend-health-contract.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-health-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  django-health-contract:
+    name: Django health endpoint regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: Backend
+    env:
+      DEBUG: "true"
+      DJANGO_SECRET_KEY: "ci-only-not-for-production"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      CI_COMPOSE_VALIDATION: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check Django configuration
+        run: python manage.py check
+      - name: Run health endpoint regression tests
+        run: python manage.py test api.test_health --verbosity 2
