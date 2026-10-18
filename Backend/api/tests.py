@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import tempfile
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -974,7 +975,7 @@ class BackgroundWorkerReadinessTests(APITestCase):
         WorkerHeartbeat.objects.create(
             name="background-worker",
             worker_id="worker-test:123",
-            last_seen_at=timezone.now() - timezone.timedelta(minutes=5),
+            last_seen_at=timezone.now() - timedelta(minutes=5),
         )
         with self.production_settings():
             response = self.client.get("/api/health/ready/")
