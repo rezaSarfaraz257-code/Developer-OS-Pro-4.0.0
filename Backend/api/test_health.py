@@ -142,3 +142,31 @@ class LivenessApiTests(TestCase):
             response = liveness_api(request)
 
         self.assertEqual(json.loads(response.content)["release_sha"], configured_sha)
+
+
+class SharedReleaseIdentityIntegrationTests(TestCase):
+    def test_all_public_health_routes_share_release_identity_and_disable_caching(self):
+        render_sha = "a" * 40
+        with patch.dict(os.environ, {
+            "RELEASE_VERSION": "4.0.0",
+            "RELEASE_SHA": "b" * 40,
+            "RENDER_GIT_COMMIT": render_sha,
+        }, clear=False):
+            client = DjangoTestClient()
+            responses = [
+                client.get("/api/health/live/"),
+                client.get("/api/health/?format=json"),
+                client.get("/api/health/ready/?format=json"),
+            ]
+
+        # Readiness may correctly fail closed when its required worker/config
+        # is missing; that must not suppress the diagnostic release identity.
+        self.assertEqual(responses[0].status_code, 200)
+        self.assertEqual(responses[1].status_code, 200)
+        self.assertIn(responses[2].status_code, (200, 503))
+        for response in responses:
+            self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+            self.assertEqual(response["Pragma"], "no-cache")
+            self.assertEqual(response["Expires"], "0")
+            self.assertEqual(response.json()["version"], "4.0.0")
+            self.assertEqual(response.json()["release_sha"], render_sha)
