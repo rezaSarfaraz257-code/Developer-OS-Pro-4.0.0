@@ -3458,7 +3458,12 @@ def _stripe_signature_valid(payload, signature, secret):
         return False
     if abs(timezone.now().timestamp() - timestamp_int) > 300:
         return False
-    signed = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
+    try:
+        payload_text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        # Invalid byte sequences are malformed input, not server errors.
+        return False
+    signed = f"{timestamp}.{payload_text}".encode("utf-8")
     expected = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
     return any(secrets.compare_digest(expected, value) for value in signatures)
 
@@ -3474,6 +3479,8 @@ def billing_webhook_api(request):
         event = json.loads(request.body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return Response({"error": "Invalid webhook payload."}, status=400)
+    if not isinstance(event, dict):
+        return Response({"error": "Webhook payload must be a JSON object."}, status=400)
     event_id = str(event.get("id") or "").strip()
     event_type = str(event.get("type") or "")
     if not event_id or not event_type:

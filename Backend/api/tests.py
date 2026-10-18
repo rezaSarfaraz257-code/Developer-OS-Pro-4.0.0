@@ -1,10 +1,14 @@
 from io import BytesIO
+import hashlib
+import hmac
+import json
 import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import IntegrityError, connection
 from django.test import override_settings
+from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
 from cryptography.fernet import Fernet
@@ -14,7 +18,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
+from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
 
 
 class ProductionReadinessTests(APITestCase):
@@ -886,3 +890,53 @@ class IDEWorkspaceLifecycleRegressionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertTrue(CodeWorkspace.objects.filter(pk=workspace.pk, owner=other).exists())
+
+
+@override_settings(STRIPE_WEBHOOK_SECRET="whsec_regression_test")
+class StripeWebhookFailClosedTests(APITestCase):
+    secret = "whsec_regression_test"
+
+    def signed_header(self, payload, timestamp=None):
+        timestamp = int(timestamp or timezone.now().timestamp())
+        signed = str(timestamp).encode("ascii") + b"." + payload
+        digest = hmac.new(self.secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+        return f"t={timestamp},v1={digest}"
+
+    def post_webhook(self, payload, signature=None):
+        return self.client.generic(
+            "POST",
+            "/api/billing/webhook/",
+            payload,
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE=signature or self.signed_header(payload),
+        )
+
+    def test_invalid_utf8_webhook_body_returns_400_without_server_error(self):
+        payload = b"\xff\xfe"
+        timestamp = int(timezone.now().timestamp())
+        response = self.post_webhook(payload, f"t={timestamp},v1=invalid")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(BillingEvent.objects.count(), 0)
+
+    def test_signed_json_array_is_rejected_as_invalid_event_shape(self):
+        payload = json.dumps(["not", "an", "event"]).encode("utf-8")
+        response = self.post_webhook(payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(BillingEvent.objects.count(), 0)
+
+    def test_invalid_signature_is_rejected_without_recording_event(self):
+        payload = json.dumps({"id": "evt_bad_sig", "type": "test.unhandled", "data": {"object": {}}}).encode("utf-8")
+        response = self.post_webhook(payload, "t=1,v1=invalid")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(BillingEvent.objects.count(), 0)
+
+    def test_duplicate_signed_event_is_acknowledged_without_duplicate_ledger_entry(self):
+        payload = json.dumps({"id": "evt_duplicate_test", "type": "test.unhandled", "data": {"object": {}}}).encode("utf-8")
+        signature = self.signed_header(payload)
+        first = self.post_webhook(payload, signature)
+        second = self.post_webhook(payload, signature)
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data["received"], True)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data["duplicate"], True)
+        self.assertEqual(BillingEvent.objects.filter(event_id="evt_duplicate_test").count(), 1)
