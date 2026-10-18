@@ -6,6 +6,12 @@ on:
       - "scripts/live_saas_contracts.mjs"
       - "scripts/live_saas_contracts.test.mjs"
       - "scripts/live_saas_smoke.mjs"
+      - "Backend/api/operational_health.py"
+      - "Backend/api/test_health.py"
+      - "Backend/api/urls.py"
+      - "Backend/x/urls.py"
+      - "Backend/x/settings.py"
+      - "Backend/requirements.txt"
       - ".github/workflows/live-saas-smoke.yml"
   push:
     branches:
@@ -14,6 +20,12 @@ on:
       - "scripts/live_saas_contracts.mjs"
       - "scripts/live_saas_contracts.test.mjs"
       - "scripts/live_saas_smoke.mjs"
+      - "Backend/api/operational_health.py"
+      - "Backend/api/test_health.py"
+      - "Backend/api/urls.py"
+      - "Backend/x/urls.py"
+      - "Backend/x/settings.py"
+      - "Backend/requirements.txt"
       - ".github/workflows/live-saas-smoke.yml"
   workflow_dispatch:
   schedule:
