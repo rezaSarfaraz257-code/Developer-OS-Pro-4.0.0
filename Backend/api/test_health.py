@@ -79,8 +79,12 @@ class SharedReleaseIdentityTests(TestCase):
                 client.get("/api/health/ready/?format=json"),
             ]
 
+        # Readiness may correctly return 503 when the production worker is absent.
+        # Release identity and no-store headers must remain available even then.
+        self.assertEqual(responses[0].status_code, 200)  # liveness is independent
+        self.assertEqual(responses[1].status_code, 200)  # database health
+        self.assertIn(responses[2].status_code, (200, 503))
         for response in responses:
-            self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
             payload = response.json()
             self.assertEqual(payload["version"], expected["version"])
@@ -95,6 +99,9 @@ class SharedReleaseIdentityTests(TestCase):
                 DjangoTestClient().get("/api/health/ready/?format=json"),
             ]
 
+        self.assertEqual(responses[0].status_code, 200)
+        self.assertEqual(responses[1].status_code, 200)
+        self.assertIn(responses[2].status_code, (200, 503))
         for response in responses:
-            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
             self.assertEqual(response.json()["release_sha"], "fedcba987654321")
