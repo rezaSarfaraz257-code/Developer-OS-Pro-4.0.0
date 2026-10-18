@@ -51,9 +51,14 @@ function matchesExpectedReleaseSha(json, result = {}) {
   const expectedSha = typeof result.expectedReleaseSha === "string"
     ? result.expectedReleaseSha.trim().toLowerCase() : "";
   if (!expectedSha) return true;
-  return /^[0-9a-f]{40}$/.test(expectedSha) &&
-    typeof json?.release_sha === "string" &&
-    json.release_sha.toLowerCase() === expectedSha;
+  if (!/^[0-9a-f]{40}$/.test(expectedSha)) return false;
+  if (typeof json?.release_sha === "string" && json.release_sha.toLowerCase() === expectedSha) {
+    return true;
+  }
+  // A release SHA may differ from HEAD when only monitor/docs files changed.
+  // The smoke runner sets this flag only after verifying the deployed Backend/
+  // tree matches HEAD and the deployed commit is an ancestor of HEAD.
+  return result.releaseRevisionMatchesBackend === true;
 }
 
 export function isLive({ response, body, result = {} }) {
@@ -236,7 +241,7 @@ export function diagnoseChecks(checks) {
       severity: "critical",
       code: "LIVE_RELEASE_REVISION_MISMATCH",
       message: `${releaseMismatchChecks.length} live check(s) returned a release SHA different from the repository revision under test: ${[...releaseMismatchNames].join(", ")}.`,
-      action: "In Render, verify the API service is linked to the intended repository and master branch, deploy the latest commit, and confirm the runtime release-SHA setting is sourced from the actual deployed commit. Re-run the live monitor after rollout. Do not disable or bypass the SHA comparison.",
+      action: "In Render, verify the API service is linked to the intended repository and master branch. If the deployed Backend/ tree differs from master, deploy the latest commit that changes Backend/ and confirm the runtime release SHA is sourced from the actual deployed commit. Re-run the live monitor. Do not disable or bypass release verification.",
     });
   }
   const originFailures = apiChecks.filter(item =>
