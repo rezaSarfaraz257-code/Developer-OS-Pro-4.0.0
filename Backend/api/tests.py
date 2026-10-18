@@ -18,7 +18,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile
+from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
 
 
 class ProductionReadinessTests(APITestCase):
@@ -940,3 +940,43 @@ class StripeWebhookFailClosedTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertEqual(second.data["duplicate"], True)
         self.assertEqual(BillingEvent.objects.filter(event_id="evt_duplicate_test").count(), 1)
+
+
+class BackgroundWorkerReadinessTests(APITestCase):
+    def production_settings(self):
+        return override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            SECRET_KEY="production-readiness-test-key",
+            ALLOWED_HOSTS=["testserver"],
+            EMAIL_HOST="smtp.example.test",
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        )
+
+    def test_production_readiness_requires_a_recent_worker_heartbeat(self):
+        with self.production_settings():
+            response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(response.data["checks"]["worker"])
+
+    def test_recent_worker_heartbeat_satisfies_worker_readiness(self):
+        WorkerHeartbeat.objects.create(
+            name="background-worker",
+            worker_id="worker-test:123",
+            last_seen_at=timezone.now(),
+        )
+        with self.production_settings():
+            response = self.client.get("/api/health/ready/")
+        self.assertTrue(response.data["checks"]["worker"])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_stale_worker_heartbeat_does_not_pass_readiness(self):
+        WorkerHeartbeat.objects.create(
+            name="background-worker",
+            worker_id="worker-test:123",
+            last_seen_at=timezone.now() - timezone.timedelta(minutes=5),
+        )
+        with self.production_settings():
+            response = self.client.get("/api/health/ready/")
+        self.assertFalse(response.data["checks"]["worker"])
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
