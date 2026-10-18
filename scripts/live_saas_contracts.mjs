@@ -97,7 +97,13 @@ export function isReady({ response, body, result = {} }) {
   let json;
   try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
   const checks = json.checks || {};
-  const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
+  // Worker is an optional deployment capability until explicitly required.
+  // Older deployments omit worker_required, so preserve the historical
+  // fail-closed contract for those responses.
+  const requiredChecks = json.worker_required === false
+    ? REQUIRED_READINESS_CHECKS.filter(name => name !== "worker")
+    : REQUIRED_READINESS_CHECKS;
+  const missing = requiredChecks.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
   const shaMatches = hasReleaseSha(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
