@@ -191,7 +191,11 @@ export function validateNoStoreCacheHeaders({ response, result }) {
   const missing = [];
   if (!directives.includes("no-store")) missing.push("cache-control: no-store");
   if (!directives.some(value => /^max-age=0$/.test(value))) missing.push("cache-control: max-age=0");
-  if ((headers.pragma || "").toLowerCase() !== "no-cache") missing.push("pragma: no-cache");
+  const pragma = (headers.pragma || "").toLowerCase();
+  // Some intermediaries incorrectly comma-join distinct response fields. If
+  // `Pragma: no-cache` is embedded in the combined value, still require the
+  // exact directive rather than failing a valid no-store response.
+  if (pragma !== "no-cache" && !directives.includes("pragma: no-cache")) missing.push("pragma: no-cache");
   return missing.length ? `health response has a cacheable or incomplete cache policy: ${missing.join(", ")}` : true;
 }
 

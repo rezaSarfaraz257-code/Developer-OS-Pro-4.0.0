@@ -141,6 +141,13 @@ test("health endpoints must explicitly disable browser and intermediary caching"
   assert.equal(validateNoStoreCacheHeaders({ response: response(), result: { cacheHeaders: {
     "cache-control": "no-store, cache-control: max-age=0, cache-control: private", pragma: "no-cache",
   } } }), true);
+  // Some hosting/proxy layers incorrectly fold Pragma into Cache-Control.
+  assert.equal(validateNoStoreCacheHeaders({ response: response(), result: { cacheHeaders: {
+    "cache-control": "no-store, cache-control: max-age=0, pragma: no-cache", pragma: "",
+  } } }), true);
+  assert.match(validateNoStoreCacheHeaders({ response: response(), result: { cacheHeaders: {
+    "cache-control": "no-store, cache-control: max-age=0, pragma: public", pragma: "",
+  } } }), /pragma: no-cache/);
   assert.match(validateNoStoreCacheHeaders({ ...secure, result: { cacheHeaders: {
     "cache-control": "max-age=14400", pragma: "",
   } } }), /cacheable or incomplete cache policy/);

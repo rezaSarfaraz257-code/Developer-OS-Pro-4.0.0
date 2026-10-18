@@ -96,7 +96,9 @@ class LivenessApiTests(TestCase):
                 response = DjangoTestClient().get("/api/health/?format=json")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+        self.assertEqual(response["Pragma"], "no-cache")
+        self.assertEqual(response["Expires"], "0")
         self.assertEqual(response.json()["version"], "4.0.0")
         self.assertEqual(response.json()["release_sha"], "abc1234")
 

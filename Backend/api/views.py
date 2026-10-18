@@ -135,7 +135,14 @@ def github_service_unavailable():
 # PROJECTS
 # =========================================================
 
-@never_cache
+def _no_store_health_response(response):
+    """Apply an explicit, consistent no-store policy to public health signals."""
+    response["Cache-Control"] = "no-store, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health_api(request):
@@ -143,17 +150,19 @@ def health_api(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             cursor.fetchone()
-        return Response({
+        return _no_store_health_response(Response({
             "status": "ok",
             "database": "ok",
             "service": "developer-os-api",
             **release_identity(),
-        })
+        }))
     except Exception:
-        return Response({"status": "degraded", "database": "unavailable", **release_identity()}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return _no_store_health_response(Response(
+            {"status": "degraded", "database": "unavailable", **release_identity()},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ))
 
 
-@never_cache
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -189,7 +198,10 @@ def readiness_api(request):
         checks["worker"] = False
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
     ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
-    return Response({"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()}, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)
+    return _no_store_health_response(Response(
+        {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
+        status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
+    ))
 
 
 @api_view(["GET", "POST"])
