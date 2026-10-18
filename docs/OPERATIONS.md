@@ -14,10 +14,11 @@ This runbook defines the operational baseline for a real production deployment.
 
 ## 2. Health semantics
 
-- `/api/health/` is the lightweight liveness/database probe.
-- `/api/health/ready/` is the deployment readiness contract. In production it validates database connectivity, trusted hosts, non-development secret configuration, email delivery configuration and the configured cache.
-- A failed readiness probe must prevent a new instance from receiving traffic.
-- Readiness is not a substitute for synthetic user journeys; production acceptance must exercise authentication, core workspace operations, runner execution and billing boundaries.
+- `/api/health/live/` is the dependency-free process liveness signal. Docker/container healthchecks must use this endpoint so a missing optional/paid worker does not cause the API process to be marked unhealthy or repeatedly restarted.
+- `/api/health/` checks API/database health and reports the deployed release identity.
+- `/api/health/ready/` is the production traffic-readiness contract. It validates database connectivity, trusted hosts, non-development secret configuration, deliverable-email configuration, cache health, and a fresh background-worker heartbeat with no stale running jobs.
+- A production readiness response of HTTP 503 when the worker is absent is intentional and must not be hidden; do not route traffic that requires queued jobs until readiness passes. Container liveness and traffic readiness are separate signals.
+- Readiness is not a substitute for synthetic user journeys; production acceptance must exercise authentication, core workspace operations, runner execution, queued email delivery and billing boundaries.
 
 ## 3. Reliability targets and error budgets
 
