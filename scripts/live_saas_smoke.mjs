@@ -4,6 +4,7 @@
  * No credentials, account creation, billing calls, or state mutations.
  */
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, isRetryableReleaseMismatch, releaseMismatchRetryDelayMs } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
@@ -22,6 +23,38 @@ const checks = [];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const maxAttempts = 4;
 const retryableHttpStatus = status => status === 408 || status === 425 || status === 429 || status >= 500;
+
+const backendRevisionCache = new Map();
+
+/**
+ * Accept a prior Render release only when its commit is in this repository history
+ * and its Backend/ tree exactly matches the checked-out master tree.
+ */
+function deployedBackendTreeMatchesCurrent(releaseSha) {
+  const expectedSha = (process.env.EXPECTED_RELEASE_SHA || "").trim().toLowerCase();
+  if (!expectedSha || !/^[0-9a-f]{40}$/i.test(releaseSha || "") || releaseSha.toLowerCase() === expectedSha) return false;
+  if (backendRevisionCache.has(releaseSha)) return backendRevisionCache.get(releaseSha);
+  let matches = false;
+  try {
+    execFileSync("git", ["cat-file", "-e", releaseSha + "^{commit}"], { stdio: "ignore" });
+    execFileSync("git", ["merge-base", "--is-ancestor", releaseSha, "HEAD"], { stdio: "ignore" });
+    execFileSync("git", ["diff", "--quiet", releaseSha, "HEAD", "--", "Backend/"], { stdio: "ignore" });
+    matches = true;
+  } catch {
+    matches = false;
+  }
+  backendRevisionCache.set(releaseSha, matches);
+  return matches;
+}
+
+function readReleaseSha(body) {
+  try {
+    const value = JSON.parse(body)?.release_sha;
+    return typeof value === "string" ? value : "";
+  } catch {
+    return "";
+  }
+}
 
 async function check(name, url, validate, timeoutMs = 12000) {
   const started = Date.now();
@@ -46,6 +79,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
         cacheHeaders: Object.fromEntries(["cache-control", "pragma"].map(header => [header, response.headers.get(header) || ""])),
         finalUrl: response.url,
         expectedReleaseSha: process.env.EXPECTED_RELEASE_SHA || "",
+        releaseRevisionMatchesBackend: deployedBackendTreeMatchesCurrent(readReleaseSha(body)),
       };
       const destinationValidation = validateFinalUrl({ response, body, result });
       const validation = destinationValidation === true ? validate({ response, body, result }) : destinationValidation;
