@@ -9,7 +9,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile
+from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
 from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
@@ -100,11 +100,20 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         worker = f"{socket.gethostname()}:{os.getpid()}"
+        last_heartbeat = 0.0
         while True:
+            now_monotonic = time.monotonic()
+            if now_monotonic - last_heartbeat >= 15:
+                WorkerHeartbeat.objects.update_or_create(
+                    name="background-worker",
+                    defaults={"worker_id": worker, "last_seen_at": timezone.now()},
+                )
+                last_heartbeat = now_monotonic
             recover_stale_jobs()
             job = claim_job(worker)
             if not job:
                 if options["once"]:
+                    WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                     return
                 time.sleep(options["sleep"])
                 continue
@@ -127,4 +136,5 @@ class Command(BaseCommand):
                     job.finished_at = now
             job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
             if options["once"]:
+                WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                 return
