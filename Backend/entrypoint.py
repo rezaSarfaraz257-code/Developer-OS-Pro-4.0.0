@@ -70,6 +70,13 @@ def run_api_with_optional_worker() -> int:
     causes the other to stop and the container to exit, so a dead worker cannot
     leave the API reporting readiness indefinitely.
     """
+    # Install shutdown handlers only after migrations complete, so Render can
+    # stop both supervised children without leaving an orphaned worker.
+    def request_shutdown(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
     enabled = os.getenv("RUN_BACKGROUND_WORKER_IN_WEB", "").strip().lower() in {
         "1", "true", "yes", "on"
     }
