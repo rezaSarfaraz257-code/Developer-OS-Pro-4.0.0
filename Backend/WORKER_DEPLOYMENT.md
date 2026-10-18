@@ -6,6 +6,18 @@ Registration, verification resend, password reset, and security alerts are store
 
 The repository's `render.yaml` currently defines the IDE runner only; it does not declare the Django email/background-job worker. If the Render deployment has no running worker, queued verification messages will remain queued.
 
+## Lower-cost single-service option
+
+If an additional always-on Render Background Worker is not affordable, the API container now supports a supervised, opt-in worker process. Set this environment variable on the **existing Django API service**:
+
+```text
+RUN_BACKGROUND_WORKER_IN_WEB=true
+```
+
+Deploy the commit containing this support. The entrypoint starts `python manage.py worker --sleep 1` alongside Gunicorn after migrations complete. If either process exits, the entrypoint stops the other process and exits non-zero so the container restarts instead of silently claiming readiness. The normal database heartbeat and readiness checks remain authoritative; this mode does not fake a heartbeat or bypass a failed database connection.
+
+This is a cost-saving compromise, not the preferred scaling model: every API replica runs one worker, so size the database connection limit and replica count accordingly. The job-claiming code uses database row locks with `skip_locked` to prevent workers from claiming the same queued job. If a dedicated worker already runs, leave this option disabled unless you intentionally want multiple consumers.
+
 ## Render configuration
 
 Create an always-on **Background Worker** service for this same repository:
