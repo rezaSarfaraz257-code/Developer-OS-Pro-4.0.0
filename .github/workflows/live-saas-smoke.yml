@@ -57,6 +57,9 @@ jobs:
       EXPECTED_RELEASE_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history lets the monitor verify the deployed Backend tree.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

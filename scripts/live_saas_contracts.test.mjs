@@ -50,6 +50,7 @@ test("health contract fails closed for invalid JSON or degraded database", () =>
   assert.equal(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "abc1234" })), true);
   const expectedSha = "a".repeat(40);
   assert.equal(isHealthy({ ...jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: expectedSha }), result: { expectedReleaseSha: expectedSha } }), true);
+  assert.equal(isHealthy({ ...jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "b".repeat(40) }), result: { expectedReleaseSha: expectedSha, releaseRevisionMatchesBackend: true } }), true);
   assert.match(isHealthy({ ...jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "b".repeat(40) }), result: { expectedReleaseSha: expectedSha } }), /does not match the expected repository revision/);
   assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "4.0.0", release_sha: "unknown" })), /real release SHA/);
   assert.match(isHealthy(jsonInput({ status: "ok", database: "ok", version: "1.0.0", release_sha: "abc1234" })), /release version 4.0.0/);
@@ -63,6 +64,7 @@ test("readiness contract requires every named production check", () => {
   assert.equal(isReady(jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "abc1234" })), true);
   const expectedSha = "a".repeat(40);
   assert.equal(isReady({ ...jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: expectedSha }), result: { expectedReleaseSha: expectedSha } }), true);
+  assert.equal(isReady({ ...jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "b".repeat(40) }), result: { expectedReleaseSha: expectedSha, releaseRevisionMatchesBackend: true } }), true);
   assert.match(isReady({ ...jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "b".repeat(40) }), result: { expectedReleaseSha: expectedSha } }), /does not match the expected repository revision/);
   assert.match(isReady(jsonInput({ status: "ready", checks, version: "4.0.0", release_sha: "unknown" })), /release SHA must be real/);
   assert.match(isReady(jsonInput({ status: "ready", checks, version: "1.0.0", release_sha: "abc1234" })), /release version must be 4.0.0/);
@@ -174,6 +176,7 @@ test("final destination must remain HTTPS and contain no embedded credentials", 
 test("liveness contract validates process identity without requiring dependencies", () => {
   assert.equal(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "abc1234" })), true);
   assert.equal(isLive({ ...jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "a".repeat(40) }), result: { expectedReleaseSha: "a".repeat(40) } }), true);
+  assert.equal(isLive({ ...jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "a".repeat(40) }), result: { expectedReleaseSha: "b".repeat(40), releaseRevisionMatchesBackend: true } }), true);
   assert.match(isLive({ ...jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "a".repeat(40) }), result: { expectedReleaseSha: "b".repeat(40) } }), /does not match the expected repository revision/);
   assert.match(isLive({ ...jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "a".repeat(40) }), result: { expectedReleaseSha: "unknown" } }), /does not match the expected repository revision/);
   assert.match(isLive(jsonInput({ status: "alive", service: "developer-os-api", version: "4.0.0", release_sha: "unknown" })), /real 7–40 character hexadecimal release SHA/);
