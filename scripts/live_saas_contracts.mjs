@@ -318,7 +318,7 @@ export function diagnoseChecks(checks) {
     ["api-readiness", "API_READINESS_CONTRACT_FAILED", "readiness"],
   ]) {
     const item = byName.get(name);
-    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+    if (item && !item.ok && !releaseMismatchNames.has(name) && item.status !== null && item.status >= 200 && item.status < 300) {
       diagnostics.push({
         severity: "critical",
         code,
