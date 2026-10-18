@@ -53,11 +53,12 @@ Never commit `.env`, production credentials, JWT secrets, GitHub client secrets,
 
 The release includes additional production safeguards:
 
-- `/api/health/ready/` readiness probe checks database connectivity and mandatory production configuration.
+- `/api/health/live/` is a dependency-free process-liveness signal.
+- `/api/health/ready/` checks database connectivity, mandatory production configuration, and a live background worker in production. HTTP 503 without the worker is expected and truthful.
 - Authentication and AI assistant endpoints have dedicated throttling policies.
 - AI prompts are capped at 6,000 characters to bound request cost and abuse.
 - Backend container runs Gunicorn as a non-root application user.
-- Docker backend health checks use the application readiness endpoint.
+- Docker/container health checks use dependency-free process liveness; production traffic readiness is checked separately through `/api/health/ready/`, which requires a fresh worker heartbeat.
 - `scripts/backup_postgres.sh` creates compressed PostgreSQL custom-format backups.
 - CodeQL and dependency-review workflows are included for the repository security gate.
 - Frontend error recovery and runtime health indicators use the live readiness endpoint.
