@@ -912,7 +912,7 @@ class StripeWebhookFailClosedTests(APITestCase):
         )
 
     def test_invalid_utf8_webhook_body_returns_400_without_server_error(self):
-        payload = b"\\xff\\xfe"
+        payload = b"\xff\xfe"
         timestamp = int(timezone.now().timestamp())
         response = self.post_webhook(payload, f"t={timestamp},v1=invalid")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
