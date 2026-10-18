@@ -11,6 +11,7 @@ on:
       - "Backend/api/urls.py"
       - "Backend/x/urls.py"
       - "Backend/x/settings.py"
+      - "Backend/**"
       - "Backend/requirements.txt"
       - ".github/workflows/live-saas-smoke.yml"
   push:
@@ -25,6 +26,7 @@ on:
       - "Backend/api/urls.py"
       - "Backend/x/urls.py"
       - "Backend/x/settings.py"
+      - "Backend/**"
       - "Backend/requirements.txt"
       - ".github/workflows/live-saas-smoke.yml"
   workflow_dispatch:
