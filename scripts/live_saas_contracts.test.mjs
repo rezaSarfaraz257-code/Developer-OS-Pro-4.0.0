@@ -262,6 +262,20 @@ test("diagnostics distinguish isolated liveness, health, readiness, and pricing 
 });
 
 
+test("diagnostics identify stale live release SHA separately from service health failures", () => {
+  const diagnostics = diagnoseChecks([
+    { name: "api-liveness", ok: false, status: 200, error: "deployed release SHA does not match the expected repository revision" },
+    { name: "api-health", ok: false, status: 200, error: "health release SHA does not match the expected repository revision" },
+    { name: "api-readiness", ok: false, status: 200, error: "readiness release SHA does not match the expected repository revision" },
+    { name: "api-pricing-contract", ok: true, status: 200 },
+  ]);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, "LIVE_RELEASE_REVISION_MISMATCH");
+  assert.match(diagnostics[0].message, /3 live check/);
+  assert.match(diagnostics[0].action, /deploy the latest commit/);
+  assert.match(diagnostics[0].action, /Do not disable or bypass/);
+});
+
 test("release SHA mismatch gets bounded rollout retries without retrying unrelated contract failures", () => {
   assert.equal(isRetryableReleaseMismatch("health release SHA does not match the expected repository revision"), true);
   assert.equal(isRetryableReleaseMismatch("deployed release SHA does not match the expected repository revision"), true);
