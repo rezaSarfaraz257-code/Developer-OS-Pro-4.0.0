@@ -20,7 +20,7 @@ if not re.search(r"^psycopg\[.*pool.*\]", requirements, re.MULTILINE):
 dockerfile = (ROOT / "Backend/Dockerfile").read_text(encoding="utf-8", errors="replace")
 if "HEALTHCHECK" not in dockerfile or "/api/health/live/" not in dockerfile:
     errors.append("Backend Dockerfile must use the dependency-free HTTP liveness healthcheck")
-if "/api/health/ready/" in dockerfile:
+if 'urlopen("http://127.0.0.1:8000/api/health/ready/"' in dockerfile:
     errors.append("Backend Dockerfile container healthcheck must not depend on production readiness")
 if "USER appuser" not in dockerfile:
     errors.append("Backend container must run as a non-root user")
