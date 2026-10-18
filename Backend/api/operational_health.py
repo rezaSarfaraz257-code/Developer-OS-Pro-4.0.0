@@ -1,4 +1,4 @@
-""""Dependency-free operational liveness endpoint.
+"""Dependency-free operational liveness endpoint.
 
 Liveness deliberately avoids database, cache, email and external-service calls.
 It is safe for orchestrators to use as a process-health signal.
