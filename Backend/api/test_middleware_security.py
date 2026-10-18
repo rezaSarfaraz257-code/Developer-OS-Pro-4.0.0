@@ -1,7 +1,7 @@
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase
 
-from api.middleware import RequestObservabilityMiddleware
+from api.middleware import ApiSecurityHeadersMiddleware, RequestObservabilityMiddleware
 
 
 class RequestIdValidationTests(SimpleTestCase):
@@ -31,3 +31,28 @@ class RequestIdValidationTests(SimpleTestCase):
     def test_generates_request_id_when_header_is_missing(self):
         response = self._response_for(None)
         self.assertRegex(response["X-Request-ID"], r"^[0-9a-f]{32}$")
+
+
+class ApiSecurityHeadersTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_api_responses_include_required_security_headers(self):
+        request = self.factory.get("/api/health/")
+        middleware = ApiSecurityHeadersMiddleware(lambda _request: HttpResponse("ok"))
+
+        response = middleware(request)
+
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["Referrer-Policy"], "same-origin")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+
+    def test_non_api_responses_are_not_given_api_only_policy(self):
+        request = self.factory.get("/")
+        middleware = ApiSecurityHeadersMiddleware(lambda _request: HttpResponse("ok"))
+
+        response = middleware(request)
+
+        self.assertNotIn("X-Frame-Options", response)
+        self.assertNotIn("Referrer-Policy", response)
