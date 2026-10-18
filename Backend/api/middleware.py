@@ -75,4 +75,7 @@ class ApiSecurityHeadersMiddleware:
             )
             response["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
             response["Cross-Origin-Resource-Policy"] = "same-site"
+            response["X-Frame-Options"] = "DENY"
+            response["Referrer-Policy"] = "same-origin"
+            response["X-Content-Type-Options"] = "nosniff"
         return response
