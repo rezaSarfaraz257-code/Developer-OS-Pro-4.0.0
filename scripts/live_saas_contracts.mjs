@@ -225,6 +225,20 @@ export function diagnoseChecks(checks) {
     "api-pricing-contract", "billing-provider-config",
   ];
   const apiChecks = apiNames.map(name => byName.get(name)).filter(Boolean);
+  // A successful HTTP response with an old release identity is a rollout/release
+  // provenance incident, not an API outage. Report it directly and avoid
+  // burying the actionable cause under generic contract-failure messages.
+  const releaseMismatchChecks = checks.filter(item =>
+    !item.ok && /release SHA does not match the expected repository revision/i.test(item.error || ""));
+  const releaseMismatchNames = new Set(releaseMismatchChecks.map(item => item.name));
+  if (releaseMismatchChecks.length > 0) {
+    diagnostics.push({
+      severity: "critical",
+      code: "LIVE_RELEASE_REVISION_MISMATCH",
+      message: `${releaseMismatchChecks.length} live check(s) returned a release SHA different from the repository revision under test: ${[...releaseMismatchNames].join(", ")}.`,
+      action: "In Render, verify the API service is linked to the intended repository and master branch, deploy the latest commit, and confirm the runtime release-SHA setting is sourced from the actual deployed commit. Re-run the live monitor after rollout. Do not disable or bypass the SHA comparison.",
+    });
+  }
   const originFailures = apiChecks.filter(item =>
     !item.ok && (item.status === null || item.status >= 500));
   const originUnavailable = apiChecks.length > 0 && originFailures.length === apiChecks.length;
@@ -264,7 +278,7 @@ export function diagnoseChecks(checks) {
 
   for (const name of ["web-ide-route", "web-ide-trailing-slash"]) {
     const item = byName.get(name);
-    if (item && !item.ok && item.status !== null && item.status >= 200 && item.status < 300) {
+    if (item && !item.ok && !releaseMismatchNames.has(name) && item.status !== null && item.status >= 200 && item.status < 300) {
       diagnostics.push({
         severity: "critical",
         code: "FRONTEND_ROUTE_CONTRACT_FAILED",
@@ -275,7 +289,7 @@ export function diagnoseChecks(checks) {
   }
 
   const liveness = byName.get("api-liveness");
-  if (liveness && !liveness.ok && liveness.status !== null && liveness.status >= 200 && liveness.status < 300) {
+  if (liveness && !liveness.ok && !releaseMismatchNames.has("api-liveness") && liveness.status !== null && liveness.status >= 200 && liveness.status < 300) {
     diagnostics.push({
       severity: "critical",
       code: "API_LIVENESS_CONTRACT_FAILED",
