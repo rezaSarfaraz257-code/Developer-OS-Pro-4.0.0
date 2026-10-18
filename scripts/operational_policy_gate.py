@@ -18,8 +18,10 @@ if not re.search(r"^psycopg\[.*pool.*\]", requirements, re.MULTILINE):
     errors.append("Backend requirements must include psycopg pool support for bounded production DB pooling")
 
 dockerfile = (ROOT / "Backend/Dockerfile").read_text(encoding="utf-8", errors="replace")
-if "HEALTHCHECK" not in dockerfile or "/api/health/ready/" not in dockerfile:
-    errors.append("Backend Dockerfile must expose the HTTP readiness healthcheck")
+if "HEALTHCHECK" not in dockerfile or "/api/health/live/" not in dockerfile:
+    errors.append("Backend Dockerfile must use the dependency-free HTTP liveness healthcheck")
+if "/api/health/ready/" in dockerfile:
+    errors.append("Backend Dockerfile container healthcheck must not depend on production readiness")
 if "USER appuser" not in dockerfile:
     errors.append("Backend container must run as a non-root user")
 if 'CMD ["python", "entrypoint.py"]' not in dockerfile:
@@ -72,6 +74,8 @@ for marker in ("release", "backup", "rollback", "runner"):
         errors.append(f"operations runbook missing required operational topic: {marker}")
 
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8", errors="replace")
+if "http://127.0.0.1:8000/api/health/live/" not in compose:
+    errors.append("Compose backend container healthcheck must use dependency-free liveness")
 if "runner_internal:" not in compose or "internal: true" not in compose:
     errors.append("Runner network must remain internal-only")
 if "RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}" not in compose:
