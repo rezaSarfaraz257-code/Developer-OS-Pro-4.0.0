@@ -40,7 +40,7 @@ class LivenessApiTests(TestCase):
 
     def test_liveness_returns_process_contract_and_no_store_cache(self):
         request = self.factory.get("/api/health/live/")
-        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc123", "RENDER_GIT_COMMIT": ""}, clear=False):
+        with patch.dict(os.environ, {"RELEASE_VERSION": "4.0.0", "RELEASE_SHA": "abc1234", "RENDER_GIT_COMMIT": ""}, clear=False):
             response = liveness_api(request)
 
         self.assertEqual(response.status_code, 200)
@@ -49,7 +49,7 @@ class LivenessApiTests(TestCase):
             "status": "alive",
             "service": "developer-os-api",
             "version": "4.0.0",
-            "release_sha": "abc123",
+            "release_sha": "abc1234",
         })
 
     def test_render_commit_overrides_stale_configured_release_sha(self):
