@@ -9,14 +9,13 @@ class OptionalBackgroundWorkerSupervisorTests(SimpleTestCase):
     @patch.dict("os.environ", {}, clear=True)
     @patch("entrypoint.os.execvp")
     def test_default_keeps_existing_api_startup_path(self, execvp):
-        with self.assertRaises(AssertionError):
-            # execvp is mocked, so it returns; production execvp replaces the
-            # process and never returns. Assert the legacy command is unchanged.
-            entrypoint.run_api_with_optional_worker()
-            execvp.assert_called_once_with(
-                "gunicorn",
-                ["gunicorn", "x.asgi:application", "-c", "gunicorn.conf.py"],
-            )
+        # execvp is mocked, so it returns; production execvp replaces the
+        # process and never returns. Assert the legacy command is unchanged.
+        entrypoint.run_api_with_optional_worker()
+        execvp.assert_called_once_with(
+            "gunicorn",
+            ["gunicorn", "x.asgi:application", "-c", "gunicorn.conf.py"],
+        )
 
     @patch.dict("os.environ", {"RUN_BACKGROUND_WORKER_IN_WEB": "true"})
     @patch("entrypoint.time.sleep", return_value=None)
