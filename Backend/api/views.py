@@ -205,7 +205,21 @@ def readiness_api(request):
     except Exception:
         checks["worker"] = False
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
-    if getattr(settings, "IS_PRODUCTION", False) or os.environ.get("REQUIRE_BACKGROUND_WORKER", "").strip().lower() in {"1", "true", "yes", "on"}:
+    # Render's deployment SHA is injected by the platform. Treat that as a
+    # production runtime signal even if ENVIRONMENT was accidentally left at
+    # its development default; otherwise a missing worker can be reported as
+    # ready while checks["worker"] is false.
+    is_render_runtime = bool(
+        os.environ.get("RENDER_SERVICE_ID", "").strip()
+        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    )
+    worker_required = (
+        getattr(settings, "IS_PRODUCTION", False)
+        or is_render_runtime
+        or os.environ.get("REQUIRE_BACKGROUND_WORKER", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if worker_required:
         mandatory.append("worker")
     ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
     return _no_store_health_response(Response(
