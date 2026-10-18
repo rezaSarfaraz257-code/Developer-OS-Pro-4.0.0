@@ -192,11 +192,21 @@ def readiness_api(request):
     except Exception:
         checks["cache"] = False
     try:
-        from .models import BackgroundJob
-        checks["worker"] = not BackgroundJob.objects.filter(status="running", locked_at__lt=timezone.now()-timedelta(minutes=10)).exists()
+        from .models import BackgroundJob, WorkerHeartbeat
+        worker_fresh = WorkerHeartbeat.objects.filter(
+            name="background-worker",
+            last_seen_at__gte=timezone.now() - timedelta(seconds=90),
+        ).exists()
+        no_stale_jobs = not BackgroundJob.objects.filter(
+            status="running",
+            locked_at__lt=timezone.now() - timedelta(minutes=10),
+        ).exists()
+        checks["worker"] = worker_fresh and no_stale_jobs
     except Exception:
         checks["worker"] = False
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
+    if getattr(settings, "IS_PRODUCTION", False) or os.environ.get("REQUIRE_BACKGROUND_WORKER", "").strip().lower() in {"1", "true", "yes", "on"}:
+        mandatory.append("worker")
     ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
     return _no_store_health_response(Response(
         {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},

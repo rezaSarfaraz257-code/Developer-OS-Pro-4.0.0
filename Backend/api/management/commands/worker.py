@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+import threading
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -9,7 +10,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile
+from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
 from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
@@ -36,6 +37,17 @@ def recover_stale_jobs():
             locked.error = (locked.error or "") + "\nRecovered stale worker lease."
             locked.last_error_at = now
             locked.save(update_fields=["status", "available_at", "dead_lettered_at", "finished_at", "error", "last_error_at"])
+
+def _heartbeat_loop(worker, stop_event):
+    """Keep a durable liveness lease fresh while the worker is idle or busy."""
+    while not stop_event.is_set():
+        WorkerHeartbeat.objects.update_or_create(
+            name="background-worker",
+            defaults={"worker_id": worker, "last_seen_at": timezone.now()},
+        )
+        if stop_event.wait(15):
+            return
+
 
 def claim_job(worker):
     with transaction.atomic():
@@ -100,11 +112,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         worker = f"{socket.gethostname()}:{os.getpid()}"
+        heartbeat_stop = threading.Event()
+        if not options["once"]:
+            # A separate heartbeat keeps readiness accurate even during a
+            # long-running export or SMTP request.
+            threading.Thread(
+                target=_heartbeat_loop,
+                args=(worker, heartbeat_stop),
+                name="developer-os-worker-heartbeat",
+                daemon=True,
+            ).start()
         while True:
             recover_stale_jobs()
             job = claim_job(worker)
             if not job:
                 if options["once"]:
+                    WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                     return
                 time.sleep(options["sleep"])
                 continue
@@ -127,4 +150,5 @@ class Command(BaseCommand):
                     job.finished_at = now
             job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
             if options["once"]:
+                WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                 return

@@ -944,3 +944,11 @@ class CommunityPostComment(models.Model):
     def __str__(self):
         return f"Comment on community post {self.post_id}"
 
+
+
+class WorkerHeartbeat(models.Model):
+    """Last durable heartbeat from the background worker process."""
+
+    name = models.CharField(max_length=100, primary_key=True)
+    worker_id = models.CharField(max_length=160)
+    last_seen_at = models.DateTimeField()
