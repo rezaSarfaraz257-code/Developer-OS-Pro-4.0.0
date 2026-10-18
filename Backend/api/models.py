@@ -951,9 +951,4 @@ class WorkerHeartbeat(models.Model):
 
     name = models.CharField(max_length=100, primary_key=True)
     worker_id = models.CharField(max_length=160)
-    last_seen_at = models.DateTimeField(db_index=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["name", "last_seen_at"], name="api_worker_heartbeat_idx"),
-        ]
+    last_seen_at = models.DateTimeField()
