@@ -156,7 +156,12 @@ test("health endpoints must explicitly disable browser and intermediary caching"
   assert.match(validateNoStoreCacheHeaders({ ...secure, result: { cacheHeaders: {
     "cache-control": "no-store", pragma: "no-cache",
   } } }), /max-age=0/);
-  assert.match(validateNoStoreCacheHeaders({ response: response(false), result: secure.result }), /HTTP 503/);
+  // Readiness may correctly be 503 when a required worker is absent; its
+  // cache headers must still be validated independently of readiness status.
+  assert.equal(validateNoStoreCacheHeaders({ response: response(false), result: secure.result }), true);
+  assert.match(validateNoStoreCacheHeaders({ response: response(false), result: { cacheHeaders: {
+    "cache-control": "max-age=60", pragma: "",
+  } } }), /cacheable or incomplete cache policy/);
 });
 
 test("final destination must remain HTTPS and contain no embedded credentials", () => {

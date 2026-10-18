@@ -38,7 +38,16 @@ function deployedBackendTreeMatchesCurrent(releaseSha) {
   try {
     execFileSync("git", ["cat-file", "-e", releaseSha + "^{commit}"], { stdio: "ignore" });
     execFileSync("git", ["merge-base", "--is-ancestor", releaseSha, "HEAD"], { stdio: "ignore" });
-    execFileSync("git", ["diff", "--quiet", releaseSha, "HEAD", "--", "Backend/"], { stdio: "ignore" });
+        // Unit-test-only changes do not alter the deployed runtime. Compare the
+    // production Backend tree while excluding Python test modules so a commit
+    // that only adds regression coverage does not falsely require a redeploy.
+    execFileSync("git", [
+      "diff", "--quiet", releaseSha, "HEAD", "--",
+      "Backend/",
+      ":(exclude)Backend/**/test_*.py",
+      ":(exclude)Backend/**/tests.py",
+      ":(exclude)Backend/**/tests/**",
+    ], { stdio: "ignore" });
     matches = true;
   } catch {
     matches = false;
