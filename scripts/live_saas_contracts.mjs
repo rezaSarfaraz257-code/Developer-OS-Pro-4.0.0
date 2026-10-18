@@ -183,7 +183,9 @@ export function validateSecurityHeaders({ response, result }) {
 
 /** Health endpoints must not be cached by browsers or intermediary proxies. */
 export function validateNoStoreCacheHeaders({ response, result }) {
-  if (!response.ok) return `HTTP ${response.status}`;
+  // Cache policy is independent of application health: validate headers even
+  // on a legitimate 503 readiness response, rather than double-counting the
+  // outage as a cache-policy failure.
   const headers = result.cacheHeaders || {};
   const cacheControl = (headers["cache-control"] || "").toLowerCase();
   // Some proxies/framework middleware expose duplicate Cache-Control fields as
