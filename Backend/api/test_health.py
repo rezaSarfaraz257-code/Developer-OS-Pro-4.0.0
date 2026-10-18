@@ -100,7 +100,7 @@ class LivenessApiTests(TestCase):
         self.assertEqual(response["Pragma"], "no-cache")
         self.assertEqual(response["Expires"], "0")
         self.assertEqual(response.json()["version"], "4.0.0")
-        self.assertEqual(response.json()["release_sha"], "abc1234")
+        self.assertEqual(json.loads(response.content)["release_sha"], "abc1234")
 
     def test_liveness_rejects_non_get_requests(self):
         request = self.factory.post("/api/health/live/")
@@ -117,7 +117,7 @@ class LivenessApiTests(TestCase):
             response = liveness_api(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["release_sha"], "unknown")
+        self.assertEqual(json.loads(response.content)["release_sha"], "unknown")
 
     def test_short_or_non_hex_configured_release_sha_is_rejected(self):
         request = self.factory.get("/api/health/live/")
@@ -129,7 +129,7 @@ class LivenessApiTests(TestCase):
                     "RENDER_GIT_COMMIT": "",
                 }, clear=False):
                     response = liveness_api(request)
-                self.assertEqual(response.json()["release_sha"], "unknown")
+                self.assertEqual(json.loads(response.content)["release_sha"], "unknown")
 
     def test_valid_configured_release_sha_is_normalized_by_whitespace(self):
         request = self.factory.get("/api/health/live/")
@@ -141,4 +141,4 @@ class LivenessApiTests(TestCase):
         }, clear=False):
             response = liveness_api(request)
 
-        self.assertEqual(response.json()["release_sha"], configured_sha)
+        self.assertEqual(json.loads(response.content)["release_sha"], configured_sha)
