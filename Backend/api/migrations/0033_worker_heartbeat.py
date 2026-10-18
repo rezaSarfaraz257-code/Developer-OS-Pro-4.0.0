@@ -13,11 +13,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("name", models.CharField(max_length=100, primary_key=True, serialize=False)),
                 ("worker_id", models.CharField(max_length=160)),
-                ("last_seen_at", models.DateTimeField(db_index=True)),
+                ("last_seen_at", models.DateTimeField()),
             ],
-        ),
-        migrations.AddIndex(
-            model_name="workerheartbeat",
-            index=models.Index(fields=["name", "last_seen_at"], name="api_worker_heartbeat_idx"),
         ),
     ]
