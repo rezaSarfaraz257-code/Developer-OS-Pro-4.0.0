@@ -73,6 +73,15 @@ test("readiness contract requires every named production check", () => {
     assert.match(isReady(jsonInput({ status: "ready", checks: incomplete, version: "4.0.0", release_sha: "abc1234" })), new RegExp(missing));
   }
   assert.match(isReady(jsonInput({ status: "degraded", checks, version: "4.0.0", release_sha: "abc1234" })), /status is not ready/);
+  const workerUnavailable = { ...checks, worker: false };
+  assert.equal(isReady(jsonInput({
+    status: "ready", checks: workerUnavailable, worker_required: false,
+    background_processing: "unavailable", version: "4.0.0", release_sha: "abc1234",
+  })), true);
+  assert.match(isReady(jsonInput({
+    status: "ready", checks: workerUnavailable, worker_required: true,
+    version: "4.0.0", release_sha: "abc1234",
+  })), /worker/);
 });
 
 test("pricing contract accepts complete plans and rejects missing or invalid contracts", () => {
