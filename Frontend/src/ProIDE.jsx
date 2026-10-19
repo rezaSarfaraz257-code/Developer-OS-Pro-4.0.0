@@ -45,6 +45,17 @@ export default function ProIDE({projectId,message,go}){
        if(!latest.ok)throw Error(latestData.error||"Workspace refresh failed while resolving save conflict.");
        const latestFiles=latestData.files&&typeof latestData.files==="object"?latestData.files:{};
        revision=latestData.revision??revision;
+       const latestLocalContent=refs.files.current[p];
+       if(typeof latestLocalContent==="string"&&latestLocalContent!==content){
+         const preservedFiles={...latestFiles,[p]:latestLocalContent};
+         refs.ws.current={...refs.ws.current,files:preservedFiles,revision};
+         refs.files.current=preservedFiles;
+         setWs(x=>x?({...x,files:preservedFiles,revision}):x);
+         setFiles(preservedFiles);
+         setDirty(true);refs.dirty.current=true;refs.dirtyBaseRevision.current=revision;
+         setStatus("Newer edits remain unsaved. Save again to persist the latest version.");
+         return false;
+       }
        const serverContent=latestFiles[p];
        if(typeof serverContent==="string"&&serverContent!==content){
          refs.ws.current={...refs.ws.current,revision};
@@ -60,10 +71,15 @@ export default function ProIDE({projectId,message,go}){
        d=await r.json().catch(()=>({}));
      }
      if(!r.ok)throw Error(d.error||d.detail||"Save failed");
-     const next=d.files||{...refs.files.current,[p]:content};
-     refs.files.current=next;refs.ws.current=refs.ws.current?({...refs.ws.current,files:next,revision:d.revision??revision}):refs.ws.current;
-     setFiles(next);setWs(x=>x?({...x,files:next,revision:d.revision??revision}):x);
-     setDirty(false);refs.dirty.current=false;refs.dirtyBaseRevision.current=null;setStatus(silent?"Saved automatically":"Saved");return true;
+     const serverFiles=d.files&&typeof d.files==="object"?d.files:{...refs.files.current,[p]:content};
+     const latestLocalContent=refs.files.current[p];
+     const hasNewerLocalEdit=typeof latestLocalContent==="string"&&latestLocalContent!==content;
+     const next=hasNewerLocalEdit?{...serverFiles,[p]:latestLocalContent}:serverFiles;
+     const nextRevision=d.revision??revision;
+     refs.files.current=next;refs.ws.current=refs.ws.current?({...refs.ws.current,files:next,revision:nextRevision}):refs.ws.current;
+     setFiles(next);setWs(x=>x?({...x,files:next,revision:nextRevision}):x);
+     setDirty(hasNewerLocalEdit);refs.dirty.current=hasNewerLocalEdit;refs.dirtyBaseRevision.current=hasNewerLocalEdit?nextRevision:null;
+     setStatus(hasNewerLocalEdit?"Newer edits remain unsaved":silent?"Saved automatically":"Saved");return !hasNewerLocalEdit;
    }catch(e){setStatus(e.message||"Save failed");return false}finally{setSaving(false)}
  },[saving]);
  useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")]).then(async([a,b])=>{const[w,f]=await Promise.all([a.json(),b.json()]);if(off)return;setWorkspaces(Array.isArray(w)?w:Array.isArray(w?.results)?w.results:[]);setFrameworks(Array.isArray(f)?f:Array.isArray(f?.results)?f.results:[])}).catch(e=>!off&&(typeof message==="function" ? message(e.message) : setStatus(e.message)));return()=>{off=true;clearTimeout(refs.timer.current);clearTimeout(refs.diag.current)}},[message]);
