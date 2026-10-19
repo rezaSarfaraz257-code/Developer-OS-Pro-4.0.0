@@ -67,7 +67,11 @@ export function removeWorkspacePatches(queue, workspaceId) {
 // "latest revision" retry could silently overwrite another collaborator's changes.
 export function canSafelySyncOfflinePatches(patches, serverRevision) {
   if (!Array.isArray(patches) || patches.length === 0) return false;
-  const revisions = patches.map((patch) => Number(patch?.base_revision));
+  const revisions = patches.map((patch) => {
+    const base = patch?.base_revision;
+    if (base == null || (typeof base === "string" && base.trim() === "")) return Number.NaN;
+    return Number(base);
+  });
   if (revisions.some((revision) => !Number.isFinite(revision))) return false;
   const uniqueRevisions = new Set(revisions);
   return uniqueRevisions.size === 1 && Number(serverRevision) === revisions[0];
