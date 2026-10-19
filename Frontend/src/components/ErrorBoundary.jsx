@@ -20,7 +20,7 @@ function reportRuntimeError(error) {
       ? previous.slice(-MAX_REPORTS + 1).map((item) => ({
           id: String(item?.id || "legacy-incident").slice(0, 80),
           type: String(item?.type || "LegacyRuntimeError").replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 60),
-          route: String(item?.route || "/").split("?")[0].slice(0, 300),
+          route: String(item?.route || "/").split(/[?#]/, 1)[0].slice(0, 300),
           timestamp: String(item?.timestamp || "").slice(0, 40),
         }))
       : [];
