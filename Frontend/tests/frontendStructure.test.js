@@ -111,3 +111,15 @@ test("web app document and install manifest keep essential metadata valid", () =
   assert.equal(manifest.display, "standalone");
   assert.ok(Array.isArray(manifest.icons) && manifest.icons.length > 0);
 });
+
+test("command surface polish is additive and respects reduced-motion preferences", () => {
+  const polish = fs.readFileSync(path.resolve(srcDir, "ProductPolish2026.css"), "utf8");
+
+  assert.match(polish, /\.os-shell\s*\{/);
+  assert.match(polish, /\.os-rail \.rail-item\.active/);
+  assert.match(polish, /\.os-main \.global-search:focus-within/);
+  assert.match(polish, /\.command-center-page \.cc-hero-v2/);
+  assert.match(polish, /\.command-center-page \.cc-surface/);
+  assert.match(polish, /@keyframes dos-page-enter/);
+  assert.match(polish, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.os-main \.page/);
+});
