@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches } from "../src/ide/offlineQueue.js";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
 
@@ -269,4 +269,19 @@ test("collaboration acknowledgements cannot clear newer or cross-workspace edits
   assert.match(ide, /const ack=d\.event\|\|\{\}/);
   assert.match(ide, /hasPendingEdit:editTimersRef\.current\.has\(ackPath\)/);
   assert.match(ide, /saving:savingRef\.current/);
+});
+
+
+test("offline replay is allowed only against its exact base revision", () => {
+  assert.equal(canSafelySyncOfflinePatches([
+    { path: "a.js", content: "A", base_revision: 12 },
+    { path: "b.js", content: "B", base_revision: 12 },
+  ], 12), true);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 12 }], 13), false);
+  assert.equal(canSafelySyncOfflinePatches([
+    { path: "a.js", base_revision: 12 },
+    { path: "b.js", base_revision: 13 },
+  ], 12), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js" }], 12), false);
+  assert.equal(canSafelySyncOfflinePatches([], 12), false);
 });
