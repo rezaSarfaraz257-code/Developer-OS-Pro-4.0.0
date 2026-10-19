@@ -273,8 +273,17 @@
     min-width: 0;
     max-width: 120px;
   }
-  .dos-ide-pro .dos-top-actions button:nth-child(n+4) {
-    display: none;
+  .dos-ide-pro .dos-top-actions {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 48vw;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #24475c transparent;
+  }
+  .dos-ide-pro .dos-top-actions > * {
+    flex: 0 0 auto;
   }
   .dos-ide-pro .dos-commandbar {
     padding-inline: 7px;
@@ -297,5 +306,41 @@
 @media (max-width: 760px) {
   .dos-ide-pro.dos-focus-mode .dos-body:not(.dos-explorer-collapsed) .dos-explorer {
     display: none;
+  }
+}
+
+
+/* Production accessibility pass: visible focus, resilient toolbars, and high-contrast support. */
+.dos-ide-pro :where(button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid rgba(94, 231, 255, .96);
+  outline-offset: 2px;
+  scroll-margin-block: 12px;
+}
+.dos-ide-pro :where(button, input, select, textarea) {
+  accent-color: var(--ide-accent);
+}
+.dos-ide-pro :where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-terminal-body,
+.dos-ide-pro .dos-file-list {
+  overscroll-behavior: contain;
+}
+.dos-ide-pro .dos-top-actions,
+.dos-ide-pro .dos-editor-toolbar,
+.dos-ide-pro .dos-dock-tabs {
+  scrollbar-width: thin;
+  scrollbar-color: #24475c transparent;
+}
+@media (forced-colors: active) {
+  .dos-ide-pro :where(button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  .dos-ide-pro .dos-tab.active,
+  .dos-ide-pro .dos-dock-tabs button.active {
+    border: 1px solid Highlight;
   }
 }
