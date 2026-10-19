@@ -22,7 +22,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat, MFADevice
 from .mature import consume_backup_code, sha256
-from .management.commands.worker import _heartbeat_loop
+from .management.commands.worker import Command as WorkerCommand, _heartbeat_loop
 
 
 class ProductionReadinessTests(APITestCase):
@@ -1010,6 +1010,22 @@ class WorkerHeartbeatResilienceTests(APITestCase):
             _heartbeat_loop("worker-test:123", stop_event)
 
         self.assertEqual(heartbeat.call_count, 2)
+        log_exception.assert_called_once()
+
+    def test_transient_queue_database_error_is_logged_and_retried(self):
+        class StopAfterRetry(Exception):
+            pass
+
+        with (
+            patch("api.management.commands.worker.threading.Thread") as thread,
+            patch("api.management.commands.worker.recover_stale_jobs", side_effect=RuntimeError("temporary DB outage")),
+            patch("api.management.commands.worker.logger.exception") as log_exception,
+            patch("api.management.commands.worker.time.sleep", side_effect=StopAfterRetry),
+        ):
+            with self.assertRaises(StopAfterRetry):
+                WorkerCommand().handle(once=False, sleep=0)
+
+        thread.return_value.start.assert_called_once()
         log_exception.assert_called_once()
 
 
