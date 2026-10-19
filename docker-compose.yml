@@ -64,6 +64,8 @@ services:
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
       # Production forbids console email; keep SMTP as the safe default and let readiness fail until configured.
       EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+      # In the full Compose stack, the worker is part of the release readiness contract.
+      REQUIRE_BACKGROUND_WORKER: ${REQUIRE_BACKGROUND_WORKER:-true}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
@@ -160,7 +162,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      # Production workers must use a real mail transport, never console output.
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
