@@ -221,7 +221,13 @@ def readiness_api(request):
     )
     if worker_required:
         mandatory.append("worker")
-    ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
+    # DEBUG may relax readiness for local development only. Platform/runtime
+    # signals that require a real worker must never be bypassed by DEBUG=True.
+    ready = (
+        all(checks[k] for k in mandatory)
+        if (not settings.DEBUG or worker_required)
+        else checks["database"]
+    )
     return _no_store_health_response(Response(
         {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
         status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
