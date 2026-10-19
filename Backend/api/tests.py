@@ -20,7 +20,9 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat, MFADevice
+from .mature import consume_backup_code, sha256
+from .management.commands.worker import _heartbeat_loop
 
 
 class ProductionReadinessTests(APITestCase):
@@ -961,6 +963,47 @@ class StripeWebhookFailClosedTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertEqual(second.data["duplicate"], True)
         self.assertEqual(BillingEvent.objects.filter(event_id="evt_duplicate_test").count(), 1)
+
+
+class MFARecoveryCodeTests(APITestCase):
+    def test_backup_code_is_consumed_once(self):
+        user = User.objects.create_user(username="mfa-recovery-owner", password="Strong-password-12345")
+        raw_code = "AB12CD34"
+        with override_settings(GITHUB_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode()):
+            device = MFADevice.objects.create(
+                user=user,
+                secret="test-only-secret",
+                enabled=True,
+                backup_code_hashes=[sha256(raw_code)],
+            )
+            self.assertTrue(consume_backup_code(device, raw_code))
+            self.assertFalse(consume_backup_code(device, raw_code))
+            device.refresh_from_db()
+            self.assertEqual(device.backup_code_hashes, [])
+
+
+class WorkerHeartbeatResilienceTests(APITestCase):
+    def test_transient_database_error_does_not_kill_heartbeat_loop(self):
+        class StopAfterTwoWaits:
+            def __init__(self):
+                self.wait_count = 0
+
+            def is_set(self):
+                return False
+
+            def wait(self, _timeout):
+                self.wait_count += 1
+                return self.wait_count >= 2
+
+        stop_event = StopAfterTwoWaits()
+        with (
+            patch("api.management.commands.worker.WorkerHeartbeat.objects.update_or_create", side_effect=[RuntimeError("temporary DB outage"), None]) as heartbeat,
+            patch("api.management.commands.worker.logger.exception") as log_exception,
+        ):
+            _heartbeat_loop("worker-test:123", stop_event)
+
+        self.assertEqual(heartbeat.call_count, 2)
+        log_exception.assert_called_once()
 
 
 class BackgroundWorkerReadinessTests(APITestCase):
