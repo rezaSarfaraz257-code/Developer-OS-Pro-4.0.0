@@ -2,6 +2,7 @@ import { Component } from "react";
 
 const MAX_REPORTS = 5;
 const REPORT_KEY = "developer-os-runtime-errors";
+const GENERIC_ERROR_MESSAGE = "An unexpected application error occurred. Try again or reload Developer OS.";
 
 function reportRuntimeError(error) {
   try {
@@ -38,17 +39,29 @@ export default class ErrorBoundary extends Component {
   }
 
   static getDerivedStateFromError(error) {
+    const isDevelopment = import.meta.env.DEV;
     return {
       hasError: true,
-      message: error?.message || "Unexpected application error.",
-      stack: String(error?.stack || ""),
+      // Production users get actionable recovery guidance, not potentially sensitive
+      // exception text or implementation details.
+      message: isDevelopment ? (error?.message || GENERIC_ERROR_MESSAGE) : GENERIC_ERROR_MESSAGE,
+      stack: isDevelopment ? String(error?.stack || "") : "",
     };
   }
 
   componentDidCatch(error, info) {
     const errorId = reportRuntimeError(error);
-    this.setState({ errorId, componentStack: String(info?.componentStack || "") });
-    console.error("Developer OS UI error", error, info);
+    const isDevelopment = import.meta.env.DEV;
+    this.setState({
+      errorId,
+      componentStack: isDevelopment ? String(info?.componentStack || "") : "",
+    });
+    if (isDevelopment) {
+      console.error("Developer OS UI error", error, info);
+    } else {
+      // Do not write raw exception details to the production console.
+      console.error("Developer OS UI error", { incidentId: errorId });
+    }
   }
 
   reset = () => {
@@ -74,16 +87,18 @@ export default class ErrorBoundary extends Component {
         <div className="app-error-card">
           <span className="eyebrow">Workspace recovery</span>
           <h1 id="runtime-error-title">Developer OS needs a quick restart</h1>
-          <p>{this.state.message}</p>
+          <p>{this.state.message || GENERIC_ERROR_MESSAGE}</p>
           {this.state.errorId && (
             <small className="app-error-id" role="status">Incident {this.state.errorId}</small>
           )}
-          <details className="app-error-diagnostics">
-            <summary>Technical diagnostics</summary>
-            <p>Route: {typeof window !== "undefined" ? window.location.pathname : "unknown"}</p>
-            {this.state.stack && <pre>{this.state.stack}</pre>}
-            {this.state.componentStack && <pre>{this.state.componentStack}</pre>}
-          </details>
+          {import.meta.env.DEV && (
+            <details className="app-error-diagnostics">
+              <summary>Technical diagnostics</summary>
+              <p>Route: {typeof window !== "undefined" ? window.location.pathname : "unknown"}</p>
+              {this.state.stack && <pre>{this.state.stack}</pre>}
+              {this.state.componentStack && <pre>{this.state.componentStack}</pre>}
+            </details>
+          )}
           <div className="app-error-actions">
             <button type="button" className="primary-button" onClick={this.reset}>
               Try again
