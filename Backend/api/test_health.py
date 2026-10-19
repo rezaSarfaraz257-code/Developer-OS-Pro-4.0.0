@@ -203,8 +203,8 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
                 "REQUIRE_BACKGROUND_WORKER": "",
             }, clear=False),
             patch("api.views.connection.cursor") as cursor_factory,
-            patch("django.core.cache.cache.set"),
-            patch("django.core.cache.cache.get", return_value="ok"),
+            patch("django.core.cache.backends.redis.RedisCache.set"),
+            patch("django.core.cache.backends.redis.RedisCache.get", return_value="ok"),
             patch("rest_framework.throttling.SimpleRateThrottle.allow_request", return_value=True),
             patch("api.models.WorkerHeartbeat.objects.filter") as heartbeat_filter,
             patch("api.models.BackgroundJob.objects.filter") as jobs_filter,
@@ -249,7 +249,7 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
 
             # DEBUG must not bypass failed mandatory dependencies in a
             # deployed runtime, even when the worker itself is optional.
-            with patch("django.core.cache.cache.get", return_value=None):
+            with patch("django.core.cache.backends.redis.RedisCache.get", return_value=None):
                 dependency_failure = readiness_api(self.factory.get("/api/health/ready/"))
             self.assertEqual(dependency_failure.status_code, 503)
             self.assertFalse(dependency_failure.data["checks"]["cache"])
