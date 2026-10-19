@@ -155,6 +155,7 @@ test("command palette filters commands and executes the first keyboard match", (
   assert.match(app, /No matching commands/);
   assert.match(app, /aria-label=\{paletteOpen \? "Filter commands" : "Search everything"\}/);
   assert.match(app, /aria-label="Notifications" aria-expanded=\{openNotif\}/);
+  assert.match(app, /event\.key === "Escape"\) \{ setPaletteOpen\(false\); setOpenNotif\(false\); setSearch\(""); \}/);
 });
 
 test("Web IDE keeps mobile actions reachable and supports high-contrast keyboard focus", () => {
