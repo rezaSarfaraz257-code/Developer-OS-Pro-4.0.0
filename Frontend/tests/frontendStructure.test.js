@@ -226,6 +226,6 @@ test("Web IDE bounds streaming terminal output for long-running sessions", () =>
   assert.match(ide, /appendBoundedText\(t,d\.data\|\|""\)/);
   const limit = 12;
   assert.equal(appendBoundedText("abcdefgh", "ijklmnop", limit), "efghijklmnop");
-  assert.equal(appendBoundedText("older output", "new", 5), "putnew");
+  assert.equal(appendBoundedText("older output", "new", 5), "utnew");
   assert.equal(DEFAULT_TERMINAL_BUFFER_LIMIT, 250_000);
 });
