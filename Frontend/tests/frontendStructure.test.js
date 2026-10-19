@@ -219,6 +219,8 @@ test("Web IDE routes tab switching through the save guard and refuses false save
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /onClick=\{\(\)=>\{void open\(p\);setRecent/);
   assert.match(ide, /if\(saving\)\{setStatus\("Save already in progress; wait before switching files\."\);return false;\}/);
+  assert.match(ide, /Newer edits remain unsaved/);
+  assert.match(ide, /return !hasNewerLocalEdit/);
 });
 
 test("Web IDE bounds streaming terminal output for long-running sessions", () => {
