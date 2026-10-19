@@ -76,3 +76,13 @@ test("touch devices retain visible 8px scrollbars without hover", () => {
   assert.match(coarsePointerRules, /height:\s*8px\s*!important/);
   assert.doesNotMatch(coarsePointerRules, /width:\s*6px/);
 });
+
+test("Firefox gets a usable hover/focus scrollbar fallback", () => {
+  const scrollbars = fs.readFileSync(path.resolve(srcDir, "ScrollbarBehavior.css"), "utf8");
+  const firefoxRules = scrollbars.split("@supports (-moz-appearance: none)")[1]?.split("/* Chromium/WebKit")[0] || "";
+
+  assert.match(firefoxRules, /scrollbar-width:\s*thin\s*!important/);
+  assert.match(firefoxRules, /\*:hover,\s*\*:focus-within\s*\{\s*scrollbar-width:\s*auto\s*!important/s);
+  assert.match(firefoxRules, /\.os-rail:not\(:hover\):not\(:focus-within\)\s*\{\s*scrollbar-width:\s*none\s*!important/s);
+  assert.match(firefoxRules, /@media \(pointer: coarse\)[\s\S]*scrollbar-width:\s*auto\s*!important/);
+});
