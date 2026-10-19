@@ -1073,3 +1073,85 @@ class BackgroundWorkerReadinessTests(APITestCase):
             response = self.client.get("/api/health/ready/")
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+
+class OrganizationPermissionPolicySecurityTests(APITestCase):
+    def setUp(self):
+        from .models import Organization, OrganizationMembership
+
+        self.owner = User.objects.create_user(
+            username="permission-policy-owner",
+            password="Strong-password-12345",
+        )
+        self.admin = User.objects.create_user(
+            username="permission-policy-admin",
+            password="Strong-password-12345",
+        )
+        self.organization = Organization.objects.create(
+            owner=self.owner,
+            name="Permission Policy Test",
+            slug="permission-policy-test",
+        )
+        OrganizationMembership.objects.create(
+            organization=self.organization,
+            user=self.owner,
+            role="owner",
+        )
+        OrganizationMembership.objects.create(
+            organization=self.organization,
+            user=self.admin,
+            role="admin",
+        )
+
+    def test_admin_cannot_rewrite_owner_permission_policy(self):
+        from .models import OrganizationRolePermission
+
+        original = ["organization.manage", "billing.manage"]
+        OrganizationRolePermission.objects.create(
+            organization=self.organization,
+            role="owner",
+            permissions=original,
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(
+            f"/api/organizations/{self.organization.pk}/permissions/",
+            {"role": "owner", "permissions": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        policy = OrganizationRolePermission.objects.get(
+            organization=self.organization,
+            role="owner",
+        )
+        self.assertEqual(policy.permissions, original)
+
+    def test_owner_can_update_owner_policy_and_permissions_are_normalized(self):
+        from .models import OrganizationRolePermission
+
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.patch(
+            f"/api/organizations/{self.organization.pk}/permissions/",
+            {"role": "owner", "permissions": [" billing.manage ", "billing.manage"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["permissions"], ["billing.manage"])
+        self.assertEqual(
+            OrganizationRolePermission.objects.get(
+                organization=self.organization,
+                role="owner",
+            ).permissions,
+            ["billing.manage"],
+        )
+
+    def test_blank_or_non_string_permissions_are_rejected(self):
+        self.client.force_authenticate(user=self.owner)
+        for permissions in ([""], [None], [123]):
+            with self.subTest(permissions=permissions):
+                response = self.client.patch(
+                    f"/api/organizations/{self.organization.pk}/permissions/",
+                    {"role": "developer", "permissions": permissions},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
