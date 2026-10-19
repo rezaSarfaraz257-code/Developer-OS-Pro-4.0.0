@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches } from "../src/ide/offlineQueue.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -165,4 +166,50 @@ test("Web IDE keeps mobile actions reachable and supports high-contrast keyboard
   assert.doesNotMatch(idePolish, /\.dos-ide-pro \.dos-top-actions button:nth-child\(n\+4\)\s*\{\s*display:\s*none/s);
   assert.match(idePolish, /:focus-visible\s*\{\s*outline:\s*2px solid/);
   assert.match(idePolish, /@media \(forced-colors: active\)/);
+});
+
+test("offline queue scopes edits to their originating workspace", () => {
+  const queue = [
+    { path: "src/app.js", content: "workspace A", workspace_id: "1" },
+    { path: "src/app.js", content: "workspace B", workspace_id: "2" },
+    { path: "legacy.txt", content: "unscoped legacy edit" },
+  ];
+  const workspaceA = getWorkspacePatches(queue, 1);
+  assert.equal(workspaceA.length, 1);
+  assert.equal(workspaceA[0].content, "workspace A");
+
+  const remaining = removeWorkspacePatches(queue, 1);
+  assert.deepEqual(remaining.map((item) => item.content), ["workspace B", "unscoped legacy edit"]);
+});
+
+test("offline queue replaces only the same path in the same workspace", () => {
+  const queue = [
+    { path: "src/app.js", content: "old A", workspace_id: "1" },
+    { path: "src/app.js", content: "B", workspace_id: "2" },
+    { path: "legacy.txt", content: "legacy" },
+  ];
+  const next = queueWorkspacePatch(queue, {
+    path: "src/app.js",
+    content: "new A",
+    workspace_id: "1",
+  });
+
+  assert.equal(next.length, 3);
+  assert.equal(next.find((item) => item.workspace_id === "1").content, "new A");
+  assert.equal(next.find((item) => item.workspace_id === "2").content, "B");
+  assert.ok(next.some((item) => item.path === "legacy.txt"));
+});
+
+test("offline queue parsing retains identifiable legacy edits and ignores malformed entries", () => {
+  const queue = parseOfflineQueue(JSON.stringify([
+    { path: "old.txt", content: "keep for recovery" },
+    { path: "new.txt", content: "scoped", workspace_id: "7" },
+    { path: 4, content: "invalid path" },
+    null,
+  ]));
+
+  assert.equal(queue.length, 2);
+  assert.equal(queue[0].workspace_id, undefined);
+  assert.equal(queue[0].content, "keep for recovery");
+  assert.deepEqual(parseOfflineQueue("not-json"), []);
 });
