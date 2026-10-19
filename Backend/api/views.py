@@ -230,7 +230,7 @@ def readiness_api(request):
     # REQUIRE_BACKGROUND_WORKER explicitly makes it part of the release gate.
     ready = (
         all(checks[k] for k in mandatory)
-        if (not settings.DEBUG or strict_runtime)
+        if (not settings.DEBUG or strict_runtime or worker_required)
         else checks["database"]
     )
     return _no_store_health_response(Response(
