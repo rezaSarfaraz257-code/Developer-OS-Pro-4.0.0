@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches } from "../src/ide/offlineQueue.js";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
 
@@ -285,4 +285,14 @@ test("offline replay is allowed only against its exact base revision", () => {
   ], 12), false);
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js" }], 12), false);
   assert.equal(canSafelySyncOfflinePatches([], 12), false);
+});
+
+
+test("offline replay removes only exact synced entries and retains newer edits", () => {
+  const original = { workspace_id: "7", path: "src/app.js", content: "old", base_revision: 4 };
+  const newer = { workspace_id: "7", path: "src/app.js", content: "newer", base_revision: 4 };
+  const otherWorkspace = { workspace_id: "8", path: "src/app.js", content: "other", base_revision: 4 };
+  const legacy = { path: "legacy.txt", content: "recover me" };
+  const remaining = removeSyncedWorkspacePatches([original, newer, otherWorkspace, legacy], [original]);
+  assert.deepEqual(remaining, [newer, otherWorkspace, legacy]);
 });
