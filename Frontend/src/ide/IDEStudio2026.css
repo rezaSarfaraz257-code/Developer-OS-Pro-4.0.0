@@ -344,3 +344,100 @@
     border: 1px solid Highlight;
   }
 }
+
+
+/* Web IDE workbench refinement: hierarchy, resilient file tabs, and readable output. */
+.dos-ide-pro .dos-workbench-strip {
+  min-width: 0;
+  background: linear-gradient(110deg, rgba(12, 28, 43, .96), rgba(7, 15, 25, .92));
+  border-bottom: 1px solid rgba(105, 174, 208, .16);
+}
+.dos-ide-pro .dos-workbench-title,
+.dos-ide-pro .dos-workbench-actions,
+.dos-ide-pro .dos-tab {
+  min-width: 0;
+}
+.dos-ide-pro .dos-workbench-title strong {
+  color: #eaf7ff;
+  font-weight: 650;
+  letter-spacing: .012em;
+}
+.dos-ide-pro .dos-workbench-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8ca9bf;
+}
+.dos-ide-pro .dos-tabs {
+  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #31536a transparent;
+}
+.dos-ide-pro .dos-tab {
+  border-top: 2px solid transparent;
+  transition: background-color .16s ease, border-color .16s ease;
+}
+.dos-ide-pro .dos-tab:hover {
+  background: rgba(64, 115, 145, .13);
+}
+.dos-ide-pro .dos-tab.active {
+  border-top-color: var(--ide-accent);
+  background: linear-gradient(180deg, rgba(65, 183, 224, .12), rgba(10, 24, 36, .38));
+}
+.dos-ide-pro .dos-tab button {
+  min-width: 26px;
+  min-height: 26px;
+}
+.dos-ide-pro .dos-editor-toolbar {
+  min-width: 0;
+  border-bottom: 1px solid rgba(105, 174, 208, .13);
+  background: rgba(7, 15, 24, .82);
+}
+.dos-ide-pro .dos-dock-tabs button {
+  min-height: 36px;
+  transition: background-color .16s ease, color .16s ease;
+}
+.dos-ide-pro .dos-dock-tabs button.active {
+  color: #e6f9ff;
+  box-shadow: inset 0 -2px 0 var(--ide-accent);
+  background: rgba(52, 164, 204, .10);
+}
+.dos-ide-pro .dos-terminal-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.dos-ide-pro .dos-statusbar > span:not(.dos-spacer) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-explorer {
+  scrollbar-gutter: stable;
+}
+@media (max-width: 760px) {
+  .dos-ide-pro .dos-workbench-strip {
+    gap: 8px;
+  }
+  .dos-ide-pro .dos-workbench-actions {
+    max-width: 46%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .dos-ide-pro .dos-workbench-actions > * {
+    flex: 0 0 auto;
+  }
+  .dos-ide-pro .dos-workbench-path {
+    max-width: 38vw;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dos-ide-pro .dos-tab,
+  .dos-ide-pro .dos-dock-tabs button {
+    transition: none;
+  }
+}
