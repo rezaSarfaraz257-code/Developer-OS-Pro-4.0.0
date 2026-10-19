@@ -144,3 +144,15 @@ test("Web IDE responsive layout preserves editor space and mobile Explorer acces
   assert.match(idePolish, /\.dos-statusbar[\s\S]*overflow:\s*hidden/);
   assert.match(idePolish, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none/);
 });
+
+test("command palette filters commands and executes the first keyboard match", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+
+  assert.match(app, /const filteredCommands = useMemo\(\(\) =>/);
+  assert.match(app, /commands\.filter\(\(\[label, path\]\)/);
+  assert.match(app, /if \(paletteOpen\)\s*\{[\s\S]*filteredCommands\[0\]/);
+  assert.match(app, /id="command-list"/);
+  assert.match(app, /No matching commands/);
+  assert.match(app, /aria-label=\{paletteOpen \? "Filter commands" : "Search everything"\}/);
+  assert.match(app, /aria-label="Notifications" aria-expanded=\{openNotif\}/);
+});
