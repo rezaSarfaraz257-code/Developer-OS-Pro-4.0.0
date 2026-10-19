@@ -72,3 +72,22 @@ export function canSafelySyncOfflinePatches(patches, serverRevision) {
   const uniqueRevisions = new Set(revisions);
   return uniqueRevisions.size === 1 && Number(serverRevision) === revisions[0];
 }
+
+
+// Remove only the exact patches that were successfully replayed. Newer edits
+// queued while the network requests were in flight must remain recoverable.
+export function removeSyncedWorkspacePatches(queue, syncedPatches) {
+  const items = Array.isArray(queue) ? queue : [];
+  const synced = Array.isArray(syncedPatches) ? syncedPatches : [];
+  return items.filter((item) => {
+    if (!item || item.workspace_id == null) return true;
+    return !synced.some((patch) =>
+      patch &&
+      patch.workspace_id != null &&
+      String(item.workspace_id) === String(patch.workspace_id) &&
+      item.path === patch.path &&
+      item.content === patch.content &&
+      Number(item.base_revision) === Number(patch.base_revision)
+    );
+  });
+}
