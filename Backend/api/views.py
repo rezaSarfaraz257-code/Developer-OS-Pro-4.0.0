@@ -179,11 +179,27 @@ def readiness_api(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             cursor.fetchone()
-        checks["database"] = True
+        db_config = getattr(settings, "DATABASES", {}).get("default", {})
+        database_url = str(
+            getattr(settings, "DATABASE_URL", "") or os.environ.get("DATABASE_URL", "")
+        ).strip()
+        checks["database"] = (
+            db_config.get("ENGINE") == "django.db.backends.postgresql" and bool(database_url)
+            if strict_runtime
+            else True
+        )
     except Exception:
-        pass
+        checks["database"] = False
     checks["secret_key"] = bool(settings.SECRET_KEY and not settings.SECRET_KEY.startswith("django-insecure-"))
-    checks["allowed_hosts"] = bool(settings.ALLOWED_HOSTS and settings.ALLOWED_HOSTS != ["*"])
+    allowed_hosts = [str(host).strip().lower() for host in (settings.ALLOWED_HOSTS or [])]
+    checks["allowed_hosts"] = bool(
+        allowed_hosts
+        and "*" not in allowed_hosts
+        and (
+            not strict_runtime
+            or all(host not in {"localhost", "127.0.0.1", "::1"} for host in allowed_hosts)
+        )
+    )
     email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
     email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
     # The console backend is useful in local development but cannot deliver
@@ -195,7 +211,17 @@ def readiness_api(request):
     try:
         from django.core.cache import cache
         cache.set("readiness", "ok", timeout=15)
-        checks["cache"] = cache.get("readiness") == "ok"
+        cache_ok = cache.get("readiness") == "ok"
+        cache_config = getattr(settings, "CACHES", {}).get("default", {})
+        cache_backend = str(cache_config.get("BACKEND", "")).lower()
+        cache_url = str(
+            getattr(settings, "CACHE_URL", "") or os.environ.get("CACHE_URL", "")
+        ).strip()
+        checks["cache"] = (
+            cache_ok and bool(cache_url) and "redis" in cache_backend
+            if strict_runtime
+            else cache_ok
+        )
     except Exception:
         checks["cache"] = False
     try:
