@@ -46,36 +46,38 @@
 .command-list button { transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .command-list button:hover { transform: translateX(2px); }
 
-/* Keep keyboard focus visible even when product chrome uses dense custom controls. */
 :where(.rail-item, .icon-btn, .logout-btn, .command-list button, .notif-pop button):focus-visible {
   outline: 2px solid var(--cyan, #43e8ff);
   outline-offset: 2px;
   z-index: 30;
 }
 
-/* Do not let long repository/project/user content widen the application shell. */
 :where(.project-line, .project-card, .result, .notif, .profile-mini) > :where(b, strong, small, span, p) {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-/* Native keyboard navigation should not be trapped by dense scroll regions. */
 .command-palette,
 .notif-pop,
 .messages,
 .comment-box,
 .dos-file-list { overscroll-behavior: contain; }
 
-/* Premium shell surfaces without forcing a visual redesign on feature pages. */
-.os-main { min-width: 0; }
+.os-main,
 .os-content { min-width: 0; }
+
 .os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) {
-  border-color: color-mix(in srgb, currentColor 12%, transparent);
+  border-color: rgba(255,255,255,.08);
+}
+
+@supports (color: color-mix(in srgb, white 50%, transparent)) {
+  .os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) {
+    border-color: color-mix(in srgb, currentColor 12%, transparent);
+  }
 }
 
 .status-chip { white-space: nowrap; }
 
-/* Improve touch precision without making desktop controls oversized. */
 @media (pointer: coarse) {
   .rail-item,
   .icon-btn,
@@ -149,8 +151,4 @@
 @keyframes dos-pop-in {
   from { opacity: 0; transform: translateY(-5px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@supports not (color: color-mix(in srgb, white 50%, transparent)) {
-  .os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) { border-color: rgba(255,255,255,.08); }
 }
