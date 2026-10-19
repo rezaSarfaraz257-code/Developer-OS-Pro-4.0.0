@@ -19,9 +19,10 @@
   }
 }
 
+/* Touch screens have no reliable hover state; keep scrollbars visible and usable. */
 @media (pointer: coarse) {
-  *::-webkit-scrollbar { width: 6px !important; height: 6px !important; }
-  *::-webkit-scrollbar:hover { width: 6px !important; height: 6px !important; }
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar:hover { width: 8px !important; height: 8px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
