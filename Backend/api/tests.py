@@ -50,6 +50,21 @@ class ProductionReadinessTests(APITestCase):
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.data["status"], "not_ready")
 
+    def test_render_readiness_stays_strict_when_debug_is_accidentally_enabled(self):
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=False):
+            with override_settings(
+                IS_PRODUCTION=False,
+                DEBUG=True,
+                SECRET_KEY="test-secret-key-that-is-not-insecure",
+                ALLOWED_HOSTS=["testserver"],
+                EMAIL_HOST="smtp.example.test",
+                EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            ):
+                response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(response.data["checks"]["worker"])
+        self.assertEqual(response.data["status"], "not_ready")
+
     def test_configured_non_console_email_backend_can_pass_email_check(self):
         with override_settings(
             IS_PRODUCTION=True,
