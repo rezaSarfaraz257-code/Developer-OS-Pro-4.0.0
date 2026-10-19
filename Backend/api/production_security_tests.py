@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
+from cryptography.fernet import Fernet
 from rest_framework.test import APIClient
 
 from .models import Project, CodeWorkspace, BackgroundJob, Organization, OrganizationMembership, MFADevice
@@ -37,17 +38,18 @@ class MFARecoveryCodeTests(TestCase):
     def test_backup_code_is_consumed_once(self):
         user = User.objects.create_user(username="mfa-recovery-owner", password="Strong-password-12345")
         raw_code = "AB12CD34"
-        device = MFADevice.objects.create(
-            user=user,
-            secret="test-only-secret",
-            enabled=True,
-            backup_code_hashes=[sha256(raw_code)],
-        )
+        with override_settings(GITHUB_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode()):
+            device = MFADevice.objects.create(
+                user=user,
+                secret="test-only-secret",
+                enabled=True,
+                backup_code_hashes=[sha256(raw_code)],
+            )
 
-        self.assertTrue(consume_backup_code(device, raw_code))
-        self.assertFalse(consume_backup_code(device, raw_code))
-        device.refresh_from_db()
-        self.assertEqual(device.backup_code_hashes, [])
+            self.assertTrue(consume_backup_code(device, raw_code))
+            self.assertFalse(consume_backup_code(device, raw_code))
+            device.refresh_from_db()
+            self.assertEqual(device.backup_code_hashes, [])
 
 
 class OrganizationIsolationTests(TestCase):
