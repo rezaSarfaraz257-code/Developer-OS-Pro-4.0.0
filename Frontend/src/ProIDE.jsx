@@ -239,7 +239,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
   executionRunRef.current+=1;const runId=executionRunRef.current;
   if(executionTimerRef.current){clearTimeout(executionTimerRef.current);executionTimerRef.current=null;}
   setStatus("Running in sandbox…");
-  setTerminal(t=>appendBoundedText(t,`${t}${t.endsWith("\n")?"":"\n"}$ ${c}\n`));
+  setTerminal(t=>appendBoundedText(t,`${t.endsWith("\n")?"":"\n"}$ ${c}\n`));
   setHistory(h=>[c,...h.filter(x=>x!==c)].slice(0,30));setHi(-1);setCommand("");
   const started=performance.now();let cursor=0;let failures=0;
   try{
