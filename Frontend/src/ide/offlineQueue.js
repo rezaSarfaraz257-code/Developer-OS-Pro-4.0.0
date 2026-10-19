@@ -86,8 +86,7 @@ export function removeSyncedWorkspacePatches(queue, syncedPatches) {
       patch.workspace_id != null &&
       String(item.workspace_id) === String(patch.workspace_id) &&
       item.path === patch.path &&
-      item.content === patch.content &&
-      Number(item.base_revision) === Number(patch.base_revision)
+      item.content === patch.content
     );
   });
 }
