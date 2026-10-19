@@ -179,7 +179,7 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
 
     @override_settings(
         DEBUG=True,
-        IS_PRODUCTION=True,
+        IS_PRODUCTION=False,
         SECRET_KEY="test-secret-key-that-is-not-insecure",
         ALLOWED_HOSTS=["example.com"],
         EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
@@ -211,6 +211,17 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
             self.assertFalse(optional_response.data["checks"]["worker"])
             self.assertFalse(optional_response.data["worker_required"])
             self.assertEqual(optional_response.data["background_processing"], "unavailable")
+
+            # A Render runtime marker must prevent the console backend from
+            # being misclassified as a working production email configuration,
+            # even if ENVIRONMENT/IS_PRODUCTION was left in development mode.
+            with override_settings(
+                EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+                EMAIL_HOST="",
+            ):
+                email_failure = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(email_failure.status_code, 503)
+            self.assertFalse(email_failure.data["checks"]["email"])
 
             # DEBUG must not bypass failed mandatory dependencies in a
             # deployed runtime, even when the worker itself is optional.
