@@ -4,6 +4,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
   color-scheme: dark;
   color: #eef7ff;
   background: #05070c;
@@ -11,14 +12,16 @@
   --dos-focus-ring: 0 0 0 3px rgba(67, 232, 255, .16);
   --dos-surface: rgba(10, 17, 29, .92);
   --dos-border: rgba(103, 232, 249, .18);
+  --dos-surface-strong: rgba(14, 23, 38, .96);
+  --dos-text-muted: #8fa4ba;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
-html { background: #05070c; color-scheme: dark; }
-body { min-height: 100vh; background: #05070c; overflow-x: hidden; }
+html { background: #05070c; color-scheme: dark; scroll-behavior: smooth; }
+body { min-height: 100vh; background: #05070c; overflow-x: hidden; overscroll-behavior-x: none; }
 button, input, textarea, select { font: inherit; }
-button { cursor: pointer; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 button:disabled { cursor: not-allowed; }
 img, svg { display: block; max-width: 100%; }
 
@@ -44,6 +47,9 @@ img, svg { display: block; max-width: 100%; }
   z-index: 2;
 }
 
+/* Keep media and interactive controls usable in narrow shells without changing desktop geometry. */
+:where(button, a, input, select, textarea) { touch-action: manipulation; }
+
 .app-error-boundary {
   min-height: 100vh;
   display: grid;
@@ -62,7 +68,7 @@ img, svg { display: block; max-width: 100%; }
   box-shadow: 0 24px 80px rgba(0,0,0,.35);
 }
 
-.app-error-card p { color: #a9bbcf; line-height: 1.7; }
+.app-error-card p { color: var(--dos-text-muted); line-height: 1.7; }
 .app-error-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
 
 /* Keep scrolling native and predictable while improving desktop discoverability. */
@@ -87,10 +93,20 @@ img, svg { display: block; max-width: 100%; }
 }
 
 @media (max-width: 640px) {
+  html { scroll-behavior: auto; }
   .app-error-card { padding: 24px; border-radius: 18px; }
 }
 
+@media (prefers-contrast: more) {
+  :root {
+    --dos-border: rgba(255, 255, 255, .34);
+    --dos-text-muted: #c5d3e1;
+  }
+  :focus-visible { outline-width: 3px; box-shadow: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
   *, *::before, *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
