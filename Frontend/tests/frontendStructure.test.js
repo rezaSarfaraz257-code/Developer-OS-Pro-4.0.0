@@ -31,3 +31,14 @@ test("app entrypoint references only existing local style layers", () => {
     assert.equal(fs.existsSync(resolved), true, `missing imported stylesheet: ${importedPath}`);
   }
 });
+
+test("runtime incident persistence excludes stack traces, messages, and query strings", () => {
+  const boundary = fs.readFileSync(path.resolve(srcDir, "components/ErrorBoundary.jsx"), "utf8");
+  const reporter = boundary.split("export default class ErrorBoundary")[0];
+
+  assert.match(reporter, /route:\s*window\.location\.pathname/);
+  assert.doesNotMatch(reporter, /window\.location\.search/);
+  assert.doesNotMatch(reporter, /stack:\s*String\(error\?\.stack/);
+  assert.doesNotMatch(reporter, /message:\s*String\(error\?\.message/);
+  assert.match(reporter, /Also sanitize older entries/);
+});
