@@ -44,7 +44,9 @@ export default function ProIDE({projectId,message,go}){
        const latest=await apiFetch(`/ide/workspaces/${w.id}/files/`);
        const latestData=await latest.json().catch(()=>({}));
        if(!latest.ok)throw Error(latestData.error||"Workspace refresh failed while resolving save conflict.");
-       const latestFiles=latestData.files&&typeof latestData.files==="object"?latestData.files:{};
+       const latestFilesFromServer=latestData.files&&typeof latestData.files==="object"?latestData.files:{};
+       const latestFiles={...latestFilesFromServer};
+       for(const dirtyPath of dirtyPathsRef.current){if(dirtyPath!==p&&typeof refs.files.current[dirtyPath]==="string")latestFiles[dirtyPath]=refs.files.current[dirtyPath];}
        revision=latestData.revision??revision;
        const latestLocalContent=refs.files.current[p];
        if(typeof latestLocalContent==="string"&&latestLocalContent!==content){
@@ -73,7 +75,9 @@ export default function ProIDE({projectId,message,go}){
      }
      if(!r.ok)throw Error(d.error||d.detail||"Save failed");
      const serverFiles=d.files&&typeof d.files==="object"?d.files:{...refs.files.current,[p]:content};
-     const latestLocalContent=refs.files.current[p];
+     const localFilesBeforeSave=refs.files.current;
+     for(const dirtyPath of dirtyPathsRef.current){if(dirtyPath!==p&&typeof localFilesBeforeSave[dirtyPath]==="string")serverFiles[dirtyPath]=localFilesBeforeSave[dirtyPath];}
+     const latestLocalContent=localFilesBeforeSave[p];
      const hasNewerLocalEdit=typeof latestLocalContent==="string"&&latestLocalContent!==content;
      const next=hasNewerLocalEdit?{...serverFiles,[p]:latestLocalContent}:serverFiles;
      const nextRevision=d.revision??revision;
