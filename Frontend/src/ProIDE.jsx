@@ -257,7 +257,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
       setStatus(["success","completed"].includes(d.status)?"Command completed":`Command ${d.status}`);
       return;
     }
-    if(initial)setTerminal(t=>t+initial+"\n");
+    if(initial)setTerminal(t=>appendBoundedText(t,initial+"\n"));
     if(d.job_id){
       setStatus(`Job ${d.job_id.slice(0,8)} queued…`);
       const poll=async()=>{
