@@ -217,7 +217,20 @@ def readiness_api(request):
     )
     if worker_required:
         mandatory.append("worker")
-    ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
+    # DEBUG may relax readiness for local development only. A deployed
+    # platform/runtime must still enforce every mandatory dependency check,
+    # even if DEBUG was accidentally enabled. Worker remains optional unless
+    # REQUIRE_BACKGROUND_WORKER explicitly makes it part of the release gate.
+    is_platform_runtime = bool(
+        os.environ.get("RENDER_SERVICE_ID", "").strip()
+        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    )
+    strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
+    ready = (
+        all(checks[k] for k in mandatory)
+        if (not settings.DEBUG or strict_runtime)
+        else checks["database"]
+    )
     return _no_store_health_response(Response(
         {
             "status": "ready" if ready else "not_ready",
