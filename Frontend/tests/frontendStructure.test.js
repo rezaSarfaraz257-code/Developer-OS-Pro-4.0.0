@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches } from "../src/ide/offlineQueue.js";
+import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -212,4 +213,19 @@ test("offline queue parsing retains identifiable legacy edits and ignores malfor
   assert.equal(queue[0].workspace_id, undefined);
   assert.equal(queue[0].content, "keep for recovery");
   assert.deepEqual(parseOfflineQueue("not-json"), []);
+});
+
+test("Web IDE routes tab switching through the save guard and refuses false save success", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /onClick=\{\(\)=>\{void open\(p\);setRecent/);
+  assert.match(ide, /if\(saving\)\{setStatus\("Save already in progress; wait before switching files\."\);return false;\}/);
+});
+
+test("Web IDE bounds streaming terminal output for long-running sessions", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /appendBoundedText\(t,d\.data\|\|""\)/);
+  const limit = 12;
+  assert.equal(appendBoundedText("abcdefgh", "ijklmnop", limit), "efghijklmnop");
+  assert.equal(appendBoundedText("older output", "new", 5), "putnew");
+  assert.equal(DEFAULT_TERMINAL_BUFFER_LIMIT, 250_000);
 });
