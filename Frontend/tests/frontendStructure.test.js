@@ -338,3 +338,13 @@ test("IDE WebSocket handlers ignore stale connections and bound terminal status 
   assert.match(ide, /if\(terminalSocket\.current===socket\)setStatus\("Terminal connection error"\)/);
   assert.match(ide, /if\(collab\.current===socket\)\{setCollabState\("offline"\);setStatus\("Collaboration connection error"\)\}/);
 });
+
+
+test("IDE diagnostics ignore stale responses after workspace, file, or content changes", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /diagnosticsRequestRef=useRef\(0\)/);
+  assert.match(ide, /requestId!==diagnosticsRequestRef\.current/);
+  assert.match(ide, /String\(refs\.ws\.current\?\.id\)!==String\(workspace\.id\)/);
+  assert.match(ide, /refs\.active\.current!==p\|\|refs\.files\.current\[p\]!==source/);
+  assert.match(ide, /diagnosticsRequestRef\.current\+=1;setDiagnostics\(\[\]\)/);
+});
