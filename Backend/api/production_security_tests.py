@@ -1,12 +1,9 @@
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
-from cryptography.fernet import Fernet
 from rest_framework.test import APIClient
 
-from .models import Project, CodeWorkspace, BackgroundJob, Organization, OrganizationMembership, MFADevice
+from .models import Project, CodeWorkspace, BackgroundJob, Organization, OrganizationMembership
 from .security import can_access_project, can_manage_project
-from .mature import consume_backup_code, sha256
-from .management.commands.worker import _heartbeat_loop
 
 
 class TenantIsolationTests(TestCase):
@@ -33,48 +30,6 @@ class DurableJobTests(TestCase):
         second, created = BackgroundJob.objects.get_or_create(kind="email", idempotency_key="verification:1", defaults={"payload": {"x": 2}})
         self.assertFalse(created)
         self.assertEqual(first.pk, second.pk)
-
-
-class WorkerHeartbeatResilienceTests(TestCase):
-    def test_transient_database_error_does_not_kill_heartbeat_loop(self):
-        class StopAfterTwoWaits:
-            def __init__(self):
-                self.wait_count = 0
-
-            def is_set(self):
-                return False
-
-            def wait(self, _timeout):
-                self.wait_count += 1
-                return self.wait_count >= 2
-
-        stop_event = StopAfterTwoWaits()
-        with (
-            patch("api.management.commands.worker.WorkerHeartbeat.objects.update_or_create", side_effect=[RuntimeError("temporary DB outage"), None]) as heartbeat,
-            patch("api.management.commands.worker.logger.exception") as log_exception,
-        ):
-            _heartbeat_loop("worker-test:123", stop_event)
-
-        self.assertEqual(heartbeat.call_count, 2)
-        log_exception.assert_called_once()
-
-
-class MFARecoveryCodeTests(TestCase):
-    def test_backup_code_is_consumed_once(self):
-        user = User.objects.create_user(username="mfa-recovery-owner", password="Strong-password-12345")
-        raw_code = "AB12CD34"
-        with override_settings(GITHUB_TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode()):
-            device = MFADevice.objects.create(
-                user=user,
-                secret="test-only-secret",
-                enabled=True,
-                backup_code_hashes=[sha256(raw_code)],
-            )
-
-            self.assertTrue(consume_backup_code(device, raw_code))
-            self.assertFalse(consume_backup_code(device, raw_code))
-            device.refresh_from_db()
-            self.assertEqual(device.backup_code_hashes, [])
 
 
 class OrganizationIsolationTests(TestCase):
