@@ -44,8 +44,6 @@ export default class ErrorBoundary extends Component {
   }
 
   reset = () => {
-    // A boundary reset must remount the failed subtree. Merely clearing the
-    // error flag can immediately execute the same broken component state.
     this.setState((state) => ({
       hasError: false,
       message: "",
@@ -64,13 +62,13 @@ export default class ErrorBoundary extends Component {
     }
 
     return (
-      <main className="app-error-boundary" role="alert">
+      <main className="app-error-boundary" role="alert" aria-labelledby="runtime-error-title">
         <div className="app-error-card">
           <span className="eyebrow">Workspace recovery</span>
-          <h1>Developer OS needs a quick restart</h1>
+          <h1 id="runtime-error-title">Developer OS needs a quick restart</h1>
           <p>{this.state.message}</p>
           {this.state.errorId && (
-            <small className="app-error-id">Incident {this.state.errorId}</small>
+            <small className="app-error-id" role="status">Incident {this.state.errorId}</small>
           )}
           <details className="app-error-diagnostics">
             <summary>Technical diagnostics</summary>
