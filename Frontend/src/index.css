@@ -4,13 +4,29 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
+  color: #eef7ff;
+  background: #05070c;
+  accent-color: #43e8ff;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+html { background: #05070c; }
+body { min-height: 100vh; background: #05070c; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 img { display: block; max-width: 100%; }
+
+:focus-visible {
+  outline: 2px solid #43e8ff;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(67, 232, 255, .24);
+  color: #ffffff;
+}
 
 .app-error-boundary {
   min-height: 100vh;
@@ -33,11 +49,7 @@ img { display: block; max-width: 100%; }
 .app-error-card p { color: #a9bbcf; line-height: 1.7; }
 .app-error-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
 
-
-/* Adaptive scrollbars: compact at rest, easier to grab on hover/focus.
-   Keep native scrolling and layout intact; touch devices retain their system behavior.
-   Chromium gives scrollbar-width precedence over ::-webkit-scrollbar sizing, so
-   standardized thin-scrollbar styling is scoped to Firefox to allow hover expansion. */
+/* Keep scrolling native and predictable while improving desktop discoverability. */
 @supports (-moz-appearance: none) {
   :root,
   * {
@@ -65,35 +77,22 @@ img { display: block; max-width: 100%; }
 }
 
 *::-webkit-scrollbar-thumb:hover,
-*:hover::-webkit-scrollbar-thumb,
 *:focus-within::-webkit-scrollbar-thumb {
   background-color: rgba(103, 232, 249, 0.82);
 }
 
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
+*::-webkit-scrollbar-corner { background: transparent; }
 
-/* Increase the hit target only while a scroll container is interacted with.
-   Overlay scrollbars on macOS/mobile remain controlled by the operating system. */
 @media (hover: hover) and (pointer: fine) {
-  *::-webkit-scrollbar:hover {
-    width: 16px;
-    height: 16px;
-  }
-
-  *:hover::-webkit-scrollbar-thumb {
-    border-width: 3px;
-    background-color: rgba(103, 232, 249, 0.72);
-  }
-
-  *:hover::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(103, 232, 249, 0.95);
-  }
+  *::-webkit-scrollbar:hover { width: 16px; height: 16px; }
+  *:hover::-webkit-scrollbar-thumb { border-width: 3px; }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  *::-webkit-scrollbar-thumb {
-    transition: background-color 160ms ease;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
