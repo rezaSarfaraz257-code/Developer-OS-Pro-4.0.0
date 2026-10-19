@@ -99,7 +99,7 @@ function Shell({ user, onLogout, children, go, current }) {
     if (e.key !== "Enter" || !search.trim()) return;
 
     if (paletteOpen) {
-      const [label, path] = filteredCommands[0] || [];
+      const [, path] = filteredCommands[0] || [];
       if (path) {
         go(path);
         setPaletteOpen(false);
