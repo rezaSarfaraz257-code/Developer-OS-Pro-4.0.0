@@ -11,6 +11,8 @@
 .topbar {
   padding-left: max(27px, env(safe-area-inset-left));
   padding-right: max(27px, env(safe-area-inset-right));
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
 }
 
 .icon-btn,
@@ -31,10 +33,18 @@
   max-height: min(70vh, 620px);
   overflow: auto;
   overscroll-behavior: contain;
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  backdrop-filter: blur(24px) saturate(135%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .42), 0 0 0 1px rgba(255,255,255,.025) inset;
 }
+
+.command-palette { animation: dos-pop-in 160ms ease-out both; transform-origin: top center; }
+.notif-pop { animation: dos-pop-in 140ms ease-out both; transform-origin: top right; }
 
 .command-list button,
 .notif-pop button { min-height: 42px; }
+.command-list button { transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.command-list button:hover { transform: translateX(2px); }
 
 /* Keep keyboard focus visible even when product chrome uses dense custom controls. */
 :where(.rail-item, .icon-btn, .logout-btn, .command-list button, .notif-pop button):focus-visible {
@@ -55,6 +65,15 @@
 .messages,
 .comment-box,
 .dos-file-list { overscroll-behavior: contain; }
+
+/* Premium shell surfaces without forcing a visual redesign on feature pages. */
+.os-main { min-width: 0; }
+.os-content { min-width: 0; }
+.os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) {
+  border-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.status-chip { white-space: nowrap; }
 
 /* Improve touch precision without making desktop controls oversized. */
 @media (pointer: coarse) {
@@ -95,6 +114,7 @@
     right: 12px;
     width: auto;
     max-height: min(68vh, 520px);
+    transform-origin: top center;
   }
 
   .command-palette {
@@ -120,5 +140,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page { animation: none !important; }
+  .page,
+  .command-palette,
+  .notif-pop { animation: none !important; }
+  .command-list button { transition: none !important; }
+}
+
+@keyframes dos-pop-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@supports not (color: color-mix(in srgb, white 50%, transparent)) {
+  .os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) { border-color: rgba(255,255,255,.08); }
 }
