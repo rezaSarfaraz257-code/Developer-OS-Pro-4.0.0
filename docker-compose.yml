@@ -177,6 +177,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       EXPORT_ROOT: /app/media/exports
     depends_on:
+      backend:
+        # Backend liveness becomes healthy only after its entrypoint has completed
+        # database migrations and the API server is accepting requests.
+        condition: service_healthy
       db:
         condition: service_healthy
       redis:
