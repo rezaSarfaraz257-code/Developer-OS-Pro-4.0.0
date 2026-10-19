@@ -281,3 +281,182 @@
   }
 }
 
+/* Command surface refinement: layered depth, clearer hierarchy, and restrained motion. */
+.os-shell {
+  background:
+    radial-gradient(ellipse at 78% -12%, rgba(28, 106, 142, .13), transparent 42%),
+    radial-gradient(ellipse at 8% 92%, rgba(44, 75, 139, .09), transparent 38%),
+    #05070c;
+}
+
+.os-rail {
+  background: linear-gradient(180deg, rgba(8, 15, 26, .98), rgba(5, 9, 17, .98));
+  border-right-color: rgba(103, 232, 249, .14);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.os-rail .rail-item {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.os-rail .rail-item:hover {
+  border-color: rgba(103, 232, 249, .12);
+  background-color: rgba(103, 232, 249, .055);
+}
+
+.os-rail .rail-item.active {
+  border-color: rgba(103, 232, 249, .2);
+  background: linear-gradient(100deg, rgba(67, 232, 255, .13), rgba(67, 232, 255, .035));
+}
+
+.os-rail .rail-item.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: #43e8ff;
+  box-shadow: 0 0 14px rgba(67, 232, 255, .45);
+}
+
+.os-main {
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(26, 65, 92, .07), transparent 48%);
+}
+
+.os-main .topbar {
+  border-bottom-color: rgba(103, 232, 249, .12);
+  background: rgba(5, 9, 16, .78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.os-main .global-search {
+  border-color: rgba(103, 232, 249, .16);
+  background: rgba(9, 17, 29, .78);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.os-main .global-search:focus-within,
+.os-main .global-search.is-command-active {
+  border-color: rgba(67, 232, 255, .48);
+  background: rgba(12, 25, 40, .96);
+  box-shadow: 0 0 0 3px rgba(67, 232, 255, .07), 0 10px 34px rgba(0, 0, 0, .14);
+}
+
+.os-main .page {
+  animation: dos-page-enter 220ms ease-out both;
+}
+
+.os-main .page > .hero-row:first-child,
+.os-main .page > .project-hero:first-child {
+  margin-bottom: 22px;
+}
+
+.os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface) {
+  border-color: rgba(103, 232, 249, .14);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .13);
+}
+
+.os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface):hover {
+  border-color: rgba(103, 232, 249, .24);
+}
+
+.os-main .page :where(.panel-head, .cc-surface-heading) {
+  gap: 12px;
+}
+
+.os-main .page :where(.panel-head h2, .cc-surface-heading h3) {
+  letter-spacing: -.025em;
+}
+
+.os-main .command-palette {
+  border-color: rgba(103, 232, 249, .24);
+  background: rgba(6, 12, 21, .97);
+  box-shadow: 0 28px 100px rgba(0, 0, 0, .58), 0 0 0 1px rgba(103, 232, 249, .04);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.os-main .command-list button {
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.os-main .command-list button:hover {
+  border-color: rgba(103, 232, 249, .18);
+  background: rgba(67, 232, 255, .075);
+}
+
+.command-center-page .cc-hero-v2 {
+  isolation: isolate;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .22);
+}
+
+.command-center-page .cc-metric-card,
+.command-center-page .cc-mission-card,
+.command-center-page .cc-create-panel {
+  transition: transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease, background-color 170ms ease;
+}
+
+.command-center-page .cc-metric-card:hover,
+.command-center-page .cc-mission-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(103, 232, 249, .3);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .22);
+}
+
+.command-center-page .cc-surface {
+  background: linear-gradient(145deg, rgba(13, 23, 37, .94), rgba(7, 13, 23, .96));
+  border-color: rgba(103, 232, 249, .16);
+}
+
+.command-center-page .cc-create-panel {
+  border-color: rgba(103, 232, 249, .18);
+  background:
+    radial-gradient(ellipse at 0% 50%, rgba(67, 232, 255, .075), transparent 45%),
+    linear-gradient(120deg, rgba(13, 23, 37, .96), rgba(7, 13, 23, .96));
+}
+
+.command-center-page .cc-create-form input:focus-visible {
+  border-color: rgba(67, 232, 255, .65);
+  box-shadow: 0 0 0 4px rgba(67, 232, 255, .1);
+}
+
+@keyframes dos-page-enter {
+  from { opacity: .72; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 760px) {
+  .os-main .topbar {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface) {
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+  }
+
+  .command-center-page .cc-metric-card:hover,
+  .command-center-page .cc-mission-card:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-main .page,
+  .os-rail .rail-item,
+  .os-main .command-list button,
+  .command-center-page .cc-metric-card,
+  .command-center-page .cc-mission-card,
+  .command-center-page .cc-create-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
