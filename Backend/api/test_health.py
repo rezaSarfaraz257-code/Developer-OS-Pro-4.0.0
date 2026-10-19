@@ -198,6 +198,7 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
             patch("api.views.connection.cursor") as cursor_factory,
             patch("django.core.cache.cache.set"),
             patch("django.core.cache.cache.get", return_value="ok"),
+            patch("rest_framework.throttling.SimpleRateThrottle.allow_request", return_value=True),
             patch("api.models.WorkerHeartbeat.objects.filter") as heartbeat_filter,
             patch("api.models.BackgroundJob.objects.filter") as jobs_filter,
         ):
