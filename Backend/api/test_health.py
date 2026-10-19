@@ -235,3 +235,14 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
             self.assertEqual(required_response.status_code, 503)
             self.assertFalse(required_response.data["checks"]["worker"])
             self.assertTrue(required_response.data["worker_required"])
+
+            # Explicitly requiring the worker must also fail closed in a local
+            # DEBUG runtime, even without Render/production markers.
+            with patch.dict(os.environ, {
+                "RENDER_SERVICE_ID": "",
+                "RENDER_GIT_COMMIT": "",
+                "REQUIRE_BACKGROUND_WORKER": "true",
+            }, clear=False):
+                local_required_response = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(local_required_response.status_code, 503)
+            self.assertTrue(local_required_response.data["worker_required"])
