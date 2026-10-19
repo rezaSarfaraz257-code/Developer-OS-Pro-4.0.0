@@ -184,6 +184,13 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
         ALLOWED_HOSTS=["example.com"],
         EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_HOST="smtp.example.com",
+        DATABASE_URL="postgresql://test:test@localhost:5432/test",
+        DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "test"}},
+        CACHE_URL="redis://cache:6379/1",
+        CACHES={"default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": "redis://cache:6379/1",
+        }},
     )
     def test_debug_does_not_bypass_production_checks_and_worker_is_explicitly_optional(self):
         # A platform deployment must keep production dependency checks strict
@@ -212,6 +219,22 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
             self.assertFalse(optional_response.data["checks"]["worker"])
             self.assertFalse(optional_response.data["worker_required"])
             self.assertEqual(optional_response.data["background_processing"], "unavailable")
+
+            # A platform runtime must not accept SQLite/locmem fallbacks as
+            # healthy production infrastructure, even if local probes succeed.
+            with override_settings(
+                DATABASE_URL="",
+                DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
+                CACHE_URL="",
+                CACHES={"default": {
+                    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                    "LOCATION": "test",
+                }},
+            ):
+                infrastructure_failure = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(infrastructure_failure.status_code, 503)
+            self.assertFalse(infrastructure_failure.data["checks"]["database"])
+            self.assertFalse(infrastructure_failure.data["checks"]["cache"])
 
             # A Render runtime marker must prevent the console backend from
             # being misclassified as a working production email configuration,
