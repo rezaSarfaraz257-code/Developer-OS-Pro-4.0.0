@@ -153,3 +153,131 @@
   from { opacity: 0; transform: translateY(-5px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* PRODUCT FINISHING 2026.10 — predictable interaction states and resilient content */
+.os-main :where(input, textarea, select) {
+  min-width: 0;
+  max-width: 100%;
+  color-scheme: dark;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.os-main :where(input, textarea, select):focus-visible,
+.os-main :where(.inline-create, .toolbar, .settings-form label):focus-within {
+  border-color: rgba(67, 232, 255, .58);
+}
+
+.os-main :where(input, textarea, select):focus-visible {
+  outline: 2px solid rgba(67, 232, 255, .72);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgba(67, 232, 255, .09);
+}
+
+.os-main :where(button, input, textarea, select):disabled {
+  opacity: .52;
+  cursor: not-allowed;
+  filter: saturate(.7);
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan, .chat, .ai-history) {
+  min-width: 0;
+}
+
+.os-main :where(.project-line, .task-row, .key-row, .member, .org-row) {
+  min-width: 0;
+}
+
+.os-main :where(.project-line, .task-row, .key-row, .member, .org-row) :where(b, strong, small, span, code, p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan):focus-within {
+  border-color: rgba(67, 232, 255, .3);
+}
+
+.os-main :where(.project-card, .plan, .org-row, .rail-item, .icon-btn, .logout-btn):focus-visible {
+  outline: 2px solid var(--cyan, #43e8ff);
+  outline-offset: 2px;
+}
+
+.os-main :where(.messages, .comment-box, .notif-pop, .command-palette, .dos-file-list) {
+  overscroll-behavior: contain;
+}
+
+.os-main :where(.error, [role="alert"]) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .os-main .hero-row,
+  .os-main .project-hero {
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .os-main .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .os-main .hero-actions :where(button, a) {
+    min-height: 44px;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) input {
+    min-width: 0;
+    flex: 1 1 180px;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) button {
+    min-height: 44px;
+  }
+
+  .os-main .panel {
+    padding: 15px;
+  }
+
+  .os-main .stat-card {
+    padding: 16px;
+  }
+
+  .os-main .stat-card strong {
+    font-size: clamp(24px, 8vw, 31px);
+    overflow-wrap: anywhere;
+  }
+
+  .os-main .message {
+    max-width: 100%;
+  }
+
+  .os-main .messages {
+    padding: 14px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .os-main :where(input, textarea, select, .panel, .stat-card, .project-card, .plan) {
+    border-color: currentColor !important;
+  }
+
+  .os-main :where(.eyebrow, .panel-kicker, .stat-card span, .stat-card small) {
+    color: #c5d3e1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-main :where(input, textarea, select, .panel, .stat-card, .project-card, .plan) {
+    transition: none !important;
+  }
+}
+
