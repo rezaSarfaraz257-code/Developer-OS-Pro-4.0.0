@@ -1028,6 +1028,35 @@ class WorkerHeartbeatResilienceTests(APITestCase):
         thread.return_value.start.assert_called_once()
         log_exception.assert_called_once()
 
+    def test_outcome_persistence_failure_does_not_kill_long_lived_worker(self):
+        class StopAfterRetry(Exception):
+            pass
+
+        class Job:
+            pk = 42
+            attempts = 1
+            max_attempts = 3
+            payload = {}
+
+            def save(self, update_fields):
+                raise RuntimeError("temporary DB outage during outcome save")
+
+        job = Job()
+        with (
+            patch("api.management.commands.worker.threading.Thread") as thread,
+            patch("api.management.commands.worker.recover_stale_jobs", side_effect=[None, RuntimeError("stop after retry")]),
+            patch("api.management.commands.worker.claim_job", return_value=job),
+            patch("api.management.commands.worker.execute", return_value={"sent": True}),
+            patch("api.management.commands.worker.logger.exception") as log_exception,
+            patch("api.management.commands.worker.time.sleep", side_effect=[None, StopAfterRetry]),
+        ):
+            with self.assertRaises(StopAfterRetry):
+                WorkerCommand().handle(once=False, sleep=0)
+
+        thread.return_value.start.assert_called_once()
+        self.assertEqual(log_exception.call_count, 2)
+        self.assertIn("outcome persistence failed", log_exception.call_args_list[0].args[0])
+
 
 class BackgroundWorkerReadinessTests(APITestCase):
     def production_settings(self):
