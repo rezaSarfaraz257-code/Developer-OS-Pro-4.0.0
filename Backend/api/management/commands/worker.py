@@ -24,11 +24,16 @@ logger = logging.getLogger(__name__)
 
 def recover_stale_jobs():
     now = timezone.now()
-    stale = BackgroundJob.objects.filter(status="running", locked_at__lt=now - STALE_AFTER)
+    stale = BackgroundJob.objects.filter(status="running").filter(
+        Q(locked_at__lt=now - STALE_AFTER) | Q(locked_at__isnull=True)
+    )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
             locked = BackgroundJob.objects.select_for_update().get(pk=job.pk)
-            if locked.status != "running" or not locked.locked_at or locked.locked_at >= now - STALE_AFTER:
+            if (
+                locked.status != "running"
+                or (locked.locked_at and locked.locked_at >= now - STALE_AFTER)
+            ):
                 continue
             if locked.attempts < locked.max_attempts:
                 locked.status = "queued"
