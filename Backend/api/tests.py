@@ -20,9 +20,9 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat, MFADevice
+from .models import APIKey, BackgroundJob, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat, MFADevice
 from .mature import consume_backup_code, sha256
-from .management.commands.worker import Command as WorkerCommand, _heartbeat_loop
+from .management.commands.worker import Command as WorkerCommand, _heartbeat_loop, recover_stale_jobs
 
 
 class ProductionReadinessTests(APITestCase):
@@ -990,6 +990,16 @@ class MFARecoveryCodeTests(APITestCase):
 
 
 class WorkerHeartbeatResilienceTests(APITestCase):
+    def test_running_job_without_lease_timestamp_is_recovered(self):
+        job = BackgroundJob.objects.create(
+            kind="email", payload={}, status="running", locked_at=None,
+            attempts=1, max_attempts=3,
+        )
+        recover_stale_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertIn("Recovered stale worker lease.", job.error)
+
     def test_transient_database_error_does_not_kill_heartbeat_loop(self):
         class StopAfterTwoWaits:
             def __init__(self):
@@ -1091,6 +1101,21 @@ class BackgroundWorkerReadinessTests(APITestCase):
             response = self.client.get("/api/health/ready/")
         self.assertTrue(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_running_job_without_lease_timestamp_blocks_readiness(self):
+        WorkerHeartbeat.objects.create(
+            name="background-worker",
+            worker_id="worker-test:123",
+            last_seen_at=timezone.now(),
+        )
+        BackgroundJob.objects.create(
+            kind="email", payload={}, status="running", locked_at=None,
+            attempts=1, max_attempts=3,
+        )
+        with self.production_settings():
+            response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(response.data["checks"]["worker"])
 
     def test_stale_worker_heartbeat_does_not_pass_readiness(self):
         WorkerHeartbeat.objects.create(
