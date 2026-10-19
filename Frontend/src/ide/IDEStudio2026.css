@@ -292,3 +292,10 @@
     animation: none;
   }
 }
+
+/* Focus mode must stay focused even at phone widths; no drawer may cover the editor. */
+@media (max-width: 760px) {
+  .dos-ide-pro.dos-focus-mode .dos-body:not(.dos-explorer-collapsed) .dos-explorer {
+    display: none;
+  }
+}
