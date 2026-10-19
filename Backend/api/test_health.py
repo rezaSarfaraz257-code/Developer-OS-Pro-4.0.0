@@ -3,7 +3,7 @@ import os
 from unittest import TestCase
 from unittest.mock import patch
 
-from django.test import Client as DjangoTestClient, RequestFactory
+from django.test import Client as DjangoTestClient, RequestFactory, override_settings
 from django.urls import reverse
 
 from .operational_health import liveness_api
