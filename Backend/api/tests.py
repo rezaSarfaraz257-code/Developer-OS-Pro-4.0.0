@@ -976,6 +976,7 @@ class MFARecoveryCodeTests(APITestCase):
                 enabled=True,
                 backup_code_hashes=[sha256(raw_code)],
             )
+            self.assertFalse(consume_backup_code(device, ""))
             self.assertTrue(consume_backup_code(device, raw_code))
             self.assertFalse(consume_backup_code(device, raw_code))
             device.refresh_from_db()
