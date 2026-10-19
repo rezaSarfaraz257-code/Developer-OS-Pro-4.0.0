@@ -19,7 +19,9 @@ This release is considered **production-validated** only when the target CI/host
 
 ## IDE
 
-The product IDE is designed around a persistent project filesystem, isolated execution runner, package installation, framework presets, terminal, file operations, project binding and keyboard shortcuts. A full Monaco integration should be added as a pinned package during the connected CI build rather than silently depending on an unpinned external CDN. Until that package is vendored/pinned, the current editor remains the safe fallback and the release must not claim IDE parity with VS Code.
+The product IDE is designed around a persistent project filesystem, isolated execution runner, package installation, framework presets, terminal, file operations, project binding and keyboard shortcuts. The current frontend already uses a pinned `monaco-editor` package and dedicated Monaco editor/diff components. The production gate is therefore to validate the connected Monaco implementation in CI and in the live IDE flow; this contract must not claim that Monaco is still an unpinned CDN dependency.
+
+IDE execution remains intentionally isolated from the Django web process. Production validation must verify that Run/terminal execution is handled by the sandboxed runner boundary with the required resource, filesystem and network restrictions.
 
 ## Important
 
