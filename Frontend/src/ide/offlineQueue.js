@@ -91,3 +91,20 @@ export function removeSyncedWorkspacePatches(queue, syncedPatches) {
     );
   });
 }
+
+
+// After a queued patch is confirmed saved, advance the base revision of remaining
+// patches in that same workspace to the exact revision returned by that save.
+// The next write still uses optimistic concurrency, so a later external write
+// causes a conflict instead of being overwritten.
+export function rebaseWorkspacePatches(queue, workspaceId, revision) {
+  if (workspaceId == null || !Number.isFinite(Number(revision))) {
+    return Array.isArray(queue) ? queue : [];
+  }
+  return (Array.isArray(queue) ? queue : []).map((item) =>
+    item && item.workspace_id != null &&
+    String(item.workspace_id) === String(workspaceId)
+      ? { ...item, base_revision: Number(revision) }
+      : item
+  );
+}
