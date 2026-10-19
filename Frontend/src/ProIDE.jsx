@@ -34,7 +34,7 @@ export default function ProIDE({projectId,message,go}){
    const w=refs.ws.current,p=refs.active.current,f=refs.files.current;
    if(!w||!p||!refs.dirty.current)return true;if(saving){setStatus("Save already in progress; wait before switching files.");return false;}
    const content=typeof f[p]==="string"?f[p]:"";
-   setSaving(true);setStatus("Saving…");
+   clearTimeout(refs.timer.current);setSaving(true);setStatus("Saving…");
    try{
      let revision=refs.dirtyBaseRevision.current ?? w.revision;
      let r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify({path:p,content,revision})});
