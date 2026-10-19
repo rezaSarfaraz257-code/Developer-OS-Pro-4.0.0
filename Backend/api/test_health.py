@@ -3,7 +3,7 @@ import os
 from unittest import TestCase
 from unittest.mock import patch
 
-from django.test import Client as DjangoTestClient, RequestFactory
+from django.test import Client as DjangoTestClient, RequestFactory, override_settings
 from django.urls import reverse
 
 from .operational_health import liveness_api
@@ -170,3 +170,22 @@ class SharedReleaseIdentityIntegrationTests(TestCase):
             self.assertEqual(response["Expires"], "0")
             self.assertEqual(response.json()["version"], "4.0.0")
             self.assertEqual(response.json()["release_sha"], render_sha)
+
+class RenderReadinessFailClosedRegressionTests(TestCase):
+    @override_settings(DEBUG=True)
+    def test_render_readiness_does_not_bypass_missing_worker_when_debug_is_true(self):
+        # A platform runtime marker must keep production readiness strict even
+        # if DEBUG is accidentally enabled by a misconfigured deployment.
+        with patch.dict(os.environ, {
+            "RENDER_SERVICE_ID": "srv-readiness-regression",
+            "RENDER_GIT_COMMIT": "a" * 40,
+            "REQUIRE_BACKGROUND_WORKER": "",
+        }, clear=False):
+            response = DjangoTestClient().get("/api/health/ready/?format=json")
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["status"], "not_ready")
+        self.assertFalse(payload["checks"]["worker"])
+        self.assertEqual(payload["release_sha"], "a" * 40)
+        self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
