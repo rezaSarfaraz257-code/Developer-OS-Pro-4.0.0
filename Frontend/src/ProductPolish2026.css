@@ -1,0 +1,75 @@
+/* Product-level finishing layer: intentionally additive and scoped to existing shell primitives. */
+.os-shell,
+.os-main,
+.os-content { isolation: isolate; }
+
+.os-content :where(h1, h2, h3) { text-wrap: balance; }
+.os-content :where(.panel, .stat-card, .project-card, .search-big, .results) {
+  contain: layout paint;
+}
+
+.topbar {
+  padding-left: max(27px, env(safe-area-inset-left));
+  padding-right: max(27px, env(safe-area-inset-right));
+}
+
+.icon-btn,
+.logout-btn,
+.rail-item { min-height: 40px; }
+
+.icon-btn { min-width: 40px; }
+
+.global-search:focus-within {
+  border-color: rgba(67, 232, 255, .48);
+  box-shadow: 0 0 0 3px rgba(67, 232, 255, .08), 0 10px 35px rgba(0, 0, 0, .18);
+}
+
+.global-search input::placeholder,
+.dos-tree-search input::placeholder { color: #526579; }
+
+.command-palette,
+.notif-pop {
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.command-list button,
+.notif-pop button { min-height: 42px; }
+
+@media (max-width: 900px) {
+  .topbar { padding-left: 18px; padding-right: 18px; }
+  .global-search { width: min(42vw, 300px); }
+  .crumb { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    height: auto;
+    min-height: 58px;
+    gap: 8px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: 8px;
+  }
+
+  .crumb { display: none; }
+  .top-actions { width: 100%; }
+  .global-search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .global-search input { min-width: 0; }
+  .logout-btn { padding-inline: 9px; }
+
+  .notif-pop {
+    position: fixed;
+    top: calc(58px + env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: min(68vh, 520px);
+  }
+
+  .os-content { padding-left: 6px; padding-right: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page { animation: none !important; }
+}
