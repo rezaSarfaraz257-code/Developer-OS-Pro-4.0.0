@@ -1,4 +1,5 @@
-from unittest.mock import Mock, call, patch
+from datetime import datetime
+from unittest.mock import Mock, patch
 
 from django.db import OperationalError
 from django.test import SimpleTestCase
@@ -26,23 +27,14 @@ class WorkerHeartbeatResilienceTests(SimpleTestCase):
         self.assertEqual(update_heartbeat.call_count, 2)
         self.assertEqual(log_exception.call_count, 1)
         self.assertEqual(close_connections.call_count, 4)
-        self.assertEqual(
-            update_heartbeat.call_args_list,
-            [
-                call(
-                    name="background-worker",
-                    defaults={
-                        "worker_id": "worker-test:123",
-                        "last_seen_at": update_heartbeat.call_args_list[0].kwargs["defaults"]["last_seen_at"],
-                    },
-                ),
-                call(
-                    name="background-worker",
-                    defaults={
-                        "worker_id": "worker-test:123",
-                        "last_seen_at": update_heartbeat.call_args_list[1].kwargs["defaults"]["last_seen_at"],
-                    },
-                ),
-            ],
-        )
-        self.assertEqual(stop_event.wait.call_args_list, [call(15), call(15)])
+        for heartbeat_call in update_heartbeat.call_args_list:
+            self.assertEqual(heartbeat_call.kwargs["name"], "background-worker")
+            self.assertEqual(
+                heartbeat_call.kwargs["defaults"]["worker_id"],
+                "worker-test:123",
+            )
+            self.assertIsInstance(
+                heartbeat_call.kwargs["defaults"]["last_seen_at"],
+                datetime,
+            )
+        self.assertEqual(stop_event.wait.call_args_list, [((15,),), ((15,),)])
