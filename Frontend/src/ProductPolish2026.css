@@ -460,3 +460,12 @@
   }
 }
 
+/* Command palette: useful empty state without decorative/game-like treatment. */
+.command-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: #a8b8c9;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
