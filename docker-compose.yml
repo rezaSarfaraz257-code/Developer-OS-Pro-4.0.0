@@ -62,7 +62,8 @@ services:
       RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-768}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      # Production forbids console email; keep SMTP as the safe default and let readiness fail until configured.
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
