@@ -348,3 +348,13 @@ test("IDE diagnostics ignore stale responses after workspace, file, or content c
   assert.match(ide, /refs\.active\.current!==p\|\|refs\.files\.current\[p\]!==source/);
   assert.match(ide, /diagnosticsRequestRef\.current\+=1;setDiagnostics\(\[\]\)/);
 });
+
+
+test("IDE workspace loads ignore out-of-order responses", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /workspaceLoadRef=useRef\(0\)/);
+  assert.match(ide, /const requestId=\+\+workspaceLoadRef\.current/);
+  assert.match(ide, /if\(!saved\|\|requestId!==workspaceLoadRef\.current\)return/);
+  assert.match(ide, /if\(requestId!==workspaceLoadRef\.current\)return/);
+  assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)setStatus/);
+});
