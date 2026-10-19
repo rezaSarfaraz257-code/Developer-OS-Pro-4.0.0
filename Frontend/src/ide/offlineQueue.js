@@ -60,3 +60,15 @@ export function removeWorkspacePatches(queue, workspaceId) {
     String(item.workspace_id) !== String(workspaceId)
   );
 }
+
+
+// Offline edits do not include a full base snapshot for each file. Only replay them
+// when the server is still at the exact revision they were based on; otherwise a
+// "latest revision" retry could silently overwrite another collaborator's changes.
+export function canSafelySyncOfflinePatches(patches, serverRevision) {
+  if (!Array.isArray(patches) || patches.length === 0) return false;
+  const revisions = patches.map((patch) => Number(patch?.base_revision));
+  if (revisions.some((revision) => !Number.isFinite(revision))) return false;
+  const uniqueRevisions = new Set(revisions);
+  return uniqueRevisions.size === 1 && Number(serverRevision) === revisions[0];
+}
