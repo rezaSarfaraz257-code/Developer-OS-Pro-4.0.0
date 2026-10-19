@@ -9,6 +9,7 @@ const srcDir = path.resolve(testsDir, "../src");
 
 const criticalStyles = [
   "index.css",
+  "ExploreModern.css",
   "ProductPolish2026.css",
   "AppAccessibility2026.css",
   "ScrollbarBehavior.css",
@@ -51,6 +52,14 @@ test("production error boundary hides raw diagnostics and logs only incident met
   assert.match(boundary, /stack:\s*isDevelopment\s*\?/);
   assert.match(boundary, /import\.meta\.env\.DEV\s*&&\s*\(/);
   assert.match(boundary, /console\.error\("Developer OS UI error",\s*\{\s*incidentId:\s*errorId\s*\}\)/);
+});
+
+test("Explore favors practical SaaS usability over decorative game-like effects", () => {
+  const explore = fs.readFileSync(path.resolve(srcDir, "ExploreModern.css"), "utf8");
+  assert.match(explore, /Practical SaaS pass: prioritize readable content and task completion/);
+  assert.match(explore, /\.explore-modern \.explore-orbit \{ display: none; \}/);
+  assert.match(explore, /\.explore-modern \.explore-card:hover\s*\{\s*transform: none;/);
+  assert.match(explore, /\.explore-modern \.explore-hero h1 span\s*\{[\s\S]*-webkit-text-fill-color: currentColor;/);
 });
 
 test("product panels preserve overlays and focus rings outside their bounds", () => {
