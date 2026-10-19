@@ -86,3 +86,13 @@ test("Firefox gets a usable hover/focus scrollbar fallback", () => {
   assert.match(firefoxRules, /\.os-rail:not\(:hover\):not\(:focus-within\)\s*\{\s*scrollbar-width:\s*none\s*!important/s);
   assert.match(firefoxRules, /@media \(pointer: coarse\)[\s\S]*scrollbar-width:\s*auto\s*!important/);
 });
+
+test("product polish includes accessible form states and mobile-safe controls", () => {
+  const polish = fs.readFileSync(path.resolve(srcDir, "ProductPolish2026.css"), "utf8");
+
+  assert.match(polish, /\.os-main :where\(input, textarea, select\):focus-visible/);
+  assert.match(polish, /\.os-main :where\(button, input, textarea, select\):disabled/);
+  assert.match(polish, /@media \(max-width: 640px\)[\s\S]*min-height: 44px/);
+  assert.match(polish, /@media \(prefers-contrast: more\)/);
+  assert.match(polish, /@media \(prefers-reduced-motion: reduce\)/);
+});
