@@ -1,4 +1,4 @@
-/* Product-level finishing layer: intentionally additive and scoped to existing shell primitives. */
+/* Product-level finishing layer: additive, scoped and safe to existing UI primitives. */
 .os-shell,
 .os-main,
 .os-content { isolation: isolate; }
@@ -16,7 +16,6 @@
 .icon-btn,
 .logout-btn,
 .rail-item { min-height: 40px; }
-
 .icon-btn { min-width: 40px; }
 
 .global-search:focus-within {
@@ -36,6 +35,37 @@
 
 .command-list button,
 .notif-pop button { min-height: 42px; }
+
+/* Keep keyboard focus visible even when product chrome uses dense custom controls. */
+:where(.rail-item, .icon-btn, .logout-btn, .command-list button, .notif-pop button):focus-visible {
+  outline: 2px solid var(--cyan, #43e8ff);
+  outline-offset: 2px;
+  z-index: 30;
+}
+
+/* Do not let long repository/project/user content widen the application shell. */
+:where(.project-line, .project-card, .result, .notif, .profile-mini) > :where(b, strong, small, span, p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Native keyboard navigation should not be trapped by dense scroll regions. */
+.command-palette,
+.notif-pop,
+.messages,
+.comment-box,
+.dos-file-list { overscroll-behavior: contain; }
+
+/* Improve touch precision without making desktop controls oversized. */
+@media (pointer: coarse) {
+  .rail-item,
+  .icon-btn,
+  .logout-btn,
+  .command-list button,
+  .notif-pop button,
+  .primary,
+  .ghost { min-height: 44px; }
+}
 
 @media (max-width: 900px) {
   .topbar { padding-left: 18px; padding-right: 18px; }
@@ -67,7 +97,26 @@
     max-height: min(68vh, 520px);
   }
 
+  .command-palette {
+    position: fixed;
+    inset: calc(58px + env(safe-area-inset-top)) 10px auto;
+    width: auto;
+    max-height: min(72vh, 560px);
+  }
+
   .os-content { padding-left: 6px; padding-right: 6px; }
+}
+
+@media (prefers-contrast: more) {
+  .rail-item,
+  .icon-btn,
+  .logout-btn,
+  .global-search,
+  .panel,
+  .stat-card,
+  .project-card,
+  .command-palette,
+  .notif-pop { border-color: currentColor; }
 }
 
 @media (prefers-reduced-motion: reduce) {
