@@ -1,0 +1,163 @@
+/* Developer OS — focused product accessibility + interaction layer. */
+
+.os-shell :where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid rgba(67, 232, 255, .9);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(67, 232, 255, .10);
+}
+
+.os-shell :where(button, a, input, textarea, select):disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.os-shell .command-palette {
+  max-height: min(70vh, 620px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.os-shell .command-list {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.os-shell .command-list button {
+  min-height: 44px;
+}
+
+.os-shell .notif-pop {
+  max-height: min(70vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.os-shell .notif-pop .pop-head {
+  position: sticky;
+  top: -13px;
+  z-index: 1;
+  background: #0b111a;
+}
+
+.os-shell .global-search:focus-within {
+  border-color: rgba(67, 232, 255, .55);
+  box-shadow: 0 0 0 3px rgba(67, 232, 255, .08), 0 0 24px rgba(67, 232, 255, .06);
+}
+
+.os-shell .global-search input::placeholder,
+.os-shell input::placeholder,
+.os-shell textarea::placeholder {
+  color: #596d82;
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .os-main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .topbar {
+    padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+  }
+
+  .crumb {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-actions {
+    min-width: 0;
+  }
+
+  .global-search {
+    width: min(34vw, 340px);
+  }
+}
+
+@media (max-width: 680px) {
+  .topbar {
+    gap: 8px;
+    height: auto;
+    min-height: 60px;
+    padding-block: 10px;
+  }
+
+  .crumb {
+    display: none;
+  }
+
+  .top-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(3, 40px);
+    gap: 6px;
+  }
+
+  .top-actions .global-search {
+    width: auto;
+    min-width: 0;
+    height: 40px;
+  }
+
+  .top-actions .icon-btn,
+  .top-actions .logout-btn {
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .top-actions .logout-btn {
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .top-actions .logout-btn::before {
+    content: "↪";
+    font-size: 16px;
+  }
+
+  .os-content {
+    padding: 12px max(10px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
+  }
+
+  .command-palette,
+  .notif-pop {
+    left: 10px;
+    right: 10px;
+    width: auto !important;
+  }
+
+  .command-palette {
+    top: 62px !important;
+  }
+
+  .notif-pop {
+    top: 58px !important;
+  }
+}
+
+@media (pointer: coarse) {
+  .os-shell :where(button, a) {
+    min-height: 44px;
+  }
+
+  .os-shell .rail-item {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-shell *,
+  .os-shell *::before,
+  .os-shell *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
