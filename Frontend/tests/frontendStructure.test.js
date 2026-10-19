@@ -96,3 +96,18 @@ test("product polish includes accessible form states and mobile-safe controls", 
   assert.match(polish, /@media \(prefers-contrast: more\)/);
   assert.match(polish, /@media \(prefers-reduced-motion: reduce\)/);
 });
+
+test("web app document and install manifest keep essential metadata valid", () => {
+  const html = fs.readFileSync(path.resolve(srcDir, "../index.html"), "utf8");
+  const manifestPath = path.resolve(srcDir, "../public/app-manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+
+  assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/);
+  assert.match(html, /<meta name="description"/);
+  assert.match(html, /<link rel="manifest" href="\/app-manifest\.json"/);
+  assert.equal(manifest.name, "Developer OS");
+  assert.equal(manifest.start_url, "/");
+  assert.equal(manifest.scope, "/");
+  assert.equal(manifest.display, "standalone");
+  assert.ok(Array.isArray(manifest.icons) && manifest.icons.length > 0);
+});
