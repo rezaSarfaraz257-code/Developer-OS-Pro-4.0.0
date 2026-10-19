@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
+import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -242,4 +243,30 @@ test("Web IDE bounds streaming terminal output for long-running sessions", () =>
   assert.equal(appendBoundedText("abcdefgh", "ijklmnop", limit), "efghijklmnop");
   assert.equal(appendBoundedText("older output", "new", 5), "utnew");
   assert.equal(DEFAULT_TERMINAL_BUFFER_LIMIT, 250_000);
+});
+
+
+test("collaboration acknowledgements cannot clear newer or cross-workspace edits", () => {
+  const base = {
+    activeWorkspaceId: 7,
+    ackWorkspaceId: "7",
+    ackPath: "src/app.js",
+    currentContent: "saved content",
+    ackContent: "saved content",
+    hasPendingEdit: false,
+    saving: false,
+  };
+
+  assert.equal(canAcknowledgeWorkspaceEdit(base), true);
+  assert.equal(canAcknowledgeWorkspaceEdit({ ...base, currentContent: "newer local edit" }), false);
+  assert.equal(canAcknowledgeWorkspaceEdit({ ...base, hasPendingEdit: true }), false);
+  assert.equal(canAcknowledgeWorkspaceEdit({ ...base, saving: true }), false);
+  assert.equal(canAcknowledgeWorkspaceEdit({ ...base, ackWorkspaceId: "8" }), false);
+  assert.equal(canAcknowledgeWorkspaceEdit({ ...base, ackContent: undefined }), false);
+
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /canAcknowledgeWorkspaceEdit\(/);
+  assert.match(ide, /const ack=d\.event\|\|\{\}/);
+  assert.match(ide, /hasPendingEdit:editTimersRef\.current\.has\(ackPath\)/);
+  assert.match(ide, /saving:savingRef\.current/);
 });
