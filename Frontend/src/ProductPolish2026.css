@@ -4,8 +4,9 @@
 .os-content { isolation: isolate; }
 
 .os-content :where(h1, h2, h3) { text-wrap: balance; }
+/* Layout containment avoids repeated reflow without clipping menus, focus rings, or shadows. */
 .os-content :where(.panel, .stat-card, .project-card, .search-big, .results) {
-  contain: layout paint;
+  contain: layout;
 }
 
 .topbar {
