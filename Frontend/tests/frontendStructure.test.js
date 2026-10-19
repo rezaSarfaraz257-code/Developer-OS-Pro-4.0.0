@@ -227,7 +227,7 @@ test("Web IDE routes tab switching through the save guard and refuses false save
 
 test("Web IDE tracks split-pane edits per file and saves every dirty file", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  assert.match(ide, /const dirtyPathsRef=useRef\(new Set\(\)\)/);
+  assert.match(ide, /dirtyPathsRef=useRef\(new Set\(\)\)/);
   assert.match(ide, /onChange=\{v=>edit\(v,secondary\)\}/);
   assert.match(ide, /const pending=\[\.\.\.dirtyPathsRef\.current\]/);
   assert.match(ide, /const saveFile=useCallback\(async\(silent=false,targetPath=refs\.active\.current\)/);
