@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import socket
 import threading
@@ -18,6 +19,8 @@ User = get_user_model()
 
 
 STALE_AFTER = timedelta(minutes=10)
+
+logger = logging.getLogger(__name__)
 
 def recover_stale_jobs():
     now = timezone.now()
@@ -41,10 +44,16 @@ def recover_stale_jobs():
 def _heartbeat_loop(worker, stop_event):
     """Keep a durable liveness lease fresh while the worker is idle or busy."""
     while not stop_event.is_set():
-        WorkerHeartbeat.objects.update_or_create(
-            name="background-worker",
-            defaults={"worker_id": worker, "last_seen_at": timezone.now()},
-        )
+        try:
+            WorkerHeartbeat.objects.update_or_create(
+                name="background-worker",
+                defaults={"worker_id": worker, "last_seen_at": timezone.now()},
+            )
+        except Exception:
+            # A transient DB error must not permanently kill the heartbeat
+            # thread. Readiness still fails closed while the lease is stale;
+            # the next interval can recover automatically when DB returns.
+            logger.exception("Worker heartbeat update failed; retrying worker_id=%s", worker)
         if stop_event.wait(15):
             return
 
