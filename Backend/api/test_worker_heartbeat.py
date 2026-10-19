@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from django.db import OperationalError
 from django.test import SimpleTestCase
@@ -37,4 +37,4 @@ class WorkerHeartbeatResilienceTests(SimpleTestCase):
                 heartbeat_call.kwargs["defaults"]["last_seen_at"],
                 datetime,
             )
-        self.assertEqual(stop_event.wait.call_args_list, [((15,),), ((15,),)])
+        self.assertEqual(stop_event.wait.call_args_list, [call(15), call(15)])
