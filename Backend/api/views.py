@@ -168,6 +168,13 @@ def health_api(request):
 def readiness_api(request):
     """Deployment readiness probe: DB plus mandatory production configuration."""
     checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False}
+    # Platform markers must trigger production-grade checks even when ENVIRONMENT
+    # was accidentally left at its development default.
+    is_platform_runtime = bool(
+        os.environ.get("RENDER_SERVICE_ID", "").strip()
+        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    )
+    strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
@@ -181,7 +188,7 @@ def readiness_api(request):
     email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
     # The console backend is useful in local development but cannot deliver
     # verification, recovery, or notification messages in production.
-    if getattr(settings, "IS_PRODUCTION", False):
+    if strict_runtime:
         checks["email"] = bool(email_host and not email_backend.endswith("console.EmailBackend"))
     else:
         checks["email"] = bool(email_host or email_backend.endswith("console.EmailBackend"))
@@ -221,11 +228,6 @@ def readiness_api(request):
     # platform/runtime must still enforce every mandatory dependency check,
     # even if DEBUG was accidentally enabled. Worker remains optional unless
     # REQUIRE_BACKGROUND_WORKER explicitly makes it part of the release gate.
-    is_platform_runtime = bool(
-        os.environ.get("RENDER_SERVICE_ID", "").strip()
-        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
-    )
-    strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
     ready = (
         all(checks[k] for k in mandatory)
         if (not settings.DEBUG or strict_runtime)
