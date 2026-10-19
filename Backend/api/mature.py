@@ -687,7 +687,18 @@ def organization_permissions_api(request, pk):
     permissions = request.data.get("permissions") or []
     if role not in {"owner", "admin", "developer", "viewer", "custom"} or not isinstance(permissions, list):
         return Response({"error": "Invalid role or permissions."}, status=400)
-    row, _ = OrganizationRolePermission.objects.update_or_create(organization=org, role=role, defaults={"permissions": [str(x) for x in permissions][:100]})
+    # An organization admin must not be able to rewrite the owner's role
+    # policy. Only the actual owner may change that highest-privilege policy.
+    if role == "owner" and membership.role != "owner":
+        return Response({"error": "Only the organization owner can change owner permissions."}, status=403)
+    if any(not isinstance(permission, str) or not permission.strip() or len(permission) > 100 for permission in permissions):
+        return Response({"error": "Permissions must be non-empty strings of at most 100 characters."}, status=400)
+    normalized_permissions = list(dict.fromkeys(permission.strip() for permission in permissions))[:100]
+    row, _ = OrganizationRolePermission.objects.update_or_create(
+        organization=org,
+        role=role,
+        defaults={"permissions": normalized_permissions},
+    )
     return Response({"role": row.role, "permissions": row.permissions})
 
 
