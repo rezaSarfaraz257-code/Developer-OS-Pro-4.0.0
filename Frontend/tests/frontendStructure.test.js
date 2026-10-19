@@ -284,6 +284,8 @@ test("offline replay is allowed only against its exact base revision", () => {
     { path: "b.js", base_revision: 13 },
   ], 12), false);
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js" }], 12), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: null }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: "" }], 0), false);
   assert.equal(canSafelySyncOfflinePatches([], 12), false);
 });
 
