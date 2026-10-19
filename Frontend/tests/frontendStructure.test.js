@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches } from "../src/ide/offlineQueue.js";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
 
@@ -295,4 +295,22 @@ test("offline replay removes only exact synced entries and retains newer edits",
   const legacy = { path: "legacy.txt", content: "recover me" };
   const remaining = removeSyncedWorkspacePatches([original, newer, otherWorkspace, legacy], [original]);
   assert.deepEqual(remaining, [newer, otherWorkspace, legacy]);
+});
+
+
+test("offline sync checkpoints successful files and rebases only the same workspace", () => {
+  const queue = [
+    { workspace_id: "7", path: "a.js", content: "saved", base_revision: 4 },
+    { workspace_id: "7", path: "b.js", content: "pending", base_revision: 4 },
+    { workspace_id: "8", path: "a.js", content: "other workspace", base_revision: 9 },
+    { path: "legacy.txt", content: "recover me" },
+  ];
+  const afterFirstSave = removeSyncedWorkspacePatches(queue, [queue[0]]);
+  const rebased = rebaseWorkspacePatches(afterFirstSave, "7", 5);
+  assert.deepEqual(rebased, [
+    { workspace_id: "7", path: "b.js", content: "pending", base_revision: 5 },
+    { workspace_id: "8", path: "a.js", content: "other workspace", base_revision: 9 },
+    { path: "legacy.txt", content: "recover me" },
+  ]);
+  assert.deepEqual(rebaseWorkspacePatches(queue, "7", Number.NaN), queue);
 });
