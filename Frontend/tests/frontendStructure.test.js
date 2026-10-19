@@ -48,3 +48,13 @@ test("product panels preserve overlays and focus rings outside their bounds", ()
   assert.match(polish, /contain:\s*layout;/);
   assert.doesNotMatch(polish, /contain:\s*layout\s+paint\s*;/);
 });
+
+test("mobile navigation and IDE activity controls keep 44px touch targets", () => {
+  const accessibility = fs.readFileSync(path.resolve(srcDir, "AppAccessibility2026.css"), "utf8");
+  const mobileRules = accessibility.split("@media (max-width:640px)")[1]?.split("@media")[0] || "";
+
+  assert.match(mobileRules, /min-height:\s*44px/);
+  assert.match(mobileRules, /min-width:\s*44px/);
+  assert.match(mobileRules, /\.dos-ide-pro \.dos-activity button\s*\{[^}]*width:\s*44px/s);
+  assert.match(mobileRules, /\.dos-ide-pro \.dos-activity button\s*\{[^}]*height:\s*44px/s);
+});
