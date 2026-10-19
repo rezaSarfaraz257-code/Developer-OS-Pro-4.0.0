@@ -41,6 +41,7 @@ test("runtime incident persistence excludes stack traces, messages, and query st
   assert.doesNotMatch(reporter, /stack:\s*String\(error\?\.stack/);
   assert.doesNotMatch(reporter, /message:\s*String\(error\?\.message/);
   assert.match(reporter, /Also sanitize older entries/);
+  assert.match(reporter, /split\(\/\[\?#\]\/\s*,\s*1\)/);
 });
 
 test("production error boundary hides raw diagnostics and logs only incident metadata", () => {
