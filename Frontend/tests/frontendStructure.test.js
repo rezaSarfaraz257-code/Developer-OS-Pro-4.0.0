@@ -42,3 +42,9 @@ test("runtime incident persistence excludes stack traces, messages, and query st
   assert.doesNotMatch(reporter, /message:\s*String\(error\?\.message/);
   assert.match(reporter, /Also sanitize older entries/);
 });
+
+test("product panels preserve overlays and focus rings outside their bounds", () => {
+  const polish = fs.readFileSync(path.resolve(srcDir, "ProductPolish2026.css"), "utf8");
+  assert.match(polish, /contain:\s*layout;/);
+  assert.doesNotMatch(polish, /contain:\s*layout\s+paint\s*;/);
+});
