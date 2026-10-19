@@ -212,6 +212,13 @@ class ReadinessDebugRuntimeRegressionTests(TestCase):
             self.assertFalse(optional_response.data["worker_required"])
             self.assertEqual(optional_response.data["background_processing"], "unavailable")
 
+            # DEBUG must not bypass failed mandatory dependencies in a
+            # deployed runtime, even when the worker itself is optional.
+            with patch("django.core.cache.cache.get", return_value=None):
+                dependency_failure = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(dependency_failure.status_code, 503)
+            self.assertFalse(dependency_failure.data["checks"]["cache"])
+
             os.environ["REQUIRE_BACKGROUND_WORKER"] = "true"
             required_response = readiness_api(self.factory.get("/api/health/ready/"))
             self.assertEqual(required_response.status_code, 503)
