@@ -230,9 +230,9 @@ def readiness_api(request):
             name="background-worker",
             last_seen_at__gte=timezone.now() - timedelta(seconds=90),
         ).exists()
-        no_stale_jobs = not BackgroundJob.objects.filter(
-            status="running",
-            locked_at__lt=timezone.now() - timedelta(minutes=10),
+        stale_job_cutoff = timezone.now() - timedelta(minutes=10)
+        no_stale_jobs = not BackgroundJob.objects.filter(status="running").filter(
+            Q(locked_at__lt=stale_job_cutoff) | Q(locked_at__isnull=True)
         ).exists()
         checks["worker"] = worker_fresh and no_stale_jobs
     except Exception:
