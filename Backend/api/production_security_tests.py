@@ -2,8 +2,9 @@ from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import Project, CodeWorkspace, BackgroundJob, Organization, OrganizationMembership
+from .models import Project, CodeWorkspace, BackgroundJob, Organization, OrganizationMembership, MFADevice
 from .security import can_access_project, can_manage_project
+from .mature import consume_backup_code, sha256
 
 
 class TenantIsolationTests(TestCase):
@@ -30,6 +31,23 @@ class DurableJobTests(TestCase):
         second, created = BackgroundJob.objects.get_or_create(kind="email", idempotency_key="verification:1", defaults={"payload": {"x": 2}})
         self.assertFalse(created)
         self.assertEqual(first.pk, second.pk)
+
+
+class MFARecoveryCodeTests(TestCase):
+    def test_backup_code_is_consumed_once(self):
+        user = User.objects.create_user(username="mfa-recovery-owner", password="Strong-password-12345")
+        raw_code = "AB12CD34"
+        device = MFADevice.objects.create(
+            user=user,
+            secret="test-only-secret",
+            enabled=True,
+            backup_code_hashes=[sha256(raw_code)],
+        )
+
+        self.assertTrue(consume_backup_code(device, raw_code))
+        self.assertFalse(consume_backup_code(device, raw_code))
+        device.refresh_from_db()
+        self.assertEqual(device.backup_code_hashes, [])
 
 
 class OrganizationIsolationTests(TestCase):
