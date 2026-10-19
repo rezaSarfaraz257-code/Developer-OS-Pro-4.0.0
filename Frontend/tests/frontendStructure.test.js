@@ -67,3 +67,12 @@ test("mobile navigation and IDE activity controls keep 44px touch targets", () =
   assert.match(mobileRules, /\.dos-ide-pro \.dos-activity button\s*\{[^}]*width:\s*44px/s);
   assert.match(mobileRules, /\.dos-ide-pro \.dos-activity button\s*\{[^}]*height:\s*44px/s);
 });
+
+test("touch devices retain visible 8px scrollbars without hover", () => {
+  const scrollbars = fs.readFileSync(path.resolve(srcDir, "ScrollbarBehavior.css"), "utf8");
+  const coarsePointerRules = scrollbars.split("@media (pointer: coarse)")[1]?.split("@media")[0] || "";
+
+  assert.match(coarsePointerRules, /width:\s*8px\s*!important/);
+  assert.match(coarsePointerRules, /height:\s*8px\s*!important/);
+  assert.doesNotMatch(coarsePointerRules, /width:\s*6px/);
+});
