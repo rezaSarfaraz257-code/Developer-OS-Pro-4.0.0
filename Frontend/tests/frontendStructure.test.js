@@ -222,7 +222,17 @@ test("Web IDE routes tab switching through the save guard and refuses false save
   assert.match(ide, /Newer edits remain unsaved/);
   assert.match(ide, /return !hasNewerLocalEdit/);
   assert.match(ide, /if\(p===active&&refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
-  assert.match(ide, /clearTimeout\(refs\.timer\.current\);setSaving\(true\)/);
+  assert.match(ide, /clearTimeout\(refs\.timer\.current\);const pendingEditTimer=editTimersRef\.current\.get\(p\)/);
+});
+
+test("Web IDE tracks split-pane edits per file and saves every dirty file", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /const dirtyPathsRef=useRef\(new Set\(\)\)/);
+  assert.match(ide, /onChange=\{v=>edit\(v,secondary\)\}/);
+  assert.match(ide, /const pending=\[\.\.\.dirtyPathsRef\.current\]/);
+  assert.match(ide, /const saveFile=useCallback\(async\(silent=false,targetPath=refs\.active\.current\)/);
+  assert.match(ide, /for\(const dirtyPath of dirtyPathsRef\.current\)/);
+  assert.match(ide, /sentPatchContentsRef\.current\.get\(ackPath\)/);
 });
 
 test("Web IDE bounds streaming terminal output for long-running sessions", () => {
