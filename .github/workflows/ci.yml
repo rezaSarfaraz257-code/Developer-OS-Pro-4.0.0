@@ -270,6 +270,8 @@ jobs:
           CORS_ALLOWED_ORIGINS: http://localhost
           CSRF_TRUSTED_ORIGINS: http://localhost
           EMAIL_VERIFICATION_REQUIRED: "false"
+          # Readiness validates SMTP configuration presence; CI does not send email.
+          EMAIL_HOST: smtp.example.test
         run: |
           trap 'status=$?; echo "=== DOCKER COMPOSE PS ==="; docker compose ps -a || true; echo "=== BACKEND LOGS ==="; docker compose logs --no-color --tail=250 backend || true; echo "=== WORKER LOGS ==="; docker compose logs --no-color --tail=120 worker || true; docker compose down -v --remove-orphans; exit $status' EXIT
           docker compose up -d db redis runner backend worker
