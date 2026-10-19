@@ -4,6 +4,7 @@ import hmac
 import json
 import tempfile
 from datetime import timedelta
+from contextlib import ExitStack
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -36,7 +37,10 @@ class ProductionReadinessTests(APITestCase):
         self.assertEqual(response.data["status"], "not_ready")
 
     def test_render_runtime_requires_worker_even_if_environment_flag_is_misconfigured(self):
-        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+        with patch.dict("os.environ", {
+            "RENDER_GIT_COMMIT": "a" * 40,
+            "REQUIRE_BACKGROUND_WORKER": "true",
+        }, clear=False):
             with override_settings(
                 IS_PRODUCTION=False,
                 DEBUG=False,
@@ -960,14 +964,20 @@ class StripeWebhookFailClosedTests(APITestCase):
 
 class BackgroundWorkerReadinessTests(APITestCase):
     def production_settings(self):
-        return override_settings(
-            IS_PRODUCTION=True,
+        # Exercise the strict readiness contract without requiring real Redis
+        # or PostgreSQL in unit tests. Production infrastructure misconfiguration
+        # is covered separately by ReadinessDebugRuntimeRegressionTests.
+        stack = ExitStack()
+        stack.enter_context(patch.dict("os.environ", {"REQUIRE_BACKGROUND_WORKER": "true"}, clear=False))
+        stack.enter_context(override_settings(
+            IS_PRODUCTION=False,
             DEBUG=False,
             SECRET_KEY="production-readiness-test-key",
             ALLOWED_HOSTS=["testserver"],
             EMAIL_HOST="smtp.example.test",
             EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
-        )
+        ))
+        return stack
 
     def test_production_readiness_requires_a_recent_worker_heartbeat(self):
         with self.production_settings():
