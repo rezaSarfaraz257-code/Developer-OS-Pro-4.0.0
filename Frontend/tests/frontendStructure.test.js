@@ -329,3 +329,12 @@ test("execution output is bounded and stale run responses cannot update the IDE"
   assert.match(ide, /async function install\(\).*const saved=await save\(true\);if\(!saved\)return/s);
   assert.match(ide, /setTerminal\(appendBoundedText\("",d\.output\|\|"Install completed\\n"\)\)/);
 });
+
+test("IDE WebSocket handlers ignore stale connections and bound terminal status output", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /if\(terminalSocket\.current!==socket\)return;/);
+  assert.match(ide, /if\(collab\.current!==socket\)return;/);
+  assert.match(ide, /setTerminal\(t=>appendBoundedText\(t,/);
+  assert.match(ide, /if\(terminalSocket\.current===socket\)setStatus\("Terminal connection error"\)/);
+  assert.match(ide, /if\(collab\.current===socket\)\{setCollabState\("offline"\);setStatus\("Collaboration connection error"\)\}/);
+});
