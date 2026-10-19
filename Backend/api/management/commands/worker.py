@@ -132,8 +132,19 @@ class Command(BaseCommand):
                 daemon=True,
             ).start()
         while True:
-            recover_stale_jobs()
-            job = claim_job(worker)
+            try:
+                recover_stale_jobs()
+                job = claim_job(worker)
+            except Exception:
+                # Database outages must not terminate the long-lived worker.
+                # Readiness will go stale if the heartbeat cannot be persisted;
+                # the worker keeps retrying when the database recovers.
+                logger.exception("Worker queue poll failed; retrying worker_id=%s", worker)
+                if options["once"]:
+                    raise
+                time.sleep(max(1.0, options["sleep"]))
+                continue
+
             if not job:
                 if options["once"]:
                     WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
