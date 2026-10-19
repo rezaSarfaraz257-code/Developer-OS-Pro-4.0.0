@@ -159,6 +159,12 @@ class ProjectApiSecurityTests(APITestCase):
         session.refresh_from_db()
         self.assertEqual(session.jti, str(rotated["jti"]))
 
+        # The original refresh token must not be accepted after rotation.
+        replay = self.client.post("/api/token/refresh/", {"refresh": str(refresh)}, format="json")
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+        session.refresh_from_db()
+        self.assertEqual(session.jti, str(rotated["jti"]))
+
         session.revoked_at = __import__("django.utils.timezone", fromlist=["now"]).now()
         session.save(update_fields=["revoked_at"])
         blocked = self.client.post("/api/token/refresh/", {"refresh": str(rotated)}, format="json")
