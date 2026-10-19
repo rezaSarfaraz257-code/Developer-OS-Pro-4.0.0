@@ -147,7 +147,7 @@ class Command(BaseCommand):
                 logger.exception("Worker queue poll failed; retrying worker_id=%s", worker)
                 if options["once"]:
                     raise
-                time.sleep(max(0.1, options["sleep"]))
+                time.sleep(max(1.0, options["sleep"]))
                 continue
 
             if not job:
