@@ -43,6 +43,15 @@ test("runtime incident persistence excludes stack traces, messages, and query st
   assert.match(reporter, /Also sanitize older entries/);
 });
 
+test("production error boundary hides raw diagnostics and logs only incident metadata", () => {
+  const boundary = fs.readFileSync(path.resolve(srcDir, "components/ErrorBoundary.jsx"), "utf8");
+
+  assert.match(boundary, /message:\s*isDevelopment\s*\?/);
+  assert.match(boundary, /stack:\s*isDevelopment\s*\?/);
+  assert.match(boundary, /import\.meta\.env\.DEV\s*&&\s*\(/);
+  assert.match(boundary, /console\.error\("Developer OS UI error",\s*\{\s*incidentId:\s*errorId\s*\}\)/);
+});
+
 test("product panels preserve overlays and focus rings outside their bounds", () => {
   const polish = fs.readFileSync(path.resolve(srcDir, "ProductPolish2026.css"), "utf8");
   assert.match(polish, /contain:\s*layout;/);
