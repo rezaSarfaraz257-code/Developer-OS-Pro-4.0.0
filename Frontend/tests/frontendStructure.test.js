@@ -221,6 +221,8 @@ test("Web IDE routes tab switching through the save guard and refuses false save
   assert.match(ide, /if\(saving\)\{setStatus\("Save already in progress; wait before switching files\."\);return false;\}/);
   assert.match(ide, /Newer edits remain unsaved/);
   assert.match(ide, /return !hasNewerLocalEdit/);
+  assert.match(ide, /if\(p===active&&refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
+  assert.match(ide, /clearTimeout\(refs\.timer\.current\);setSaving\(true\)/);
 });
 
 test("Web IDE bounds streaming terminal output for long-running sessions", () => {
