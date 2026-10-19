@@ -76,7 +76,7 @@ function Shell({ user, onLogout, children, go, current }) {
         setPaletteOpen(true);
         requestAnimationFrame(() => searchRef.current?.focus());
       }
-      if (event.key === "Escape") { setPaletteOpen(false); setOpenNotif(false); }
+      if (event.key === "Escape") { setPaletteOpen(false); setOpenNotif(false); setSearch(""); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
