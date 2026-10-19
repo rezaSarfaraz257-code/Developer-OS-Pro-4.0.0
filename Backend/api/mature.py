@@ -152,16 +152,33 @@ def _backup_codes(device):
 
 
 def consume_backup_code(device, supplied):
+    """Consume one MFA recovery code atomically to prevent concurrent replay."""
     supplied = str(supplied or "").strip().upper()
     digest = sha256(supplied)
-    hashes = _backup_codes(device)
-    if digest not in hashes:
+    if not supplied:
         return False
-    hashes.remove(digest)
-    device.backup_code_hashes = hashes
-    device.last_used_at = timezone.now()
-    device.save(update_fields=["backup_code_hashes", "last_used_at"])
-    return True
+
+    # A JSON-list read/modify/write without a row lock allows two concurrent
+    # login requests to accept the same recovery code. Serialize consumption
+    # on the MFA device row; PostgreSQL honours this lock across workers.
+    with transaction.atomic():
+        locked_device = MFADevice.objects.select_for_update().filter(pk=device.pk).first()
+        if locked_device is None:
+            return False
+        hashes = list(_backup_codes(locked_device))
+        match = next((stored for stored in hashes if hmac.compare_digest(str(stored), digest)), None)
+        if match is None:
+            return False
+        hashes.remove(match)
+        locked_device.backup_code_hashes = hashes
+        locked_device.last_used_at = timezone.now()
+        locked_device.save(update_fields=["backup_code_hashes", "last_used_at"])
+
+        # Keep the caller's in-memory instance coherent without writing its
+        # potentially stale JSON field back over the locked database row.
+        device.backup_code_hashes = hashes
+        device.last_used_at = locked_device.last_used_at
+        return True
 
 
 def _email(subject, to, text, html=None):
