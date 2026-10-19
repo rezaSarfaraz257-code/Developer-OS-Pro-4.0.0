@@ -156,3 +156,12 @@ test("command palette filters commands and executes the first keyboard match", (
   assert.match(app, /aria-label=\{paletteOpen \? "Filter commands" : "Search everything"\}/);
   assert.match(app, /aria-label="Notifications" aria-expanded=\{openNotif\}/);
 });
+
+test("Web IDE keeps mobile actions reachable and supports high-contrast keyboard focus", () => {
+  const idePolish = fs.readFileSync(path.resolve(srcDir, "ide/IDEStudio2026.css"), "utf8");
+
+  assert.match(idePolish, /\.dos-ide-pro \.dos-top-actions[\s\S]*max-width:\s*48vw[\s\S]*overflow-x:\s*auto/);
+  assert.doesNotMatch(idePolish, /\.dos-ide-pro \.dos-top-actions button:nth-child\(n\+4\)\s*\{\s*display:\s*none/s);
+  assert.match(idePolish, /:focus-visible\s*\{\s*outline:\s*2px solid/);
+  assert.match(idePolish, /@media \(forced-colors: active\)/);
+});
