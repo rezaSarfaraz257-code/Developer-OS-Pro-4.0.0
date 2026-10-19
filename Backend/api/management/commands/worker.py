@@ -168,7 +168,24 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
-            job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+            try:
+                job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+            except Exception:
+                # Outcome persistence can fail after execution (for example, an
+                # SMTP send succeeded but the DB connection dropped). Do not
+                # kill the long-lived worker. The job remains leased as running;
+                # stale-lease recovery will retry/dead-letter it after STALE_AFTER.
+                # This queue is at-least-once: handlers should be idempotent where
+                # possible because a successful side effect may be repeated.
+                logger.exception(
+                    "Worker job outcome persistence failed; stale recovery will reconcile job_id=%s worker_id=%s",
+                    job.pk,
+                    worker,
+                )
+                if options["once"]:
+                    raise
+                time.sleep(max(1.0, options["sleep"]))
+                continue
             if options["once"]:
                 WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                 return
