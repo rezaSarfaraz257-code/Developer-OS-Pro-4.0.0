@@ -1,3 +1,31 @@
+/* Firefox uses scrollbar-width instead of WebKit pseudo-elements. */
+@supports (-moz-appearance: none) {
+  :root, html, body, * {
+    scrollbar-width: thin !important;
+  }
+
+  *:hover, *:focus-within {
+    scrollbar-width: auto !important;
+  }
+
+  @media (min-width: 721px) {
+    .os-rail:not(:hover):not(:focus-within) {
+      scrollbar-width: none !important;
+    }
+
+    .os-rail:hover, .os-rail:focus-within {
+      scrollbar-width: auto !important;
+    }
+  }
+
+  @media (pointer: coarse) {
+    :root, html, body, * {
+      scrollbar-width: auto !important;
+    }
+  }
+}
+
+/* Chromium/WebKit supports pixel-width hover expansion. */
 /* Final scrollbar behavior overrides. */
 @supports not (-moz-appearance: none) {
   :root, html, body, * {
