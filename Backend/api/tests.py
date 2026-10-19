@@ -36,7 +36,7 @@ class ProductionReadinessTests(APITestCase):
         self.assertFalse(response.data["checks"]["email"])
         self.assertEqual(response.data["status"], "not_ready")
 
-    def test_render_runtime_requires_worker_even_if_environment_flag_is_misconfigured(self):
+    def test_render_runtime_honors_explicit_worker_requirement(self):
         with patch.dict("os.environ", {
             "RENDER_GIT_COMMIT": "a" * 40,
             "REQUIRE_BACKGROUND_WORKER": "true",
@@ -52,6 +52,7 @@ class ProductionReadinessTests(APITestCase):
                 response = self.client.get("/api/health/ready/")
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertFalse(response.data["checks"]["worker"])
+        self.assertTrue(response.data["worker_required"])
         self.assertEqual(response.data["status"], "not_ready")
 
     def test_configured_non_console_email_backend_can_pass_email_check(self):
