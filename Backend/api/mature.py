@@ -97,7 +97,7 @@ def revoke_user_sessions(user):
 
 
 class MatureTokenRefreshSerializer(TokenRefreshSerializer):
-    """Bind refresh rotation to a live SecuritySession record."""
+    """Bind refresh rotation to a live session and serialize concurrent refreshes."""
     def validate(self, attrs):
         raw_refresh = attrs.get("refresh")
         try:
@@ -107,23 +107,27 @@ class MatureTokenRefreshSerializer(TokenRefreshSerializer):
         except Exception as exc:
             raise serializers.ValidationError("Invalid refresh token.") from exc
 
-        session = SecuritySession.objects.filter(
-            user_id=user_id, jti=old_jti, revoked_at__isnull=True
-        ).first()
-        if session is None:
-            raise serializers.ValidationError("Refresh session is no longer active.")
+        # Lock and rotate the session in one transaction. Without the row lock,
+        # two requests carrying the same refresh token can both pass the session
+        # check before either request updates the JTI.
+        with transaction.atomic():
+            session = SecuritySession.objects.select_for_update().filter(
+                user_id=user_id, jti=old_jti, revoked_at__isnull=True
+            ).first()
+            if session is None:
+                raise serializers.ValidationError("Refresh session is no longer active.")
 
-        data = super().validate(attrs)
-        new_refresh = data.get("refresh")
-        if new_refresh:
-            rotated = RefreshToken(new_refresh)
-            session.jti = str(rotated.get("jti"))
-            session.last_seen_at = timezone.now()
-            session.save(update_fields=["jti", "last_seen_at"])
-        else:
-            session.last_seen_at = timezone.now()
-            session.save(update_fields=["last_seen_at"])
-        return data
+            data = super().validate(attrs)
+            new_refresh = data.get("refresh")
+            if new_refresh:
+                rotated = RefreshToken(new_refresh)
+                session.jti = str(rotated.get("jti"))
+                session.last_seen_at = timezone.now()
+                session.save(update_fields=["jti", "last_seen_at"])
+            else:
+                session.last_seen_at = timezone.now()
+                session.save(update_fields=["last_seen_at"])
+            return data
 
 
 def _totp(secret: str, counter: int) -> str:
