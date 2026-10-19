@@ -124,3 +124,14 @@ test("command surface polish is additive and respects reduced-motion preferences
   assert.match(polish, /@keyframes dos-page-enter/);
   assert.match(polish, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.os-main \.page/);
 });
+
+test("Web IDE responsive layout preserves editor space and mobile Explorer access", () => {
+  const idePolish = fs.readFileSync(path.resolve(srcDir, "ide/IDEStudio2026.css"), "utf8");
+
+  assert.match(idePolish, /\.dos-ide-pro \.dos-body:not\(\.dos-explorer-collapsed\) \.dos-explorer/);
+  assert.match(idePolish, /position:\s*absolute[\s\S]*width:\s*min\(290px, calc\(100% - 54px\)\)/);
+  assert.match(idePolish, /\.dos-ide-pro\.dos-focus-mode \.dos-body/);
+  assert.match(idePolish, /\.dos-dock-tabs[\s\S]*overflow-x:\s*auto/);
+  assert.match(idePolish, /\.dos-statusbar[\s\S]*overflow:\s*hidden/);
+  assert.match(idePolish, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none/);
+});
