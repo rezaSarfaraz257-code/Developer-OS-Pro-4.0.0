@@ -147,14 +147,15 @@ class Command(BaseCommand):
                 logger.exception("Worker queue poll failed; retrying worker_id=%s", worker)
                 if options["once"]:
                     raise
-                time.sleep(max(1.0, options["sleep"]))
+                time.sleep(max(0.1, options["sleep"]))
                 continue
 
             if not job:
                 if options["once"]:
                     WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                     return
-                time.sleep(options["sleep"])
+                # Avoid a CPU-burning tight loop if --sleep is zero or negative.
+                time.sleep(max(0.1, options["sleep"]))
                 continue
             try:
                 result = execute(job)
