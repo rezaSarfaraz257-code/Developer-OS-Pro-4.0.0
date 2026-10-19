@@ -314,3 +314,14 @@ test("offline sync checkpoints successful files and rebases only the same worksp
   ]);
   assert.deepEqual(rebaseWorkspacePatches(queue, "7", Number.NaN), queue);
 });
+
+
+test("execution output is bounded and stale run responses cannot update the IDE", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /if\(runId!==executionRunRef\.current\)return;/);
+  assert.match(ide, /setTerminal\(t=>appendBoundedText\(t,od\.output\)\)/);
+  assert.match(ide, /setTerminal\(t=>appendBoundedText\(t,initial\+"\\n"\)\)/);
+  assert.match(ide, /if\(d\.files\)\{const serverFiles=\{\.\.\.d\.files\};for\(const dirtyPath of dirtyPathsRef\.current\)/);
+  assert.match(ide, /async function install\(\).*const saved=await save\(true\);if\(!saved\)return/s);
+  assert.match(ide, /setTerminal\(appendBoundedText\("",d\.output\|\|"Install completed\\n"\)\)/);
+});
