@@ -7,6 +7,7 @@ from django.test import Client as DjangoTestClient, RequestFactory
 from django.urls import reverse
 
 from .operational_health import liveness_api
+from .views import readiness_api
 
 
 class LivenessApiTests(TestCase):
@@ -170,3 +171,49 @@ class SharedReleaseIdentityIntegrationTests(TestCase):
             self.assertEqual(response["Expires"], "0")
             self.assertEqual(response.json()["version"], "4.0.0")
             self.assertEqual(response.json()["release_sha"], render_sha)
+
+
+class ReadinessDebugRuntimeRegressionTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @override_settings(
+        DEBUG=True,
+        IS_PRODUCTION=True,
+        SECRET_KEY="test-secret-key-that-is-not-insecure",
+        ALLOWED_HOSTS=["example.com"],
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.com",
+    )
+    def test_debug_does_not_bypass_production_checks_and_worker_is_explicitly_optional(self):
+        # A platform deployment must keep production dependency checks strict
+        # even if DEBUG is accidentally enabled. The worker itself remains an
+        # explicit gate so API-only deployments can start without fake health.
+        with (
+            patch.dict(os.environ, {
+                "RENDER_SERVICE_ID": "srv-readiness-regression",
+                "RENDER_GIT_COMMIT": "a" * 40,
+                "REQUIRE_BACKGROUND_WORKER": "",
+            }, clear=False),
+            patch("api.views.connection.cursor") as cursor_factory,
+            patch("django.core.cache.cache.set"),
+            patch("django.core.cache.cache.get", return_value="ok"),
+            patch("api.models.WorkerHeartbeat.objects.filter") as heartbeat_filter,
+            patch("api.models.BackgroundJob.objects.filter") as jobs_filter,
+        ):
+            cursor = cursor_factory.return_value.__enter__.return_value
+            cursor.fetchone.return_value = (1,)
+            heartbeat_filter.return_value.exists.return_value = False
+            jobs_filter.return_value.exists.return_value = False
+
+            optional_response = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(optional_response.status_code, 200)
+            self.assertFalse(optional_response.data["checks"]["worker"])
+            self.assertFalse(optional_response.data["worker_required"])
+            self.assertEqual(optional_response.data["background_processing"], "unavailable")
+
+            os.environ["REQUIRE_BACKGROUND_WORKER"] = "true"
+            required_response = readiness_api(self.factory.get("/api/health/ready/"))
+            self.assertEqual(required_response.status_code, 503)
+            self.assertFalse(required_response.data["checks"]["worker"])
+            self.assertTrue(required_response.data["worker_required"])
