@@ -21,6 +21,8 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
         job.refresh_from_db()
         self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
         self.assertIn("Recovered stale worker lease.", job.error)
 
     def test_stale_running_job_at_attempt_limit_is_dead_lettered(self):
@@ -36,5 +38,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
         job.refresh_from_db()
         self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
         self.assertIsNotNone(job.dead_lettered_at)
         self.assertIsNotNone(job.finished_at)
