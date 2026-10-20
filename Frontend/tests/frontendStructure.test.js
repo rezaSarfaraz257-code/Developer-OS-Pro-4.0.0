@@ -367,3 +367,12 @@ test("IDE workspace deletion saves dirty files and invalidates stale requests", 
   assert.match(ide, /if\(String\(refs\.ws\.current\?\.id\)===deletingWorkspaceId\)setStatus/);
   assert.match(ide, /refs\.dirtyBaseRevision\.current=null;dirtyPathsRef\.current\.clear\(\)/);
 });
+
+
+test("IDE bulk tab closing saves dirty files before hiding tabs", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /async function closeOthers\(p=active\)\{\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
+  assert.match(ide, /async function closeAll\(\)\{\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
+  assert.match(ide, /const remaining=pinned\.filter\(x=>typeof refs\.files\.current\[x\]==="string"\)/);
+  assert.match(ide, /if\(fallback\)\{await open\(fallback\);\}else\{setActive\("\\"\);refs\.active\.current="\\"/);
+});
