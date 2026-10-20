@@ -4,7 +4,7 @@ from unittest.mock import Mock, call, patch
 from django.db import OperationalError
 from django.test import SimpleTestCase
 
-from .management.commands.worker import _heartbeat_loop
+from .management.commands.worker import Command, _heartbeat_loop
 
 
 class WorkerHeartbeatResilienceTests(SimpleTestCase):
@@ -38,3 +38,25 @@ class WorkerHeartbeatResilienceTests(SimpleTestCase):
                 datetime,
             )
         self.assertEqual(stop_event.wait.call_args_list, [call(15), call(15)])
+
+    @patch("api.management.commands.worker.logger.exception")
+    @patch("api.management.commands.worker.time.sleep")
+    @patch("api.management.commands.worker.claim_job", return_value=None)
+    @patch(
+        "api.management.commands.worker.recover_stale_jobs",
+        side_effect=[OperationalError("temporary database disconnect"), None],
+    )
+    @patch("api.management.commands.worker.threading.Thread")
+    def test_transient_queue_poll_failure_does_not_terminate_worker(
+        self, worker_thread, recover_jobs, claim, sleep, log_exception
+    ):
+        sleep.side_effect = [None, KeyboardInterrupt()]
+        with patch("api.management.commands.worker.socket.gethostname", return_value="worker-test"):
+            with patch("api.management.commands.worker.os.getpid", return_value=123):
+                with self.assertRaises(KeyboardInterrupt):
+                    Command().handle(once=False, sleep=1.0)
+
+        self.assertEqual(recover_jobs.call_count, 2)
+        claim.assert_called_once_with("worker-test:123")
+        self.assertEqual(log_exception.call_count, 1)
+        self.assertEqual(sleep.call_count, 2)

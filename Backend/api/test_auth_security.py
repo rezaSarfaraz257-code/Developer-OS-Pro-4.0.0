@@ -2,12 +2,12 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .mature import sha256
-from .models import EmailVerificationToken, UserProfile
+from .mature import consume_backup_code, sha256
+from .models import EmailVerificationToken, MFADevice, UserProfile
 
 
 class AuthenticationHardeningTests(TestCase):
@@ -94,3 +94,24 @@ class AuthenticationHardeningTests(TestCase):
         self.assertEqual(response.status_code, 400)
         profile.refresh_from_db()
         self.assertFalse(profile.email_verified)
+
+    @override_settings(GITHUB_TOKEN_ENCRYPTION_KEY="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    def test_mfa_backup_code_is_single_use_and_blank_codes_are_rejected(self):
+        user = User.objects.create_user(
+            username="mfa-recovery-user",
+            email="mfa-recovery@example.test",
+            password="A-Unique-Long-Password-934!",
+        )
+        device = MFADevice.objects.create(
+            user=user,
+            secret="JBSWY3DPEHPK3PXP",
+            enabled=True,
+            backup_code_hashes=[sha256("RECOVERY-ONE")],
+        )
+
+        self.assertFalse(consume_backup_code(device, "   "))
+        self.assertTrue(consume_backup_code(device, "recovery-one"))
+        device.refresh_from_db()
+        self.assertEqual(device.backup_code_hashes, [])
+        self.assertIsNotNone(device.last_used_at)
+        self.assertFalse(consume_backup_code(device, "RECOVERY-ONE"))

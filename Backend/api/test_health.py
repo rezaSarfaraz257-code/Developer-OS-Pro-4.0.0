@@ -188,3 +188,38 @@ class RenderReadinessFailClosedRegressionTests(TestCase):
         self.assertFalse(payload["checks"]["worker"])
         self.assertEqual(payload["release_sha"], "a" * 40)
         self.assertEqual(response["Cache-Control"], "no-store, max-age=0")
+
+
+    @override_settings(
+        DEBUG=True,
+        IS_PRODUCTION=False,
+        SECRET_KEY="a-valid-test-secret-key",
+        ALLOWED_HOSTS=["*", "localhost"],
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        EMAIL_HOST="",
+        DATABASE_URL="",
+        CACHE_URL="",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    )
+    def test_render_runtime_fails_closed_on_development_dependency_fallbacks(self):
+        # Platform markers must enforce production dependencies even when
+        # ENVIRONMENT/DEBUG are accidentally left in development mode.
+        with patch.dict(os.environ, {
+            "RENDER_SERVICE_ID": "srv-strict-readiness-regression",
+            "RENDER_GIT_COMMIT": "b" * 40,
+            "DATABASE_URL": "",
+            "CACHE_URL": "",
+            "REQUIRE_BACKGROUND_WORKER": "",
+        }, clear=False):
+            with patch("api.views.connection.cursor") as cursor_factory:
+                cursor = cursor_factory.return_value.__enter__.return_value
+                cursor.fetchone.return_value = (1,)
+                response = DjangoTestClient().get("/api/health/ready/?format=json")
+
+        self.assertEqual(response.status_code, 503)
+        checks = response.json()["checks"]
+        self.assertFalse(checks["database"])
+        self.assertFalse(checks["allowed_hosts"])
+        self.assertFalse(checks["email"])
+        self.assertFalse(checks["cache"])
+        self.assertFalse(checks["worker"])

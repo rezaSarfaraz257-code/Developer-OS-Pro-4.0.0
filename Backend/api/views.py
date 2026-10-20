@@ -166,68 +166,95 @@ def health_api(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
-    """Deployment readiness probe: DB plus mandatory production configuration."""
+    """Deployment readiness probe with fail-closed checks for deployed runtimes."""
+    is_platform_runtime = bool(
+        os.environ.get("RENDER_SERVICE_ID", "").strip()
+        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    )
+    strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
     checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False}
+
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             cursor.fetchone()
-        checks["database"] = True
+        db_config = getattr(settings, "DATABASES", {}).get("default", {})
+        database_url = str(
+            getattr(settings, "DATABASE_URL", "") or os.environ.get("DATABASE_URL", "")
+        ).strip()
+        checks["database"] = (
+            db_config.get("ENGINE") == "django.db.backends.postgresql" and bool(database_url)
+            if strict_runtime
+            else True
+        )
     except Exception:
-        pass
-    checks["secret_key"] = bool(settings.SECRET_KEY and not settings.SECRET_KEY.startswith("django-insecure-"))
-    checks["allowed_hosts"] = bool(settings.ALLOWED_HOSTS and settings.ALLOWED_HOSTS != ["*"])
+        checks["database"] = False
+
+    checks["secret_key"] = bool(
+        settings.SECRET_KEY and not settings.SECRET_KEY.startswith("django-insecure-")
+    )
+    allowed_hosts = [str(host).strip().lower() for host in (settings.ALLOWED_HOSTS or [])]
+    loopback_hosts = {"localhost", "127.0.0.1", "::1"}
+    checks["allowed_hosts"] = bool(
+        allowed_hosts
+        and "*" not in allowed_hosts
+        and (
+            not strict_runtime
+            or all(host not in loopback_hosts for host in allowed_hosts)
+        )
+    )
+
     email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
     email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
-    # The console backend is useful in local development but cannot deliver
-    # verification, recovery, or notification messages in production.
-    if getattr(settings, "IS_PRODUCTION", False):
+    # Console email is acceptable only for local development. A deployed
+    # service must have a real mail transport configured even if DEBUG is wrong.
+    if strict_runtime:
         checks["email"] = bool(email_host and not email_backend.endswith("console.EmailBackend"))
     else:
         checks["email"] = bool(email_host or email_backend.endswith("console.EmailBackend"))
+
     try:
         from django.core.cache import cache
         cache.set("readiness", "ok", timeout=15)
-        checks["cache"] = cache.get("readiness") == "ok"
+        cache_works = cache.get("readiness") == "ok"
+        cache_url = str(getattr(settings, "CACHE_URL", "") or os.environ.get("CACHE_URL", "")).strip()
+        cache_config = getattr(settings, "CACHES", {}).get("default", {})
+        cache_is_production_backend = (
+            str(cache_config.get("BACKEND", "")).endswith("RedisCache") and bool(cache_url)
+        )
+        checks["cache"] = cache_works and (cache_is_production_backend if strict_runtime else True)
     except Exception:
         checks["cache"] = False
+
     try:
         from .models import BackgroundJob, WorkerHeartbeat
         worker_fresh = WorkerHeartbeat.objects.filter(
             name="background-worker",
             last_seen_at__gte=timezone.now() - timedelta(seconds=90),
         ).exists()
-        no_stale_jobs = not BackgroundJob.objects.filter(
-            status="running",
-            locked_at__lt=timezone.now() - timedelta(minutes=10),
+        stale_jobs = BackgroundJob.objects.filter(status="running").filter(
+            Q(locked_at__lt=timezone.now() - timedelta(minutes=10))
+            | Q(locked_at__isnull=True)
         ).exists()
-        checks["worker"] = worker_fresh and no_stale_jobs
+        checks["worker"] = worker_fresh and not stale_jobs
     except Exception:
         checks["worker"] = False
+
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
-    # Render's deployment SHA is injected by the platform. Treat that as a
-    # production runtime signal even if ENVIRONMENT was accidentally left at
-    # its development default; otherwise a missing worker can be reported as
-    # ready while checks["worker"] is false.
-    is_render_runtime = bool(
-        os.environ.get("RENDER_SERVICE_ID", "").strip()
-        or os.environ.get("RENDER_GIT_COMMIT", "").strip()
-    )
     worker_required = (
         getattr(settings, "IS_PRODUCTION", False)
-        or is_render_runtime
+        or is_platform_runtime
         or os.environ.get("REQUIRE_BACKGROUND_WORKER", "").strip().lower()
         in {"1", "true", "yes", "on"}
     )
     if worker_required:
         mandatory.append("worker")
-    # DEBUG is not a safe reason to bypass production checks when the platform
-    # explicitly identifies this process as production or requires the worker.
-    # Preserve the database-only shortcut for ordinary local development only.
+
+    # DEBUG must not bypass readiness on a hosting platform or in production.
     ready = (
         checks["database"]
         if settings.DEBUG and not worker_required
-        else all(checks[k] for k in mandatory)
+        else all(checks[key] for key in mandatory)
     )
     return _no_store_health_response(Response(
         {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
