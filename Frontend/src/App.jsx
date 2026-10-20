@@ -934,7 +934,8 @@ function Explore() {
 
     {aiResult&&<section className="explore-ai-panel"><div className="explore-ai-head"><div><span>✦ DOS INTELLIGENCE</span><strong>Discovery Brief</strong></div><button onClick={()=>setAiResult("")}>×</button></div><p>{aiResult}</p></section>}
     {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>{void load(q);void loadPersonalData()}}>RETRY</button></div>}
-    {tab==="projects"&&publicProjectsError&&<div className="explore-error" role="alert"><span>{publicProjectsError}</span><button type="button" onClick={()=>setPublicProjectsRefresh(value=>value+1)}>RETRY PUBLIC PROJECTS</button></div>\n    {tab==="projects"&&publicProjectsLoading&&<div className="explore-loading" role="status">SYNCING PUBLIC PROJECTS…</div>}
+    {tab==="projects"&&publicProjectsError&&<div className="explore-error" role="alert"><span>{publicProjectsError}</span><button type="button" onClick={()=>setPublicProjectsRefresh(value=>value+1)}>RETRY PUBLIC PROJECTS</button></div>
+    {tab==="projects"&&publicProjectsLoading&&<div className="explore-loading" role="status">SYNCING PUBLIC PROJECTS…</div>}
     {toast&&<div className="explore-toast" role="status">✓ {toast}</div>}
 
     <section className="explore-controls">
