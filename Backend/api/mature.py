@@ -97,7 +97,7 @@ def revoke_user_sessions(user):
 
 
 class MatureTokenRefreshSerializer(TokenRefreshSerializer):
-    """Bind refresh rotation to a live SecuritySession record."""
+    """Bind refresh rotation to a live session and serialize concurrent refreshes."""
     def validate(self, attrs):
         raw_refresh = attrs.get("refresh")
         try:
@@ -107,23 +107,27 @@ class MatureTokenRefreshSerializer(TokenRefreshSerializer):
         except Exception as exc:
             raise serializers.ValidationError("Invalid refresh token.") from exc
 
-        session = SecuritySession.objects.filter(
-            user_id=user_id, jti=old_jti, revoked_at__isnull=True
-        ).first()
-        if session is None:
-            raise serializers.ValidationError("Refresh session is no longer active.")
+        # Lock and rotate the session in one transaction. Without the row lock,
+        # concurrent requests can both pass the session check before either
+        # request persists the replacement JTI.
+        with transaction.atomic():
+            session = SecuritySession.objects.select_for_update().filter(
+                user_id=user_id, jti=old_jti, revoked_at__isnull=True
+            ).first()
+            if session is None:
+                raise serializers.ValidationError("Refresh session is no longer active.")
 
-        data = super().validate(attrs)
-        new_refresh = data.get("refresh")
-        if new_refresh:
-            rotated = RefreshToken(new_refresh)
-            session.jti = str(rotated.get("jti"))
-            session.last_seen_at = timezone.now()
-            session.save(update_fields=["jti", "last_seen_at"])
-        else:
-            session.last_seen_at = timezone.now()
-            session.save(update_fields=["last_seen_at"])
-        return data
+            data = super().validate(attrs)
+            new_refresh = data.get("refresh")
+            if new_refresh:
+                rotated = RefreshToken(new_refresh)
+                session.jti = str(rotated.get("jti"))
+                session.last_seen_at = timezone.now()
+                session.save(update_fields=["jti", "last_seen_at"])
+            else:
+                session.last_seen_at = timezone.now()
+                session.save(update_fields=["last_seen_at"])
+            return data
 
 
 def _totp(secret: str, counter: int) -> str:
@@ -152,16 +156,36 @@ def _backup_codes(device):
 
 
 def consume_backup_code(device, supplied):
+    """Consume one MFA recovery code atomically to prevent concurrent replay."""
     supplied = str(supplied or "").strip().upper()
-    digest = sha256(supplied)
-    hashes = _backup_codes(device)
-    if digest not in hashes:
+    if not supplied:
         return False
-    hashes.remove(digest)
-    device.backup_code_hashes = hashes
-    device.last_used_at = timezone.now()
-    device.save(update_fields=["backup_code_hashes", "last_used_at"])
-    return True
+    digest = sha256(supplied)
+
+    # JSON-list read/modify/write without a row lock allows two concurrent
+    # login requests to accept the same recovery code. Serialize consumption
+    # on the MFA device row; PostgreSQL honours this lock across workers.
+    with transaction.atomic():
+        locked_device = MFADevice.objects.select_for_update().filter(pk=device.pk).first()
+        if locked_device is None:
+            return False
+        hashes = list(_backup_codes(locked_device))
+        match = next(
+            (stored for stored in hashes if hmac.compare_digest(str(stored), digest)),
+            None,
+        )
+        if match is None:
+            return False
+        hashes.remove(match)
+        locked_device.backup_code_hashes = hashes
+        locked_device.last_used_at = timezone.now()
+        locked_device.save(update_fields=["backup_code_hashes", "last_used_at"])
+
+        # Keep the caller's in-memory instance coherent without writing its
+        # potentially stale JSON field back over the locked database row.
+        device.backup_code_hashes = hashes
+        device.last_used_at = locked_device.last_used_at
+        return True
 
 
 def _email(subject, to, text, html=None):
