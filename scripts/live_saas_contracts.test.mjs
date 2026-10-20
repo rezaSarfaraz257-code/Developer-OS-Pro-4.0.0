@@ -331,3 +331,28 @@ test("diagnostics classify frontend availability, SPA shell, and liveness identi
   assert.ok(livenessContractFailure.some(item => item.code === "API_LIVENESS_CONTRACT_FAILED"));
   assert.equal(livenessContractFailure.some(item => item.code === "API_LIVENESS_UNHEALTHY"), false);
 });
+
+
+test("health diagnostics include only allowlisted fields and boolean readiness checks", async () => {
+  const { summarizeHealthPayload } = await import("./live_saas_contracts.mjs");
+  const summary = summarizeHealthPayload(JSON.stringify({
+    status: "not_ready",
+    service: "developer-os-api",
+    database: "ok",
+    version: "4.0.0",
+    release_sha: "a".repeat(40),
+    checks: { database: true, secret_key: false, worker: false, injected_secret: "must-not-leak" },
+    secret: "must-not-leak",
+    arbitrary: { token: "must-not-leak" },
+  }));
+  assert.deepEqual(summary, {
+    status: "not_ready",
+    service: "developer-os-api",
+    database: "ok",
+    version: "4.0.0",
+    release_sha: "a".repeat(40),
+    checks: { database: true, secret_key: false, worker: false },
+  });
+  assert.equal(summarizeHealthPayload("not-json"), null);
+  assert.equal(summarizeHealthPayload(JSON.stringify({ secret: "no diagnostic fields" })), null);
+});
