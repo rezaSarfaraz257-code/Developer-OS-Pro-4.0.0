@@ -1,0 +1,26 @@
+/* Public project discovery and owner visibility controls */
+.public-project-card{position:relative;overflow:hidden}
+.public-project-card:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,#67e8f9,rgba(129,140,248,.25),transparent);opacity:.8}
+.public-project-status{color:#86efac;font-size:.65rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.public-project-owner{display:flex;align-items:center;gap:10px;margin:18px 0 13px;min-width:0}
+.public-project-avatar{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border:1px solid rgba(103,232,249,.28);border-radius:12px;background:linear-gradient(145deg,rgba(34,211,238,.16),rgba(99,102,241,.18));color:#a5f3fc;font-weight:800}
+.public-project-owner>span:last-child{display:grid;gap:3px;min-width:0}
+.public-project-owner small{color:#7f93aa;font-size:.56rem;font-weight:800;letter-spacing:.12em}
+.public-project-owner strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d8e7f7;font-size:.75rem}
+.public-project-stack{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 17px}
+.public-project-stack span{padding:5px 8px;border:1px solid rgba(148,163,184,.15);border-radius:7px;background:rgba(148,163,184,.045);color:#9eb4cb;font-size:.62rem}
+.public-project-links{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.public-project-links a{color:#8eeafa;font-size:.68rem;font-weight:800;text-decoration:none;letter-spacing:.05em}
+.public-project-links a:hover{text-decoration:underline}
+.public-project-links i{color:#7088a1;font-size:.58rem;font-style:normal;font-weight:800;letter-spacing:.1em}
+.px-card-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.px-public-toggle{min-height:34px;padding:7px 10px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:rgba(148,163,184,.06);color:#a8bdd1;font:inherit;font-size:.7rem;font-weight:750;cursor:pointer;transition:border-color .18s ease,background .18s ease,color .18s ease}
+.px-public-toggle:hover:not(:disabled){border-color:rgba(103,232,249,.45);background:rgba(34,211,238,.08);color:#cffafe}
+.px-public-toggle.is-public{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.08);color:#86efac}
+.px-public-toggle:disabled{opacity:.6;cursor:wait}
+.px-public-field{display:flex;align-items:flex-start;gap:12px;padding:14px;border:1px solid rgba(103,232,249,.2);border-radius:13px;background:rgba(34,211,238,.045);cursor:pointer}
+.px-public-field input{width:17px;height:17px;margin-top:2px;accent-color:#22d3ee;flex:0 0 auto}
+.px-public-field span{display:grid;gap:5px}
+.px-public-field strong{color:#dcecf9;font-size:.82rem}
+.px-public-field small{color:#8ca3bc;font-size:.72rem;line-height:1.55}
+@media(max-width:620px){.px-card-actions{align-items:stretch;flex-direction:column}.px-card-actions button{width:100%;justify-content:center}}
