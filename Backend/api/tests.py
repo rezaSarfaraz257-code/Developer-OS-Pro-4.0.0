@@ -163,6 +163,9 @@ class ProjectApiSecurityTests(APITestCase):
         self.assertEqual(first.status_code, status.HTTP_200_OK)
         self.assertIn("refresh", first.data)
 
+        replay = self.client.post("/api/token/refresh/", {"refresh": str(refresh)}, format="json")
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+
         rotated = RefreshToken(first.data["refresh"])
         session.refresh_from_db()
         self.assertEqual(session.jti, str(rotated["jti"]))
