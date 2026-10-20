@@ -135,14 +135,26 @@ class Command(BaseCommand):
                 daemon=True,
             ).start()
         while True:
-            recover_stale_jobs()
-            job = claim_job(worker)
+            try:
+                recover_stale_jobs()
+                job = claim_job(worker)
+            except Exception:
+                # Database outages must not terminate the long-lived worker.
+                # Readiness will go stale if the heartbeat cannot be persisted;
+                # retry when the database recovers rather than faking health.
+                logger.exception("Worker queue poll failed; retrying worker_id=%s", worker)
+                if options["once"]:
+                    raise
+                time.sleep(max(1.0, options["sleep"]))
+                continue
+
             if not job:
                 if options["once"]:
                     WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                     return
-                time.sleep(options["sleep"])
+                time.sleep(max(0.1, options["sleep"]))
                 continue
+
             try:
                 result = execute(job)
                 job.status = "succeeded"
@@ -160,7 +172,24 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
-            job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+
+            try:
+                job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+            except Exception:
+                # An external side effect may already have succeeded. Keep the
+                # long-lived worker alive; stale-lease recovery reconciles the
+                # running job later. This queue is at-least-once, so handlers
+                # must remain idempotent where possible.
+                logger.exception(
+                    "Worker job outcome persistence failed; stale recovery will reconcile job_id=%s worker_id=%s",
+                    job.pk,
+                    worker,
+                )
+                if options["once"]:
+                    raise
+                time.sleep(max(1.0, options["sleep"]))
+                continue
+
             if options["once"]:
                 WorkerHeartbeat.objects.filter(name="background-worker", worker_id=worker).delete()
                 return
