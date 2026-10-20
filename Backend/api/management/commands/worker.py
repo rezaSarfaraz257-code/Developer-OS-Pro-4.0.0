@@ -41,9 +41,14 @@ def recover_stale_jobs():
                 locked.status = "failed"
                 locked.dead_lettered_at = now
                 locked.finished_at = now
+            locked.locked_at = None
+            locked.locked_by = ""
             locked.error = (locked.error or "") + "\nRecovered stale worker lease."
             locked.last_error_at = now
-            locked.save(update_fields=["status", "available_at", "dead_lettered_at", "finished_at", "error", "last_error_at"])
+            locked.save(update_fields=[
+                "status", "available_at", "locked_at", "locked_by",
+                "dead_lettered_at", "finished_at", "error", "last_error_at",
+            ])
 
 def _heartbeat_loop(worker, stop_event):
     """Keep a durable liveness lease fresh and recover from transient DB errors."""
