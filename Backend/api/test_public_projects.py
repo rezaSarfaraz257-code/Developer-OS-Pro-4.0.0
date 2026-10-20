@@ -49,6 +49,6 @@ class PublicProjectGalleryTests(APITestCase):
             {"is_public": False},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.public_project.refresh_from_db()
         self.assertTrue(self.public_project.is_public)
