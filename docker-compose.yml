@@ -61,8 +61,10 @@ services:
       RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}
       RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-768}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
+      REQUIRE_BACKGROUND_WORKER: ${REQUIRE_BACKGROUND_WORKER:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      # Never silently treat console logging as production email delivery.
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
@@ -87,7 +89,7 @@ services:
         - -c
         - >-
           import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8000/api/health/live/', timeout=4)
+          urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/health/live/', headers={'Host': 'backend'}), timeout=4)
       interval: 10s
       timeout: 5s
       retries: 12
@@ -159,7 +161,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Developer OS <no-reply@localhost>}
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
