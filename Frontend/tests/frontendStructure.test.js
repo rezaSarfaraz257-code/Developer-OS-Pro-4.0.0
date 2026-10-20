@@ -376,3 +376,12 @@ test("IDE bulk tab closing saves dirty files before hiding tabs", () => {
   assert.match(ide, /const remaining=pinned\.filter\(x=>typeof refs\.files\.current\[x\]==="string"\)/);
   assert.match(ide, /if\(fallback\)\{await open\(fallback\);\}else\{setActive\(""\);refs\.active\.current=""/);
 });
+
+
+test("IDE tabs show unsaved state for each dirty file, including inactive tabs", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const css = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
+  assert.match(ide, /dirtyPathsRef\.current\.has\(p\)\?<em className="dos-tab-dirty" title="Unsaved changes" aria-label="Unsaved changes">●<\/em>:null/);
+  assert.match(ide, /pinned\.includes\(p\)\?<em className="dos-tab-pin" title="Pinned tab" aria-label="Pinned tab">◆<\/em>:null/);
+  assert.match(css, /\.dos-tab \.dos-tab-dirty\{color:#ff7a90;margin-left:0;font-size:9px\}/);
+});
