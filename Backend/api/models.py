@@ -45,6 +45,7 @@ class Project(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
+    is_public = models.BooleanField(default=False, db_index=True)
     category = models.CharField(
         max_length=50,
         choices=CATEGORY_CHOICES,
