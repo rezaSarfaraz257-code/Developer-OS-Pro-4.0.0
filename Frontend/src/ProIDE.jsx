@@ -130,8 +130,22 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
  const edit=(v,path=active)=>{const targetPath=path;if(typeof v!=="string"||!targetPath)return;if(!refs.dirty.current)refs.dirtyBaseRevision.current=Number(refs.ws.current?.revision??0);refs.files.current={...refs.files.current,[targetPath]:v};setFiles(refs.files.current);dirtyPathsRef.current.add(targetPath);setDirty(true);refs.dirty.current=true;setStatus("Unsaved changes");const priorTimer=editTimersRef.current.get(targetPath);if(priorTimer)clearTimeout(priorTimer);const nextTimer=setTimeout(()=>{editTimersRef.current.delete(targetPath);const w=refs.ws.current,p=targetPath;if(!w||!p)return;const msg={type:"patch",path:p,content:refs.files.current[p]||"",base_revision:Number(refs.dirtyBaseRevision.current ?? w.revision ?? 0),client_id:clientId.current};if(collab.current?.readyState===1){sentPatchContentsRef.current.set(p,msg.content);collab.current.send(JSON.stringify(msg))}else{const q=parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY));const patch={...msg,workspace_id:String(w.id)};const next=queueWorkspacePatch(q,patch);try{localStorage.setItem(OFFLINE_QUEUE_KEY,JSON.stringify(next));setOfflineQueue(next);setStatus("Saved locally — waiting for connection")}catch{setStatus("Offline queue is full; this edit could not be queued safely.")}}},1200);editTimersRef.current.set(targetPath,nextTimer);clearTimeout(refs.diag.current);refs.diag.current=setTimeout(()=>diagnose(targetPath),1800)};
  async function diagnose(p=refs.active.current){const workspace=refs.ws.current;if(!workspace||!p)return;const requestId=++diagnosticsRequestRef.current;const source=refs.files.current[p];try{const e=p.split(".").pop()?.toLowerCase(),language=e==="py"?"python":["ts","tsx"].includes(e)?"typescript":["js","jsx"].includes(e)?"javascript":e,r=await apiFetch(`/ide/workspaces/${workspace.id}/diagnostics/`,{method:"POST",body:JSON.stringify({path:p,language})}),d=await r.json();if(requestId!==diagnosticsRequestRef.current||String(refs.ws.current?.id)!==String(workspace.id)||refs.active.current!==p||refs.files.current[p]!==source)return;if(!r.ok)throw Error(d.error||"Diagnostics failed");setDiagnostics(Array.isArray(d.diagnostics)?d.diagnostics:[]);setStatus(d.diagnostics?.length?`${d.diagnostics.length} diagnostic(s)`:"No diagnostics")}catch(e){if(requestId===diagnosticsRequestRef.current&&String(refs.ws.current?.id)===String(workspace.id)&&refs.active.current===p&&refs.files.current[p]===source)setStatus(`Diagnostics: ${e.message}`)}}
  function togglePin(p=active){if(!p)return;setPinned(x=>x.includes(p)?x.filter(v=>v!==p):[...x,p])}
- function closeOthers(p=active){setTabs(t=>t.filter(x=>x===p||pinned.includes(x)))}
- function closeAll(){setTabs(t=>pinned.filter(x=>files[x]))}
+ async function closeOthers(p=active){
+   if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)return;}
+   setTabs(t=>t.filter(x=>x===p||pinned.includes(x)));
+   setStatus("Other tabs closed · changes saved");
+ }
+ async function closeAll(){
+   if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)return;}
+   const remaining=pinned.filter(x=>typeof refs.files.current[x]==="string");
+   setTabs(remaining);
+   if(!remaining.includes(refs.active.current)){
+     const fallback=remaining[0]||"";
+     if(fallback){await open(fallback);}
+     else{setActive("");refs.active.current="";setSelected(new Set());setCursor({line:1,column:1});}
+   }
+   setStatus(remaining.length?"Unpinned tabs closed · changes saved":"All tabs closed · changes saved");
+ }
  async function explorerMutation(payload,retry=true){
    const w=refs.ws.current;
    if(!w) throw Error("No workspace selected.");
