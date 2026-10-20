@@ -1,0 +1,14 @@
+{
+  "name": "Developer OS",
+  "short_name": "Developer OS",
+  "description": "The operating system for developers — projects, intelligence, code, collaboration and delivery.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#05070c",
+  "theme_color": "#05070c",
+  "color_scheme": "dark",
+  "icons": [
+    {"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

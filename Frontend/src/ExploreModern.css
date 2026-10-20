@@ -107,3 +107,48 @@
 @media(max-width:980px){.explore-modern .explore-grid-pro.is-compact{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.explore-modern .explore-grid-pro.is-compact{grid-template-columns:1fr}.explore-modern .explore-control-actions{gap:6px}.explore-modern .explore-control-actions>button{padding:8px 9px}.explore-modern .explore-tabs button{min-width:0}.explore-modern .explore-tabs button b{font-size:8px}}
 @media(prefers-reduced-motion:reduce){.explore-modern .explore-card,.explore-modern .explore-control-actions button{transition:none!important}}
+
+
+/* Practical SaaS pass: prioritize readable content and task completion over game-like effects. */
+.explore-modern .explore-hero {
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(15, 25, 39, .98), rgba(8, 14, 24, .98));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .16);
+}
+.explore-modern .explore-hero-glow,
+.explore-modern .explore-orbit { display: none; }
+.explore-modern .explore-hero h1 span {
+  background: none;
+  color: #eaf4ff;
+  -webkit-text-fill-color: currentColor;
+}
+.explore-modern .explore-card {
+  border-radius: 11px;
+  background: rgba(12, 19, 30, .96);
+  box-shadow: none;
+  transition: border-color .16s ease, background-color .16s ease;
+}
+.explore-modern .explore-card::before { display: none; }
+.explore-modern .explore-card:hover {
+  transform: none;
+  border-color: rgba(133, 165, 196, .34);
+  background: rgba(16, 26, 40, .98);
+  box-shadow: none;
+}
+.explore-modern .explore-icon {
+  background: rgba(101, 229, 255, .07);
+  box-shadow: none;
+}
+.explore-modern .explore-tabs button.active {
+  background: rgba(101, 229, 255, .08);
+  box-shadow: none;
+}
+.explore-modern .explore-ai-panel {
+  background: rgba(12, 20, 32, .96);
+}
+.explore-modern .explore-toast {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .explore-modern .explore-card { transition: none; }
+}

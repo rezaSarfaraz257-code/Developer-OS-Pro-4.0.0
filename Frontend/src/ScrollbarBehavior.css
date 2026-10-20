@@ -1,59 +1,58 @@
-/* Final scrollbar behavior overrides.
-   Chromium honors the standardized scrollbar-width property over WebKit pseudo-element
-   dimensions. Several older IDE styles set scrollbar-width: thin, so normalize that
-   property only in Chromium/WebKit browsers and let the explicit WebKit dimensions win.
-   Firefox keeps its native standardized scrollbar styling. */
-@supports not (-moz-appearance: none) {
-  :root,
-  html,
-  body,
-  * {
+/* Firefox uses scrollbar-width instead of WebKit pseudo-elements. */
+@supports (-moz-appearance: none) {
+  :root, html, body, * {
+    scrollbar-width: thin !important;
+  }
+
+  *:hover, *:focus-within {
     scrollbar-width: auto !important;
-    scrollbar-color: auto !important;
   }
 
-  *::-webkit-scrollbar {
-    width: 8px !important;
-    height: 8px !important;
-  }
-
-  *::-webkit-scrollbar:hover {
-    width: 16px !important;
-    height: 16px !important;
-  }
-
-  /* IDE styles have more specific scrollbar selectors; preserve the same hover contract. */
-  .dos-ide-pro ::-webkit-scrollbar {
-    width: 8px !important;
-    height: 8px !important;
-  }
-
-  .dos-ide-pro ::-webkit-scrollbar:hover {
-    width: 16px !important;
-    height: 16px !important;
-  }
-
-  /* Keep the desktop navigation rail hidden at rest, then reveal it on interaction. */
   @media (min-width: 721px) {
     .os-rail:not(:hover):not(:focus-within) {
       scrollbar-width: none !important;
     }
 
-    .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar {
-      width: 0 !important;
-      height: 0 !important;
-    }
-
-    .os-rail:hover,
-    .os-rail:focus-within {
+    .os-rail:hover, .os-rail:focus-within {
       scrollbar-width: auto !important;
-      scrollbar-color: auto !important;
-    }
-
-    .os-rail:hover::-webkit-scrollbar,
-    .os-rail:focus-within::-webkit-scrollbar {
-      width: 16px !important;
-      height: 16px !important;
     }
   }
+
+  @media (pointer: coarse) {
+    :root, html, body, * {
+      scrollbar-width: auto !important;
+    }
+  }
+}
+
+/* Chromium/WebKit supports pixel-width hover expansion. */
+/* Final scrollbar behavior overrides. */
+@supports not (-moz-appearance: none) {
+  :root, html, body, * {
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+  }
+
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar:hover { width: 16px !important; height: 16px !important; }
+
+  .dos-ide-pro ::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  .dos-ide-pro ::-webkit-scrollbar:hover { width: 16px !important; height: 16px !important; }
+
+  @media (min-width: 721px) {
+    .os-rail:not(:hover):not(:focus-within) { scrollbar-width: none !important; }
+    .os-rail:not(:hover):not(:focus-within)::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+    .os-rail:hover, .os-rail:focus-within { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+    .os-rail:hover::-webkit-scrollbar, .os-rail:focus-within::-webkit-scrollbar { width: 16px !important; height: 16px !important; }
+  }
+}
+
+/* Touch screens have no reliable hover state; keep scrollbars visible and usable. */
+@media (pointer: coarse) {
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar:hover { width: 8px !important; height: 8px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *::-webkit-scrollbar, *::-webkit-scrollbar-thumb { transition: none !important; }
 }

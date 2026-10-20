@@ -71,10 +71,12 @@ function Shell({ user, onLogout, children, go, current }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault(); setPaletteOpen(true);
+        event.preventDefault();
+        setSearch("");
+        setPaletteOpen(true);
         requestAnimationFrame(() => searchRef.current?.focus());
       }
-      if (event.key === "Escape") { setPaletteOpen(false); setOpenNotif(false); }
+      if (event.key === "Escape") { setPaletteOpen(false); setOpenNotif(false); setSearch(""); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -85,11 +87,29 @@ function Shell({ user, onLogout, children, go, current }) {
     ["Invite & Earn", "/referrals", "↗"], ["Billing & Plans", "/billing", "◇"], ["My Profile", "/profile", "◎"], ["Settings", "/settings", "⚙"],
   ], []);
 
+  const filteredCommands = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return commands;
+    return commands.filter(([label, path]) =>
+      `${label} ${path}`.toLocaleLowerCase().includes(query)
+    );
+  }, [commands, search]);
+
   const runSearch = (e) => {
-    if (e.key === "Enter" && search.trim()) {
-      go(`/search?q=${encodeURIComponent(search.trim())}`);
-      setSearch("");
+    if (e.key !== "Enter" || !search.trim()) return;
+
+    if (paletteOpen) {
+      const [, path] = filteredCommands[0] || [];
+      if (path) {
+        go(path);
+        setPaletteOpen(false);
+        setSearch("");
+      }
+      return;
     }
+
+    go(`/search?q=${encodeURIComponent(search.trim())}`);
+    setSearch("");
   };
 
   return (
@@ -137,17 +157,18 @@ function Shell({ user, onLogout, children, go, current }) {
           <div className="top-actions">
             <div className={`global-search ${paletteOpen ? "is-command-active" : ""}`}>
               
-              <span>⌕</span><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={runSearch} placeholder="Search everything  /  Ctrl K" />
+              <span aria-hidden="true">⌕</span><input ref={searchRef} aria-label={paletteOpen ? "Filter commands" : "Search everything"} aria-controls={paletteOpen ? "command-list" : undefined} aria-expanded={paletteOpen} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={runSearch} placeholder={paletteOpen ? "Type a command, then press Enter" : "Search everything  /  Ctrl K"} />
             </div>
-            <button className="icon-btn" onClick={() => setOpenNotif(v => !v)}>◌<sup>{notifications.unread || ""}</sup></button>
+            <button className="icon-btn" type="button" aria-label="Notifications" aria-expanded={openNotif} onClick={() => setOpenNotif(v => !v)}>◌<sup>{notifications.unread || ""}</sup></button>
             <button className="icon-btn profile-shortcut" onClick={() => go("/profile")} title="My profile" aria-label="My profile"><Avatar imageUrl={user.avatar_url} initials={(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "D").trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()} label="My profile" /></button>
             <button className="icon-btn" onClick={() => go("/ide")}>⌘</button>
             <button className="logout-btn" onClick={() => { revokeRefreshToken(); clearAuth(); onLogout(); }}>EXIT</button>
           </div>
           {paletteOpen && <div className="command-palette" role="dialog" aria-label="Command palette">
             <div className="command-palette-head"><span>COMMAND CENTER</span><kbd>ESC</kbd></div>
-            <div className="command-list">
-              {commands.map(([label, path, icon]) => <button key={path} onClick={() => { setPaletteOpen(false); go(path); }}><span>{icon}</span><b>{label}</b><small>{path}</small></button>)}
+            <div className="command-list" id="command-list">
+              {filteredCommands.map(([label, path, icon]) => <button key={path} type="button" onClick={() => { setPaletteOpen(false); setSearch(""); go(path); }}><span aria-hidden="true">{icon}</span><b>{label}</b><small>{path}</small></button>)}
+              {!filteredCommands.length && <p className="command-empty" role="status">No matching commands. Try a page name such as Projects or Web IDE.</p>}
             </div>
           </div>}
           {openNotif && <div className="notif-pop">

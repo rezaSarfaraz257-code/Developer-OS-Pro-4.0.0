@@ -4,19 +4,57 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+  color: #eef7ff;
+  background: #05070c;
+  accent-color: #43e8ff;
+  --dos-focus-ring: 0 0 0 3px rgba(67, 232, 255, .16);
+  --dos-surface: rgba(10, 17, 29, .92);
+  --dos-border: rgba(103, 232, 249, .18);
+  --dos-surface-strong: rgba(14, 23, 38, .96);
+  --dos-text-muted: #8fa4ba;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+html { background: #05070c; color-scheme: dark; scroll-behavior: smooth; }
+body { min-height: 100vh; background: #05070c; overflow-x: hidden; overscroll-behavior-x: none; }
 button, input, textarea, select { font: inherit; }
-button { cursor: pointer; }
-img { display: block; max-width: 100%; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; }
+img, svg { display: block; max-width: 100%; }
+
+:focus-visible {
+  outline: 2px solid #43e8ff;
+  outline-offset: 2px;
+  box-shadow: var(--dos-focus-ring);
+}
+
+::selection {
+  background: rgba(67, 232, 255, .24);
+  color: #ffffff;
+}
+
+/* Prevent accidental layout overflow from long repository names, paths and user content. */
+:where(h1, h2, h3, h4, p, button, a, label, span, td, th) {
+  overflow-wrap: anywhere;
+}
+
+/* Native keyboard users should never lose the focus indicator inside dense product chrome. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  position: relative;
+  z-index: 2;
+}
+
+/* Keep media and interactive controls usable in narrow shells without changing desktop geometry. */
+:where(button, a, input, select, textarea) { touch-action: manipulation; }
 
 .app-error-boundary {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
   background: #050a12;
   color: #eef7ff;
 }
@@ -24,20 +62,16 @@ img { display: block; max-width: 100%; }
 .app-error-card {
   width: min(620px, 100%);
   padding: 32px;
-  border: 1px solid rgba(103, 232, 249, .18);
+  border: 1px solid var(--dos-border);
   border-radius: 24px;
-  background: rgba(10, 17, 29, .92);
+  background: var(--dos-surface);
   box-shadow: 0 24px 80px rgba(0,0,0,.35);
 }
 
-.app-error-card p { color: #a9bbcf; line-height: 1.7; }
+.app-error-card p { color: var(--dos-text-muted); line-height: 1.7; }
 .app-error-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
 
-
-/* Adaptive scrollbars: compact at rest, easier to grab on hover/focus.
-   Keep native scrolling and layout intact; touch devices retain their system behavior.
-   Chromium gives scrollbar-width precedence over ::-webkit-scrollbar sizing, so
-   standardized thin-scrollbar styling is scoped to Firefox to allow hover expansion. */
+/* Keep scrolling native and predictable while improving desktop discoverability. */
 @supports (-moz-appearance: none) {
   :root,
   * {
@@ -46,54 +80,37 @@ img { display: block; max-width: 100%; }
   }
 }
 
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-*::-webkit-scrollbar-track {
-  background: rgba(9, 15, 24, 0.38);
-  border-radius: 999px;
-}
-
-*::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background-color: rgba(112, 145, 174, 0.58);
-  background-clip: padding-box;
-}
-
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: rgba(9, 15, 24, 0.38); border-radius: 999px; }
+*::-webkit-scrollbar-thumb { min-height: 28px; border: 2px solid transparent; border-radius: 999px; background-color: rgba(112, 145, 174, 0.58); background-clip: padding-box; }
 *::-webkit-scrollbar-thumb:hover,
-*:hover::-webkit-scrollbar-thumb,
-*:focus-within::-webkit-scrollbar-thumb {
-  background-color: rgba(103, 232, 249, 0.82);
-}
+*:focus-within::-webkit-scrollbar-thumb { background-color: rgba(103, 232, 249, 0.82); }
+*::-webkit-scrollbar-corner { background: transparent; }
 
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Increase the hit target only while a scroll container is interacted with.
-   Overlay scrollbars on macOS/mobile remain controlled by the operating system. */
 @media (hover: hover) and (pointer: fine) {
-  *::-webkit-scrollbar:hover {
-    width: 16px;
-    height: 16px;
-  }
-
-  *:hover::-webkit-scrollbar-thumb {
-    border-width: 3px;
-    background-color: rgba(103, 232, 249, 0.72);
-  }
-
-  *:hover::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(103, 232, 249, 0.95);
-  }
+  *::-webkit-scrollbar:hover { width: 16px; height: 16px; }
+  *:hover::-webkit-scrollbar-thumb { border-width: 3px; }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  *::-webkit-scrollbar-thumb {
-    transition: background-color 160ms ease;
+@media (max-width: 640px) {
+  html { scroll-behavior: auto; }
+  .app-error-card { padding: 24px; border-radius: 18px; }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --dos-border: rgba(255, 255, 255, .34);
+    --dos-text-muted: #c5d3e1;
+  }
+  :focus-visible { outline-width: 3px; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

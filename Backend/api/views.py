@@ -221,7 +221,14 @@ def readiness_api(request):
     )
     if worker_required:
         mandatory.append("worker")
-    ready = all(checks[k] for k in mandatory) if not settings.DEBUG else checks["database"]
+    # DEBUG is not a safe reason to bypass production checks when the platform
+    # explicitly identifies this process as production or requires the worker.
+    # Preserve the database-only shortcut for ordinary local development only.
+    ready = (
+        checks["database"]
+        if settings.DEBUG and not worker_required
+        else all(checks[k] for k in mandatory)
+    )
     return _no_store_health_response(Response(
         {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
         status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,

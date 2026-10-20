@@ -1,0 +1,471 @@
+/* Product-level finishing layer: additive, scoped and safe to existing UI primitives. */
+.os-shell,
+.os-main,
+.os-content { isolation: isolate; }
+
+.os-content :where(h1, h2, h3) { text-wrap: balance; }
+/* Layout containment avoids repeated reflow without clipping menus, focus rings, or shadows. */
+.os-content :where(.panel, .stat-card, .project-card, .search-big, .results) {
+  contain: layout;
+}
+
+.topbar {
+  padding-left: max(27px, env(safe-area-inset-left));
+  padding-right: max(27px, env(safe-area-inset-right));
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+.icon-btn,
+.logout-btn,
+.rail-item { min-height: 40px; }
+.icon-btn { min-width: 40px; }
+
+.global-search:focus-within {
+  border-color: rgba(67, 232, 255, .48);
+  box-shadow: 0 0 0 3px rgba(67, 232, 255, .08), 0 10px 35px rgba(0, 0, 0, .18);
+}
+
+.global-search input::placeholder,
+.dos-tree-search input::placeholder { color: #526579; }
+
+.command-palette,
+.notif-pop {
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  backdrop-filter: blur(24px) saturate(135%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .42), 0 0 0 1px rgba(255,255,255,.025) inset;
+}
+
+.command-palette { animation: dos-pop-in 160ms ease-out both; transform-origin: top center; }
+.notif-pop { animation: dos-pop-in 140ms ease-out both; transform-origin: top right; }
+
+.command-list button,
+.notif-pop button { min-height: 42px; }
+.command-list button { transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.command-list button:hover { transform: translateX(2px); }
+
+:where(.rail-item, .icon-btn, .logout-btn, .command-list button, .notif-pop button):focus-visible {
+  outline: 2px solid var(--cyan, #43e8ff);
+  outline-offset: 2px;
+  z-index: 30;
+}
+
+:where(.project-line, .project-card, .result, .notif, .profile-mini) > :where(b, strong, small, span, p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.command-palette,
+.notif-pop,
+.messages,
+.comment-box,
+.dos-file-list { overscroll-behavior: contain; }
+
+.os-main,
+.os-content { min-width: 0; }
+
+.os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) {
+  border-color: rgba(255,255,255,.08);
+}
+
+@supports (color: color-mix(in srgb, white 50%, transparent)) {
+  .os-content :where(.panel, .stat-card, .project-card, .search-big, .results, .card) {
+    border-color: color-mix(in srgb, currentColor 12%, transparent);
+  }
+}
+
+.status-chip { white-space: nowrap; }
+
+@media (pointer: coarse) {
+  .rail-item,
+  .icon-btn,
+  .logout-btn,
+  .command-list button,
+  .notif-pop button,
+  .primary,
+  .ghost { min-height: 44px; }
+}
+
+@media (max-width: 900px) {
+  .topbar { padding-left: 18px; padding-right: 18px; }
+  .global-search { width: min(42vw, 300px); }
+  .crumb { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    height: auto;
+    min-height: 58px;
+    gap: 8px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: 8px;
+  }
+
+  .crumb { display: none; }
+  .top-actions { width: 100%; }
+  .global-search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .global-search input { min-width: 0; }
+  .logout-btn { padding-inline: 9px; }
+
+  .notif-pop {
+    position: fixed;
+    top: calc(58px + env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: min(68vh, 520px);
+    transform-origin: top center;
+  }
+
+  .command-palette {
+    position: fixed;
+    inset: calc(58px + env(safe-area-inset-top)) 10px auto;
+    width: auto;
+    max-height: min(72vh, 560px);
+  }
+
+  .os-content { padding-left: 6px; padding-right: 6px; }
+}
+
+@media (prefers-contrast: more) {
+  .rail-item,
+  .icon-btn,
+  .logout-btn,
+  .global-search,
+  .panel,
+  .stat-card,
+  .project-card,
+  .command-palette,
+  .notif-pop { border-color: currentColor; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .command-palette,
+  .notif-pop { animation: none !important; }
+  .command-list button { transition: none !important; }
+}
+
+@keyframes dos-pop-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* PRODUCT FINISHING 2026.10 — predictable interaction states and resilient content */
+.os-main :where(input, textarea, select) {
+  min-width: 0;
+  max-width: 100%;
+  color-scheme: dark;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.os-main :where(input, textarea, select):focus-visible,
+.os-main :where(.inline-create, .toolbar, .settings-form label):focus-within {
+  border-color: rgba(67, 232, 255, .58);
+}
+
+.os-main :where(input, textarea, select):focus-visible {
+  outline: 2px solid rgba(67, 232, 255, .72);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgba(67, 232, 255, .09);
+}
+
+.os-main :where(button, input, textarea, select):disabled {
+  opacity: .52;
+  cursor: not-allowed;
+  filter: saturate(.7);
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan, .chat, .ai-history) {
+  min-width: 0;
+}
+
+.os-main :where(.project-line, .task-row, .key-row, .member, .org-row) {
+  min-width: 0;
+}
+
+.os-main :where(.project-line, .task-row, .key-row, .member, .org-row) :where(b, strong, small, span, code, p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.os-main :where(.panel, .stat-card, .project-card, .plan):focus-within {
+  border-color: rgba(67, 232, 255, .3);
+}
+
+.os-main :where(.project-card, .plan, .org-row, .rail-item, .icon-btn, .logout-btn):focus-visible {
+  outline: 2px solid var(--cyan, #43e8ff);
+  outline-offset: 2px;
+}
+
+.os-main :where(.messages, .comment-box, .notif-pop, .command-palette, .dos-file-list) {
+  overscroll-behavior: contain;
+}
+
+.os-main :where(.error, [role="alert"]) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .os-main .hero-row,
+  .os-main .project-hero {
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .os-main .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .os-main .hero-actions :where(button, a) {
+    min-height: 44px;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) input {
+    min-width: 0;
+    flex: 1 1 180px;
+  }
+
+  .os-main :where(.inline-create, .comment-input, .org-create, .invite-row) button {
+    min-height: 44px;
+  }
+
+  .os-main .panel {
+    padding: 15px;
+  }
+
+  .os-main .stat-card {
+    padding: 16px;
+  }
+
+  .os-main .stat-card strong {
+    font-size: clamp(24px, 8vw, 31px);
+    overflow-wrap: anywhere;
+  }
+
+  .os-main .message {
+    max-width: 100%;
+  }
+
+  .os-main .messages {
+    padding: 14px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .os-main :where(input, textarea, select, .panel, .stat-card, .project-card, .plan) {
+    border-color: currentColor !important;
+  }
+
+  .os-main :where(.eyebrow, .panel-kicker, .stat-card span, .stat-card small) {
+    color: #c5d3e1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-main :where(input, textarea, select, .panel, .stat-card, .project-card, .plan) {
+    transition: none !important;
+  }
+}
+
+/* Command surface refinement: layered depth, clearer hierarchy, and restrained motion. */
+.os-shell {
+  background:
+    radial-gradient(ellipse at 78% -12%, rgba(28, 106, 142, .13), transparent 42%),
+    radial-gradient(ellipse at 8% 92%, rgba(44, 75, 139, .09), transparent 38%),
+    #05070c;
+}
+
+.os-rail {
+  background: linear-gradient(180deg, rgba(8, 15, 26, .98), rgba(5, 9, 17, .98));
+  border-right-color: rgba(103, 232, 249, .14);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.os-rail .rail-item {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.os-rail .rail-item:hover {
+  border-color: rgba(103, 232, 249, .12);
+  background-color: rgba(103, 232, 249, .055);
+}
+
+.os-rail .rail-item.active {
+  border-color: rgba(103, 232, 249, .2);
+  background: linear-gradient(100deg, rgba(67, 232, 255, .13), rgba(67, 232, 255, .035));
+}
+
+.os-rail .rail-item.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: #43e8ff;
+  box-shadow: 0 0 14px rgba(67, 232, 255, .45);
+}
+
+.os-main {
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(26, 65, 92, .07), transparent 48%);
+}
+
+.os-main .topbar {
+  border-bottom-color: rgba(103, 232, 249, .12);
+  background: rgba(5, 9, 16, .78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.os-main .global-search {
+  border-color: rgba(103, 232, 249, .16);
+  background: rgba(9, 17, 29, .78);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.os-main .global-search:focus-within,
+.os-main .global-search.is-command-active {
+  border-color: rgba(67, 232, 255, .48);
+  background: rgba(12, 25, 40, .96);
+  box-shadow: 0 0 0 3px rgba(67, 232, 255, .07), 0 10px 34px rgba(0, 0, 0, .14);
+}
+
+.os-main .page {
+  animation: dos-page-enter 220ms ease-out both;
+}
+
+.os-main .page > .hero-row:first-child,
+.os-main .page > .project-hero:first-child {
+  margin-bottom: 22px;
+}
+
+.os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface) {
+  border-color: rgba(103, 232, 249, .14);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .13);
+}
+
+.os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface):hover {
+  border-color: rgba(103, 232, 249, .24);
+}
+
+.os-main .page :where(.panel-head, .cc-surface-heading) {
+  gap: 12px;
+}
+
+.os-main .page :where(.panel-head h2, .cc-surface-heading h3) {
+  letter-spacing: -.025em;
+}
+
+.os-main .command-palette {
+  border-color: rgba(103, 232, 249, .24);
+  background: rgba(6, 12, 21, .97);
+  box-shadow: 0 28px 100px rgba(0, 0, 0, .58), 0 0 0 1px rgba(103, 232, 249, .04);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.os-main .command-list button {
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.os-main .command-list button:hover {
+  border-color: rgba(103, 232, 249, .18);
+  background: rgba(67, 232, 255, .075);
+}
+
+.command-center-page .cc-hero-v2 {
+  isolation: isolate;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .22);
+}
+
+.command-center-page .cc-metric-card,
+.command-center-page .cc-mission-card,
+.command-center-page .cc-create-panel {
+  transition: transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease, background-color 170ms ease;
+}
+
+.command-center-page .cc-metric-card:hover,
+.command-center-page .cc-mission-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(103, 232, 249, .3);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .22);
+}
+
+.command-center-page .cc-surface {
+  background: linear-gradient(145deg, rgba(13, 23, 37, .94), rgba(7, 13, 23, .96));
+  border-color: rgba(103, 232, 249, .16);
+}
+
+.command-center-page .cc-create-panel {
+  border-color: rgba(103, 232, 249, .18);
+  background:
+    radial-gradient(ellipse at 0% 50%, rgba(67, 232, 255, .075), transparent 45%),
+    linear-gradient(120deg, rgba(13, 23, 37, .96), rgba(7, 13, 23, .96));
+}
+
+.command-center-page .cc-create-form input:focus-visible {
+  border-color: rgba(67, 232, 255, .65);
+  box-shadow: 0 0 0 4px rgba(67, 232, 255, .1);
+}
+
+@keyframes dos-page-enter {
+  from { opacity: .72; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 760px) {
+  .os-main .topbar {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .os-main .page :where(.panel, .stat-card, .project-card, .plan, .cc-surface) {
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+  }
+
+  .command-center-page .cc-metric-card:hover,
+  .command-center-page .cc-mission-card:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-main .page,
+  .os-rail .rail-item,
+  .os-main .command-list button,
+  .command-center-page .cc-metric-card,
+  .command-center-page .cc-mission-card,
+  .command-center-page .cc-create-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Command palette: useful empty state without decorative/game-like treatment. */
+.command-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: #a8b8c9;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

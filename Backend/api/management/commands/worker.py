@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import socket
 import threading
@@ -7,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMultiAlternatives
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
 from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
@@ -15,6 +16,7 @@ from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 STALE_AFTER = timedelta(minutes=10)
@@ -39,12 +41,22 @@ def recover_stale_jobs():
             locked.save(update_fields=["status", "available_at", "dead_lettered_at", "finished_at", "error", "last_error_at"])
 
 def _heartbeat_loop(worker, stop_event):
-    """Keep a durable liveness lease fresh while the worker is idle or busy."""
+    """Keep a durable liveness lease fresh and recover from transient DB errors."""
     while not stop_event.is_set():
-        WorkerHeartbeat.objects.update_or_create(
-            name="background-worker",
-            defaults={"worker_id": worker, "last_seen_at": timezone.now()},
-        )
+        try:
+            # Long-running worker activity and database restarts can leave
+            # stale connections behind. Refresh them on every heartbeat cycle.
+            close_old_connections()
+            WorkerHeartbeat.objects.update_or_create(
+                name="background-worker",
+                defaults={"worker_id": worker, "last_seen_at": timezone.now()},
+            )
+        except Exception:
+            # A transient DB error must not permanently kill this daemon thread.
+            # Readiness still fails closed when the persisted lease becomes stale.
+            logger.exception("Background worker heartbeat update failed")
+        finally:
+            close_old_connections()
         if stop_event.wait(15):
             return
 
