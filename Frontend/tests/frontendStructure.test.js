@@ -374,5 +374,5 @@ test("IDE bulk tab closing saves dirty files before hiding tabs", () => {
   assert.match(ide, /async function closeOthers\(p=active\)\{\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
   assert.match(ide, /async function closeAll\(\)\{\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
   assert.match(ide, /const remaining=pinned\.filter\(x=>typeof refs\.files\.current\[x\]==="string"\)/);
-  assert.match(ide, /if\(fallback\)\{await open\(fallback\);\}else\{setActive\("\\"\);refs\.active\.current="\\"/);
+  assert.match(ide, /if\(fallback\)\{await open\(fallback\);\}else\{setActive\(""\);refs\.active\.current=""/);
 });
