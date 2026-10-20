@@ -1,3 +1,5 @@
+import os
+from contextlib import contextmanager
 from io import BytesIO
 import hashlib
 import hmac
@@ -977,15 +979,26 @@ class StripeWebhookFailClosedTests(APITestCase):
 
 
 class BackgroundWorkerReadinessTests(APITestCase):
+    @contextmanager
     def production_settings(self):
-        return override_settings(
-            IS_PRODUCTION=True,
-            DEBUG=False,
-            SECRET_KEY="production-readiness-test-key",
-            ALLOWED_HOSTS=["testserver"],
-            EMAIL_HOST="smtp.example.test",
-            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
-        )
+        # These tests isolate worker-heartbeat gating. Full production-runtime
+        # dependency enforcement is covered by RenderReadinessFailClosedRegressionTests.
+        with patch.dict(os.environ, {
+            "REQUIRE_BACKGROUND_WORKER": "true",
+            "RENDER_SERVICE_ID": "",
+            "RENDER_GIT_COMMIT": "",
+        }, clear=False):
+            with override_settings(
+                IS_PRODUCTION=False,
+                DEBUG=False,
+                SECRET_KEY="worker-readiness-test-key",
+                ALLOWED_HOSTS=["testserver"],
+                EMAIL_HOST="smtp.example.test",
+                EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+                CACHE_URL="",
+                CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+            ):
+                yield
 
     def test_production_readiness_requires_a_recent_worker_heartbeat(self):
         with self.production_settings():
