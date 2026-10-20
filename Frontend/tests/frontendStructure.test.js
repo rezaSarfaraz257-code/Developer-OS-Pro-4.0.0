@@ -385,3 +385,9 @@ test("IDE tabs show unsaved state for each dirty file, including inactive tabs",
   assert.match(ide, /pinned\.includes\(p\)\?<em className="dos-tab-pin" title="Pinned tab" aria-label="Pinned tab">◆<\/em>:null/);
   assert.match(css, /\.dos-tab \.dos-tab-dirty\{color:#ff7a90;margin-left:0;font-size:9px\}/);
 });
+
+
+test("IDE closing an individual inactive dirty tab saves before removing it", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /if\(dirtyPathsRef\.current\.has\(p\)\|\|\(p===active&&refs\.dirty\.current\)\)\{const saved=await save\(true\);if\(!saved\)return;\}const index=tabs\.indexOf\(p\)/);
+});
