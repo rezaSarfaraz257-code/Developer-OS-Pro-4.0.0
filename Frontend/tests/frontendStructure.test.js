@@ -358,3 +358,12 @@ test("IDE workspace loads ignore out-of-order responses", () => {
   assert.match(ide, /if\(requestId!==workspaceLoadRef\.current\)return/);
   assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)setStatus/);
 });
+
+
+test("IDE workspace deletion saves dirty files and invalidates stale requests", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}if\(!confirm\(`Delete workspace/);
+  assert.match(ide, /workspaceLoadRef\.current\+=1;diagnosticsRequestRef\.current\+=1;setDiagnostics\(\[\]\)/);
+  assert.match(ide, /if\(String\(refs\.ws\.current\?\.id\)===deletingWorkspaceId\)setStatus/);
+  assert.match(ide, /refs\.dirtyBaseRevision\.current=null;dirtyPathsRef\.current\.clear\(\)/);
+});
