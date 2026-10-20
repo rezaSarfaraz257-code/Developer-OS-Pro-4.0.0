@@ -39,6 +39,7 @@ urlpatterns = [
     path("workspace/summary/", views.workspace_summary_api, name="workspace-summary"),
     path("projects/<int:pk>/collaborators/", views.project_collaborators_api, name="project-collaborators"),
     path("assistant/", views.assistant_api, name="assistant"),
+    path("projects/public/", views.public_projects_api, name="public-projects"),
     path("projects/", views.projects_api, name="projects"),
     path("projects/<int:pk>/", views.project_detail_api, name="detail"),
     path("profile/", views.profile_api, name="profile"),
