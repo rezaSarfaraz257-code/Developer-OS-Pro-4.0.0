@@ -685,6 +685,9 @@ function Explore() {
   const [favorites,setFavorites]=useState([]);
   const [workspaces,setWorkspaces]=useState([]);
   const [publicProjects,setPublicProjects]=useState([]);
+  const [publicProjectsLoading,setPublicProjectsLoading]=useState(true);
+  const [publicProjectsError,setPublicProjectsError]=useState("");
+  const [publicProjectsRefresh,setPublicProjectsRefresh]=useState(0);
   const [busy,setBusy]=useState(true);
   const [aiBusy,setAiBusy]=useState(false);
   const [aiResult,setAiResult]=useState("");
@@ -770,17 +773,23 @@ function Explore() {
 
   useEffect(() => {
     let cancelled = false;
+    setPublicProjectsLoading(true);
+    setPublicProjectsError("");
     const timer = window.setTimeout(async () => {
       try {
         const response = await apiFetch("/projects/public/?q=" + encodeURIComponent(q.trim()));
         const payload = await parseExploreResponse(response, "Public projects");
         if (!cancelled) setPublicProjects(asExploreArray(payload));
-      } catch {
-        if (!cancelled) setPublicProjects([]);
+      } catch (err) {
+        // Do not turn API/auth failures into a false "no projects found" state.
+        // Preserve the last successful results and show an actionable error.
+        if (!cancelled) setPublicProjectsError(err?.message || "Public projects could not be loaded.");
+      } finally {
+        if (!cancelled) setPublicProjectsLoading(false);
       }
     }, q.trim() ? 260 : 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [q]);
+  }, [q, publicProjectsRefresh]);
 
   useEffect(() => {
     void loadPersonalData();
@@ -925,6 +934,8 @@ function Explore() {
 
     {aiResult&&<section className="explore-ai-panel"><div className="explore-ai-head"><div><span>✦ DOS INTELLIGENCE</span><strong>Discovery Brief</strong></div><button onClick={()=>setAiResult("")}>×</button></div><p>{aiResult}</p></section>}
     {error&&<div className="explore-error" role="alert"><span>{error}</span><button type="button" onClick={()=>{void load(q);void loadPersonalData()}}>RETRY</button></div>}
+    {tab==="projects"&&publicProjectsError&&<div className="explore-error" role="alert"><span>{publicProjectsError}</span><button type="button" onClick={()=>setPublicProjectsRefresh(value=>value+1)}>RETRY PUBLIC PROJECTS</button></div>}
+    {tab==="projects"&&publicProjectsLoading&&<div className="explore-loading" role="status" aria-live="polite" aria-atomic="true">SYNCING PUBLIC PROJECTS…</div>}
     {toast&&<div className="explore-toast" role="status">✓ {toast}</div>}
 
     <section className="explore-controls">
@@ -957,7 +968,7 @@ function Explore() {
           <div className="explore-card-footer public-project-links">{(p.repository_url||p.link)?<a href={p.repository_url||p.link} target="_blank" rel="noopener noreferrer">OPEN PROJECT <b>↗</b></a>:<span>PUBLIC PROJECT</span>}<i>COMMUNITY</i></div>
         </article>)}
         {tab==="resources"&&visibleResources.map(r=><article className="explore-card" key={r.id}><div className="explore-card-top"><span className="explore-tag">{r.resource_type||"RESOURCE"}</span><span>{r.category||"KNOWLEDGE"}</span></div><div className="explore-icon">◈</div><h3>{r.title}</h3><p>{r.description||"Developer knowledge for sharper decisions and better builds."}</p>{r.link?<a className="explore-link" href={r.link} target="_blank" rel="noopener noreferrer">OPEN RESOURCE <b>↗</b></a>:<div className="explore-card-footer"><span>INTERNAL RESOURCE</span><i>→</i></div>}</article>)}
-        {!data.length&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
+        {!busy&&!data.length&&!(tab==="projects"&&(publicProjectsLoading||publicProjectsError))&&<div className="explore-empty"><div>⌕</div><h3>No signal found.</h3><p>Change the search, category or tag and let the discovery engine try again.</p><button className="ghost" onClick={()=>{setQ("");setCategory("All");setActiveTag("")}}>RESET DISCOVERY</button></div>}
       </section>}
     {!busy&&data.length>pageSize&&<div className="explore-load-more"><span>Showing {Math.min(pageSize,data.length)} of {data.length}</span><button type="button" className="ghost" onClick={()=>setPageSize(v=>Math.min(v+12,data.length))}>LOAD MORE <span>↓</span></button></div>}
     </> }
