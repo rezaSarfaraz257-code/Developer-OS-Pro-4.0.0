@@ -2,7 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -95,6 +95,7 @@ class AuthenticationHardeningTests(TestCase):
         profile.refresh_from_db()
         self.assertFalse(profile.email_verified)
 
+    @override_settings(GITHUB_TOKEN_ENCRYPTION_KEY="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
     def test_mfa_backup_code_is_single_use_and_blank_codes_are_rejected(self):
         user = User.objects.create_user(
             username="mfa-recovery-user",
