@@ -270,17 +270,27 @@ jobs:
           CORS_ALLOWED_ORIGINS: http://localhost
           CSRF_TRUSTED_ORIGINS: http://localhost
           EMAIL_VERIFICATION_REQUIRED: "false"
+          EMAIL_HOST: smtp.example.test
+          EMAIL_HOST_USER: ci@example.test
+          EMAIL_HOST_PASSWORD: ci-test-password
         run: |
           trap 'status=$?; echo "=== DOCKER COMPOSE PS ==="; docker compose ps -a || true; echo "=== BACKEND LOGS ==="; docker compose logs --no-color --tail=250 backend || true; echo "=== WORKER LOGS ==="; docker compose logs --no-color --tail=120 worker || true; docker compose down -v --remove-orphans; exit $status' EXIT
-          docker compose up -d db redis runner backend
+          docker compose up -d db redis runner backend worker
           docker compose ps
           for i in $(seq 1 60); do
             if docker compose exec -T backend python -c 'import socket; s=socket.create_connection(("127.0.0.1",8000),2); s.close()' >/dev/null 2>&1; then break; fi
             sleep 5
           done
           docker compose exec -T backend python manage.py check --deploy
-          docker compose exec -T backend python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://backend:8000/api/health/ready/", timeout=5)'
-          docker compose up -d --no-deps worker
+          readiness_ok=false
+          for i in $(seq 1 60); do
+            if docker compose exec -T backend python -c 'import urllib.request; urllib.request.urlopen(urllib.request.Request("http://backend:8000/api/health/ready/", headers={"Host": "backend"}), timeout=5)' >/dev/null 2>&1; then
+              readiness_ok=true
+              break
+            fi
+            sleep 5
+          done
+          test "$readiness_ok" = true
           docker compose up -d --no-deps frontend
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1/ >/dev/null 2>&1; then break; fi
