@@ -127,7 +127,7 @@ if not 0 < DB_POOL_TIMEOUT <= 60:
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
     if parsed.scheme.startswith("postgres"):
-        db_config = {"ENGINE": "django.db.backends.postgresql", "NAME": parsed.path.lstrip("/"), "USER": parsed.username or "", "PASSWORD": parsed.password or "", "HOST": parsed.hostname or "", "PORT": str(parsed.port or 5432), "CONN_HEALTH_CHECKS": True}
+        db_config = {"ENGINE": "django.db.backends.postgresql", "NAME": parsed.path.lstrip("/"), "USER": parsed.username or "", "PASSWORD": parsed.password or "", "HOST": parsed.hostname or "", "PORT": str(parsed.port or 5432), "CONN_HEALTH_CHECKS": True, "DISABLE_SERVER_SIDE_CURSORS": True}
         if DB_POOL_ENABLED:
             db_config["CONN_MAX_AGE"] = 0
             db_config["OPTIONS"] = {"pool": {"min_size": DB_POOL_MIN_SIZE, "max_size": DB_POOL_MAX_SIZE, "timeout": DB_POOL_TIMEOUT}}
