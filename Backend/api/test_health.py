@@ -171,6 +171,28 @@ class SharedReleaseIdentityIntegrationTests(TestCase):
             self.assertEqual(response.json()["version"], "4.0.0")
             self.assertEqual(response.json()["release_sha"], render_sha)
 
+class ReadinessFailureLoggingTests(TestCase):
+    def test_not_ready_emits_secret_safe_structured_log(self):
+        with patch.dict(os.environ, {
+            "RENDER_SERVICE_ID": "srv-readiness-logging-test",
+            "RENDER_GIT_COMMIT": "c" * 40,
+            "REQUIRE_BACKGROUND_WORKER": "",
+        }, clear=False):
+            with self.assertLogs("api.views", level="WARNING") as captured:
+                response = DjangoTestClient().get("/api/health/ready/?format=json")
+
+        if response.status_code == 503:
+            matching = [
+                record for record in captured.output
+                if "production_readiness_failed" in record
+            ]
+            self.assertTrue(matching)
+            serialized = "\\n".join(matching)
+            self.assertIn("failed_checks", serialized)
+            self.assertNotIn("SECRET_KEY", serialized)
+            self.assertNotIn("PASSWORD", serialized)
+
+
 class RenderReadinessFailClosedRegressionTests(TestCase):
     @override_settings(DEBUG=True)
     def test_render_readiness_does_not_bypass_missing_worker_when_debug_is_true(self):
