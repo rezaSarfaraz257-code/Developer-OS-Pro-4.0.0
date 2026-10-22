@@ -171,6 +171,35 @@ class SharedReleaseIdentityIntegrationTests(TestCase):
             self.assertEqual(response.json()["version"], "4.0.0")
             self.assertEqual(response.json()["release_sha"], render_sha)
 
+class ReadinessFailureLoggingTests(TestCase):
+    def test_not_ready_emits_secret_safe_structured_log(self):
+        with patch.dict(os.environ, {
+            "RENDER_SERVICE_ID": "srv-readiness-logging-test",
+            "RENDER_GIT_COMMIT": "c" * 40,
+            "REQUIRE_BACKGROUND_WORKER": "",
+        }, clear=False):
+            with self.assertLogs("api.views", level="WARNING") as captured:
+                response = DjangoTestClient().get("/api/health/ready/?format=json")
+
+        if response.status_code == 503:
+            matching = [
+                record for record in captured.output
+                if "production_readiness_failed" in record
+            ]
+            self.assertTrue(matching)
+            # assertLogs.output intentionally contains the formatted log message;
+            # inspect the real LogRecord extras for structured, secret-safe fields.
+            self.assertIn("production_readiness_failed", matching[0])
+            record = captured.records[0]
+            self.assertTrue(hasattr(record, "failed_checks"))
+            self.assertEqual(record.event, "production_readiness_failed")
+            self.assertEqual(record.release_sha, "c" * 40)
+            self.assertIsInstance(record.strict_runtime, bool)
+            self.assertIsInstance(record.worker_required, bool)
+            self.assertNotIn("SECRET_KEY", record.getMessage())
+            self.assertNotIn("PASSWORD", record.getMessage())
+
+
 class RenderReadinessFailClosedRegressionTests(TestCase):
     @override_settings(DEBUG=True)
     def test_render_readiness_does_not_bypass_missing_worker_when_debug_is_true(self):
