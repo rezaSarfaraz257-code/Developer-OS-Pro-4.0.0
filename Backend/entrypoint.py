@@ -72,6 +72,11 @@ def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
 def main() -> None:
     migrate_with_postgres_lock()
 
+    # One-time, explicit admin recovery for deployments without interactive Shell.
+    # Disable the flag and remove the password env var immediately after success.
+    if os.getenv("DJANGO_SUPERUSER_BOOTSTRAP", "").strip().lower() in {"1", "true", "yes", "on"}:
+        run(sys.executable, "manage.py", "bootstrap_admin_from_env")
+
     worker: subprocess.Popen[bytes] | None = None
     if _worker_enabled():
         # The worker uses the same migrated database and environment as the API.
