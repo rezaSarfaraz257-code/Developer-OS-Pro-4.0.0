@@ -187,10 +187,17 @@ class ReadinessFailureLoggingTests(TestCase):
                 if "production_readiness_failed" in record
             ]
             self.assertTrue(matching)
-            serialized = "\\n".join(matching)
-            self.assertIn("failed_checks", serialized)
-            self.assertNotIn("SECRET_KEY", serialized)
-            self.assertNotIn("PASSWORD", serialized)
+            # assertLogs.output intentionally contains the formatted log message;
+            # inspect the real LogRecord extras for structured, secret-safe fields.
+            self.assertIn("production_readiness_failed", matching[0])
+            record = captured.records[0]
+            self.assertTrue(hasattr(record, "failed_checks"))
+            self.assertEqual(record.event, "production_readiness_failed")
+            self.assertEqual(record.release_sha, "c" * 40)
+            self.assertIsInstance(record.strict_runtime, bool)
+            self.assertIsInstance(record.worker_required, bool)
+            self.assertNotIn("SECRET_KEY", record.getMessage())
+            self.assertNotIn("PASSWORD", record.getMessage())
 
 
 class RenderReadinessFailClosedRegressionTests(TestCase):
