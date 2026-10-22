@@ -5,6 +5,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
+
+from api.models import UserProfile
 
 
 def enabled(value):
@@ -53,6 +56,13 @@ class Command(BaseCommand):
             user.is_staff = True
             user.is_superuser = True
             user.save()
+            # This account was explicitly configured by the operator for recovery.
+            # Mark its email verified so the normal API login gate does not reject it.
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if not profile.email_verified:
+                profile.email_verified = True
+                profile.email_verified_at = timezone.now()
+                profile.save(update_fields=["email_verified", "email_verified_at"])
 
         self.stdout.write(self.style.SUCCESS(
             f"Administrator bootstrap completed for username={user.get_username()!r}. "
