@@ -46,6 +46,33 @@ export function isSpaShell({ response, body, result }) {
 export const EXPECTED_RELEASE_VERSION = "4.0.0";
 const RELEASE_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 const hasReleaseSha = value => typeof value === "string" && RELEASE_SHA_PATTERN.test(value);
+/**
+ * Return a strictly allowlisted, secret-free summary for public health probes.
+ * Never copy arbitrary response fields into CI artifacts; readiness diagnostics
+ * intentionally expose only status/release identity and boolean dependency checks.
+ */
+export function summarizeHealthPayload(body) {
+  let payload;
+  try { payload = JSON.parse(body); } catch { return null; }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const summary = {};
+  for (const key of ["status", "service", "database", "version"]) {
+    if (typeof payload[key] === "string" && payload[key].length <= 64) summary[key] = payload[key];
+  }
+  if (typeof payload.release_sha === "string" &&
+      (RELEASE_SHA_PATTERN.test(payload.release_sha) || payload.release_sha === "unknown")) {
+    summary.release_sha = payload.release_sha;
+  }
+  if (payload.checks && typeof payload.checks === "object" && !Array.isArray(payload.checks)) {
+    const checks = {};
+    for (const key of REQUIRED_READINESS_CHECKS) {
+      if (typeof payload.checks[key] === "boolean") checks[key] = payload.checks[key];
+    }
+    if (Object.keys(checks).length) summary.checks = checks;
+  }
+  return Object.keys(summary).length ? summary : null;
+}
+
 
 function matchesExpectedReleaseSha(json, result = {}) {
   const expectedSha = typeof result.expectedReleaseSha === "string"

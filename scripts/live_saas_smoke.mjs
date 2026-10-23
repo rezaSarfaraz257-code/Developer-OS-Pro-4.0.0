@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
-import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, isRetryableReleaseMismatch, releaseMismatchRetryDelayMs } from "./live_saas_contracts.mjs";
+import { isHtml, isSpaShell, isLive, isHealthy, isReady, validatePricing, validateBillingConfig, validateSecurityHeaders, validateNoStoreCacheHeaders, validateFinalUrl, diagnoseChecks, retryDelayMs, isRetryableReleaseMismatch, releaseMismatchRetryDelayMs, summarizeHealthPayload } from "./live_saas_contracts.mjs";
 
 function requireHttpsOrigin(name, value) {
   let parsed;
@@ -89,6 +89,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
         finalUrl: response.url,
         expectedReleaseSha: process.env.EXPECTED_RELEASE_SHA || "",
         releaseRevisionMatchesBackend: deployedBackendTreeMatchesCurrent(readReleaseSha(body)),
+        healthDiagnostics: name.startsWith("api-") && url.includes("/api/health/") ? summarizeHealthPayload(body) : null,
       };
       const destinationValidation = validateFinalUrl({ response, body, result });
       const validation = destinationValidation === true ? validate({ response, body, result }) : destinationValidation;
@@ -99,6 +100,7 @@ async function check(name, url, validate, timeoutMs = 12000) {
         status: response.status,
         ok: validation === true,
         error: validation === true ? null : String(validation),
+        healthDiagnostics: result.healthDiagnostics,
       };
       attempts.push(attemptRecord);
       finalResult = { ...result, ok: validation === true, error: validation === true ? null : String(validation) };
