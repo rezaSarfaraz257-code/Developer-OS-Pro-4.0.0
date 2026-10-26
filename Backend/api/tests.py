@@ -9,7 +9,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.db import IntegrityError, connection
+from django.db import DatabaseError, IntegrityError, connection
 from django.test import override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
