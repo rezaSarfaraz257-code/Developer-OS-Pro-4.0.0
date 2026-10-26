@@ -11,6 +11,22 @@ from fastapi import HTTPException
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
 
+class RunnerJobTenantIsolationTests(unittest.TestCase):
+    def test_job_lookup_requires_matching_workspace(self):
+        job_id = main._new_job("workspace-a")
+        try:
+            job = main._job_for_workspace(job_id, "workspace-a")
+            self.assertEqual(job["workspace_id"], "workspace-a")
+            with self.assertRaises(HTTPException) as ctx:
+                main._job_for_workspace(job_id, "workspace-b")
+            self.assertEqual(ctx.exception.status_code, 404)
+        finally:
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+            with main.JOB_OUTPUT_LOCK:
+                main.JOB_OUTPUT.pop(job_id, None)
+
+
 class RunnerSecurityTests(unittest.TestCase):
     def test_rejects_absolute_and_traversal_paths(self):
         for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", "a//b", ""):
