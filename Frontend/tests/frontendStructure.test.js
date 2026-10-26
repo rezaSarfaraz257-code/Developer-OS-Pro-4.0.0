@@ -391,3 +391,17 @@ test("IDE closing an individual inactive dirty tab saves before removing it", ()
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /if\(dirtyPathsRef\.current\.has\(p\)\|\|\(p===active&&refs\.dirty\.current\)\)\{const saved=await save\(true\);if\(!saved\)return;\}const index=tabs\.indexOf\(p\)/);
 });
+
+
+test("Explorer move, duplicate, and rename preserve every dirty editor tab before replacing workspace state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const move = ide.match(/async function movePath\(from,toFolder\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const duplicate = ide.match(/async function duplicatePath\(path\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const rename = ide.match(/async function renamePath\(path\)\{([\s\S]*?)\n \}/)?.[1] || "";
+
+  for (const [name, body] of [["move", move], ["duplicate", duplicate], ["rename", rename]]) {
+    assert.match(body, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/, `${name} must detect inactive dirty tabs too`);
+    assert.match(body, /const saved=await save\(true\);if\(!saved\)/, `${name} must stop if saving pending edits fails`);
+    assert.ok(body.indexOf("await save(true)") < body.indexOf("await applyExplorerState") || !body.includes("await applyExplorerState"), `${name} must save before replacing workspace state`);
+  }
+});
