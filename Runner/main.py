@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -444,6 +444,42 @@ def safe_rel(path):
         raise ValueError("unsafe path")
     return normalized
 
+def _write_workspace_file(root, rel, content):
+    """Write beneath a workspace using directory FDs and O_NOFOLLOW.
+
+    Path-based symlink checks alone are vulnerable to a time-of-check/time-of-use
+    race when a running process can mutate the workspace concurrently.
+    """
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(str(root), directory_flags)
+    opened_dirs = []
+    parent_fd = root_fd
+    try:
+        parts = rel.split("/")
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+            child_fd = os.open(part, directory_flags, dir_fd=parent_fd)
+            opened_dirs.append(child_fd)
+            parent_fd = child_fd
+
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow
+        file_fd = os.open(parts[-1], flags, 0o600, dir_fd=parent_fd)
+        with os.fdopen(file_fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError("unsafe path") from exc
+        raise
+    finally:
+        for directory_fd in reversed(opened_dirs):
+            os.close(directory_fd)
+        os.close(root_fd)
+
+
 def write_snapshot(root, files):
     if len(files) > MAX_FILES:
         raise ValueError(f"workspace exceeds {MAX_FILES} files")
@@ -455,28 +491,7 @@ def write_snapshot(root, files):
         total += len(content.encode())
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
-        root_resolved = root.resolve()
-        # Create parent directories one component at a time. Recursive mkdir
-        # follows symlinks, so doing it before validation could create paths
-        # outside the workspace even if the final write is later rejected.
-        parent = root
-        parts = rel.split("/")
-        for part in parts[:-1]:
-            parent = parent / part
-            if parent.is_symlink():
-                raise ValueError("unsafe path")
-            if parent.exists():
-                if not parent.is_dir():
-                    raise ValueError("file/directory collision")
-            else:
-                parent.mkdir()
-        target = parent / parts[-1]
-        if target.is_symlink():
-            raise ValueError("unsafe path")
-        resolved = target.resolve(strict=False)
-        if resolved != root_resolved and root_resolved not in resolved.parents:
-            raise ValueError("unsafe path")
-        target.write_text(content, encoding="utf-8")
+        _write_workspace_file(root, rel, content)
 
 def snapshot(root):
     out = {}
