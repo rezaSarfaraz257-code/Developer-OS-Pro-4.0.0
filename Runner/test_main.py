@@ -381,6 +381,23 @@ def test_job_endpoints_reject_foreign_workspace_for_status_output_stream_and_can
     assert main._job_snapshot(job_id)["status"] == "running"
 
 
+def test_execution_timeout_preserves_partial_output_in_stream_buffer():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        with patch("main._sandbox_command", return_value=["python", "-c", "print('x')"]), \
+             patch("main._scheduler_acquire", return_value=True), \
+             patch("main._scheduler_release"), \
+             patch("main.subprocess.run", side_effect=main.subprocess.TimeoutExpired(cmd="test", timeout=5, output=b"partial output")):
+            result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    assert "timed out" in result["stderr"].lower()
+    assert main._job_snapshot(result["job_id"])["status"] == "timeout"
+    output = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in output
+    assert "timed out" in output.lower()
+
+
 def test_timeout_is_terminal_for_job_output_stream():
     job_id = main._new_job("timeout-stream-workspace")
     main._set_job(job_id, status="running", started_at=time.time())
