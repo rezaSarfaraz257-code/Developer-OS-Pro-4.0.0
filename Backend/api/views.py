@@ -262,6 +262,11 @@ def readiness_api(request):
         if settings.DEBUG and not worker_required
         else all(checks[key] for key in mandatory)
     )
+    if not ready:
+        failed_checks = [name for name, passed in checks.items() if name in mandatory and not passed]
+        # Check names are non-sensitive; never log connection strings or secrets.
+        logger.warning("Production readiness failed checks: %s", ",".join(failed_checks) or "unknown")
+
     return _no_store_health_response(Response(
         {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
         status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
