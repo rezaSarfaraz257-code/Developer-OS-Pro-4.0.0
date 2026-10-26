@@ -702,6 +702,7 @@ function Explore() {
   const [favoriteBusy, setFavoriteBusy] = useState([]);
   const [workspaceBusy, setWorkspaceBusy] = useState([]);
   const [compact, setCompact] = useState(false);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
   const searchRef = useRef(null);
   const toastTimer = useRef(null);
 
@@ -959,7 +960,7 @@ function Explore() {
             <div className="explore-card-footer"><button type="button" disabled={workspaceBusy.includes(t.id)} onClick={()=>void addToWorkspace(t)}>{workspaceBusy.includes(t.id)?"CREATING WORKSPACE…":"＋ ADD TO WORKSPACE"}</button><i aria-hidden="true">→</i></div>
           </article>
         })}
-        {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
+        {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button type="button" className={selectedWorkflowId===w.id?"active":""} aria-pressed={selectedWorkflowId===w.id} onClick={()=>{setSelectedWorkflowId(selectedWorkflowId===w.id?null:w.id);notify(selectedWorkflowId===w.id?"Workflow selection cleared.":"Workflow “"+w.title+"” selected for review; no workflow has been executed.");}}>{selectedWorkflowId===w.id?"✓ SELECTED":"SELECT PLAYBOOK"}</button><i aria-hidden="true">→</i></div></article>)}
         {tab==="projects"&&visiblePublicProjects.map(p=><article className="explore-card public-project-card" key={p.id}>
           <div className="explore-card-top"><span className="explore-tag">{p.category||"PROJECT"}</span><span className="public-project-status">{p.status||"In Progress"}</span></div>
           <div className="explore-icon">◈</div><h3>{p.title||"Untitled project"}</h3><p>{p.description||"A community project shared on Developer OS."}</p>
