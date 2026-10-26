@@ -2219,17 +2219,19 @@ def _runner_request(method, path, payload, timeout=30):
             kwargs["json"] = payload
 
         response = None
-        # Render/free instances can briefly wake, restart or cold-start.
-        # Retry only transient transport/upstream failures with bounded backoff.
-        for attempt in range(3):
+        # Retry only safe GET requests. Replaying a POST after an ambiguous
+        # timeout can execute a command or start a process twice.
+        retryable = method.upper() == "GET"
+        max_attempts = 3 if retryable else 1
+        for attempt in range(max_attempts):
             try:
                 response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
             except (requests.Timeout, requests.ConnectionError):
-                if attempt == 2:
+                if attempt + 1 >= max_attempts:
                     raise
                 time.sleep(0.25 * (2 ** attempt))
                 continue
-            if response.status_code not in {502, 503, 504} or attempt == 2:
+            if response.status_code not in {502, 503, 504} or attempt + 1 >= max_attempts:
                 break
             time.sleep(0.25 * (2 ** attempt))
 
@@ -2543,6 +2545,7 @@ def ide_workspace_sync_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_install_framework_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2577,6 +2580,7 @@ def ide_install_framework_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2803,11 +2807,14 @@ def ide_execute_api(request, pk):
         try:
             allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
         except (DatabaseError, IntegrityError):
-            # Usage telemetry must never make the actual sandbox unavailable.
-            # This also keeps IDE usable during a rolling schema migration.
-            logger.exception("IDE usage metering unavailable: user=%s", getattr(request.user, "pk", None))
-            allowed, used, limit, plan = True, None, None, "free"
-            usage_warning = "Usage metering temporarily unavailable; execution was allowed."
+            # Fail closed: never execute user code when quota enforcement cannot
+            # be verified against the database.
+            logger.exception("IDE usage enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+            return Response({
+                "error": "Execution quota could not be verified. Please retry shortly.",
+                "code": "usage_enforcement_unavailable",
+                "stage": stage,
+            }, status=503)
         if not allowed:
             return Response({
                 "error": "Monthly IDE execution limit reached.",
@@ -3962,12 +3969,39 @@ def ide_build_api(request, pk):
 @throttle_classes([RunnerRateThrottle])
 def ide_process_start_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user): return Response({"error":"Read-only workspace."}, status=403)
-    command = str(request.data.get("command") or "").strip()
-    if not command: return Response({"error":"Command is required."}, status=400)
-    plan, _ = _plan_for(request.user)
-    data, error = _runner_request("POST","/process/start",{**_workspace_payload(ws),"command":command,"entitlement":{"plan":plan}},timeout=30)
-    if error: return Response(error,status=503)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "Read-only workspace."}, status=403)
+
+    command = request.data.get("command")
+    if not isinstance(command, str) or not command.strip() or len(command) > 2000:
+        return Response({"error": "A command up to 2,000 characters is required."}, status=400)
+    command = command.strip()
+
+    try:
+        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+    except (DatabaseError, IntegrityError):
+        logger.exception("IDE process quota enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+        return Response({
+            "error": "Process quota could not be verified. Please retry shortly.",
+            "code": "usage_enforcement_unavailable",
+            "stage": "usage_limit",
+        }, status=503)
+    if not allowed:
+        return Response({
+            "error": "Monthly IDE execution limit reached.",
+            "plan": plan,
+            "used": used,
+            "limit": limit,
+        }, status=429)
+
+    data, error = _runner_request(
+        "POST",
+        "/process/start",
+        {**_workspace_payload(ws), "command": command, "entitlement": {"plan": plan}},
+        timeout=30,
+    )
+    if error:
+        return Response(error, status=503)
     return Response(data, status=201)
 
 @api_view(["GET"])
