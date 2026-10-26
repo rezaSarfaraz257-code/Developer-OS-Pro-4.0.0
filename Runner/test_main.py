@@ -713,19 +713,18 @@ def test_timeout_runner_terminates_process_group_and_preserves_output():
     with patch("main.subprocess.Popen", return_value=process), patch(
         "main._terminate_process_group"
     ) as terminate:
-        with __import__("contextlib").nullcontext():
-            result_error = None
-            try:
-                main._run_process_with_timeout(
-                    ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
-                )
-            except subprocess.TimeoutExpired as exc:
-                result_error = exc
+        result_error = None
+        try:
+            main._run_process_with_timeout(
+                ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
+            )
+        except subprocess.TimeoutExpired as exc:
+            result_error = exc
     terminate.assert_called_once_with(process, grace_seconds=0.1)
     assert result_error is not None
     assert result_error.output == "partial"
     assert result_error.stderr == "warning"
-\n
+
 
 def test_terminate_process_group_signals_descendants_after_leader_exits():
     process = Mock()
@@ -742,4 +741,4 @@ def test_terminate_process_group_signals_descendants_after_leader_exits():
     calls = killpg.call_args_list
     assert calls[0].args == (12345, main.signal.SIGTERM)
     assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
-\n
+
