@@ -455,17 +455,26 @@ def write_snapshot(root, files):
         total += len(content.encode())
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
-        target = root / rel
         root_resolved = root.resolve()
-        parent = target.parent
-        parent.mkdir(parents=True, exist_ok=True)
-        # Never follow a pre-existing symlink out of the workspace.
-        if any(part.is_symlink() for part in [parent, *parent.parents] if part != root and part.exists()):
+        # Create parent directories one component at a time. Recursive mkdir
+        # follows symlinks, so doing it before validation could create paths
+        # outside the workspace even if the final write is later rejected.
+        parent = root
+        parts = rel.split("/")
+        for part in parts[:-1]:
+            parent = parent / part
+            if parent.is_symlink():
+                raise ValueError("unsafe path")
+            if parent.exists():
+                if not parent.is_dir():
+                    raise ValueError("file/directory collision")
+            else:
+                parent.mkdir()
+        target = parent / parts[-1]
+        if target.is_symlink():
             raise ValueError("unsafe path")
         resolved = target.resolve(strict=False)
         if resolved != root_resolved and root_resolved not in resolved.parents:
-            raise ValueError("unsafe path")
-        if target.exists() and target.is_symlink():
             raise ValueError("unsafe path")
         target.write_text(content, encoding="utf-8")
 
