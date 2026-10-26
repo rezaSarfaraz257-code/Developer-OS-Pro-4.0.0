@@ -91,11 +91,20 @@ export default function ProIDE({projectId,message,go}){
    }catch(e){setStatus(e.message||"Save failed");return false}finally{savingRef.current=false;setSaving(false)}
  },[]);
  const save=useCallback(async(silent=false)=>{
-   const pending=[...dirtyPathsRef.current];
-   if(pending.length===0&&refs.dirty.current&&refs.active.current){dirtyPathsRef.current.add(refs.active.current);pending.push(refs.active.current);}
-   for(const path of pending){const ok=await saveFile(true,path);if(!ok)return false;}
-   if(pending.length)setStatus(silent?"Saved automatically":"All changes saved");
-   return true;
+   let savedAny=false;
+   // Repeat because edits can land in another tab while an earlier file is saving.
+   // Destructive actions must not proceed on the basis of a stale one-time snapshot.
+   for(let pass=0;pass<10;pass++){
+     const pending=[...dirtyPathsRef.current];
+     if(pending.length===0&&refs.dirty.current&&refs.active.current){dirtyPathsRef.current.add(refs.active.current);pending.push(refs.active.current);}
+     if(pending.length===0&&!refs.dirty.current&&dirtyPathsRef.current.size===0){
+       if(savedAny)setStatus(silent?"Saved automatically":"All changes saved");
+       return true;
+     }
+     for(const path of pending){const ok=await saveFile(true,path);if(!ok)return false;savedAny=true;}
+   }
+   setStatus("Edits are still changing. Save again before continuing.");
+   return false;
  },[saveFile]);
  useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")]).then(async([a,b])=>{const[w,f]=await Promise.all([a.json(),b.json()]);if(off)return;setWorkspaces(Array.isArray(w)?w:Array.isArray(w?.results)?w.results:[]);setFrameworks(Array.isArray(f)?f:Array.isArray(f?.results)?f.results:[])}).catch(e=>!off&&(typeof message==="function" ? message(e.message) : setStatus(e.message)));return()=>{off=true;clearTimeout(refs.timer.current);for(const timer of editTimersRef.current.values())clearTimeout(timer);editTimersRef.current.clear();clearTimeout(refs.diag.current)}},[message]);
  const load=useCallback(async(item)=>{if(!item)return;const requestId=++workspaceLoadRef.current;if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved||requestId!==workspaceLoadRef.current)return;}setStatus("Loading workspace…");try{const r=await apiFetch(`/ide/workspaces/${item.id}/files/`);const d=await r.json();if(requestId!==workspaceLoadRef.current)return;if(!r.ok)throw Error(d.error||d.detail||`Explorer load failed (HTTP ${r.status})`);const f=d.files&&typeof d.files==="object"?d.files:{};const p=d.active_file||Object.keys(f)[0]||"";diagnosticsRequestRef.current+=1;setDiagnostics([]);const next={...item,files:f,active_file:p,revision:d.revision??item.revision};refs.ws.current=next;refs.files.current=f;refs.active.current=p;refs.dirty.current=false;refs.dirtyBaseRevision.current=null;dirtyPathsRef.current.clear();setWs(next);setFiles(f);setActive(p);setTabs(p?[p]:[]);setSelected(new Set(p?[p]:[]));setDirty(false);setStatus("Explorer synced")}catch(e){if(requestId===workspaceLoadRef.current)setStatus(e.message||"Explorer load failed")}},[save]);
