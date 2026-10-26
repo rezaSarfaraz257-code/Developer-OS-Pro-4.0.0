@@ -115,13 +115,14 @@ export function removeSyncedWorkspacePatches(queue, syncedPatches) {
 // The next write still uses optimistic concurrency, so a later external write
 // causes a conflict instead of being overwritten.
 export function rebaseWorkspacePatches(queue, workspaceId, revision) {
-  if (workspaceId == null || !Number.isFinite(Number(revision))) {
+  const parsedRevision = parseWorkspaceRevision(revision);
+  if (workspaceId == null || parsedRevision === null) {
     return Array.isArray(queue) ? queue : [];
   }
   return (Array.isArray(queue) ? queue : []).map((item) =>
     item && item.workspace_id != null &&
     String(item.workspace_id) === String(workspaceId)
-      ? { ...item, base_revision: Number(revision) }
+      ? { ...item, base_revision: parsedRevision }
       : item
   );
 }
