@@ -604,18 +604,32 @@ DANGEROUS_ENV_KEYS = {
     "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "HOME", "TMPDIR",
 }
 
+MAX_PROCESS_ENV_VARS = 64
+MAX_PROCESS_ENV_BYTES = 16 * 1024
+
+
 def _safe_process_env(base_env, env_extra):
-    """Allow user environment variables without allowing runtime hijacking."""
-    if not env_extra:
+    """Apply a bounded allowlist to user-controlled process environment values."""
+    if not isinstance(env_extra, dict) or not env_extra:
         return base_env
-    for key, value in dict(env_extra).items():
+
+    accepted_bytes = 0
+    for index, (key, value) in enumerate(env_extra.items()):
+        # Bound iteration as well as accepted data so oversized payloads cannot
+        # cause unbounded work before the subprocess is even started.
+        if index >= MAX_PROCESS_ENV_VARS:
+            break
         key = str(key)
         value = str(value)
         if not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", key) or len(value) > 4000:
             continue
         if key in DANGEROUS_ENV_KEYS or key.startswith(("LD_", "DYLD_")):
             continue
+        entry_bytes = len(key.encode("utf-8")) + len(value.encode("utf-8"))
+        if accepted_bytes + entry_bytes > MAX_PROCESS_ENV_BYTES:
+            continue
         base_env[key] = value
+        accepted_bytes += entry_bytes
     return base_env
 
 def _normalize_command(command):
