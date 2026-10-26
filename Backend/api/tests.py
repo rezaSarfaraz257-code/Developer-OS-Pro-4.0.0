@@ -77,6 +77,46 @@ class RunnerRequestRetrySafetyTests(APITestCase):
         self.assertEqual(sleep.call_count, 2)
 
 
+class IDEPreviewPortContractTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-preview-port-contract",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Preview port contract",
+            files={"package.json": '{"scripts":{"dev":"vite"}}'},
+            active_file="package.json",
+            framework="react-vite",
+        )
+
+    @patch("api.views._runner_request")
+    def test_preview_start_passes_the_proxy_port_to_runner(self, runner_request):
+        def echo_preview_port(method, path, payload, timeout=30):
+            self.assertEqual(method, "POST")
+            self.assertEqual(path, "/preview/start")
+            return ({"id": "preview-test", "status": "running", "port": payload["port"]}, None)
+        runner_request.side_effect = echo_preview_port
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/preview/start/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        expected_port = 10000 + (self.workspace.pk % 1000)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["port"], expected_port)
+        self.assertEqual(
+            response.data["public_preview"],
+            f"/api/ide/workspaces/{self.workspace.pk}/preview/",
+        )
+        self.assertEqual(runner_request.call_count, 1)
+
+
 class ProductionReadinessTests(APITestCase):
     def test_console_email_backend_never_passes_production_readiness(self):
         with override_settings(
