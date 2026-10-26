@@ -658,7 +658,7 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         partial_stdout = (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else ""
         if partial_stdout:
             _append_job_output(job_id, partial_stdout)
-        _append_job_output(job_id, timeout_message + "\\n")
+        _append_job_output(job_id, timeout_message + "\n")
         _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
                  error=timeout_message)
         return {
