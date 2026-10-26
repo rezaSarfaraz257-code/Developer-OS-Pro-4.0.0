@@ -467,6 +467,41 @@ def test_process_stop_and_cancel_terminate_entire_process_group():
                 main.PROCESSES.pop(process_id, None)
 
 
+def test_process_stop_and_cancel_hide_foreign_workspace_processes():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"foreign-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-owner",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch("main._terminate_process_group") as terminate:
+                try:
+                    getattr(main, endpoint_name)(
+                        process_id,
+                        "workspace-other",
+                        "Bearer runner-test-token",
+                    )
+                except HTTPException as exc:
+                    assert exc.status_code == 404
+                else:
+                    raise AssertionError("A foreign workspace must not control this process")
+                terminate.assert_not_called()
+                assert popen.poll() is None
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
+
+
 def test_process_stop_route_is_registered_once():
     stop_routes = [
         route.path
