@@ -2354,8 +2354,14 @@ def ide_capabilities_api(request):
             "plan": plan,
         }, status=200)
     limits = PLAN_LIMITS[plan]
+    sandbox = data.get("sandbox") if isinstance(data.get("sandbox"), dict) else {}
+    execution_available = sandbox.get("execution_available")
+    # A reachable Runner is not necessarily ready to execute code. Strict mode
+    # intentionally disables execution when the host cannot enforce per-run
+    # isolation; report that degraded capability instead of a false "ready".
+    runner_status = "ready" if execution_available is True else "degraded"
     return Response({
-        "status": "ready",
+        "status": runner_status,
         "plan": plan,
         "limits": {
             "ide_runs_month": limits["ide_runs_month"],
