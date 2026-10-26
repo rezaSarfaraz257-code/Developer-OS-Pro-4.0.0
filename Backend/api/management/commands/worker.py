@@ -218,16 +218,22 @@ class Command(BaseCommand):
                 lease_stop.set()
                 lease_thread.join(timeout=2)
 
-            # Release the durable lease for every persisted terminal/retry outcome.
-            # Otherwise completed/requeued rows retain a stale owner marker that
-            # complicates diagnostics and can confuse future lifecycle changes.
+            # Release the durable lease and persist related terminal state atomically.
+            # A permanently failed export must not remain visibly "running" forever;
+            # retryable failures intentionally keep the export in its running state.
             job.locked_at = None
             job.locked_by = ""
             try:
-                job.save(update_fields=[
-                    "status", "result", "error", "available_at", "finished_at",
-                    "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
-                ])
+                with transaction.atomic():
+                    job.save(update_fields=[
+                        "status", "result", "error", "available_at", "finished_at",
+                        "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
+                    ])
+                    if job.kind == "data_export" and job.status == "failed":
+                        DataExportRequest.objects.filter(
+                            pk=job.payload.get("export_id"),
+                            user_id=job.payload.get("user_id"),
+                        ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the
                 # long-lived worker alive; stale-lease recovery reconciles the
