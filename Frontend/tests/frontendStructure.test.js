@@ -278,6 +278,7 @@ test("offline replay is allowed only against its exact base revision", () => {
     { path: "a.js", content: "A", base_revision: 12 },
     { path: "b.js", content: "B", base_revision: 12 },
   ], 12), true);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: "12" }], "12"), true);
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 12 }], 13), false);
   assert.equal(canSafelySyncOfflinePatches([
     { path: "a.js", base_revision: 12 },
@@ -286,6 +287,11 @@ test("offline replay is allowed only against its exact base revision", () => {
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js" }], 12), false);
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: null }], 0), false);
   assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: "" }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 0 }], null), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 0 }], ""), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: "invalid" }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: -1 }], -1), false);
+  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 1.5 }], 1.5), false);
   assert.equal(canSafelySyncOfflinePatches([], 12), false);
 });
 
