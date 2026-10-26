@@ -108,6 +108,34 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_not_called()
 
 
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
+    def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "start"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_debug_start_validates_parameters_before_consuming_quota(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "start", "line": "not-an-integer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
