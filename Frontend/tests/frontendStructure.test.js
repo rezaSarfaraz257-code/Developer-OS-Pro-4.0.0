@@ -731,7 +731,7 @@ test("IDE create-file and create-folder reject malformed Explorer file maps with
 
 test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  const saveStart = ide.indexOf("const saveOne=useCallback");
+  const saveStart = ide.indexOf("const saveFile=useCallback");
   const saveEnd = ide.indexOf("const save=useCallback", saveStart);
   const saveOne = ide.slice(saveStart, saveEnd);
   const syncStart = ide.indexOf("const syncWorkspaceState=useCallback");
