@@ -730,6 +730,11 @@ class ProcessEnvironmentBoundsTests(unittest.TestCase):
             main.MAX_PROCESS_ENV_VARS,
         )
 
+    def test_process_environment_skips_malformed_unicode_values(self):
+        result = main._safe_process_env({}, {"SAFE_VALUE": "ok", "BAD_VALUE": "bad\\ud800"})
+        self.assertEqual(result["SAFE_VALUE"], "ok")
+        self.assertNotIn("BAD_VALUE", result)
+
     def test_process_environment_enforces_total_byte_budget(self):
         base = {}
         supplied = {"FIRST": "a" * 4000, "SECOND": "b" * 4000, "THIRD": "c" * 4000,
