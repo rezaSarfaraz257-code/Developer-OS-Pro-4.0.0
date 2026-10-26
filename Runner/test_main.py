@@ -347,7 +347,29 @@ def test_retry_delay_is_bounded():
 
 
 def test_stream_terminal_status_is_supported():
-    assert {"completed", "failed", "cancelled"}.issuperset({"completed", "failed", "cancelled"})
+    assert main.TERMINAL_JOB_STATES == {"completed", "failed", "timeout", "cancelled"}
+
+
+def test_job_workspace_scope_hides_unknown_and_foreign_jobs():
+    job_id = main._new_job("workspace-owner")
+    assert main._job_for_workspace(job_id, "workspace-owner")["id"] == job_id
+    for workspace_id in ("workspace-other", "missing-workspace"):
+        try:
+            main._job_for_workspace(job_id, workspace_id)
+        except HTTPException as exc:
+            assert exc.status_code == 404
+        else:
+            raise AssertionError("Foreign workspace must not access job")
+
+
+def test_cleanup_releases_output_for_expired_jobs():
+    job_id = main._new_job("expired-output-workspace")
+    main._append_job_output(job_id, "private output")
+    main._set_job(job_id, status="completed", finished_at=time.time() - 120)
+    with patch.object(main, "JOB_RETENTION_SECONDS", 60):
+        main._cleanup_jobs()
+    assert main._job_snapshot(job_id) is None
+    assert main._job_output_snapshot(job_id) == ""
 
 
 def test_concurrent_workspace_limits():
