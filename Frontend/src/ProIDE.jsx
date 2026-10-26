@@ -241,15 +241,15 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
      setStatus("File created");
    }catch(e){setStatus(e.message||"Create failed")}
  }
- async function applyExplorerState(d, {removed="",renamedFrom="",renamedTo=""}={}) {
+ async function applyExplorerState(d, {removed="",renamedFrom="",renamedTo="",expectedWorkspaceId=refs.ws.current?.id}={}) {
+   if(!expectedWorkspaceId||refs.ws.current?.id!==expectedWorkspaceId)throw Error("Workspace changed before Explorer update could be applied.");
    let response=d;
    let next=response?.files&&typeof response.files==="object"&&!Array.isArray(response.files)?response.files:null;
    if(!next){
-     const current=refs.ws.current;
-     if(!current)throw Error("Workspace is no longer available.");
-     const refresh=await apiFetch(`/ide/workspaces/${current.id}/files/`);
+     const refresh=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`);
      const latest=await refresh.json().catch(()=>({}));
      if(!refresh.ok||!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error(latest.error||latest.detail||`Workspace refresh failed after file operation (HTTP ${refresh.status})`);
+     if(refs.ws.current?.id!==expectedWorkspaceId)throw Error("Workspace changed while refreshing Explorer files. Retry the operation.");
      response={...response,...latest};
      next=latest.files;
    }
@@ -266,26 +266,26 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const base=destination.replace(/\\\\+$/,"");const name=from.split("/").pop();const target=(base==="."?"":base+"/")+name;
    if(target===from||target.startsWith(from+"/"))return setStatus("Invalid move destination");
    try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before moving a file.");}
-     const d=await explorerMutation({action:"rename",path:from,to:target});await applyExplorerState(d,{renamedFrom:from,renamedTo:target});setStatus("Moved");
+     const d=await explorerMutation({action:"rename",path:from,to:target});await applyExplorerState(d,{renamedFrom:from,renamedTo:target,expectedWorkspaceId:w.id});setStatus("Moved");
    }catch(e){setStatus(e.message||"Move failed")}
  }
  async function duplicatePath(path){
    const w=refs.ws.current;if(!w||!path||typeof refs.files.current[path]!=="string")return;
    const target=prompt("Duplicate as",path.replace(/([^/]+)$/,"$1.copy"))?.trim();if(!target)return;
-   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before duplicating a file.");}const content=refs.files.current[path];if(typeof content!=="string")throw Error("Source file is no longer available.");const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d);setSelected(new Set([target]));setStatus("Duplicated")}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before duplicating a file.");}const content=refs.files.current[path];if(typeof content!=="string")throw Error("Source file is no longer available.");const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d,{expectedWorkspaceId:w.id});setSelected(new Set([target]));setStatus("Duplicated")}
    catch(e){setStatus(e.message||"Duplicate failed")}
  }
  async function renamePath(path){
    const currentWs=refs.ws.current;if(!currentWs||!path)return;const target=prompt("Rename to",path)?.trim();if(!target||target===path)return;
    try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before renaming a file.");}
-     const d=await explorerMutation({action:"rename",path,to:target});await applyExplorerState(d,{renamedFrom:path,renamedTo:target});setStatus("Renamed");
+     const d=await explorerMutation({action:"rename",path,to:target});await applyExplorerState(d,{renamedFrom:path,renamedTo:target,expectedWorkspaceId:currentWs.id});setStatus("Renamed");
    }catch(e){setStatus(e.message||"Rename failed")}
  }
  async function removeFile(){
    const currentWs=refs.ws.current,p=refs.active.current;if(!currentWs||!p||!confirm(`Delete ${p}?`))return;
    try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before deleting a file.");}
      const d=await explorerDelete(p);
-     await applyExplorerState(d,{removed:p});setStatus("Deleted");
+     await applyExplorerState(d,{removed:p,expectedWorkspaceId:currentWs.id});setStatus("Deleted");
    }catch(e){setStatus(e.message||"Delete failed")}
  }
  async function run(e,commandOverride){
