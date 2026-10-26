@@ -564,6 +564,14 @@
 .dos-ide-pro .dos-overlay-search>input:focus{
   box-shadow:inset 0 0 0 1px rgba(99,230,255,.08),0 0 24px rgba(99,230,255,.04);
 }
+/* Focus mode expands the actual editor grid while preserving editor, dock and status state. */
+.dos-ide-pro.dos-focus-mode .dos-body{
+  grid-template-columns:48px minmax(0,1fr);
+}
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-inspector{
+  display:none;
+}
 .dos-ide-pro.dos-focus-mode .dos-activity button:not(.selected),
 .dos-ide-pro.dos-focus-mode .dos-inspector{
   opacity:.38;
