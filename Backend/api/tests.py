@@ -22,7 +22,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+from .models import APIKey, BackgroundJob, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
 
 
 class RunnerRequestRetrySafetyTests(APITestCase):
@@ -1204,6 +1204,73 @@ class StripeWebhookFailClosedTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertEqual(second.data["duplicate"], True)
         self.assertEqual(BillingEvent.objects.filter(event_id="evt_duplicate_test").count(), 1)
+
+
+class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
+    def test_stale_running_job_is_requeued_with_backoff_and_lease_cleared(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker:1",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertGreater(job.available_at, timezone.now())
+        self.assertIn("Recovered stale worker lease.", job.error)
+        self.assertIsNotNone(job.last_error_at)
+        self.assertIsNone(job.finished_at)
+
+    def test_stale_running_job_at_attempt_limit_is_dead_lettered(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker:2",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIn("Recovered stale worker lease.", job.error)
+
+    def test_recent_running_job_is_not_recovered(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="active-worker:1",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "active-worker:1")
 
 
 class BackgroundWorkerReadinessTests(APITestCase):
