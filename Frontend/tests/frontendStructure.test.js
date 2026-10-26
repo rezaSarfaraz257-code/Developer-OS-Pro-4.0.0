@@ -519,6 +519,16 @@ test("IDE workspace retry is pending-aware and clears loading only for the curre
   assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
 });
 
+test("creating a folder preserves the existing Explorer tree when mutation response omits files", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function newFolder()");
+  const end = ide.indexOf("async function newFile()", start);
+  const createFolder = ide.slice(start, end);
+  assert.match(createFolder, /const d=await explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\}\)/);
+  assert.match(createFolder, /d\.files&&typeof d\.files==="object"\?d\.files:\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}/);
+  assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
+});
+
 test("IDE workspace and framework list failures are visible and retryable", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const initStart = ide.indexOf('Promise.all([apiFetch("/ide/workspaces/")');
