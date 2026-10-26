@@ -404,4 +404,5 @@ test("Explorer move, duplicate, and rename preserve every dirty editor tab befor
     assert.match(body, /const saved=await save\(true\);if\(!saved\)/, `${name} must stop if saving pending edits fails`);
     assert.ok(body.indexOf("await save(true)") < body.indexOf("await applyExplorerState") || !body.includes("await applyExplorerState"), `${name} must save before replacing workspace state`);
   }
+  assert.ok(duplicate.indexOf("await save(true)") < duplicate.indexOf("const content=refs.files.current[path]"), "duplicate must read the latest source contents after saving dirty edits");
 });
