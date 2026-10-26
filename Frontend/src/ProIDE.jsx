@@ -228,9 +228,9 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    }catch(e){setStatus(e.message||"Move failed")}
  }
  async function duplicatePath(path){
-   const w=refs.ws.current;if(!w||!path)return;const content=refs.files.current[path];if(typeof content!=="string")return;
+   const w=refs.ws.current;if(!w||!path||typeof refs.files.current[path]!=="string")return;
    const target=prompt("Duplicate as",path.replace(/([^/]+)$/,"$1.copy"))?.trim();if(!target)return;
-   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before duplicating a file.");}const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d);setSelected(new Set([target]));setStatus("Duplicated")}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before duplicating a file.");}const content=refs.files.current[path];if(typeof content!=="string")throw Error("Source file is no longer available.");const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d);setSelected(new Set([target]));setStatus("Duplicated")}
    catch(e){setStatus(e.message||"Duplicate failed")}
  }
  async function renamePath(path){
