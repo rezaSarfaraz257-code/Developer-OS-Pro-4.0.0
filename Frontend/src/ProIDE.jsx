@@ -223,19 +223,19 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const destination=Object.prototype.hasOwnProperty.call(refs.files.current,toFolder)?(toFolder.includes("/")?toFolder.slice(0,toFolder.lastIndexOf("/")):"."):toFolder;
    const base=destination.replace(/\\\\+$/,"");const name=from.split("/").pop();const target=(base==="."?"":base+"/")+name;
    if(target===from||target.startsWith(from+"/"))return setStatus("Invalid move destination");
-   try{if(refs.dirty.current&&refs.active.current===from){const saved=await save(true);if(!saved)throw Error("Save current file first.");}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before moving a file.");}
      const d=await explorerMutation({action:"rename",path:from,to:target});await applyExplorerState(d,{renamedFrom:from,renamedTo:target});setStatus("Moved");
    }catch(e){setStatus(e.message||"Move failed")}
  }
  async function duplicatePath(path){
    const w=refs.ws.current;if(!w||!path)return;const content=refs.files.current[path];if(typeof content!=="string")return;
    const target=prompt("Duplicate as",path.replace(/([^/]+)$/,"$1.copy"))?.trim();if(!target)return;
-   try{const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d);setSelected(new Set([target]));setStatus("Duplicated")}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before duplicating a file.");}const d=await explorerMutation({action:"create",path:target,content});await applyExplorerState(d);setSelected(new Set([target]));setStatus("Duplicated")}
    catch(e){setStatus(e.message||"Duplicate failed")}
  }
  async function renamePath(path){
    const currentWs=refs.ws.current;if(!currentWs||!path)return;const target=prompt("Rename to",path)?.trim();if(!target||target===path)return;
-   try{if(refs.dirty.current&&refs.active.current===path){const saved=await save(true);if(!saved)throw Error("Save current file before renaming.");}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before renaming a file.");}
      const d=await explorerMutation({action:"rename",path,to:target});await applyExplorerState(d,{renamedFrom:path,renamedTo:target});setStatus("Renamed");
    }catch(e){setStatus(e.message||"Rename failed")}
  }
