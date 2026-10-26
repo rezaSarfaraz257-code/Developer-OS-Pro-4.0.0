@@ -542,6 +542,17 @@ test("creating a folder preserves the existing Explorer tree when mutation respo
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
+test("IDE command submission without a workspace reports that the command was not sent", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function run(");
+  const end = ide.indexOf("const onSaveKey", start);
+  const run = ide.slice(start, end > start ? end : start + 5000);
+  assert.match(run, /if\(!ws\)\{const message="No workspace selected\./);
+  assert.match(run, /setStatus\("Command not sent · no workspace"\)/);
+  assert.match(run, /\[RUNNER\] \$\{message\}/);
+  assert.doesNotMatch(run, /if\(!ws\|\|!c\)return/);
+});
+
 test("IDE focus mode expands the editor grid and hides side panels without unmounting editor state", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const css = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
