@@ -149,6 +149,19 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_not_called()
 
 
+    @patch("api.views._runner_request", return_value=(None, None))
+    def test_debugger_rejects_malformed_runner_response(self, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "status"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_response")
+        runner_request.assert_called_once()
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
