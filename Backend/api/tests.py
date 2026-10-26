@@ -1207,6 +1207,43 @@ class StripeWebhookFailClosedTests(APITestCase):
 
 
 class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
+    def test_job_lease_refresh_extends_only_the_current_owners_running_job(self):
+        from .management.commands.worker import refresh_job_lease
+
+        old_lease = timezone.now() - timedelta(minutes=2)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=old_lease,
+            locked_by="worker-current",
+        )
+
+        self.assertTrue(refresh_job_lease(job.pk, "worker-current"))
+        job.refresh_from_db()
+        self.assertGreater(job.locked_at, old_lease)
+
+        refreshed_lease = job.locked_at
+        self.assertFalse(refresh_job_lease(job.pk, "worker-other"))
+        job.refresh_from_db()
+        self.assertEqual(job.locked_by, "worker-current")
+        self.assertEqual(job.locked_at, refreshed_lease)
+
+    def test_job_lease_refresh_does_not_revive_completed_jobs(self):
+        from .management.commands.worker import refresh_job_lease
+
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="succeeded",
+            locked_at=None,
+            locked_by="",
+        )
+        self.assertFalse(refresh_job_lease(job.pk, "worker-current"))
+        job.refresh_from_db()
+        self.assertEqual(job.status, "succeeded")
+        self.assertIsNone(job.locked_at)
+
     def test_stale_running_job_is_requeued_with_backoff_and_lease_cleared(self):
         from .management.commands.worker import recover_stale_jobs
 
