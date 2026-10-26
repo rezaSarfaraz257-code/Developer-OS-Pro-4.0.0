@@ -220,13 +220,13 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
  }
  async function applyExplorerState(d, {removed="",renamedFrom="",renamedTo=""}={}) {
    let response=d;
-   let next=response?.files&&typeof response.files==="object"?response.files:null;
+   let next=response?.files&&typeof response.files==="object"&&!Array.isArray(response.files)?response.files:null;
    if(!next){
      const current=refs.ws.current;
      if(!current)throw Error("Workspace is no longer available.");
      const refresh=await apiFetch(`/ide/workspaces/${current.id}/files/`);
      const latest=await refresh.json().catch(()=>({}));
-     if(!refresh.ok||!latest.files||typeof latest.files!=="object")throw Error(latest.error||latest.detail||`Workspace refresh failed after file operation (HTTP ${refresh.status})`);
+     if(!refresh.ok||!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error(latest.error||latest.detail||`Workspace refresh failed after file operation (HTTP ${refresh.status})`);
      response={...response,...latest};
      next=latest.files;
    }
