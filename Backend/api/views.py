@@ -4258,14 +4258,47 @@ def ide_preview_start_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ide_preview_proxy_api(request, pk, preview_path=""):
-    ws=_workspace_for_user(pk,request.user)
-    headers={"Authorization":f"Bearer {RUNNER_TOKEN}"}
+    ws = _workspace_for_user(pk, request.user)
+    headers = {"Authorization": f"Bearer {RUNNER_TOKEN}"}
+    response = None
+    max_bytes = 10_000_000
     try:
-        response=requests.get(f"{RUNNER_URL}/preview/{ws.id}/{preview_path.lstrip('/')}",headers=headers,timeout=15)
+        # Preview applications are user-controlled. Never follow upstream
+        # redirects, which could otherwise turn this authenticated proxy into
+        # an SSRF path, and cap response bytes before buffering them in Django.
+        response = requests.get(
+            f"{RUNNER_URL}/preview/{ws.id}/{preview_path.lstrip('/')}",
+            headers=headers,
+            timeout=15,
+            stream=True,
+            allow_redirects=False,
+        )
+        declared = response.headers.get("Content-Length")
+        if declared:
+            try:
+                if int(declared) > max_bytes:
+                    return Response({"error": "Preview response exceeds the 10 MB limit."}, status=413)
+            except ValueError:
+                pass
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                return Response({"error": "Preview response exceeds the 10 MB limit."}, status=413)
+            chunks.append(chunk)
+        content_type = response.headers.get("Content-Type", "text/plain")
+        result = HttpResponse(b"".join(chunks), status=response.status_code, content_type=content_type)
+        result["X-Content-Type-Options"] = "nosniff"
+        result["Cache-Control"] = "no-store"
+        return result
     except requests.RequestException as exc:
-        return Response({"error":f"Preview unavailable: {exc.__class__.__name__}"},status=502)
-    content_type=response.headers.get("Content-Type","text/plain")
-    return HttpResponse(response.content,status=response.status_code,content_type=content_type)
+        return Response({"error": f"Preview unavailable: {exc.__class__.__name__}"}, status=502)
+    finally:
+        if response is not None:
+            response.close()
 
 # =========================================================
 # PUBLIC COMMUNITY FEED
