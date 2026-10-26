@@ -436,3 +436,15 @@ test("active profile route exposes retryable accessible load errors instead of a
   assert.match(profile, /role="status" aria-live="polite"/);
   assert.doesNotMatch(profile, /setSaveError\("Could not load your profile/);
 });
+
+test("app bootstrap preserves authentication on transient profile failures and offers retry", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const bootstrap = app.slice(app.indexOf("export default function App() {"));
+
+  assert.match(bootstrap, /const \[bootError,setBootError\]=useState\(""/);
+  assert.match(bootstrap, /\.catch\(error=>\{if\(active\)setBootError/);
+  assert.doesNotMatch(bootstrap, /\.catch\(\(\)=>setAuthenticated\(false\)\)/);
+  assert.match(bootstrap, /Retry connection/);
+  assert.match(bootstrap, /role="alert" aria-live="assertive"/);
+  assert.match(bootstrap, /return\(\)=>\{active=false;\}/);
+});
