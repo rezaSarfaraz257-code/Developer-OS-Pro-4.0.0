@@ -116,6 +116,45 @@ class IDEPreviewPortContractTests(APITestCase):
         )
         self.assertEqual(runner_request.call_count, 1)
 
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_preview_proxy_does_not_follow_redirects_and_sets_safe_headers(self, get):
+        upstream = Mock()
+        upstream.status_code = 302
+        upstream.headers = {"Content-Type": "text/html", "Content-Length": "0"}
+        upstream.iter_content.return_value = []
+        upstream.close = Mock()
+        get.return_value = upstream
+
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/preview/redirect"
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(get.call_args.kwargs["allow_redirects"], False)
+        self.assertTrue(get.call_args.kwargs["stream"])
+        upstream.close.assert_called_once()
+
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_preview_proxy_rejects_declared_oversized_body(self, get):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {"Content-Type": "text/html", "Content-Length": "10000001"}
+        upstream.close = Mock()
+        get.return_value = upstream
+
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/preview/large"
+        )
+
+        self.assertEqual(response.status_code, 413)
+        upstream.close.assert_called_once()
+
 
 class ProductionReadinessTests(APITestCase):
     def test_console_email_backend_never_passes_production_readiness(self):
