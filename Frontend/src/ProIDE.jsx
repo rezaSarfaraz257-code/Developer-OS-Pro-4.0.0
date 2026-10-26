@@ -98,7 +98,7 @@ export default function ProIDE({projectId,message,go}){
    return true;
  },[saveFile]);
  useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")]).then(async([a,b])=>{const[w,f]=await Promise.all([a.json(),b.json()]);if(off)return;setWorkspaces(Array.isArray(w)?w:Array.isArray(w?.results)?w.results:[]);setFrameworks(Array.isArray(f)?f:Array.isArray(f?.results)?f.results:[])}).catch(e=>!off&&(typeof message==="function" ? message(e.message) : setStatus(e.message)));return()=>{off=true;clearTimeout(refs.timer.current);for(const timer of editTimersRef.current.values())clearTimeout(timer);editTimersRef.current.clear();clearTimeout(refs.diag.current)}},[message]);
- const load=useCallback(async(item)=>{if(!item)return;const requestId=++workspaceLoadRef.current;if(refs.dirty.current){const saved=await save(true);if(!saved||requestId!==workspaceLoadRef.current)return;}setStatus("Loading workspace…");try{const r=await apiFetch(`/ide/workspaces/${item.id}/files/`);const d=await r.json();if(requestId!==workspaceLoadRef.current)return;if(!r.ok)throw Error(d.error||d.detail||`Explorer load failed (HTTP ${r.status})`);const f=d.files&&typeof d.files==="object"?d.files:{};const p=d.active_file||Object.keys(f)[0]||"";diagnosticsRequestRef.current+=1;setDiagnostics([]);const next={...item,files:f,active_file:p,revision:d.revision??item.revision};refs.ws.current=next;refs.files.current=f;refs.active.current=p;refs.dirty.current=false;refs.dirtyBaseRevision.current=null;dirtyPathsRef.current.clear();setWs(next);setFiles(f);setActive(p);setTabs(p?[p]:[]);setSelected(new Set(p?[p]:[]));setDirty(false);setStatus("Explorer synced")}catch(e){if(requestId===workspaceLoadRef.current)setStatus(e.message||"Explorer load failed")}},[save]);
+ const load=useCallback(async(item)=>{if(!item)return;const requestId=++workspaceLoadRef.current;if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved||requestId!==workspaceLoadRef.current)return;}setStatus("Loading workspace…");try{const r=await apiFetch(`/ide/workspaces/${item.id}/files/`);const d=await r.json();if(requestId!==workspaceLoadRef.current)return;if(!r.ok)throw Error(d.error||d.detail||`Explorer load failed (HTTP ${r.status})`);const f=d.files&&typeof d.files==="object"?d.files:{};const p=d.active_file||Object.keys(f)[0]||"";diagnosticsRequestRef.current+=1;setDiagnostics([]);const next={...item,files:f,active_file:p,revision:d.revision??item.revision};refs.ws.current=next;refs.files.current=f;refs.active.current=p;refs.dirty.current=false;refs.dirtyBaseRevision.current=null;dirtyPathsRef.current.clear();setWs(next);setFiles(f);setActive(p);setTabs(p?[p]:[]);setSelected(new Set(p?[p]:[]));setDirty(false);setStatus("Explorer synced")}catch(e){if(requestId===workspaceLoadRef.current)setStatus(e.message||"Explorer load failed")}},[save]);
  useEffect(()=>{if(!ws&&workspaces[0])load(workspaces[0])},[workspaces,ws,load]);useEffect(()=>{if(!ws)return;const token=getAccessToken();if(!token)return;const apiOrigin=/^https?:\/\//i.test(API_URL)?new URL(API_URL).origin:window.location.origin;const socketUrl=apiOrigin.replace(/^http:/i,"ws:").replace(/^https:/i,"wss:")+`/ws/ide/workspaces/${ws.id}/terminal/?token=${encodeURIComponent(token)}`;let socket,intentionalClose=false;try{socket=new WebSocket(socketUrl);terminalSocket.current=socket;socket.onopen=()=>{if(terminalSocket.current===socket)setStatus("Terminal connected")};socket.onmessage=e=>{if(terminalSocket.current!==socket)return;try{const d=JSON.parse(e.data);if(d.type==="process"){terminalProcess.current=d.data?.id||null;return}if(d.type==="stdout"||d.type==="stderr"){setTerminal(t=>appendBoundedText(t,d.data||""));return}if(d.type==="exit"){terminalProcess.current=null;setStatus(`Process exited · ${d.data?.exit_code??"?"}`);setTerminal(t=>appendBoundedText(t,`\n[exit ${d.data?.exit_code??"?"}]\n`));return}if(d.type==="error"){setStatus(d.message||"Terminal error");setTerminal(t=>appendBoundedText(t,`\n${d.message||"Terminal error"}\n`))}}catch{}};socket.onerror=()=>{if(terminalSocket.current===socket)setStatus("Terminal connection error")};socket.onclose=()=>{
   if(terminalSocket.current!==socket)return;
   terminalSocket.current=null;
@@ -182,7 +182,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const folder=prompt("New folder path","src/components")?.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");
    if(!folder)return;
    try{
-     if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a folder.")}
+     if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a folder.")}
      const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"});
      const next=d.files||{};const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
      refs.files.current=next;refs.ws.current=nextWs;setFiles(next);setWs(nextWs);
@@ -199,7 +199,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const raw=prompt("New file path",defaultPath);if(raw===null)return;
    const p=raw.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");if(!p)return;
    try{
-     if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file before creating a new file.")}
+     if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a new file.")}
      const d=await explorerMutation({path:p,content:"",action:"create"});
      const nextFiles=d.files||{...refs.files.current,[p]:""};
      const nextWs={...refs.ws.current,files:nextFiles,revision:d.revision??refs.ws.current.revision,active_file:d.active_file||p};
@@ -241,7 +241,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
  }
  async function removeFile(){
    const currentWs=refs.ws.current,p=refs.active.current;if(!currentWs||!p||!confirm(`Delete ${p}?`))return;
-   try{if(refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save current file first.");}
+   try{if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before deleting a file.");}
      const d=await explorerDelete(p);
      await applyExplorerState(d,{removed:p});setStatus("Deleted");
    }catch(e){setStatus(e.message||"Delete failed")}
@@ -252,7 +252,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
   if(!c&&active)c=commandForFile(active,refs.files.current);
   if(!ws||!c)return;
   if(ideCaps?.status!=="ready"||ideCaps?.runner?.operations?.execute!==true){const reason=ideCaps?.runner?.sandbox?.unavailable_reason||ideCaps?.error?.error||ideCaps?.error?.detail||"Secure execution is unavailable or runner capabilities have not loaded. Your code was not sent. Configure a supported per-execution sandbox; shared-container compatibility is intentionally disabled.";setStatus("Runner unavailable · secure sandbox required");if(lastRunnerBlockRef.current!==reason){lastRunnerBlockRef.current=reason;setTerminal(t=>appendBoundedText(t,`${t.endsWith("\n")?"":"\n"}[RUNNER] ${reason}\n`))}return;}lastRunnerBlockRef.current="";
-  if(refs.dirty.current){const saved=await save(true);if(!saved)return;}
+  if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)return;}
   executionRunRef.current+=1;const runId=executionRunRef.current;
   if(executionTimerRef.current){clearTimeout(executionTimerRef.current);executionTimerRef.current=null;}
   setStatus("Running in sandbox…");
@@ -312,7 +312,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
   }catch(err){if(runId!==executionRunRef.current)return;setStatus(err.message||"Terminal execution failed");setTerminal(t=>appendBoundedText(t,`${err.message||"Terminal execution failed"}\n`));}
  }
  async function syncRepository(direction="push"){if(!ws)return;try{const r=await apiFetch("/repositories/");const repos=await r.json();const repo=repos?.[0];if(!r.ok||!repo)throw Error("Create an independent repository first.");const x=await apiFetch(`/repositories/${repo.id}/sync-workspace/`,{method:"POST",body:JSON.stringify({workspace_id:ws.id,direction})});const d=await x.json();if(!x.ok)throw Error(d.error||"Repository sync failed");setStatus(direction==="push"?"Saved to Developer OS Repository":"Loaded from Developer OS Repository")}catch(e){setStatus(e.message)}}
- async function install(){if(!ws)return;if(!packages.trim())return setStatus("Enter packages first");if(refs.dirty.current){const saved=await save(true);if(!saved)return;}try{const r=await apiFetch(`/ide/workspaces/${ws.id}/install/`,{method:"POST",body:JSON.stringify({packages:packages.trim(),framework})}),d=await r.json();if(!r.ok)throw Error(d.error||"Install failed");if(d.files){const serverFiles={...d.files};for(const dirtyPath of dirtyPathsRef.current){if(typeof refs.files.current[dirtyPath]==="string")serverFiles[dirtyPath]=refs.files.current[dirtyPath];}refs.files.current=serverFiles;setFiles(serverFiles);setWs(w=>w?({...w,files:serverFiles}):w);}setTerminal(appendBoundedText("",d.output||"Install completed\n"));setStatus("Packages installed")}catch(e){setStatus(e.message)}}
+ async function install(){if(!ws)return;if(!packages.trim())return setStatus("Enter packages first");if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)return;}try{const r=await apiFetch(`/ide/workspaces/${ws.id}/install/`,{method:"POST",body:JSON.stringify({packages:packages.trim(),framework})}),d=await r.json();if(!r.ok)throw Error(d.error||"Install failed");if(d.files){const serverFiles={...d.files};for(const dirtyPath of dirtyPathsRef.current){if(typeof refs.files.current[dirtyPath]==="string")serverFiles[dirtyPath]=refs.files.current[dirtyPath];}refs.files.current=serverFiles;setFiles(serverFiles);setWs(w=>w?({...w,files:serverFiles}):w);}setTerminal(appendBoundedText("",d.output||"Install completed\n"));setStatus("Packages installed")}catch(e){setStatus(e.message)}}
  const filtered=useMemo(()=>Object.keys(files).filter(p=>p.toLowerCase().includes(quick.toLowerCase())).slice(0,40),[files,quick]);
  const [paletteQuery,setPaletteQuery]=useState("");
  const openDock=useCallback((tab="terminal")=>{setDockTab(tab);setDockOpen(true);if(tab==="terminal"){setPanel(null);setShowTerminal(true)}else{setShowTerminal(false);setPanel(tab)}},[]);
