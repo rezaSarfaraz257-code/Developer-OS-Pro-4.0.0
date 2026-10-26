@@ -362,6 +362,37 @@ def test_job_workspace_scope_hides_unknown_and_foreign_jobs():
             raise AssertionError("Foreign workspace must not access job")
 
 
+def test_job_endpoints_reject_foreign_workspace_for_status_output_stream_and_cancel():
+    job_id = main._new_job("workspace-owner")
+    main._set_job(job_id, status="running", started_at=time.time())
+    with patch.object(main, "TOKEN", "runner-test-token"):
+        for endpoint in (
+            lambda: main.job_status(job_id, "workspace-other", "Bearer runner-test-token"),
+            lambda: main.job_output(job_id, "workspace-other", 0, "Bearer runner-test-token"),
+            lambda: main.job_output_stream(job_id, "workspace-other", 0, "Bearer runner-test-token"),
+            lambda: main.cancel_job(job_id, "workspace-other", "Bearer runner-test-token"),
+        ):
+            try:
+                endpoint()
+            except HTTPException as exc:
+                assert exc.status_code == 404
+            else:
+                raise AssertionError("Foreign workspace endpoint access must return 404")
+    assert main._job_snapshot(job_id)["status"] == "running"
+
+
+def test_timeout_is_terminal_for_job_output_stream():
+    job_id = main._new_job("timeout-stream-workspace")
+    main._set_job(job_id, status="running", started_at=time.time())
+    main._append_job_output(job_id, "partial output")
+    main._set_job(job_id, status="timeout", finished_at=time.time())
+    with patch.object(main, "TOKEN", "runner-test-token"):
+        result = main.job_output_stream(job_id, "timeout-stream-workspace", 0, "Bearer runner-test-token")
+    assert result["done"] is True
+    assert result["status"] == "timeout"
+    assert result["output"] == "partial output"
+
+
 def test_cleanup_releases_output_for_expired_jobs():
     job_id = main._new_job("expired-output-workspace")
     main._append_job_output(job_id, "private output")
