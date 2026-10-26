@@ -192,7 +192,7 @@ class RunnerSecurityTests(unittest.TestCase):
             session.start()
 
     def test_workspace_path_is_rejected_before_filesystem_access(self):
-        for path in ("../x", "/tmp/x", "C:/x", ".git/config"):
+        for path in ("../x", "/tmp/x", "C:/x", ".git/config", "nested/.git/config", "nested/.git"):
             with self.assertRaises(ValueError):
                 safe_rel(path)
 
