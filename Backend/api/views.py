@@ -2439,7 +2439,7 @@ def _safe_ide_path(value):
     path = str(value or "").replace("\\", "/").strip()
     if not path or len(path) > 500 or any(part in {"", ".", ".."} for part in path.split("/")):
         return None
-    if path.startswith(".git/") or "/.git/" in path or path == ".git":
+    if ".git" in path.split("/"):
         return None
     return path
 
