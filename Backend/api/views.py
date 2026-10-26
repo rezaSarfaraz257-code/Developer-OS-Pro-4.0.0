@@ -4016,11 +4016,17 @@ def ide_processes_api(request, pk):
 @permission_classes([IsAuthenticated])
 def ide_job_stream_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
-    cursor = request.query_params.get("cursor", "0")
+    raw_cursor = request.query_params.get("cursor", "0")
+    try:
+        cursor = int(raw_cursor)
+    except (TypeError, ValueError):
+        return Response({"error": "Cursor must be a non-negative integer.", "code": "invalid_job_cursor"}, status=400)
+    if cursor < 0 or cursor > 2**63 - 1:
+        return Response({"error": "Cursor must be a non-negative integer.", "code": "invalid_job_cursor"}, status=400)
     data, error = _runner_request(
         "GET",
-        f"/jobs/{job_id}/stream?cursor={cursor}",
-        {"workspace_id": str(ws.id)},
+        f"/jobs/{job_id}/stream",
+        {"workspace_id": str(ws.id), "cursor": cursor},
         timeout=10,
     )
     if error:
@@ -4042,7 +4048,7 @@ def ide_job_cancel_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel", {"workspace_id": str(ws.id)}, timeout=15)
+    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel?workspace_id={ws.id}", {"workspace_id": str(ws.id)}, timeout=15)
     if error:
         return Response(error, status=503)
     return Response(data)
