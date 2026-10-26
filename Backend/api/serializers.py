@@ -331,9 +331,20 @@ class CodeWorkspaceSerializer(serializers.ModelSerializer):
         for filename, content in value.items():
             if not isinstance(filename, str) or len(filename) > 500:
                 raise serializers.ValidationError("Invalid file path.")
-            # Prevent path traversal before anything reaches the runner.
-            normalized = filename.replace("\\", "/").lstrip("/")
-            if ".." in normalized.split("/") or normalized in {"", "."}:
+            # Match the runner's path contract at the API boundary. Do not
+            # silently normalize absolute paths or permit dot-segments: doing
+            # so can make persisted workspace state differ from runner state.
+            normalized = filename.replace("\\", "/")
+            parts = normalized.split("/")
+            if (
+                not normalized
+                or normalized.startswith("/")
+                or re.match(r"^[A-Za-z]:", normalized)
+                or any(part in {"", ".", ".."} for part in parts)
+                or normalized == ".git"
+                or normalized.startswith(".git/")
+                or "/.git/" in normalized
+            ):
                 raise serializers.ValidationError("Invalid workspace path.")
             if not isinstance(content, str) or len(content) > 1_000_000:
                 raise serializers.ValidationError("Each text file must be 1 MB or smaller.")
