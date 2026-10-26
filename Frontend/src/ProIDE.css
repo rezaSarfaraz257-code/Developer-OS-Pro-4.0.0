@@ -4105,3 +4105,8 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 /* Global Search selected-result focus: keep keyboard and pointer selection visible. */
 .dos-ide-pro .dos-search-results button.selected{background:#103149;box-shadow:inset 2px 0 #55dcff}
 .dos-ide-pro .dos-search-results button:focus-visible{outline:2px solid #55dcff;outline-offset:-2px;background:#10263a}
+/* Workspace recovery stays visible in the IDE status row without covering editor controls. */
+.dos-status-retry{flex:0 0 auto;border:1px solid rgba(255,122,144,.45);border-radius:5px;background:rgba(255,122,144,.08);color:inherit;padding:3px 8px;font:inherit;font-size:11px;cursor:pointer;}
+.dos-status-retry:hover:not(:disabled){background:rgba(255,122,144,.16);}
+.dos-status-retry:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
+.dos-status-retry:disabled{opacity:.5;cursor:not-allowed;}
