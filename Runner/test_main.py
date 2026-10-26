@@ -4,6 +4,7 @@ import time
 import subprocess
 import tempfile
 import os
+import sys
 from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
@@ -741,4 +742,29 @@ def test_terminate_process_group_signals_descendants_after_leader_exits():
     calls = killpg.call_args_list
     assert calls[0].args == (12345, main.signal.SIGTERM)
     assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
+
+def test_execution_timeout_kills_descendant_processes():
+    with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:
+        root = Path(tmp)
+        marker = root / "descendant-survived"
+        child_code = "import time; time.sleep(0.6); open('descendant-survived', 'w').write('alive')"
+        parent_code = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            "time.sleep(10)"
+        )
+        timed_out = False
+        try:
+            main._run_process_with_timeout(
+                [sys.executable, "-c", parent_code],
+                cwd=root,
+                env={"PATH": os.environ.get("PATH", "")},
+                timeout=0.1,
+                preexec_fn=lambda: None,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        time.sleep(0.75)
+        assert timed_out
+        assert not marker.exists(), "A child process survived the execution timeout"
 
