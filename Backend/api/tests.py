@@ -78,6 +78,36 @@ class ProductionReadinessTests(APITestCase):
         self.assertTrue(response.data["checks"]["email"])
 
 
+class IDEExecutionQuotaFailClosedTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-quota-fail-closed",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Quota fail-closed regression",
+            files={"main.py": "print('must not run')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated quota database outage"))
+    def test_execution_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {"command": "python main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
