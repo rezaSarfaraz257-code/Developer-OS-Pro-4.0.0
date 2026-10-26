@@ -481,3 +481,14 @@ test("Explore workflow cards describe selection rather than claiming execution",
   assert.match(workflowCard, /no workflow has been executed/);
   assert.doesNotMatch(workflowCard, />START PLAYBOOK</);
 });
+
+test("notification read action reports API failures instead of clearing unread state", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  assert.match(app, /const markNotificationsRead = async \(\) =>/);
+  assert.match(app, /if \(!response\.ok\) throw new Error\("Notifications could not be marked as read/);
+  assert.match(app, /catch \(error\) \{\s*setNotificationActionError/);
+  assert.match(app, /setNotifications\(previous => \(\{ \.\.\.previous, unread: 0 \}\)\)/);
+  assert.match(app, /notificationActionBusy \|\| !notifications\.unread/);
+  assert.match(app, /notificationActionError && <p role="alert">/);
+  assert.match(app, /onClick=\{markNotificationsRead\}/);
+});
