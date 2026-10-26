@@ -269,7 +269,8 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
   e?.preventDefault();
   let c=(typeof commandOverride==="string"?commandOverride:command).trim();
   if(!c&&active)c=commandForFile(active,refs.files.current);
-  if(!ws||!c)return;
+  if(!c)return;
+  if(!ws){const message="No workspace selected. Choose or retry a workspace before running commands.";setStatus("Command not sent · no workspace");setTerminal(t=>appendBoundedText(t,`${t.endsWith("\n")?"":"\n"}[RUNNER] ${message}\n`));return;}
   if(ideCaps?.status!=="ready"||ideCaps?.runner?.operations?.execute!==true){const reason=ideCaps?.runner?.sandbox?.unavailable_reason||ideCaps?.error?.error||ideCaps?.error?.detail||"Secure execution is unavailable or runner capabilities have not loaded. Your code was not sent. Configure a supported per-execution sandbox; shared-container compatibility is intentionally disabled.";setStatus("Runner unavailable · secure sandbox required");if(lastRunnerBlockRef.current!==reason){lastRunnerBlockRef.current=reason;setTerminal(t=>appendBoundedText(t,`${t.endsWith("\n")?"":"\n"}[RUNNER] ${reason}\n`))}return;}lastRunnerBlockRef.current="";
   if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)return;}
   executionRunRef.current+=1;const runId=executionRunRef.current;
