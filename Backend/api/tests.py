@@ -2,6 +2,7 @@ from io import BytesIO
 import hashlib
 import hmac
 import json
+import requests
 import tempfile
 from datetime import timedelta
 from unittest.mock import patch
@@ -597,6 +598,47 @@ class PlatformUpgradeTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views.time.sleep")
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("ambiguous transport failure"))
+    @patch("api.views.RUNNER_TOKEN", "test-token")
+    @patch("api.views.RUNNER_URL", "http://runner.test")
+    def test_runner_does_not_retry_mutating_post_requests(self, request_mock, sleep_mock):
+        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+            "POST", "/exec", {}, timeout=1
+        )
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request_mock.call_count, 1)
+        sleep_mock.assert_not_called()
+
+    @patch("api.views.time.sleep")
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("temporary transport failure"))
+    @patch("api.views.RUNNER_TOKEN", "test-token")
+    @patch("api.views.RUNNER_URL", "http://runner.test")
+    def test_runner_retries_safe_get_requests_with_bounded_attempts(self, request_mock, sleep_mock):
+        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+            "GET", "/capabilities", {}, timeout=1
+        )
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request_mock.call_count, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+
+    @patch("api.views._runner_request")
+    def test_invalid_job_stream_cursor_is_rejected_before_runner_request(self, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Cursor validation", "files": {}, "active_file": ""},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+        response = self.client.get(
+            f"/api/ide/workspaces/{workspace.data['id']}/jobs/job-test/stream/?cursor=not-a-number"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_job_cursor")
         runner_request.assert_not_called()
 
     def test_ide_runner_terminal_states_are_complete(self):
