@@ -4261,14 +4261,19 @@ def _safe_preview_proxy_path(path):
     """Reject traversal and encode route data so it cannot alter the upstream URL."""
     from urllib.parse import quote, unquote
     raw = unquote(str(path or ""))
-    if len(raw) > 2048 or "\\\\" in raw or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+    if len(raw) > 2048 or "\\" in raw or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
         return None
     if any(part in {".", ".."} for part in raw.split("/")):
         return None
-    return quote(raw.lstrip("/"), safe="/-._~!def ide_preview_proxy_api(request, pk, preview_path=""):'()*+,;=:@")
+    return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
+
+def ide_preview_proxy_api(request, pk, preview_path=""):'()*+,;=:@")
 
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws = _workspace_for_user(pk, request.user)
+    safe_preview_path = _safe_preview_proxy_path(preview_path)
+    if safe_preview_path is None:
+        return Response({"error": "Invalid preview path."}, status=400)
     headers = {"Authorization": f"Bearer {RUNNER_TOKEN}"}
     response = None
     max_bytes = 10_000_000
