@@ -1759,11 +1759,13 @@ def _safe_preview_path(path):
     """Validate and encode a user-controlled preview route before proxying."""
     from urllib.parse import quote, unquote
     raw = unquote(str(path or ""))
-    if len(raw) > 2048 or "\\\\" in raw or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+    if len(raw) > 2048 or "\\" in raw or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
         raise HTTPException(status_code=400, detail="Invalid preview path.")
     if any(part in {".", ".."} for part in raw.split("/")):
         raise HTTPException(status_code=400, detail="Invalid preview path.")
-    return quote(raw.lstrip("/"), safe="/-._~!def _bounded_preview_fetch(url, timeout=10):'()*+,;=:@")
+    return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
+
+def _bounded_preview_fetch(url, timeout=10):'()*+,;=:@")
 
 def _bounded_preview_fetch(url, timeout=10):
     """Fetch preview bytes without following redirects or allowing unbounded bodies."""
