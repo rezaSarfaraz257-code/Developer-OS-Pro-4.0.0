@@ -585,7 +585,7 @@ class PlatformUpgradeTests(APITestCase):
     def test_invalid_process_command_does_not_consume_quota(self, consume_usage, runner_request):
         workspace = self.client.post(
             "/api/ide/workspaces/",
-            {"name": "Invalid process command", "files": {}, "active_file": ""},
+            {"name": "Invalid process command", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
             format="json",
         )
         self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
@@ -630,7 +630,7 @@ class PlatformUpgradeTests(APITestCase):
     def test_invalid_job_stream_cursor_is_rejected_before_runner_request(self, runner_request):
         workspace = self.client.post(
             "/api/ide/workspaces/",
-            {"name": "Cursor validation", "files": {}, "active_file": ""},
+            {"name": "Cursor validation", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
             format="json",
         )
         self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
