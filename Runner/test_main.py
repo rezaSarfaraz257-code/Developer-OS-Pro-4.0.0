@@ -4,7 +4,7 @@ import time
 import subprocess
 import tempfile
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
 
@@ -429,6 +429,42 @@ def test_job_endpoints_hide_foreign_workspace_jobs():
             else:
                 raise AssertionError("A foreign workspace must not access another workspace's job")
     assert main._job_snapshot(job_id)["status"] == "running"
+
+
+def test_process_stop_and_cancel_terminate_entire_process_group():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"test-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-process-group",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+
+        def terminate_group(proc, grace_seconds=None):
+            proc.poll.return_value = 0
+
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch(
+                "main._terminate_process_group", side_effect=terminate_group
+            ) as terminate:
+                result = getattr(main, endpoint_name)(
+                    process_id,
+                    "workspace-process-group",
+                    "Bearer runner-test-token",
+                )
+            terminate.assert_called_once_with(popen)
+            assert result["status"] == "success"
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
 
 
 def test_concurrent_workspace_limits():
