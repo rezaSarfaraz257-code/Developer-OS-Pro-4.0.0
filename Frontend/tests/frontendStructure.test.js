@@ -706,3 +706,24 @@ test("switching workspaces invalidates stale execution polling and pending UI ti
   assert.match(loader, /if\(executionTimerRef\.current\)\{clearTimeout\(executionTimerRef\.current\);executionTimerRef\.current=null;\}/);
   assert.ok(loader.indexOf("executionRunRef.current++") < loader.indexOf("setWs(next)"), "old run output must be invalidated before the new workspace becomes active");
 });
+
+
+test("IDE create-file and create-folder reject malformed Explorer file maps without corrupting local state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const fileStart = ide.indexOf("async function newFile()");
+  const fileEnd = ide.indexOf("async function newFolder()", fileStart);
+  const folderStart = fileEnd;
+  const folderEnd = ide.indexOf("async function renamePath(", folderStart);
+  const createFile = ide.slice(fileStart, fileEnd);
+  const createFolder = ide.slice(folderStart, folderEnd);
+
+  assert.ok(fileStart >= 0 && fileEnd > fileStart, "create-file handler should exist");
+  assert.ok(folderStart >= 0 && folderEnd > folderStart, "create-folder handler should exist");
+  for (const handler of [createFile, createFolder]) {
+    assert.match(handler, /d\.files==null\?/);
+    assert.match(handler, /typeof (?:nextFiles|next)!=="object"\|\|Array\.isArray\((?:nextFiles|next)\)/);
+    assert.match(handler, /Workspace response did not include a valid file map\./);
+  }
+  assert.match(createFile, /\{\.\.\.refs\.files\.current,\[p\]:""\}/);
+  assert.match(createFolder, /\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}/);
+});
