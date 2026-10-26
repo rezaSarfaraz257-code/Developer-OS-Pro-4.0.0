@@ -4074,7 +4074,7 @@ def ide_job_cancel_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel", {"workspace_id": str(ws.id)}, timeout=15)
+    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel?workspace_id={ws.id}", {"workspace_id": str(ws.id)}, timeout=15)
     if error:
         return Response(error, status=503)
     return Response(data)
