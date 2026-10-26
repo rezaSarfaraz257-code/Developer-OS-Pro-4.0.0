@@ -156,7 +156,10 @@ def health_api(request):
             "service": "developer-os-api",
             **release_identity(),
         }))
-    except Exception:
+    except Exception as exc:
+        # Keep diagnostics in server logs without exposing database details to
+        # unauthenticated health probes or leaking connection metadata.
+        logger.warning("Database health probe failed (%s).", type(exc).__name__)
         return _no_store_health_response(Response(
             {"status": "degraded", "database": "unavailable", **release_identity()},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -187,7 +190,10 @@ def readiness_api(request):
             if strict_runtime
             else True
         )
-    except Exception:
+    except Exception as exc:
+        # Health responses stay intentionally generic; operators can correlate
+        # failures using this sanitized server-side signal.
+        logger.warning("Database readiness probe failed (%s).", type(exc).__name__)
         checks["database"] = False
 
     checks["secret_key"] = bool(
