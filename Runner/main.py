@@ -654,12 +654,17 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         if "proc" in locals():
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
+        timeout_message = f"Execution timed out after {int(policy['timeout'])} seconds."
+        partial_stdout = (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else ""
+        if partial_stdout:
+            _append_job_output(job_id, partial_stdout)
+        _append_job_output(job_id, timeout_message + "\\n")
         _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
-                 error=f"Execution timed out after {int(policy['timeout'])} seconds.")
+                 error=timeout_message)
         return {
             "job_id": job_id, "status": "timeout", "exit_code": 124,
-            "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": f"Execution timed out after {int(policy['timeout'])} seconds.",
+            "stdout": partial_stdout,
+            "stderr": timeout_message,
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except Exception as exc:
