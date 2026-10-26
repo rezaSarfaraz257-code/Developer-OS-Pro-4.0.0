@@ -50,6 +50,30 @@ def recover_stale_jobs():
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
             ])
 
+def refresh_job_lease(job_id, worker):
+    """Extend a running job's lease only while this worker still owns it."""
+    return BackgroundJob.objects.filter(
+        pk=job_id,
+        status="running",
+        locked_by=worker,
+    ).update(locked_at=timezone.now()) == 1
+
+
+def _job_lease_loop(job_id, worker, stop_event, interval=30):
+    """Prevent legitimate long-running tasks from being mistaken for orphaned jobs."""
+    while not stop_event.wait(interval):
+        try:
+            close_old_connections()
+            if not refresh_job_lease(job_id, worker):
+                return
+        except Exception:
+            # A temporary database outage is observable; stale recovery remains
+            # the fallback if the lease cannot be extended before its deadline.
+            logger.exception("Background job lease refresh failed job_id=%s worker_id=%s", job_id, worker)
+        finally:
+            close_old_connections()
+
+
 def _heartbeat_loop(worker, stop_event):
     """Keep a durable liveness lease fresh and recover from transient DB errors."""
     while not stop_event.is_set():
@@ -165,6 +189,14 @@ class Command(BaseCommand):
                 time.sleep(max(0.1, options["sleep"]))
                 continue
 
+            lease_stop = threading.Event()
+            lease_thread = threading.Thread(
+                target=_job_lease_loop,
+                args=(job.pk, worker, lease_stop),
+                name=f"developer-os-job-lease-{job.pk}",
+                daemon=True,
+            )
+            lease_thread.start()
             try:
                 result = execute(job)
                 job.status = "succeeded"
@@ -182,6 +214,9 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
+            finally:
+                lease_stop.set()
+                lease_thread.join(timeout=2)
 
             # Release the durable lease for every persisted terminal/retry outcome.
             # Otherwise completed/requeued rows retain a stale owner marker that
