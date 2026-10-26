@@ -477,6 +477,22 @@ def test_process_stop_route_is_registered_once():
     assert stop_routes == ["/process/{process_id}/stop"]
 
 
+def test_write_snapshot_rejects_symlink_before_creating_external_directories():
+    with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+        root = Path(root_tmp)
+        outside_target = Path(outside_tmp) / "should-not-be-created"
+        (root / "escape").symlink_to(outside_target, target_is_directory=True)
+
+        try:
+            main.write_snapshot(root, {"escape/file.txt": "must not escape"})
+        except ValueError as exc:
+            assert "unsafe path" in str(exc)
+        else:
+            raise AssertionError("A symlinked workspace parent must be rejected")
+
+        assert not outside_target.exists()
+
+
 def test_concurrent_workspace_limits():
     assert main.MAX_CONCURRENT_EXECUTIONS >= 1
     assert main.MAX_CONCURRENT_PROCESSES >= 1
