@@ -269,6 +269,36 @@ class IDEJobStreamCursorValidationTests(APITestCase):
         runner_request.assert_not_called()
 
 
+class IDEProcessAuthorizationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-process-readonly-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Read-only process authorization",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    @patch("api.views._workspace_write_allowed", return_value=False)
+    def test_read_only_workspace_cannot_stop_process(self, write_allowed, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/process/process-123/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["error"], "You have read-only access to this workspace.")
+        write_allowed.assert_called_once()
+        runner_request.assert_not_called()
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
