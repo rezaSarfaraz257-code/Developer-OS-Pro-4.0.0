@@ -2863,15 +2863,17 @@ def ide_execute_api(request, pk):
             return Response({"error": "You have read-only access to this workspace."}, status=403)
 
         stage = "usage_limit"
-        usage_warning = None
         try:
             allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
         except (DatabaseError, IntegrityError):
-            # Usage telemetry must never make the actual sandbox unavailable.
-            # This also keeps IDE usable during a rolling schema migration.
-            logger.exception("IDE usage metering unavailable: user=%s", getattr(request.user, "pk", None))
-            allowed, used, limit, plan = True, None, None, "free"
-            usage_warning = "Usage metering temporarily unavailable; execution was allowed."
+            # Execution quotas are an authorization boundary, not optional telemetry.
+            # Fail closed when usage cannot be durably checked/consumed.
+            logger.exception("IDE usage enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+            return Response({
+                "error": "Execution quota could not be verified. Please retry shortly.",
+                "code": "usage_enforcement_unavailable",
+                "stage": "usage_limit",
+            }, status=503)
         if not allowed:
             return Response({
                 "error": "Monthly IDE execution limit reached.",
