@@ -2883,6 +2883,12 @@ def ide_debug_api(request, pk):
     data, error = _runner_request("POST", "/debug", payload, timeout=35)
     if error:
         return Response(error, status=503)
+    if not isinstance(data, dict):
+        logger.error("IDE debugger returned an invalid response payload: workspace=%s", ws.id)
+        return Response({
+            "error": "Debugger returned an invalid response. Please retry shortly.",
+            "code": "runner_invalid_response",
+        }, status=503)
     return Response({
         "session_id": data.get("session_id"),
         "state": data.get("state", "paused" if action in {"pause", "step_over", "step_into", "step_out"} else "ready"),
