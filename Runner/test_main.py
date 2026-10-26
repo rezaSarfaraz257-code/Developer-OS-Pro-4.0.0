@@ -732,7 +732,14 @@ def test_terminate_process_group_signals_descendants_after_leader_exits():
     process.pid = 12345
     process.poll.return_value = 0
     process.wait.return_value = 0
-    with patch("main.os.killpg") as killpg:
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            raise ProcessLookupError
+
+    with patch("main.os.killpg", side_effect=kill_group) as killpg:
         main._terminate_process_group(process, grace_seconds=0.1)
-    killpg.assert_called_once_with(12345, main.signal.SIGTERM)
+    calls = killpg.call_args_list
+    assert calls[0].args == (12345, main.signal.SIGTERM)
+    assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
 \n
