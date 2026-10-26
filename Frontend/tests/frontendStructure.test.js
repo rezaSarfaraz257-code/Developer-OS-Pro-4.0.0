@@ -542,6 +542,16 @@ test("creating a folder preserves the existing Explorer tree when mutation respo
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
+test("IDE focus mode expands the editor grid and hides side panels without unmounting editor state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const css = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
+  assert.match(ide, /focusMode\?\"dos-focus-mode\":\"\"/);
+  assert.match(ide, /aria-label=\{focusMode\?\"Exit Focus Mode\":\"Focus code editor\"\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body\s*\{\s*grid-template-columns:\s*48px minmax\(0,1fr\);\s*\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-explorer,\s*\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-inspector\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-activity/);
+});
+
 test("IDE workspace and framework list failures are visible and retryable", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const initStart = ide.indexOf('Promise.all([apiFetch("/ide/workspaces/")');
