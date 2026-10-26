@@ -556,8 +556,8 @@ test("IDE command submission without a workspace reports that the command was no
 test("IDE focus mode expands the editor grid and hides side panels without unmounting editor state", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const css = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
-  assert.match(ide, /focusMode\?\"dos-focus-mode\":\"\"/);
-  assert.match(ide, /aria-label=\{focusMode\?\"Exit Focus Mode\":\"Focus code editor\"\}/);
+  assert.match(ide, /focusMode\?"dos-focus-mode":""/);
+  assert.match(ide, /aria-label=\{focusMode\?"Exit Focus Mode":"Focus code editor"\}/);
   assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body\s*\{\s*grid-template-columns:\s*48px minmax\(0,1fr\);\s*\}/);
   assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-explorer,\s*\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-inspector\s*\{\s*display:\s*none;\s*\}/);
   assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-activity/);
