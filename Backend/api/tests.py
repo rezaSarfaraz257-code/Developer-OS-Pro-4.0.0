@@ -245,6 +245,20 @@ class IDEJobStreamCursorValidationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         runner_request.assert_not_called()
 
+    @patch("api.views._runner_request", return_value=({"job_id": "job-1", "output": "", "cursor": 12, "done": False}, None))
+    def test_valid_cursor_and_workspace_scope_are_forwarded_as_query_params(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=12"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        runner_request.assert_called_once_with(
+            "GET",
+            "/jobs/job-1/stream",
+            {"workspace_id": str(self.workspace.pk), "cursor": 12},
+            timeout=10,
+        )
+
     @patch("api.views._runner_request")
     def test_negative_cursor_is_rejected(self, runner_request):
         response = self.client.get(
