@@ -229,15 +229,30 @@ def _job_for_workspace(job_id, workspace_id):
     return job
 
 def _terminate_process_group(proc, *, grace_seconds=None):
-    if proc is None or proc.poll() is not None:
+    if proc is None:
         return
     grace = CANCEL_GRACE_SECONDS if grace_seconds is None else max(0.1, float(grace_seconds))
+    # The leader may already have exited while a descendant still holds the
+    # output pipe open. Since all managed children start a new session, its PID
+    # is also the process-group ID; signal that group even if poll() is non-null.
+    group_id = proc.pid
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.terminate()
-        except (ProcessLookupError, OSError):
+        os.killpg(group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except (ProcessLookupError, OSError):
+                return
+        else:
+            return
+    except (PermissionError, OSError):
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except (ProcessLookupError, OSError):
+                return
+        else:
             return
     try:
         proc.wait(timeout=grace)
@@ -245,12 +260,13 @@ def _terminate_process_group(proc, *, grace_seconds=None):
     except subprocess.TimeoutExpired:
         pass
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        os.killpg(group_id, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.kill()
-        except (ProcessLookupError, OSError):
-            return
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
+                return
     try:
         proc.wait(timeout=1)
     except subprocess.TimeoutExpired:
