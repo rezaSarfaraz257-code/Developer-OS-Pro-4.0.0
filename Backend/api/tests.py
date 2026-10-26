@@ -30,8 +30,9 @@ class RunnerRequestRetrySafetyTests(APITestCase):
     @patch("api.views.time.sleep")
     @patch("api.views.RUNNER_URL", "https://runner.test")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
-    def test_mutating_runner_request_is_not_replayed(self, runner_token, runner_url, sleep, request):
-        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+    def test_mutating_runner_request_is_not_replayed(self, sleep, request):
+        from . import views
+        data, error = views._runner_request(
             "POST", "/exec", {"command": "python main.py"}, timeout=1
         )
 
@@ -44,7 +45,7 @@ class RunnerRequestRetrySafetyTests(APITestCase):
     @patch("api.views.time.sleep")
     @patch("api.views.RUNNER_URL", "https://runner.test")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
-    def test_get_runner_request_uses_bounded_retries(self, runner_token, runner_url, sleep, request):
+    def test_get_runner_request_uses_bounded_retries(self, sleep, request):
         from . import views
         data, error = views._runner_request("GET", "/capabilities", {}, timeout=1)
 
