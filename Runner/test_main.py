@@ -390,7 +390,7 @@ def test_timeout_job_stream_reports_done():
 def test_timeout_execution_persists_partial_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -402,7 +402,7 @@ def test_timeout_execution_persists_partial_output_for_streaming_clients():
 def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -703,3 +703,26 @@ class ProcessEnvironmentBoundsTests(unittest.TestCase):
         total = sum(len(key.encode("utf-8")) + len(value.encode("utf-8")) for key, value in result.items())
         self.assertLessEqual(total, main.MAX_PROCESS_ENV_BYTES)
         self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
+
+def test_timeout_runner_terminates_process_group_and_preserves_output():
+    process = Mock()
+    process.communicate.side_effect = [
+        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
+        ("partial", "warning"),
+    ]
+    with patch("main.subprocess.Popen", return_value=process), patch(
+        "main._terminate_process_group"
+    ) as terminate:
+        with __import__("contextlib").nullcontext():
+            result_error = None
+            try:
+                main._run_process_with_timeout(
+                    ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
+                )
+            except subprocess.TimeoutExpired as exc:
+                result_error = exc
+    terminate.assert_called_once_with(process, grace_seconds=0.1)
+    assert result_error is not None
+    assert result_error.output == "partial"
+    assert result_error.stderr == "warning"
+\n
