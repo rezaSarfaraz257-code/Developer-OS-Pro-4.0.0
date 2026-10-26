@@ -346,8 +346,18 @@ def test_retry_delay_is_bounded():
     assert main._retry_delay(100) <= 10
 
 
-def test_stream_terminal_status_is_supported():
-    assert {"completed", "failed", "cancelled"}.issuperset({"completed", "failed", "cancelled"})
+def test_stream_terminal_status_includes_timeout():
+    assert main.TERMINAL_JOB_STATES == {"completed", "failed", "timeout", "cancelled"}
+
+
+def test_timeout_job_stream_reports_done():
+    job_id = main._new_job("stream-timeout")
+    assert main._set_job(job_id, status="running") is True
+    assert main._set_job(job_id, status="timeout", finished_at=time.time(), exit_code=124) is True
+    with patch("main.TOKEN", "test-token"):
+        result = main.job_output_stream(job_id, cursor=0, authorization="Bearer test-token")
+    assert result["done"] is True
+    assert result["status"] == "timeout"
 
 
 def test_concurrent_workspace_limits():
