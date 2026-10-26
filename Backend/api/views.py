@@ -2836,16 +2836,16 @@ def ide_debug_api(request, pk):
         field = str(exc) or "line/column"
         return Response({"error": f"Invalid debugger {field}; value is outside the accepted range."}, status=400)
 
-    path = request.data.get("path") or ""
-    condition = request.data.get("condition") or ""
-    expression = request.data.get("expression") or ""
-    session_id = request.data.get("session_id") or ""
+    path = request.data.get("path", "")
+    condition = request.data.get("condition", "")
+    expression = request.data.get("expression", "")
+    session_id = request.data.get("session_id", "")
     if not all(isinstance(value, str) for value in (path, condition, expression, session_id)):
         return Response({"error": "Debugger path, condition, expression, and session_id must be strings."}, status=400)
     if len(path) > 1000 or len(condition) > 1000 or len(expression) > 4000 or len(session_id) > 200:
         return Response({"error": "Debugger input exceeds the allowed length."}, status=400)
 
-    breakpoints = request.data.get("breakpoints") or []
+    breakpoints = request.data.get("breakpoints", [])
     if not isinstance(breakpoints, list) or len(breakpoints) > 200:
         return Response({"error": "Breakpoints must be a list containing at most 200 items."}, status=400)
     if any(not isinstance(item, dict) for item in breakpoints):
