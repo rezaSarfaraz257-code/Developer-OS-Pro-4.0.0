@@ -747,7 +747,7 @@ def test_execution_timeout_kills_descendant_processes():
     with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:
         root = Path(tmp)
         marker = root / "descendant-survived"
-        child_code = "import time; time.sleep(0.6); open('descendant-survived', 'w').write('alive')"
+        child_code = "import time; time.sleep(0.4); open('descendant-survived', 'w').write('alive')"
         parent_code = (
             "import subprocess,sys,time; "
             f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
@@ -764,7 +764,7 @@ def test_execution_timeout_kills_descendant_processes():
             )
         except subprocess.TimeoutExpired:
             timed_out = True
-        time.sleep(0.75)
+        time.sleep(1.0)
         assert timed_out
         assert not marker.exists(), "A child process survived the execution timeout"
 
