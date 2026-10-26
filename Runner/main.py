@@ -220,6 +220,14 @@ def _job_snapshot(job_id):
         job = JOBS.get(job_id)
         return dict(job) if job else None
 
+def _job_for_workspace(job_id, workspace_id):
+    """Return a job only to callers scoped to the workspace that created it."""
+    job = _job_snapshot(job_id)
+    if not job or str(job.get("workspace_id")) != str(workspace_id):
+        # Deliberately use the same response for unknown and foreign jobs.
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
 def _terminate_process_group(proc, *, grace_seconds=None):
     if proc is None or proc.poll() is not None:
         return
@@ -827,21 +835,18 @@ def ready(authorization: str = Header(default="")):
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
 
 @app.post("/jobs/{job_id}/cancel")
-def cancel_job(job_id: str, authorization: str = Header(default="")):
+def cancel_job(job_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
-    job = _job_snapshot(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     result = _cancel_job(job_id)
     if not result:
         raise HTTPException(status_code=404, detail="Job not found.")
     return result
 
 @app.get("/jobs/{job_id}/stream")
-def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
+def job_output_stream(job_id: str, workspace_id: str, cursor: int = 0, authorization: str = Header(default="")):
     auth(authorization)
-    if not _job_snapshot(job_id):
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     start = time.monotonic()
     current = max(0, int(cursor or 0))
     while time.monotonic() - start < STREAM_WAIT_SECONDS:
@@ -856,20 +861,16 @@ def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(
     return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in TERMINAL_JOB_STATES), "status": job["status"] if job else "unknown"}
 
 @app.get("/jobs/{job_id}/output")
-def job_output(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
+def job_output(job_id: str, workspace_id: str, cursor: int = 0, authorization: str = Header(default="")):
     auth(authorization)
-    if not _job_snapshot(job_id):
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     chunk, next_cursor = _job_output_slice(job_id, cursor)
     return {"job_id": job_id, "output": chunk, "cursor": next_cursor}
 
 @app.get("/jobs/{job_id}")
-def job_status(job_id: str, authorization: str = Header(default="")):
+def job_status(job_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
-    job = _job_snapshot(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    return job
+    return _job_for_workspace(job_id, workspace_id)
 
 @app.get("/queue")
 def queue_status(authorization: str = Header(default="")):
