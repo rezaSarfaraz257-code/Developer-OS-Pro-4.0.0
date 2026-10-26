@@ -4148,8 +4148,8 @@ def ide_job_stream_api(request, pk, job_id):
         return Response({"error": "Cursor must be a non-negative integer in the supported range."}, status=400)
     data, error = _runner_request(
         "GET",
-        f"/jobs/{job_id}/stream?cursor={cursor}",
-        {"workspace_id": str(ws.id)},
+        f"/jobs/{job_id}/stream",
+        {"workspace_id": str(ws.id), "cursor": cursor},
         timeout=10,
     )
     if error:
