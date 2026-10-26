@@ -638,3 +638,18 @@ test("IDE context-menu Close Tab saves pending edits and keeps the tab open when
   assert.match(close, /setPinned\(items=>items\.filter\(item=>item!==path\)\)/);
   assert.match(ide, /<button onClick=\{\(\)=>closeTab\(contextMenu\.path\)\}>Close Tab<\/button>/);
 });
+
+
+test("IDE context-menu Delete saves pending edits before destructive Explorer mutations", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf('<button onClick={async()=>{const p=contextMenu.path;setContextMenu(null);try{if(dirtyPathsRef.current.size');
+  const end = ide.indexOf(">Delete</button>", start);
+  const handler = ide.slice(start, end > start ? end : start + 900);
+
+  assert.ok(start >= 0, "context-menu delete handler should exist");
+  assert.match(handler, /const saved=await save\(true\)/);
+  assert.match(handler, /if\(!saved\)throw Error\("Save all pending edits before deleting a file\."\)/);
+  assert.ok(handler.indexOf("if(!saved)") < handler.indexOf("const d=await explorerDelete(p)"), "delete must not start before edits save");
+  assert.match(handler, /await applyExplorerState\(d,\{removed:p\}\)/);
+  assert.match(handler, /catch\(e\)\{setStatus\(e\.message\|\|"Delete failed"\)\}/);
+});
