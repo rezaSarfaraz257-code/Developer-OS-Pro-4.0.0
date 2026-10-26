@@ -193,7 +193,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    try{
      if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a folder.")}
      const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"});
-     const next=d.files||{};const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
+     const next=d.files&&typeof d.files==="object"?d.files:{...refs.files.current,[folder+"/.gitkeep"]:""};const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
      refs.files.current=next;refs.ws.current=nextWs;setFiles(next);setWs(nextWs);
      setExpanded(x=>{const n=new Set(x);const parts=folder.split("/");for(let i=1;i<=parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
      setSelected(new Set([folder]));setStatus("Folder created");
