@@ -1,4 +1,5 @@
 import os
+import requests
 from contextlib import contextmanager
 from io import BytesIO
 import hashlib
@@ -22,6 +23,35 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+
+
+class RunnerRequestRetrySafetyTests(APITestCase):
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated lost response"))
+    @patch("api.views.time.sleep")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_mutating_runner_request_is_not_replayed(self, runner_token, runner_url, sleep, request):
+        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+            "POST", "/exec", {"command": "python main.py"}, timeout=1
+        )
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        request.assert_called_once()
+        sleep.assert_not_called()
+
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated unavailable runner"))
+    @patch("api.views.time.sleep")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_get_runner_request_uses_bounded_retries(self, runner_token, runner_url, sleep, request):
+        from . import views
+        data, error = views._runner_request("GET", "/capabilities", {}, timeout=1)
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
 
 
 class ProductionReadinessTests(APITestCase):
