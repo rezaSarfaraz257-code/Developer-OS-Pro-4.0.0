@@ -1210,19 +1210,10 @@ def _stop_process(pid):
         if not item:
             raise HTTPException(status_code=404, detail="Process not found.")
         proc = item["popen"]
-        if proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError, OSError):
-                    pass
-        return _process_state(pid)
+    # Terminate the process group, not just the shell parent. This also reaps
+    # descendants started by build tools, dev servers, and package scripts.
+    _terminate_process_group(proc)
+    return _process_state(pid)
 
 def _workspace_preview_port(workspace_id):
     return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
@@ -1519,14 +1510,6 @@ def process_get(pid: str, workspace_id: str, authorization: str = Header(default
     if state["workspace_id"] != str(workspace_id):
         raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
     return state
-
-@app.post("/process/{pid}/stop")
-def process_stop(pid: str, workspace_id: str, authorization: str = Header(default="")):
-    auth(authorization)
-    state = _process_state(pid)
-    if state["workspace_id"] != str(workspace_id):
-        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
-    return _stop_process(pid)
 
 @app.get("/processes")
 def process_list(workspace_id: str, authorization: str = Header(default="")):
