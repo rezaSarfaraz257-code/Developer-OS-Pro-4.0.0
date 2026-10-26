@@ -1291,6 +1291,29 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertIsNotNone(job.finished_at)
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    def test_stale_export_dead_letter_marks_request_failed(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        user = User.objects.create_user(username="stale-export-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=20),
+            locked_by="dead-worker:export",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(export.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+
     @patch("api.management.commands.worker.execute", return_value={"ok": True})
     def test_successful_job_persistence_releases_worker_lease(self, execute):
         from .management.commands.worker import Command
