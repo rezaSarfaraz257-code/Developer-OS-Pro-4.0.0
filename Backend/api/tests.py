@@ -162,6 +162,40 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_called_once()
 
 
+class IDEJobStreamCursorValidationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-job-cursor-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Job cursor validation",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    def test_malformed_cursor_is_rejected_before_runner_request(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=0%26workspace_id%3D999"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_negative_cursor_is_rejected(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=-1"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        runner_request.assert_not_called()
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
