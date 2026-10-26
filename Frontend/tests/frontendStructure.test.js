@@ -663,3 +663,12 @@ test("IDE context-menu Delete saves pending edits before destructive Explorer mu
   assert.match(handler, /await applyExplorerState\(d,\{removed:p\}\)/);
   assert.match(handler, /catch\(e\)\{setStatus\(e\.message\|\|"Delete failed"\)\}/);
 });
+
+
+test("IDE command palette exposes an accessible modal and named controls", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /className="dos-palette" role="dialog" aria-modal="true" aria-labelledby="dos-command-palette-title"/);
+  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);
+  assert.match(ide, /aria-label="Close command palette"/);
+  assert.match(ide, /input aria-label="Filter commands" autoFocus/);
+});
