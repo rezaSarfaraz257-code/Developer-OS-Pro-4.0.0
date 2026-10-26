@@ -42,7 +42,7 @@ RUN npm install -g npm@12.2.0 pyright@1.1.404 typescript@5.9.3 typescript-langua
 # copies with patched releases; this keeps the npm major/runtime contract intact.
 RUN mkdir -p /tmp/runtime-fixes \
     && cd /tmp/runtime-fixes \
-    && npm install --no-save --no-package-lock --ignore-scripts brace-expansion@5.0.12 undici@6.28.1 \
+    && npm install --no-save --no-package-lock --ignore-scripts brace-expansion@5.0.12 undici@6.29.1 \
     && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
     && cp -a node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/ \
     && rm -rf /usr/local/lib/node_modules/npm/node_modules/undici \
