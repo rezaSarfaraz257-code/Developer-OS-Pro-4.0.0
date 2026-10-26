@@ -671,7 +671,13 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         timeout_message = f"Execution timed out after {int(policy['timeout'])} seconds."
-        partial_stdout = (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else ""
+        partial_stdout = exc.stdout or ""
+        if isinstance(partial_stdout, bytes):
+            partial_stdout = partial_stdout.decode("utf-8", errors="replace")
+        elif not isinstance(partial_stdout, str):
+            partial_stdout = str(partial_stdout) if partial_stdout else ""
+        partial_stdout = partial_stdout[-MAX_OUTPUT:]
+        # Keep pre-timeout output available to synchronous and streaming clients.
         if partial_stdout:
             _append_job_output(job_id, partial_stdout)
         _append_job_output(job_id, timeout_message + "\n")
