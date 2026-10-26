@@ -539,6 +539,26 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("revision", response.data)
 
     @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_execute_command_does_not_consume_quota(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Invalid execute command", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/execute/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     @patch("api.views._consume_usage", side_effect=DatabaseError("simulated quota database outage"))
     def test_ide_execute_fails_closed_when_quota_cannot_be_verified(self, consume_usage, runner_request):
         workspace = self.client.post(
