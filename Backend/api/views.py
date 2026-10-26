@@ -4179,12 +4179,15 @@ def ide_job_cancel_api(request, pk, job_id):
 @api_view(["GET","POST"])
 @permission_classes([IsAuthenticated])
 def ide_process_detail_api(request, pk, process_id):
-    ws=_workspace_for_user(pk,request.user)
-    payload={"workspace_id":str(ws.id)}
-    method="GET" if request.method=="GET" else "POST"
-    path=f"/process/{process_id}" + ("/stop" if method=="POST" else "")
-    data,error=_runner_request(method,path,payload,timeout=15)
-    if error:return Response(error,status=503)
+    ws = _workspace_for_user(pk, request.user)
+    if request.method == "POST" and not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    payload = {"workspace_id": str(ws.id)}
+    method = "GET" if request.method == "GET" else "POST"
+    path = f"/process/{process_id}" + ("/stop" if method == "POST" else "")
+    data, error = _runner_request(method, path, payload, timeout=15)
+    if error:
+        return Response(error, status=503)
     return Response(data)
 
 @api_view(["POST"])
