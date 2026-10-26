@@ -232,9 +232,8 @@ def _terminate_process_group(proc, *, grace_seconds=None):
     if proc is None:
         return
     grace = CANCEL_GRACE_SECONDS if grace_seconds is None else max(0.1, float(grace_seconds))
-    # The leader may already have exited while a descendant still holds the
-    # output pipe open. Since all managed children start a new session, its PID
-    # is also the process-group ID; signal that group even if poll() is non-null.
+    # Managed children start a new session, so the leader PID is the process
+    # group ID. Do not rely on poll(): the leader may exit before its children.
     group_id = proc.pid
     try:
         os.killpg(group_id, signal.SIGTERM)
@@ -254,11 +253,23 @@ def _terminate_process_group(proc, *, grace_seconds=None):
                 return
         else:
             return
-    try:
-        proc.wait(timeout=grace)
-        return
-    except subprocess.TimeoutExpired:
-        pass
+
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(group_id, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            # The group exists but cannot be probed; attempt the hard stop below.
+            break
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=min(0.05, max(0.001, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+        time.sleep(min(0.025, max(0.0, deadline - time.monotonic())))
+
     try:
         os.killpg(group_id, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
