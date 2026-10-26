@@ -518,3 +518,15 @@ test("IDE workspace retry is pending-aware and clears loading only for the curre
   assert.match(ide, /disabled=\{workspaceLoading\|\|\(!ws&&!workspaces\.length\)\}/);
   assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
 });
+
+test("IDE workspace and framework list failures are visible and retryable", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const init = ide.slice(ide.indexOf('useEffect(()=>{let off=false;Promise.all([apiFetch("/ide/workspaces/")'), ide.indexOf('const load=useCallback'));
+  assert.match(init, /if\(!a\.ok\)throw Error\(w\.error\|\|w\.detail\|\|`Workspace list failed \(HTTP \$\{a\.status\}\)`\)/);
+  assert.match(init, /if\(!b\.ok\)throw Error\(f\.error\|\|f\.detail\|\|`Framework list failed \(HTTP \$\{b\.status\}\)`\)/);
+  assert.match(init, /setWorkspaceListError\(error\);setStatus\(error\)/);
+  assert.match(init, /\[message,workspaceListRetry\]\);
+  assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
+  assert.match(ide, /Retry workspaces/);
+  assert.match(ide, /setWorkspaceListRetry\(value=>value\+1\)/);
+});
