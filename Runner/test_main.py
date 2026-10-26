@@ -399,6 +399,18 @@ def test_timeout_execution_persists_partial_output_for_streaming_clients():
     assert "Execution timed out after" in streamed
 
 
+def test_timeout_execution_decodes_byte_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
+
+
 def test_concurrent_workspace_limits():
     assert main.MAX_CONCURRENT_EXECUTIONS >= 1
     assert main.MAX_CONCURRENT_PROCESSES >= 1
