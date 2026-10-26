@@ -671,3 +671,35 @@ def test_scheduler_queue_position_disappears_after_release():
     with main.SCHEDULER_LOCK:
         main.SCHEDULER_WAITING.pop("busy", None)
     assert main._scheduler_queue_position("busy") == 0
+
+
+class ProcessEnvironmentBoundsTests(unittest.TestCase):
+    def test_process_environment_rejects_runtime_hijacking_and_bounds_entries(self):
+        base = {"PATH": "/usr/bin"}
+        supplied = {
+            "SAFE_VALUE": "allowed",
+            "LD_PRELOAD": "/tmp/evil.so",
+            "PYTHONPATH": "/tmp/evil",
+            **{f"EXTRA_{index}": "x" for index in range(main.MAX_PROCESS_ENV_VARS + 10)},
+        }
+
+        result = main._safe_process_env(base, supplied)
+
+        self.assertEqual(result["SAFE_VALUE"], "allowed")
+        self.assertNotIn("LD_PRELOAD", result)
+        self.assertNotIn("PYTHONPATH", result)
+        self.assertLessEqual(
+            sum(1 for key in result if key not in {"PATH"}),
+            main.MAX_PROCESS_ENV_VARS,
+        )
+
+    def test_process_environment_enforces_total_byte_budget(self):
+        base = {}
+        supplied = {"FIRST": "a" * 4000, "SECOND": "b" * 4000, "THIRD": "c" * 4000,
+                    "FOURTH": "d" * 4000, "FIFTH": "e" * 4000}
+
+        result = main._safe_process_env(base, supplied)
+
+        total = sum(len(key.encode("utf-8")) + len(value.encode("utf-8")) for key, value in result.items())
+        self.assertLessEqual(total, main.MAX_PROCESS_ENV_BYTES)
+        self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
