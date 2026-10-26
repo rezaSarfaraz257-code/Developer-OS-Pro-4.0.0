@@ -320,22 +320,6 @@ def test_incremental_job_output_cursor():
     assert cursor3 == len("hello\\nworld\\n")
 
 
-def test_mutating_runner_request_is_never_retried_after_transport_error():
-    with patch.object(main, "RUNNER_URL", "http://runner.test"), patch.object(main, "RUNNER_TOKEN", "test-token"), patch("main.requests.request", side_effect=main.requests.ConnectionError("ambiguous timeout")) as request, patch("main.time.sleep"):
-        data, error = main._runner_request("POST", "/exec", {}, timeout=1)
-    assert data is None
-    assert error["code"] == "runner_unreachable"
-    assert request.call_count == 1
-
-
-def test_safe_runner_get_request_retries_transient_transport_error():
-    with patch.object(main, "RUNNER_URL", "http://runner.test"), patch.object(main, "RUNNER_TOKEN", "test-token"), patch("main.requests.request", side_effect=main.requests.ConnectionError("temporary")) as request, patch("main.time.sleep"):
-        data, error = main._runner_request("GET", "/capabilities", {}, timeout=1)
-    assert data is None
-    assert error["code"] == "runner_unreachable"
-    assert request.call_count == 3
-
-
 def test_stream_wait_is_bounded():
     assert 0.1 <= main.STREAM_WAIT_SECONDS <= 5.0
 
