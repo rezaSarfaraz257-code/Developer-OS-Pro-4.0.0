@@ -467,6 +467,16 @@ def test_process_stop_and_cancel_terminate_entire_process_group():
                 main.PROCESSES.pop(process_id, None)
 
 
+def test_process_stop_route_is_registered_once():
+    stop_routes = [
+        route.path
+        for route in main.app.routes
+        if "POST" in getattr(route, "methods", set())
+        and route.path in {"/process/{process_id}/stop", "/process/{pid}/stop"}
+    ]
+    assert stop_routes == ["/process/{process_id}/stop"]
+
+
 def test_concurrent_workspace_limits():
     assert main.MAX_CONCURRENT_EXECUTIONS >= 1
     assert main.MAX_CONCURRENT_PROCESSES >= 1
