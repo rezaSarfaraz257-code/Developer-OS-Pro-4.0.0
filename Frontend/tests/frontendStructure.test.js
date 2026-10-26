@@ -528,6 +528,16 @@ test("IDE workspace load failures expose an accessible retry action", () => {
 });
 
 
+test("IDE workspace loads reject malformed file maps instead of showing a false empty workspace", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
+
+  assert.match(load, /if\(!d\.files\|\|typeof d\.files!=="object"\|\|Array\.isArray\(d\.files\)\)throw Error\("Workspace response did not include a valid file map\."\)/);
+  assert.match(load, /const f=d\.files;/);
+  assert.match(load, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
+  assert.doesNotMatch(load, /const f=d\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
+});
+
 test("IDE workspace retry is pending-aware and clears loading only for the current request", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
