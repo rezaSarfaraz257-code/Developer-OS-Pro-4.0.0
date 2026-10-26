@@ -321,6 +321,19 @@ test("offline sync checkpoints successful files and rebases only the same worksp
     { path: "legacy.txt", content: "recover me" },
   ]);
   assert.deepEqual(rebaseWorkspacePatches(queue, "7", Number.NaN), queue);
+  for (const invalidRevision of [null, undefined, "", " ", true, -1, 1.5, "invalid"]) {
+    assert.deepEqual(
+      rebaseWorkspacePatches(queue, "7", invalidRevision),
+      queue,
+      `invalid revision must not rewrite queued base revisions: ${String(invalidRevision)}`,
+    );
+  }
+  assert.deepEqual(rebaseWorkspacePatches(queue, "7", "6"), [
+    { ...queue[0], base_revision: 6 },
+    { ...queue[1], base_revision: 6 },
+    queue[2],
+    queue[3],
+  ]);
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /refs\.dirtyBaseRevision\.current=anyDirty\?revision:null/);
 });
