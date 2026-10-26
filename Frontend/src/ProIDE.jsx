@@ -219,9 +219,19 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    }catch(e){setStatus(e.message||"Create failed")}
  }
  async function applyExplorerState(d, {removed="",renamedFrom="",renamedTo=""}={}) {
-   const next=d?.files&&typeof d.files==="object"?d.files:{};
-   const nextActive=d?.active_file||refs.active.current||Object.keys(next)[0]||"";
-   const nextWs={...refs.ws.current,files:next,revision:d?.revision??refs.ws.current?.revision,active_file:nextActive};
+   let response=d;
+   let next=response?.files&&typeof response.files==="object"?response.files:null;
+   if(!next){
+     const current=refs.ws.current;
+     if(!current)throw Error("Workspace is no longer available.");
+     const refresh=await apiFetch(`/ide/workspaces/${current.id}/files/`);
+     const latest=await refresh.json().catch(()=>({}));
+     if(!refresh.ok||!latest.files||typeof latest.files!=="object")throw Error(latest.error||latest.detail||`Workspace refresh failed after file operation (HTTP ${refresh.status})`);
+     response={...response,...latest};
+     next=latest.files;
+   }
+   const nextActive=response?.active_file||refs.active.current||Object.keys(next)[0]||"";
+   const nextWs={...refs.ws.current,files:next,revision:response?.revision??refs.ws.current?.revision,active_file:nextActive};
    refs.files.current=next;refs.ws.current=nextWs;refs.active.current=nextActive;refs.dirty.current=false;dirtyPathsRef.current.clear();
    setFiles(next);setWs(nextWs);setActive(nextActive);setDirty(false);
    if(removed)setTabs(t=>t.filter(x=>x!==removed));
