@@ -901,18 +901,7 @@ def process_stop(process_id: str, workspace_id: str, authorization: str = Header
     if not item or str(item["workspace_id"]) != str(workspace_id):
         raise HTTPException(status_code=404, detail="Process not found.")
     proc = item["popen"]
-    if proc.poll() is None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-        try:
-            proc.wait(timeout=CANCEL_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
+    _terminate_process_group(proc)
     _metric("process_stopped")
     return _process_state(process_id)
 
@@ -923,14 +912,8 @@ def process_cancel(process_id: str, workspace_id: str, authorization: str = Head
         item=PROCESSES.get(str(process_id))
     if not item or str(item["workspace_id"]) != str(workspace_id):
         raise HTTPException(status_code=404, detail="Process not found.")
-    proc=item["popen"]
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=CANCEL_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=1)
+    proc = item["popen"]
+    _terminate_process_group(proc)
     _metric("process_stopped")
     return _process_state(process_id)
 
