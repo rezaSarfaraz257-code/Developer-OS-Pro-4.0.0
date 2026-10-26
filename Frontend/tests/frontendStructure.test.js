@@ -622,3 +622,19 @@ test("offline collaboration sync cannot update a newly selected workspace from a
   assert.ok(sync.includes("if(collab.current===socket)setOfflineQueue(rebased);if(collab.current!==socket)return"), "stale socket must not mutate current UI state after a successful write");
   assert.ok(sync.includes("const remaining=parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY));if(collab.current!==socket)return;setOfflineQueue(remaining)"), "stale socket must not apply the old workspace revision to the active workspace");
 });
+
+
+test("IDE context-menu Close Tab saves pending edits and keeps the tab open when saving fails", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function closeTab(path)");
+  const end = ide.indexOf("async function closeAll()", start);
+  const close = ide.slice(start, end > start ? end : start + 1800);
+
+  assert.ok(start >= 0, "guarded single-tab close handler should exist");
+  assert.match(close, /if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)/);
+  assert.match(close, /const saved=await save\(true\);/);
+  assert.match(close, /if\(!saved\)\{setStatus\("Tab kept open · save failed"\);return;\}/);
+  assert.ok(close.indexOf("if(!saved)") < close.indexOf("setTabs(remaining)"), "tab removal must happen only after a successful save");
+  assert.match(close, /setPinned\(items=>items\.filter\(item=>item!==path\)\)/);
+  assert.match(ide, /<button onClick=\{\(\)=>closeTab\(contextMenu\.path\)\}>Close Tab<\/button>/);
+});
