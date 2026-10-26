@@ -197,6 +197,7 @@ VALID_JOB_TRANSITIONS = {
     "running": {"running", "completed", "failed", "timeout", "cancelled"},
     "completed": {"completed"},
     "failed": {"failed"},
+    "timeout": {"timeout"},
     "cancelled": {"cancelled"},
 }
 
@@ -835,11 +836,11 @@ def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(
         if chunk:
             return {"job_id": job_id, "output": chunk, "cursor": next_cursor, "done": False}
         job = _job_snapshot(job_id)
-        if job and job["status"] in ("completed", "failed", "cancelled"):
+        if job and job["status"] in TERMINAL_JOB_STATES:
             return {"job_id": job_id, "output": "", "cursor": current, "done": True, "status": job["status"]}
         time.sleep(0.05)
     job = _job_snapshot(job_id)
-    return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in ("completed","failed","cancelled")), "status": job["status"] if job else "unknown"}
+    return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in TERMINAL_JOB_STATES), "status": job["status"] if job else "unknown"}
 
 @app.get("/jobs/{job_id}/output")
 def job_output(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
