@@ -1337,7 +1337,11 @@ export default function App() {
     let active=true;
     setBootError("");
     apiFetch("/profile/")
-      .then(response=>response.json())
+      .then(async response=>{
+        const profile=await response.json().catch(()=>({}));
+        if(!response.ok) throw new Error(formatApiError(profile,"Developer OS could not initialize your profile. Please retry."));
+        return profile;
+      })
       .then(profile=>{if(active){setUser(profile.user||profile);setBootError("");}})
       .catch(error=>{if(active)setBootError(error.message||"Developer OS could not initialize your profile. Please retry.");});
     return()=>{active=false;};
