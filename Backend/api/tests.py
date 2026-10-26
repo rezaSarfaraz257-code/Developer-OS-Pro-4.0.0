@@ -641,6 +641,18 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.data["code"], "invalid_job_cursor")
         runner_request.assert_not_called()
 
+    @patch("api.views._runner_request", return_value=({"sandbox": {"execution_available": False, "mode": "unavailable"}}, None))
+    def test_ide_capabilities_report_degraded_without_isolated_execution(self, runner_request):
+        response = self.client.get("/api/ide/capabilities/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "degraded")
+
+    @patch("api.views._runner_request", return_value=({"sandbox": {"execution_available": True, "mode": "bubblewrap"}}, None))
+    def test_ide_capabilities_report_ready_with_isolated_execution(self, runner_request):
+        response = self.client.get("/api/ide/capabilities/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ready")
+
     def test_ide_runner_terminal_states_are_complete(self):
         terminal_states = {"success", "completed", "failed", "timeout", "cancelled"}
         self.assertEqual(
