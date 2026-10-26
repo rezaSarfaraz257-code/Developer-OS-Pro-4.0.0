@@ -342,14 +342,18 @@ class CodeWorkspaceSerializer(serializers.ModelSerializer):
                 or normalized.startswith("/")
                 or re.match(r"^[A-Za-z]:", normalized)
                 or any(part in {"", ".", ".."} for part in parts)
-                or normalized == ".git"
-                or normalized.startswith(".git/")
-                or "/.git/" in normalized
+                or ".git" in parts
             ):
                 raise serializers.ValidationError("Invalid workspace path.")
-            if not isinstance(content, str) or len(content) > 1_000_000:
+            if not isinstance(content, str):
+                raise serializers.ValidationError("Each workspace file must contain text.")
+            try:
+                content_bytes = len(content.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise serializers.ValidationError("Workspace files must contain valid UTF-8 text.") from exc
+            if content_bytes > 1_000_000:
                 raise serializers.ValidationError("Each text file must be 1 MB or smaller.")
-            total += len(content.encode("utf-8"))
+            total += content_bytes
         if total > 50_000_000:
             raise serializers.ValidationError("Workspace source must be 50 MB or smaller.")
         return value
