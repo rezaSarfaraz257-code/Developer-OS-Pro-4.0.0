@@ -342,6 +342,16 @@ def test_output_buffer_cleanup_for_finished_job():
     assert len(main._job_output_snapshot(job_id)) <= main.JOB_OUTPUT_MAX_BYTES
 
 
+def test_expired_job_cleanup_also_releases_output_buffer():
+    job_id = main._new_job("expired-cleanup")
+    main._append_job_output(job_id, "stale output")
+    expired_at = time.time() - main.JOB_RETENTION_SECONDS - 1
+    assert main._set_job(job_id, status="completed", finished_at=expired_at) is True
+    main._cleanup_jobs()
+    assert main._job_snapshot(job_id) is None
+    assert main._job_output_snapshot(job_id) == ""
+
+
 def test_retry_delay_is_bounded():
     assert main._retry_delay(1) <= 10
     assert main._retry_delay(100) <= 10
