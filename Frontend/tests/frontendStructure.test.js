@@ -566,6 +566,7 @@ test("Explorer mutations cannot apply stale results after the selected workspace
   assert.match(duplicate, /expectedWorkspaceId:w\.id/);
   assert.match(rename, /expectedWorkspaceId:currentWs\.id/);
   assert.match(remove, /expectedWorkspaceId:currentWs\.id/);
+  assert.match(ide, /const p=contextMenu\.path,workspaceId=refs\.ws\.current\?\.id;[\s\S]*?expectedWorkspaceId:workspaceId/);
 });
 
 test("Explorer mutation refreshes authoritative files before replacing local state when response omits files", () => {
