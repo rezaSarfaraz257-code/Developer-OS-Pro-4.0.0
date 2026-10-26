@@ -420,3 +420,18 @@ test("IDE workspace-changing and execution actions account for inactive dirty ta
   assert.match(install, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
   assert.match(ide, /lastRunnerBlockRef\.current="";\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
 });
+
+test("profile transient load failures keep the session and expose retryable accessible errors", () => {
+  const profile = fs.readFileSync(path.resolve(srcDir, "Pages/Profile/Profile.jsx"), "utf8");
+
+  assert.match(profile, /const \[loadError, setLoadError\] = useState\("\ "\)/);
+  assert.match(profile, /setLoadError\(error\.message \|\| "Unable to load your profile/);
+  assert.match(profile, /setProfileLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(profile, /role="alert"/);
+  assert.match(profile, /let cancelled = false/);
+  assert.match(profile, /if \(cancelled\) return/);
+  assert.doesNotMatch(profile, /clearAuth\(\)/);
+  assert.doesNotMatch(profile, /setPage\("auth"\)/);
+  assert.match(profile, /setSaveError\(error\.message \|\| "Unable to save profile/);
+  assert.match(profile, /saveError && <p className="avatar-upload-error" role="alert">/);
+});
