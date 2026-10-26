@@ -68,7 +68,7 @@ export function removeWorkspacePatches(queue, workspaceId) {
 function parseWorkspaceRevision(value) {
   if (
     typeof value !== "number" &&
-    !(typeof value === "string" && /^\\d+$/.test(value.trim()))
+    !(typeof value === "string" && /^\d+$/.test(value.trim()))
   ) {
     return null;
   }
