@@ -731,7 +731,7 @@ class ProcessEnvironmentBoundsTests(unittest.TestCase):
         )
 
     def test_process_environment_skips_malformed_unicode_values(self):
-        result = main._safe_process_env({}, {"SAFE_VALUE": "ok", "BAD_VALUE": "bad\\ud800"})
+        result = main._safe_process_env({}, {"SAFE_VALUE": "ok", "BAD_VALUE": "bad" + chr(0xD800)})
         self.assertEqual(result["SAFE_VALUE"], "ok")
         self.assertNotIn("BAD_VALUE", result)
 
