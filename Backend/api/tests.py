@@ -22,7 +22,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BackgroundJob, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+from .models import APIKey, BackgroundJob, BillingEvent, DataExportRequest, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
 
 
 class RunnerRequestRetrySafetyTests(APITestCase):
@@ -1317,6 +1317,50 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertIsNone(job.locked_at)
         self.assertEqual(job.locked_by, "")
         self.assertIsNotNone(job.finished_at)
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("export failed"))
+    def test_permanently_failed_export_marks_request_failed_atomically(self, execute):
+        from .management.commands.worker import Command
+
+        user = User.objects.create_user(username="export-failure-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="queued",
+            max_attempts=1,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(export.status, "failed")
+        self.assertIsNotNone(job.finished_at)
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("temporary export failure"))
+    def test_retryable_export_failure_does_not_mark_request_failed(self, execute):
+        from .management.commands.worker import Command
+
+        user = User.objects.create_user(username="export-retry-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="queued",
+            max_attempts=3,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(export.status, "running")
+        self.assertIsNone(job.finished_at)
         execute.assert_called_once()
 
     def test_recent_running_job_is_not_recovered(self):
