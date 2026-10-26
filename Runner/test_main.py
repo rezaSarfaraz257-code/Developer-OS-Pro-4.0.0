@@ -794,3 +794,58 @@ def test_execution_timeout_kills_descendant_processes():
         assert timed_out
         assert not marker.exists(), "A child process survived the execution timeout"
 
+
+
+class PreviewProxySafetyTests(unittest.TestCase):
+    @patch("main.requests.get")
+    def test_preview_fetch_disables_redirects_and_bounds_response(self, get):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {"content-length": "11", "content-type": "text/html"}
+        upstream.iter_content.return_value = [b"preview-ok!"]
+        upstream.close = Mock()
+        get.return_value = upstream
+
+        content, status_code, content_type = main._bounded_preview_fetch(
+            "http://127.0.0.1:12345/", timeout=2
+        )
+
+        self.assertEqual(content, b"preview-ok!")
+        self.assertEqual(status_code, 200)
+        self.assertEqual(content_type, "text/html")
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertTrue(get.call_args.kwargs["stream"])
+        upstream.close.assert_called_once()
+
+    @patch("main.requests.get")
+    def test_preview_fetch_rejects_declared_oversized_response(self, get):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {
+            "content-length": str(main.MAX_PREVIEW_RESPONSE_BYTES + 1),
+            "content-type": "application/octet-stream",
+        }
+        upstream.close = Mock()
+        get.return_value = upstream
+
+        with self.assertRaises(HTTPException) as ctx:
+            main._bounded_preview_fetch("http://127.0.0.1:12345/large")
+        self.assertEqual(ctx.exception.status_code, 413)
+        upstream.iter_content.assert_not_called()
+        upstream.close.assert_called_once()
+
+    @patch("main.requests.get")
+    def test_preview_fetch_rejects_chunked_oversized_response(self, get):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {"content-type": "application/octet-stream"}
+        upstream.iter_content.return_value = [
+            b"x" * (main.MAX_PREVIEW_RESPONSE_BYTES + 1)
+        ]
+        upstream.close = Mock()
+        get.return_value = upstream
+
+        with self.assertRaises(HTTPException) as ctx:
+            main._bounded_preview_fetch("http://127.0.0.1:12345/chunked")
+        self.assertEqual(ctx.exception.status_code, 413)
+        upstream.close.assert_called_once()
