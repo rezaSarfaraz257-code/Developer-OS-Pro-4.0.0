@@ -672,3 +672,16 @@ test("IDE command palette exposes an accessible modal and named controls", () =>
   assert.match(ide, /aria-label="Close command palette"/);
   assert.match(ide, /input aria-label="Filter commands" autoFocus/);
 });
+
+
+test("switching workspaces invalidates stale execution polling and pending UI timers", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const loadStart = ide.indexOf("const load=useCallback(async(item)=>");
+  const loadEnd = ide.indexOf("},[save]);", loadStart);
+  const loader = ide.slice(loadStart, loadEnd > loadStart ? loadEnd : loadStart + 3000);
+
+  assert.ok(loadStart >= 0, "workspace loader should exist");
+  assert.match(loader, /executionRunRef\.current\+\+/);
+  assert.match(loader, /if\(executionTimerRef\.current\)\{clearTimeout\(executionTimerRef\.current\);executionTimerRef\.current=null;\}/);
+  assert.ok(loader.indexOf("executionRunRef.current++") < loader.indexOf("setWs(next)"), "old run output must be invalidated before the new workspace becomes active");
+});
