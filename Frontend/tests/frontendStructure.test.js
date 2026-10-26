@@ -424,7 +424,7 @@ test("IDE workspace-changing and execution actions account for inactive dirty ta
 test("profile transient load failures keep the session and expose retryable accessible errors", () => {
   const profile = fs.readFileSync(path.resolve(srcDir, "Pages/Profile/Profile.jsx"), "utf8");
 
-  assert.match(profile, /const \[loadError, setLoadError\] = useState\("\ "\)/);
+  assert.match(profile, /const \[loadError, setLoadError\] = useState\(""/);
   assert.match(profile, /setLoadError\(error\.message \|\| "Unable to load your profile/);
   assert.match(profile, /setProfileLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
   assert.match(profile, /role="alert"/);
