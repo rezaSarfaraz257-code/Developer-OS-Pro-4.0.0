@@ -525,7 +525,7 @@ test("IDE workspace and framework list failures are visible and retryable", () =
   assert.match(init, /if\(!a\.ok\)throw Error\(w\.error\|\|w\.detail\|\|`Workspace list failed \(HTTP \$\{a\.status\}\)`\)/);
   assert.match(init, /if\(!b\.ok\)throw Error\(f\.error\|\|f\.detail\|\|`Framework list failed \(HTTP \$\{b\.status\}\)`\)/);
   assert.match(init, /setWorkspaceListError\(error\);setStatus\(error\)/);
-  assert.match(init, /\[message,workspaceListRetry\]\);
+  assert.match(init, /\[message,workspaceListRetry\]/);
   assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
   assert.match(ide, /Retry workspaces/);
   assert.match(ide, /setWorkspaceListRetry\(value=>value\+1\)/);
