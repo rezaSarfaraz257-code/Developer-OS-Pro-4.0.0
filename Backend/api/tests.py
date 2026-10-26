@@ -109,6 +109,19 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
 
 
     @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_execution_payload_does_not_consume_quota(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
     def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
         response = self.client.post(
