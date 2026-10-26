@@ -2932,8 +2932,25 @@ def ide_execute_api(request, pk):
 
         stage = "runner_payload"
         submitted_files = request.data.get("files")
-        if submitted_files is not None and not isinstance(submitted_files, dict):
-            return Response({"error": "Workspace files must be an object."}, status=400)
+        if submitted_files is not None:
+            if not isinstance(submitted_files, dict):
+                return Response({"error": "Workspace files must be an object."}, status=400)
+            # Validate the exact snapshot before quota consumption or forwarding
+            # it to the runner. The runner repeats filesystem checks, but the
+            # API must reject malformed/oversized input consistently as well.
+            files_serializer = CodeWorkspaceSerializer(
+                ws,
+                data={"files": submitted_files},
+                partial=True,
+                context={"request": request},
+            )
+            if not files_serializer.is_valid():
+                return Response({
+                    "error": "Workspace files failed validation.",
+                    "code": "invalid_workspace_files",
+                    "details": files_serializer.errors,
+                }, status=400)
+            submitted_files = files_serializer.validated_data["files"]
 
         stage = "usage_limit"
         try:
