@@ -227,6 +227,32 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertGreaterEqual(port, 1024)
         self.assertLessEqual(port, 65535)
 
+    def test_preview_commands_are_pinned_to_the_proxy_port(self):
+        cases = [
+            ("npm run dev -- --host 0.0.0.0", ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "12345"]),
+            ("python3 manage.py runserver 0.0.0.0:8000", ["python3", "manage.py", "runserver", "0.0.0.0:12345"]),
+            ("python -m uvicorn main:app --host 0.0.0.0 --port 8000", ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "12345"]),
+            ("flask --app app run --host 0.0.0.0 --port 8000", ["flask", "--app", "app", "run", "--host", "0.0.0.0", "--port", "12345"]),
+            ("streamlit run app.py --server.address 0.0.0.0", ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "12345"]),
+        ]
+        for command, expected in cases:
+            with self.subTest(command=command):
+                self.assertEqual(__import__("shlex").split(main._preview_command_for_port(command, 12345)), expected)
+
+    def test_preview_command_rejects_invalid_port_and_empty_command(self):
+        with self.assertRaises(HTTPException):
+            main._preview_command_for_port("npm run dev", 80)
+        with self.assertRaises(HTTPException):
+            main._preview_command_for_port("", 12345)
+
+    def test_preview_start_route_is_not_registered_twice(self):
+        routes = [
+            route for route in main.app.routes
+            if getattr(route, "path", None) == "/preview/start"
+            and "POST" in (getattr(route, "methods", set()) or set())
+        ]
+        self.assertEqual(len(routes), 1)
+
     def test_rejects_oversized_commands(self):
         with self.assertRaises(HTTPException):
             run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
