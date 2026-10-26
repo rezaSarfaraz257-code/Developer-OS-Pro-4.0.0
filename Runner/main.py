@@ -1315,6 +1315,60 @@ def _stop_process(pid):
 def _workspace_preview_port(workspace_id):
     return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
 
+
+def _preview_command_for_port(command, port):
+    """Pin common framework preview commands to the proxy's assigned port."""
+    if not isinstance(port, int) or not 1024 <= port <= 65535:
+        raise HTTPException(status_code=400, detail="Invalid preview port.")
+    try:
+        parts = shlex.split(str(command or "").strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid preview command.")
+    if not parts:
+        raise HTTPException(status_code=400, detail="Preview command is required.")
+
+    def set_option(option, value):
+        if option in parts:
+            index = parts.index(option)
+            if index + 1 < len(parts):
+                parts[index + 1] = str(value)
+            else:
+                parts.append(str(value))
+        else:
+            parts.extend([option, str(value)])
+
+    lowered = [part.lower() for part in parts]
+    if "runserver" in lowered:
+        index = lowered.index("runserver")
+        host_index = next((i for i in range(index + 1, len(parts)) if ":" in parts[i]), None)
+        address = f"0.0.0.0:{port}"
+        if host_index is not None:
+            host = parts[host_index].rsplit(":", 1)[0] or "0.0.0.0"
+            parts[host_index] = f"{host}:{port}"
+        else:
+            parts.append(address)
+    elif "uvicorn" in lowered:
+        set_option("--port", port)
+    elif "flask" in lowered and "run" in lowered:
+        set_option("--port", port)
+    elif "streamlit" in lowered:
+        set_option("--server.port", port)
+    elif (parts[0] in {"npm", "pnpm", "yarn"} and "dev" in lowered) or "next" in lowered:
+        if "--" in parts:
+            separator = parts.index("--")
+            tail = parts[separator + 1:]
+            if "--port" in tail:
+                idx = separator + 1 + tail.index("--port")
+                if idx + 1 < len(parts):
+                    parts[idx + 1] = str(port)
+                else:
+                    parts.append(str(port))
+            else:
+                parts.extend(["--port", str(port)])
+        else:
+            parts.extend(["--port", str(port)])
+    return shlex.join(parts)
+
 PREVIEW_LOCK = threading.RLock()
 PREVIEWS = {}
 WATCHDOG_INTERVAL = max(2, int(os.environ.get("RUNNER_WATCHDOG_INTERVAL_SECONDS", "5")))
@@ -1393,12 +1447,11 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
     port = int(payload.port or _workspace_preview_port(payload.workspace_id))
     if not (1024 <= port <= 65535):
         raise HTTPException(status_code=400, detail="Invalid preview port.")
-    command = payload.command.strip() or f"python3 -m http.server {port}"
-    # Bind preview servers to localhost inside the runner; the deployment proxy
-    # is responsible for exposing an authenticated preview route.
-    if "127.0.0.1" not in command and "localhost" not in command:
-        command = command
-    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=payload.env)
+    command = _preview_command_for_port(payload.command.strip() or f"python3 -m http.server {port}", port)
+    # The authenticated control-plane proxy forwards to this workspace port.
+    # Framework commands are normalized so their listener and proxy agree.
+    env_extra = {**payload.env, "PORT": str(port)}
+    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=env_extra)
     with PROCESS_LOCK:
         proc = PROCESSES[str(pid)]["popen"]
     with PREVIEW_LOCK:
@@ -1703,21 +1756,6 @@ def preview_plan_api(payload: Workspace, authorization: str = Header(default="")
     auth(authorization)
     safe_workspace(payload.workspace_id)
     return preview_plan(payload.files)
-
-@app.post("/preview/start")
-def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
-    auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    port = _workspace_preview_port(payload.workspace_id)
-    command = str(payload.command or "").strip()
-    if not command:
-        raise HTTPException(status_code=400, detail="Preview command is required.")
-    # The command is supplied by a trusted framework preset on the API side.
-    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
-        raise HTTPException(status_code=400, detail="Preview command blocked.")
-    pid = _start_process(root, command + f" --port {port}" if "--port" not in command and "runserver" not in command else command, allow_network=False, env_extra={"PORT": str(port)})
-    return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
 
 @app.get("/preview/{workspace_id}/{path:path}")
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
