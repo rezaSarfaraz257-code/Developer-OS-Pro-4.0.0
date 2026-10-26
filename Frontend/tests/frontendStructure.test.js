@@ -566,14 +566,15 @@ test("IDE focus mode expands the editor grid and hides side panels without unmou
 test("IDE rejects malformed array payloads when refreshing workspace file maps", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function applyExplorerState(d,");
-  const end = ide.indexOf("\\n async function movePath(", start);
+  const end = ide.indexOf("\n async function movePath(", start);
   const refresh = ide.slice(start, end > start ? end : start + 2600);
 
   assert.ok(start >= 0, "Explorer state reconciliation should exist");
-  assert.match(refresh, /!Array\\.isArray\\(response\\.files\\)/);
-  assert.match(refresh, /!Array\\.isArray\\(latest\\.files\\)/);
+  assert.match(refresh, /!Array\.isArray\(response\.files\)/);
+  assert.match(refresh, /!Array\.isArray\(latest\.files\)/);
   assert.match(refresh, /Workspace refresh failed after file operation/);
 });
+
 
 test("IDE workspace and framework list failures are visible and retryable", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
