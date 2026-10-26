@@ -641,6 +641,38 @@ def _normalize_command(command):
         command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
     return command
 
+def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn):
+    """Run a command in its own process group and terminate the group on timeout."""
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        preexec_fn=preexec_fn,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        # subprocess.run(timeout=...) only kills its direct child. Keep the
+        # Popen handle so descendants in the same process group are terminated.
+        _terminate_process_group(proc, grace_seconds=0.1)
+        try:
+            stdout, stderr = proc.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(proc, grace_seconds=0.1)
+            try:
+                stdout, stderr = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = exc.output or "", exc.stderr or ""
+        stdout = stdout or exc.output or ""
+        stderr = stderr or exc.stderr or ""
+        raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+
 def run_command(root, command, *, allow_network=False, entitlement=None):
     command = _normalize_command(command)
     policy = _entitlement_policy({"entitlement": entitlement or {}})
@@ -679,9 +711,11 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
     _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
-            proc = subprocess.run(
-                _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=min(TIMEOUT, int(policy['timeout'])), start_new_session=True,
+            proc = _run_process_with_timeout(
+                _sandbox_command(root, command, allow_network=allow_network),
+                cwd=root,
+                env=env,
+                timeout=min(TIMEOUT, int(policy["timeout"])),
                 preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
             )
         finished = time.time()
@@ -705,8 +739,6 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
-        if "proc" in locals():
-            _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         timeout_message = f"Execution timed out after {int(policy['timeout'])} seconds."
         partial_stdout = exc.stdout or ""
