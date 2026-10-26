@@ -2991,7 +2991,7 @@ def ide_execute_api(request, pk):
             "files": dict(ws.files or {}),
             "revision": int(ws.revision or 0),
         }
-        warnings = [x for x in [usage_warning, sync_warning] if x]
+        warnings = [sync_warning] if sync_warning else []
         if warnings:
             response_data["warnings"] = warnings
         return Response(response_data)
