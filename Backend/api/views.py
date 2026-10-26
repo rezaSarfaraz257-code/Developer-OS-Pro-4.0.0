@@ -4108,7 +4108,13 @@ def ide_processes_api(request, pk):
 @permission_classes([IsAuthenticated])
 def ide_job_stream_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
-    cursor = request.query_params.get("cursor", "0")
+    raw_cursor = request.query_params.get("cursor", "0")
+    try:
+        cursor = int(raw_cursor)
+    except (TypeError, ValueError, OverflowError):
+        return Response({"error": "Cursor must be a non-negative integer."}, status=400)
+    if cursor < 0 or cursor > 2_147_483_647:
+        return Response({"error": "Cursor must be a non-negative integer in the supported range."}, status=400)
     data, error = _runner_request(
         "GET",
         f"/jobs/{job_id}/stream?cursor={cursor}",
