@@ -512,6 +512,17 @@ def test_process_stop_route_is_registered_once():
     assert stop_routes == ["/process/{process_id}/stop"]
 
 
+def test_write_snapshot_writes_nested_and_root_files_safely():
+    with tempfile.TemporaryDirectory() as root_tmp:
+        root = Path(root_tmp)
+        main.write_snapshot(root, {
+            "src/main.py": "print('safe')\n",
+            "README.md": "workspace",
+        })
+        assert (root / "src" / "main.py").read_text(encoding="utf-8") == "print('safe')\n"
+        assert (root / "README.md").read_text(encoding="utf-8") == "workspace"
+
+
 def test_write_snapshot_rejects_symlink_before_creating_external_directories():
     with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
         root = Path(root_tmp)
