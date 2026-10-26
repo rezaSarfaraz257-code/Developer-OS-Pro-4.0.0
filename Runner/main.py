@@ -286,10 +286,18 @@ def _cancel_job(job_id):
 
 def _cleanup_jobs():
     cutoff = time.time() - JOB_RETENTION_SECONDS
+    expired_ids = []
     with JOB_LOCK:
         for job_id, job in list(JOBS.items()):
             if job["finished_at"] and job["finished_at"] < cutoff:
                 JOBS.pop(job_id, None)
+                expired_ids.append(job_id)
+    # Output buffers have a separate lock. Clean them after releasing JOB_LOCK
+    # to avoid nested-lock ordering and bound memory across long-lived runners.
+    if expired_ids:
+        with JOB_OUTPUT_LOCK:
+            for job_id in expired_ids:
+                JOB_OUTPUT.pop(job_id, None)
 
 
 def _scheduler_snapshot():
