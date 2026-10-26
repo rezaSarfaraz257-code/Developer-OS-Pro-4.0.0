@@ -430,6 +430,29 @@ class IDEProcessAuthorizationTests(APITestCase):
         write_allowed.assert_called_once()
         runner_request.assert_not_called()
 
+    @patch("api.views._runner_request")
+    def test_foreign_workspace_cannot_read_processes_jobs_or_preview(self, runner_request):
+        from .models import CodeWorkspace
+        other = User.objects.create_user(
+            username="ide-process-foreign-owner",
+            password="long-test-password-123",
+        )
+        foreign_workspace = CodeWorkspace.objects.create(
+            owner=other,
+            name="Private foreign workspace",
+            files={"main.py": "print('private')"},
+        )
+        paths = (
+            f"/api/ide/workspaces/{foreign_workspace.pk}/processes/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/jobs/private-job/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/preview/",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        runner_request.assert_not_called()
+
 
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
