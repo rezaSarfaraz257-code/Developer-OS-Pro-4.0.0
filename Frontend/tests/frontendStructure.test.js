@@ -575,3 +575,18 @@ test("IDE workspace and framework list failures are visible and retryable", () =
   assert.match(ide, /Retry workspaces/);
   assert.match(ide, /setWorkspaceListRetry\(value=>value\+1\)/);
 });
+
+
+test("offline collaboration sync cannot update a newly selected workspace from a stale socket", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("const workspacePatches=getWorkspacePatches(q,ws.id)");
+  const end = ide.indexOf("}catch(err){if(collab.current===socket)setStatus(", start);
+  const sync = ide.slice(start, end > start ? end : start + 5000);
+
+  assert.ok(start >= 0, "offline sync handler should exist");
+  assert.ok(end > start, "offline sync handler should have a bounded catch");
+  assert.ok(sync.indexOf("if(collab.current!==socket)return;const state=await r.json()") > sync.indexOf("const r=await apiFetch"), "stale socket must be checked after the workspace fetch");
+  assert.ok(sync.indexOf("if(collab.current!==socket)return;const wr=await apiFetch") > -1, "stale socket must be checked before each queued write");
+  assert.ok(sync.includes("if(collab.current===socket)setOfflineQueue(rebased);if(collab.current!==socket)return"), "stale socket must not mutate current UI state after a successful write");
+  assert.ok(sync.includes("const remaining=parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY));if(collab.current!==socket)return;setOfflineQueue(remaining)"), "stale socket must not apply the old workspace revision to the active workspace");
+});
