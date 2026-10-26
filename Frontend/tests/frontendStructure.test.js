@@ -571,7 +571,7 @@ test("IDE rejects malformed array payloads when refreshing workspace file maps",
 
   assert.ok(start >= 0, "Explorer state reconciliation should exist");
   assert.match(refresh, /!Array\.isArray\(response\.files\)/);
-  assert.match(refresh, /!Array\.isArray\(latest\.files\)/);
+  assert.match(refresh, /\|\|Array\.isArray\(latest\.files\)/);
   assert.match(refresh, /Workspace refresh failed after file operation/);
 });
 
