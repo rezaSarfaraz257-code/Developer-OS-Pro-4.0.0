@@ -183,8 +183,16 @@ class Command(BaseCommand):
                     job.dead_lettered_at = now
                     job.finished_at = now
 
+            # Release the durable lease for every persisted terminal/retry outcome.
+            # Otherwise completed/requeued rows retain a stale owner marker that
+            # complicates diagnostics and can confuse future lifecycle changes.
+            job.locked_at = None
+            job.locked_by = ""
             try:
-                job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+                job.save(update_fields=[
+                    "status", "result", "error", "available_at", "finished_at",
+                    "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
+                ])
             except Exception:
                 # An external side effect may already have succeeded. Keep the
                 # long-lived worker alive; stale-lease recovery reconciles the
