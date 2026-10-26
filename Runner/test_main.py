@@ -411,6 +411,26 @@ def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     assert "Execution timed out after" in streamed
 
 
+def test_job_endpoints_hide_foreign_workspace_jobs():
+    job_id = main._new_job("workspace-owner")
+    assert main._set_job(job_id, status="running", started_at=time.time()) is True
+    with patch("main.TOKEN", "test-token"):
+        endpoints = (
+            lambda: main.job_status(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+            lambda: main.job_output(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.job_output_stream(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.cancel_job(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+        )
+        for endpoint in endpoints:
+            try:
+                endpoint()
+            except HTTPException as exc:
+                assert exc.status_code == 404
+            else:
+                raise AssertionError("A foreign workspace must not access another workspace's job")
+    assert main._job_snapshot(job_id)["status"] == "running"
+
+
 def test_concurrent_workspace_limits():
     assert main.MAX_CONCURRENT_EXECUTIONS >= 1
     assert main.MAX_CONCURRENT_PROCESSES >= 1
