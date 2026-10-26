@@ -441,6 +441,9 @@ test("active profile route exposes retryable accessible load errors instead of a
 
   assert.ok(profileStart >= 0 && settingsStart > profileStart, "active Profile component should be present");
   assert.match(profile, /const \[loadError, setLoadError\] = useState\(""/);
+  assert.match(profile, /\.then\(async response => \{/);
+  assert.match(profile, /if \(!response\.ok\) \{/);
+  assert.match(profile, /formatApiError\(data, "Could not load your profile\. Please try again\."\)/);
   assert.match(profile, /\.catch\(error => \{\s*if \(active\) setLoadError\(error\.message/);
   assert.match(profile, /if \(!profile\) return loadError \?/);
   assert.match(profile, /role="alert"/);
