@@ -2298,12 +2298,12 @@ def _runner_request(method, path, payload, timeout=30):
         try:
             data = response.json() if response.content else {}
         except ValueError:
-            preview = response.text[:500].strip() if response.text else ""
+            # Upstream HTML/text may contain stack traces or internal details.
+            # Report the status and a stable code without forwarding its body.
             return None, {
                 "error": f"Runner returned a non-JSON response (HTTP {response.status_code}).",
                 "code": "runner_invalid_response",
                 "status": response.status_code,
-                "details": preview,
             }
 
         if response.status_code >= 400:
