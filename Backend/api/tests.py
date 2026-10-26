@@ -7,7 +7,7 @@ import hmac
 import json
 import tempfile
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.db import DatabaseError, IntegrityError, connection
@@ -40,6 +40,28 @@ class RunnerRequestRetrySafetyTests(APITestCase):
         self.assertEqual(error["code"], "runner_unreachable")
         request.assert_called_once()
         sleep.assert_not_called()
+
+    @patch("api.views.requests.request")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_non_json_runner_body_is_not_exposed_to_api_clients(self, request):
+        from . import views
+        response = Mock()
+        response.status_code = 500
+        response.content = b"<html>internal traceback with secret-value</html>"
+        response.text = "internal traceback with secret-value"
+        response.json.side_effect = ValueError("not JSON")
+        request.return_value = response
+
+        data, error = views._runner_request("GET", "/capabilities", {}, timeout=1)
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_invalid_response")
+        self.assertEqual(error["status"], 500)
+        self.assertNotIn("details", error)
+        self.assertNotIn("secret-value", json.dumps(error))
+        self.assertNotIn("traceback", json.dumps(error).lower())
+
 
     @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated unavailable runner"))
     @patch("api.views.time.sleep")
