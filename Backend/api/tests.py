@@ -182,6 +182,25 @@ class HealthProbeFailureLoggingTests(APITestCase):
         cursor.assert_called_once()
 
 
+class ReadinessFailureDiagnosticsTests(APITestCase):
+    def test_not_ready_response_logs_only_failed_check_names(self):
+        with override_settings(
+            IS_PRODUCTION=True,
+            DEBUG=False,
+            SECRET_KEY="test-secret-key-that-is-not-insecure",
+            ALLOWED_HOSTS=["testserver"],
+            EMAIL_HOST="",
+            EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        ):
+            with self.assertLogs("api.views", level="WARNING") as captured:
+                response = self.client.get("/api/health/ready/")
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertTrue(any("Production readiness failed checks:" in line for line in captured.output))
+        self.assertTrue(any("database" in line and "email" in line for line in captured.output))
+        self.assertNotIn("test-secret-key-that-is-not-insecure", "\n".join(captured.output))
+
+
 class ProductionReadinessTests(APITestCase):
     def test_console_email_backend_never_passes_production_readiness(self):
         with override_settings(
