@@ -459,3 +459,13 @@ test("community feed distinguishes initial API failure from a genuinely empty fe
   assert.match(feed, /onClick=\{\(\) => void loadPosts\(\)\}/);
   assert.match(feed, /The next great idea could be yours/);
 });
+
+test("Explore workflow cards describe selection rather than claiming execution", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const workflowCard = app.slice(app.indexOf('tab==="workflows"&&visibleWorkflows.map'), app.indexOf('tab==="resources"&&visibleResources.map'));
+
+  assert.match(workflowCard, /SELECT PLAYBOOK/);
+  assert.match(workflowCard, /aria-pressed=\{selectedWorkflowId===w\.id\}/);
+  assert.match(workflowCard, /no workflow has been executed/);
+  assert.doesNotMatch(workflowCard, />START PLAYBOOK</);
+});
