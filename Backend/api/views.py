@@ -2800,40 +2800,92 @@ def ide_lsp_notifications_api(request, pk):
 @permission_classes([IsAuthenticated])
 @throttle_classes([RunnerRateThrottle])
 def ide_debug_api(request, pk):
-    """Debugger orchestration contract for the isolated runner.
+    """Proxy a validated debugger action to the isolated runner.
 
-    The Django API never executes user code itself. It forwards debugger
-    commands to the configured sandbox runner, which owns the actual DAP/
-    runtime process.
+    Validate all caller-controlled fields before consuming quota. Starting a
+    debug session is billable execution and must fail closed if quota state
+    cannot be read and durably updated.
     """
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
+
     action = str(request.data.get("action") or "status").strip().lower()
-    if action == "start":
-        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
-        if not allowed:
-            return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-    allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
+    allowed_actions = {
+        "start", "continue", "pause", "step_over", "step_into", "step_out",
+        "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack",
+        "variables", "scopes", "watch", "status",
+    }
     if action not in allowed_actions:
         return Response({"error": "Unsupported debugger action."}, status=400)
+
+    def bounded_int(field, default, minimum, maximum):
+        raw = request.data.get(field, default)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(field)
+        if value < minimum or value > maximum:
+            raise ValueError(field)
+        return value
+
+    try:
+        line = bounded_int("line", 0, 0, 10_000_000)
+        column = bounded_int("column", 1, 1, 1_000_000)
+    except ValueError as exc:
+        field = str(exc) or "line/column"
+        return Response({"error": f"Invalid debugger {field}; value is outside the accepted range."}, status=400)
+
+    path = request.data.get("path") or ""
+    condition = request.data.get("condition") or ""
+    expression = request.data.get("expression") or ""
+    session_id = request.data.get("session_id") or ""
+    if not all(isinstance(value, str) for value in (path, condition, expression, session_id)):
+        return Response({"error": "Debugger path, condition, expression, and session_id must be strings."}, status=400)
+    if len(path) > 1000 or len(condition) > 1000 or len(expression) > 4000 or len(session_id) > 200:
+        return Response({"error": "Debugger input exceeds the allowed length."}, status=400)
+
+    breakpoints = request.data.get("breakpoints") or []
+    if not isinstance(breakpoints, list) or len(breakpoints) > 200:
+        return Response({"error": "Breakpoints must be a list containing at most 200 items."}, status=400)
+    if any(not isinstance(item, dict) for item in breakpoints):
+        return Response({"error": "Each breakpoint must be an object."}, status=400)
+
+    if action == "start":
+        try:
+            allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        except (DatabaseError, IntegrityError):
+            logger.exception("IDE debugger quota enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+            return Response({
+                "error": "Debugger quota could not be verified. Please retry shortly.",
+                "code": "usage_enforcement_unavailable",
+                "stage": "usage_limit",
+            }, status=503)
+        if not allowed:
+            return Response({
+                "error": "Monthly IDE execution limit reached.",
+                "plan": plan,
+                "used": used,
+                "limit": limit,
+            }, status=429)
+
     payload = {
         **_workspace_payload(ws),
         "action": action,
-        "path": str(request.data.get("path") or "")[:1000],
-        "line": int(request.data.get("line") or 0),
-        "column": int(request.data.get("column") or 1),
-        "condition": str(request.data.get("condition") or "")[:1000],
-        "expression": str(request.data.get("expression") or "")[:4000],
-        "breakpoints": request.data.get("breakpoints") or [],
-        "session_id": str(request.data.get("session_id") or "")[:200],
+        "path": path,
+        "line": line,
+        "column": column,
+        "condition": condition,
+        "expression": expression,
+        "breakpoints": breakpoints,
+        "session_id": session_id,
     }
     data, error = _runner_request("POST", "/debug", payload, timeout=35)
     if error:
         return Response(error, status=503)
     return Response({
         "session_id": data.get("session_id"),
-        "state": data.get("state", "paused" if action in {"pause","step_over","step_into","step_out"} else "ready"),
+        "state": data.get("state", "paused" if action in {"pause", "step_over", "step_into", "step_out"} else "ready"),
         "thread_id": data.get("thread_id"),
         "frame": data.get("frame"),
         "stack": data.get("stack", []),
