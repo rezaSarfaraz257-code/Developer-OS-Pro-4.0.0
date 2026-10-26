@@ -1,4 +1,5 @@
 from io import BytesIO
+import re
 import warnings
 
 from django.contrib.auth.models import User
