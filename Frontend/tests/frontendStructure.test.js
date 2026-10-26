@@ -421,17 +421,18 @@ test("IDE workspace-changing and execution actions account for inactive dirty ta
   assert.match(ide, /lastRunnerBlockRef\.current="";\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
 });
 
-test("profile transient load failures keep the session and expose retryable accessible errors", () => {
-  const profile = fs.readFileSync(path.resolve(srcDir, "Pages/Profile/Profile.jsx"), "utf8");
+test("active profile route exposes retryable accessible load errors instead of an endless spinner", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const profileStart = app.indexOf("function Profile({ onProfileUpdate }) {");
+  const settingsStart = app.indexOf("function Settings({ go }) {", profileStart);
+  const profile = app.slice(profileStart, settingsStart);
 
+  assert.ok(profileStart >= 0 && settingsStart > profileStart, "active Profile component should be present");
   assert.match(profile, /const \[loadError, setLoadError\] = useState\(""/);
-  assert.match(profile, /setLoadError\(error\.message \|\| "Unable to load your profile/);
-  assert.match(profile, /setProfileLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(profile, /\.catch\(error => \{\s*if \(active\) setLoadError\(error\.message/);
+  assert.match(profile, /if \(!profile\) return loadError \?/);
   assert.match(profile, /role="alert"/);
-  assert.match(profile, /let cancelled = false/);
-  assert.match(profile, /if \(cancelled\) return/);
-  assert.doesNotMatch(profile, /clearAuth\(\)/);
-  assert.doesNotMatch(profile, /setPage\("auth"\)/);
-  assert.match(profile, /setSaveError\(error\.message \|\| "Unable to save profile/);
-  assert.match(profile, /saveError && <p className="avatar-upload-error" role="alert">/);
+  assert.match(profile, /setLoadAttempt\(attempt => attempt \+ 1\)/);
+  assert.match(profile, /role="status" aria-live="polite"/);
+  assert.doesNotMatch(profile, /setSaveError\("Could not load your profile/);
 });
