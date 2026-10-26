@@ -534,6 +534,7 @@ test("IDE workspace loads reject malformed file maps instead of showing a false 
 
   assert.match(load, /if\(!d\.files\|\|typeof d\.files!=="object"\|\|Array\.isArray\(d\.files\)\)throw Error\("Workspace response did not include a valid file map\."\)/);
   assert.match(load, /const f=d\.files;/);
+  assert.match(load, /r\.json\(\)\.catch\(\(\)=>\(\{\}\)\)/);
   assert.match(load, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
   assert.doesNotMatch(load, /const f=d\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
 });
