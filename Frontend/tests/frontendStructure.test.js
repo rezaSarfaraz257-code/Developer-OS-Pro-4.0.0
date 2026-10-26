@@ -502,3 +502,14 @@ test("IDE workspace load failures expose an accessible retry action", () => {
   assert.match(ide, /setWorkspaceLoadError\(""\);setStatus\("Loading workspace/);
   assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\(""\);setStatus\("Explorer synced/);
 });
+
+
+test("IDE workspace retry is pending-aware and clears loading only for the current request", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
+  assert.match(ide, /\[workspaceLoading,setWorkspaceLoading\]=useState\(false\)/);
+  assert.match(load, /setWorkspaceLoading\(true\);setStatus\("Loading workspace…"/);
+  assert.match(load, /finally\{if\(requestId===workspaceLoadRef\.current\)setWorkspaceLoading\(false\)\}/);
+  assert.match(ide, /disabled=\{workspaceLoading\|\|\(!ws&&!workspaces\.length\)\}/);
+  assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
+});
