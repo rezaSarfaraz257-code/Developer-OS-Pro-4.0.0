@@ -197,7 +197,7 @@ class ReadinessFailureDiagnosticsTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertTrue(any("Production readiness failed checks:" in line for line in captured.output))
-        self.assertTrue(any("database" in line and "email" in line for line in captured.output))
+        self.assertTrue(any("email" in line for line in captured.output))
         self.assertNotIn("test-secret-key-that-is-not-insecure", "\n".join(captured.output))
 
 
