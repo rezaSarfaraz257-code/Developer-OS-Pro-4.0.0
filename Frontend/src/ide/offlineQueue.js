@@ -65,16 +65,30 @@ export function removeWorkspacePatches(queue, workspaceId) {
 // Offline edits do not include a full base snapshot for each file. Only replay them
 // when the server is still at the exact revision they were based on; otherwise a
 // "latest revision" retry could silently overwrite another collaborator's changes.
+function parseWorkspaceRevision(value) {
+  if (
+    typeof value !== "number" &&
+    !(typeof value === "string" && /^\\d+$/.test(value.trim()))
+  ) {
+    return null;
+  }
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
 export function canSafelySyncOfflinePatches(patches, serverRevision) {
   if (!Array.isArray(patches) || patches.length === 0) return false;
-  const revisions = patches.map((patch) => {
-    const base = patch?.base_revision;
-    if (base == null || (typeof base === "string" && base.trim() === "")) return Number.NaN;
-    return Number(base);
-  });
-  if (revisions.some((revision) => !Number.isFinite(revision))) return false;
+
+  // Missing server metadata must never coerce to revision 0. Offline replay
+  // is destructive if it proceeds without an explicit, comparable revision.
+  const currentRevision = parseWorkspaceRevision(serverRevision);
+  if (currentRevision === null) return false;
+
+  const revisions = patches.map((patch) => parseWorkspaceRevision(patch?.base_revision));
+  if (revisions.some((revision) => revision === null)) return false;
+
   const uniqueRevisions = new Set(revisions);
-  return uniqueRevisions.size === 1 && Number(serverRevision) === revisions[0];
+  return uniqueRevisions.size === 1 && currentRevision === revisions[0];
 }
 
 
