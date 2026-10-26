@@ -175,6 +175,8 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       EXPORT_ROOT: /app/media/exports
     depends_on:
+      backend:
+        condition: service_healthy
       db:
         condition: service_healthy
       redis:
