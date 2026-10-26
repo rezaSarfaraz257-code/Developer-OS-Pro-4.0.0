@@ -1765,7 +1765,7 @@ def _safe_preview_path(path):
         raise HTTPException(status_code=400, detail="Invalid preview path.")
     return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
 
-def _bounded_preview_fetch(url, timeout=10):'()*+,;=:@")
+def _bounded_preview_fetch(url, timeout=10):
 
 def _bounded_preview_fetch(url, timeout=10):
     """Fetch preview bytes without following redirects or allowing unbounded bodies."""
