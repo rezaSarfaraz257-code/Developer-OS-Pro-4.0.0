@@ -29,6 +29,16 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
 
 
 class RunnerSecurityTests(unittest.TestCase):
+    def test_preview_path_rejects_traversal_and_control_characters(self):
+        for path in ("../admin", "src/../admin", "%2e%2e/admin", "a\\\\b", "bad\\npath"):
+            with self.subTest(path=path):
+                with self.assertRaises(HTTPException) as ctx:
+                    main._safe_preview_path(path)
+                self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_preview_path_encodes_query_and_fragment_delimiters(self):
+        self.assertEqual(main._safe_preview_path("app?token=x#fragment"), "app%3Ftoken=x%23fragment")
+
     def test_rejects_absolute_and_traversal_paths(self):
         for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", "a//b", ""):
             with self.assertRaises(ValueError):
