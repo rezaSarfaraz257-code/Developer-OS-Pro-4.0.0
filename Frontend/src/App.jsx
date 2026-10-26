@@ -57,6 +57,8 @@ function Shell({ user, onLogout, children, go, current }) {
   const searchRef = useRef(null);
   const [notifications, setNotifications] = useState({ unread: 0, items: [] });
   const [openNotif, setOpenNotif] = useState(false);
+  const [notificationActionError, setNotificationActionError] = useState("");
+  const [notificationActionBusy, setNotificationActionBusy] = useState(false);
   const [plan, setPlan] = useState("free");
 
   useEffect(() => {
@@ -95,6 +97,20 @@ function Shell({ user, onLogout, children, go, current }) {
       `${label} ${path}`.toLocaleLowerCase().includes(query)
     );
   }, [commands, search]);
+  const markNotificationsRead = async () => {
+    if (notificationActionBusy) return;
+    setNotificationActionBusy(true);
+    setNotificationActionError("");
+    try {
+      const response = await apiFetch("/notifications/", { method: "PATCH", body: JSON.stringify({}) });
+      if (!response.ok) throw new Error("Notifications could not be marked as read. Please try again.");
+      setNotifications(previous => ({ ...previous, unread: 0 }));
+    } catch (error) {
+      setNotificationActionError(error?.message || "Notifications could not be marked as read. Please try again.");
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
 
   const runSearch = (e) => {
     if (e.key !== "Enter" || !search.trim()) return;
@@ -173,7 +189,8 @@ function Shell({ user, onLogout, children, go, current }) {
             </div>
           </div>}
           {openNotif && <div className="notif-pop">
-            <div className="pop-head"><b>Notifications</b><button onClick={() => apiFetch("/notifications/", {method:"PATCH",body:JSON.stringify({})}).then(() => setNotifications(n => ({...n, unread:0})))}>Mark read</button></div>
+            <div className="pop-head"><b>Notifications</b><button type="button" disabled={notificationActionBusy || !notifications.unread} aria-busy={notificationActionBusy} onClick={markNotificationsRead}>{notificationActionBusy ? "Marking read…" : "Mark read"}</button></div>
+            {notificationActionError && <p role="alert">{notificationActionError}</p>}
             {(notifications.items || []).slice(0, 8).map(n => <div className="notif" key={n.id}><b>{n.title}</b><span>{n.body}</span></div>)}
             {!notifications.items?.length && <div className="empty">No notifications.</div>}
           </div>}
