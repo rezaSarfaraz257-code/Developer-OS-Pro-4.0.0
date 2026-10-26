@@ -4228,7 +4228,12 @@ def ide_preview_start_api(request, pk):
     framework=str(request.data.get("framework") or ws.framework or "").lower()
     spec=FRAMEWORK_CATALOG.get(framework)
     if not spec:return Response({"error":"Preview requires a supported framework preset."},status=400)
-    data,error=_runner_request("POST","/preview/start",{**_workspace_payload(ws),"command":spec["start"]},timeout=30)
+    port_base=int(os.environ.get("IDE_PREVIEW_PORT_BASE","10000"))
+    port_span=max(1,int(os.environ.get("IDE_PREVIEW_PORT_SPAN","1000")))
+    port=port_base + (int(ws.id) % port_span)
+    if not 1024 <= port <= 65535:
+        return Response({"error":"Preview port configuration is invalid.","code":"preview_port_invalid"},status=503)
+    data,error=_runner_request("POST","/preview/start",{**_workspace_payload(ws),"command":spec["start"],"port":port},timeout=30)
     if error:return Response(error,status=503)
     data["public_preview"]=f"/api/ide/workspaces/{ws.id}/preview/"
     return Response(data)
@@ -4238,7 +4243,6 @@ def ide_preview_start_api(request, pk):
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws=_workspace_for_user(pk,request.user)
     headers={"Authorization":f"Bearer {RUNNER_TOKEN}"}
-    port=int(os.environ.get("IDE_PREVIEW_PORT_BASE","10000")) + (int(ws.id) % int(os.environ.get("IDE_PREVIEW_PORT_SPAN","1000")))
     try:
         response=requests.get(f"{RUNNER_URL}/preview/{ws.id}/{preview_path.lstrip('/')}",headers=headers,timeout=15)
     except requests.RequestException as exc:
