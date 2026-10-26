@@ -406,3 +406,17 @@ test("Explorer move, duplicate, and rename preserve every dirty editor tab befor
   }
   assert.ok(duplicate.indexOf("await save(true)") < duplicate.indexOf("const content=refs.files.current[path]"), "duplicate must read the latest source contents after saving dirty edits");
 });
+
+
+test("IDE workspace-changing and execution actions account for inactive dirty tabs", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\n/ )?.[1] || "";
+  const folder = ide.match(/async function newFolder\(\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const remove = ide.match(/async function removeFile\(\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const install = ide.match(/async function install\(\)\{([\s\S]*?)\n/ )?.[1] || "";
+  assert.match(load, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(folder, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(remove, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(install, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(ide, /lastRunnerBlockRef\.current="";\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
+});
