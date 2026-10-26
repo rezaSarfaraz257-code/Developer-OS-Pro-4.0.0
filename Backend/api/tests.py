@@ -1132,3 +1132,49 @@ class BackgroundWorkerReadinessTests(APITestCase):
             response = self.client.get("/api/health/ready/")
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    def test_stale_worker_job_is_requeued_with_bounded_backoff(self):
+        from .models import BackgroundJob
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "test@example.test"},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker",
+        )
+
+        recover_stale_jobs()
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, "queued")
+        self.assertGreater(job.available_at, timezone.now())
+        self.assertLessEqual(job.available_at, timezone.now() + timedelta(seconds=5))
+        self.assertIn("Recovered stale worker lease.", job.error)
+        self.assertIsNotNone(job.last_error_at)
+
+    def test_exhausted_stale_worker_job_is_dead_lettered(self):
+        from .models import BackgroundJob
+        from .management.commands.worker import recover_stale_jobs
+
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "test@example.test"},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=20),
+            locked_by="dead-worker",
+        )
+
+        recover_stale_jobs()
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIn("Recovered stale worker lease.", job.error)
