@@ -168,6 +168,20 @@ class IDEPreviewPortContractTests(APITestCase):
         upstream.close.assert_called_once()
 
 
+class HealthProbeFailureLoggingTests(APITestCase):
+    @patch("api.views.connection.cursor", side_effect=RuntimeError("do-not-log-secret"))
+    def test_database_probe_failure_is_logged_without_exposing_exception_details(self, cursor):
+        with self.assertLogs("api.views", level="WARNING") as captured:
+            response = self.client.get("/api/health/")
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["database"], "unavailable")
+        self.assertNotIn("do-not-log-secret", response.content.decode("utf-8"))
+        self.assertTrue(any("RuntimeError" in line for line in captured.output))
+        self.assertNotIn("do-not-log-secret", "\n".join(captured.output))
+        cursor.assert_called_once()
+
+
 class ProductionReadinessTests(APITestCase):
     def test_console_email_backend_never_passes_production_readiness(self):
         with override_settings(
