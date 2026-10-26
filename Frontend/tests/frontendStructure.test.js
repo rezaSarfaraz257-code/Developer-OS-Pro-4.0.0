@@ -393,6 +393,18 @@ test("IDE closing an individual inactive dirty tab saves before removing it", ()
 });
 
 
+test("save rechecks dirty tabs added while an earlier tab is saving", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const save = ide.match(/const save=useCallback\(async\(silent=false\)=>\{([\s\S]*?)\n \},\[saveFile\]\)/)?.[1] || "";
+
+  assert.match(save, /for\(let pass=0;pass<10;pass\+\+\)/);
+  assert.match(save, /const pending=\[\.\.\.dirtyPathsRef\.current\]/);
+  assert.match(save, /pending\.length===0&&!refs\.dirty\.current&&dirtyPathsRef\.current\.size===0/);
+  assert.match(save, /Edits are still changing\. Save again before continuing\./);
+  assert.match(save, /if\(!ok\)return false/);
+});
+
+
 test("Explorer move, duplicate, and rename preserve every dirty editor tab before replacing workspace state", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const move = ide.match(/async function movePath\(from,toFolder\)\{([\s\S]*?)\n \}/)?.[1] || "";
