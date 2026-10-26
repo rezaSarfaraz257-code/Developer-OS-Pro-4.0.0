@@ -457,6 +457,8 @@ test("app bootstrap preserves authentication on transient profile failures and o
   const bootstrap = app.slice(app.indexOf("export default function App() {"));
 
   assert.match(bootstrap, /const \[bootError,setBootError\]=useState\(""/);
+  assert.match(bootstrap, /\.then\(async response=>\{/);
+  assert.match(bootstrap, /if\(!response\.ok\) throw new Error\(formatApiError\(profile,"Developer OS could not initialize your profile\. Please retry\."\)\)/);
   assert.match(bootstrap, /\.catch\(error=>\{if\(active\)setBootError/);
   assert.doesNotMatch(bootstrap, /\.catch\(\(\)=>setAuthenticated\(false\)\)/);
   assert.match(bootstrap, /Retry connection/);
