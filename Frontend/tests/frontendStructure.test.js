@@ -448,3 +448,14 @@ test("app bootstrap preserves authentication on transient profile failures and o
   assert.match(bootstrap, /role="alert" aria-live="assertive"/);
   assert.match(bootstrap, /return\(\)=>\{active=false;\}/);
 });
+
+test("community feed distinguishes initial API failure from a genuinely empty feed", () => {
+  const feed = fs.readFileSync(path.resolve(srcDir, "CommunityFeed.jsx"), "utf8");
+
+  assert.match(feed, /posts\.length === 0 && error \?/);
+  assert.match(feed, /Community feed unavailable/);
+  assert.match(feed, /role="alert"/);
+  assert.match(feed, /Retry loading posts/);
+  assert.match(feed, /onClick=\{\(\) => void loadPosts\(\)\}/);
+  assert.match(feed, /The next great idea could be yours/);
+});
