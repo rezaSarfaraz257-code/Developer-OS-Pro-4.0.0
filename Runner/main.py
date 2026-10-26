@@ -650,7 +650,12 @@ def _safe_process_env(base_env, env_extra):
             continue
         if key in DANGEROUS_ENV_KEYS or key.startswith(("LD_", "DYLD_")):
             continue
-        entry_bytes = len(key.encode("utf-8")) + len(value.encode("utf-8"))
+        try:
+            entry_bytes = len(key.encode("utf-8")) + len(value.encode("utf-8"))
+        except UnicodeEncodeError:
+            # JSON can carry escaped lone surrogates; do not let malformed
+            # Unicode crash a request while preparing the child environment.
+            continue
         if accepted_bytes + entry_bytes > MAX_PROCESS_ENV_BYTES:
             continue
         base_env[key] = value
