@@ -726,3 +726,13 @@ def test_timeout_runner_terminates_process_group_and_preserves_output():
     assert result_error.output == "partial"
     assert result_error.stderr == "warning"
 \n
+
+def test_terminate_process_group_signals_descendants_after_leader_exits():
+    process = Mock()
+    process.pid = 12345
+    process.poll.return_value = 0
+    process.wait.return_value = 0
+    with patch("main.os.killpg") as killpg:
+        main._terminate_process_group(process, grace_seconds=0.1)
+    killpg.assert_called_once_with(12345, main.signal.SIGTERM)
+\n
