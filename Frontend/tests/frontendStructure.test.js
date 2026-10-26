@@ -492,3 +492,13 @@ test("notification read action reports API failures instead of clearing unread s
   assert.match(app, /notificationActionError && <p role="alert">/);
   assert.match(app, /onClick=\{markNotificationsRead\}/);
 });
+
+test("IDE workspace load failures expose an accessible retry action", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /const \[workspaceLoadError,setWorkspaceLoadError\]=useState\(""/);
+  assert.match(ide, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
+  assert.match(ide, /role=\{workspaceLoadError\?"alert":"status"\}/);
+  assert.match(ide, /workspaceLoadError&&<button type="button" className="dos-status-retry" onClick=\{\(\)=>void load\(ws\|\|workspaces\[0\]\)\}/);
+  assert.match(ide, /setWorkspaceLoadError\("");setStatus\("Loading workspace/);
+  assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\("");setStatus\("Explorer synced/);
+});
