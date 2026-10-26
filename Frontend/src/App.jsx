@@ -1057,23 +1057,29 @@ function Profile({ onProfileUpdate }) {
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const avatarInputRef = useRef(null);
 
   useEffect(() => {
     let active = true;
+    setLoadError("");
     apiFetch("/profile/")
       .then(response => response.json())
       .then(data => {
         if (active) {
           setProfile(data);
+          setLoadError("");
           onProfileUpdate?.(data);
         }
       })
-      .catch(() => { if (active) setSaveError("Could not load your profile. Please refresh and try again."); });
+      .catch(error => {
+        if (active) setLoadError(error.message || "Could not load your profile. Please try again.");
+      });
     return () => { active = false; };
-  }, [onProfileUpdate]);
+  }, [onProfileUpdate, loadAttempt]);
 
   useEffect(() => {
     if (!avatarFile) {
@@ -1161,7 +1167,15 @@ function Profile({ onProfileUpdate }) {
     }
   };
 
-  if (!profile) return <div className="page loading">LOADING PROFILE...</div>;
+  if (!profile) return loadError ? (
+    <main className="page" aria-labelledby="profile-load-error-title">
+      <section className="panel" role="alert">
+        <h1 id="profile-load-error-title">Profile unavailable</h1>
+        <p>{loadError}</p>
+        <button className="primary" type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry loading profile</button>
+      </section>
+    </main>
+  ) : <div className="page loading" role="status" aria-live="polite">LOADING PROFILE...</div>;
   const profileName = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Developer";
   const initials = profileName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "D";
   const displayedAvatar = avatarFile ? avatarPreview : (removeAvatar ? "" : profile.avatar_url);
