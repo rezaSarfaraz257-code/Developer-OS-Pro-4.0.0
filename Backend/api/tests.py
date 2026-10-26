@@ -215,6 +215,37 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_not_called()
 
     @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_unsafe_execution_snapshot_is_rejected_before_quota_or_runner(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {
+                "command": "python main.py",
+                "files": {"../secrets.txt": "must-not-run"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_workspace_files")
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_absolute_and_git_metadata_paths_are_rejected_in_execution_snapshot(self, consume_usage, runner_request):
+        for unsafe_path in ("/etc/passwd", "C:\\\\Windows\\\\win.ini", ".git/config", "src//main.py"):
+            with self.subTest(path=unsafe_path):
+                response = self.client.post(
+                    f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+                    {"command": "python main.py", "files": {unsafe_path: "x"}},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, unsafe_path)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
     def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
         response = self.client.post(
@@ -889,7 +920,7 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         workspace_id = response.data["id"]
         revision = response.data["revision"]
-        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", ".git/config", "src//app.py"):
+        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", ".", "./main.py", "src//app.py"):
             response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": path, "content": "x", "revision": revision}, format="json")
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, path)
 
