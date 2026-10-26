@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch, clearAuth } from "../../services/api";
+import { apiFetch } from "../../services/api";
 import Avatar from "../../components/Avatar";
 import "./Profile.css";
 
@@ -9,7 +9,10 @@ const acceptedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [profileLoadAttempt, setProfileLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState("");
@@ -35,14 +38,18 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
     if (!isAuthenticated) {
       setProfile(null);
       setIsEditing(false);
-      return;
+      setLoadError("");
+      return undefined;
     }
 
+    let cancelled = false;
     const loadProfile = async () => {
       setLoading(true);
+      setLoadError("");
       try {
         const response = await apiFetch("/profile/");
         const data = await response.json();
+        if (cancelled) return;
         setProfile(data);
         onProfileUpdate(data);
         setForm({
@@ -61,16 +68,20 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
           website: data.website || "",
         });
       } catch (error) {
-        console.error(error);
-        clearAuth();
-        setPage("auth");
+        if (cancelled) return;
+        // apiFetch owns authentication-expiry handling. A network/5xx failure
+        // must not erase a valid session or redirect the user away from the page.
+        setLoadError(error.message || "Unable to load your profile. Please try again.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    loadProfile();
-  }, [isAuthenticated, onProfileUpdate, setPage]);
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, onProfileUpdate, profileLoadAttempt]);
 
   useEffect(() => {
     if (!avatarFile) {
@@ -118,6 +129,7 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
 
   const handleSaveProfile = async () => {
     setSaving(true);
+    setSaveError("");
 
     try {
       const payload = {
@@ -156,10 +168,10 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
       setAvatarFile(null);
       setRemoveAvatar(false);
       setAvatarError("");
+      setSaveError("");
       setIsEditing(false);
     } catch (error) {
-      console.error(error);
-      alert(error.message || "Unable to save profile.");
+      setSaveError(error.message || "Unable to save profile. Your changes are still available to retry.");
     } finally {
       setSaving(false);
     }
@@ -247,7 +259,18 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
 
         <section className="profile-summary">
           {loading ? (
-            <div className="loading-box">Loading profile...</div>
+            <div className="loading-box" role="status" aria-live="polite">Loading profile...</div>
+          ) : loadError ? (
+            <div className="empty-box" role="alert">
+              <p>Unable to load your profile: {loadError}</p>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setProfileLoadAttempt((attempt) => attempt + 1)}
+              >
+                Retry
+              </button>
+            </div>
           ) : isEditing ? (
             <div className="profile-editor">
               <div className="avatar-upload-control">
@@ -388,6 +411,7 @@ export default function ProfilePage({ setPage, isAuthenticated, onProfileUpdate 
                 />
               </label>
 
+              {saveError && <p className="avatar-upload-error" role="alert">{saveError}</p>}
               <button
                 type="button"
                 className="primary-button"
