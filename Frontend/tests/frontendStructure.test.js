@@ -499,7 +499,7 @@ test("IDE workspace load failures expose an accessible retry action", () => {
   assert.match(ide, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
   assert.match(ide, /role=\{workspaceLoadError\?"alert":"status"\}/);
   assert.match(ide, /workspaceLoadError&&<button type="button" className="dos-status-retry" onClick=\{\(\)=>void load\(ws\|\|workspaces\[0\]\)\}/);
-  assert.match(ide, /setWorkspaceLoadError\\("");setWorkspaceLoading\\(true\\);setStatus\\("Loading workspace/);
+  assert.ok(ide.includes('setWorkspaceLoadError("");setWorkspaceLoading(true);setStatus("Loading workspace…")'));
   assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\(""\);setStatus\("Explorer synced/);
 });
 
