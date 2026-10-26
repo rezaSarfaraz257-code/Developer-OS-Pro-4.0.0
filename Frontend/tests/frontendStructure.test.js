@@ -747,3 +747,12 @@ test("IDE save-conflict recovery and collaboration state reject malformed file m
   assert.match(sync, /Workspace update did not include a valid file map\./);
   assert.match(sync, /Array\.isArray\(data\.files\)/);
 });
+
+
+test("IDE AI apply and undo validate file maps before changing editor state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /AI patch response did not include a valid file map\./);
+  assert.match(ide, /AI undo response did not include a valid file map\./);
+  assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files\?\?files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
+  assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
+});
