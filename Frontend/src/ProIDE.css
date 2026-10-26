@@ -4110,3 +4110,10 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 .dos-status-retry:hover:not(:disabled){background:rgba(255,122,144,.16);}
 .dos-status-retry:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
 .dos-status-retry:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Workspace discovery errors remain visible without obscuring the workspace selector. */
+.dos-workspace-load-error{display:flex;align-items:center;gap:8px;max-width:min(420px,38vw);color:#ffb4bf;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.dos-workspace-load-error button{flex:0 0 auto;border:1px solid rgba(255,180,191,.5);border-radius:5px;background:rgba(255,180,191,.08);color:inherit;padding:4px 8px;font:inherit;cursor:pointer}
+.dos-workspace-load-error button:hover{background:rgba(255,180,191,.16)}
+.dos-workspace-load-error button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+@media(max-width:760px){.dos-workspace-load-error{max-width:100%;flex-wrap:wrap}}
