@@ -588,7 +588,8 @@ test("creating a folder preserves the existing Explorer tree when mutation respo
   const end = ide.indexOf("async function newFile()", start);
   const createFolder = ide.slice(start, end);
   assert.match(createFolder, /const d=await explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\}\)/);
-  assert.match(createFolder, /d\.files==null\?\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}:d\.files/);\n  assert.match(createFolder, /Array\.isArray\(next\)/);
+  assert.match(createFolder, /d\.files==null\?\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}:d\.files/);
+  assert.match(createFolder, /Array\.isArray\(next\)/);
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
