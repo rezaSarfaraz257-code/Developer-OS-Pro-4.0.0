@@ -1254,6 +1254,34 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertIsNotNone(job.finished_at)
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    @patch("api.management.commands.worker.execute", return_value={"ok": True})
+    def test_successful_job_persistence_releases_worker_lease(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=2)
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.result, {"ok": True})
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("expected failure"))
+    def test_failed_job_persistence_releases_worker_lease(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=1)
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.finished_at)
+        execute.assert_called_once()
+
     def test_recent_running_job_is_not_recovered(self):
         from .management.commands.worker import recover_stale_jobs
 
