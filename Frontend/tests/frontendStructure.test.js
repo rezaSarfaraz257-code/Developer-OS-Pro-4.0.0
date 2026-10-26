@@ -727,3 +727,23 @@ test("IDE create-file and create-folder reject malformed Explorer file maps with
   assert.match(createFile, /\{\.\.\.refs\.files\.current,\[p\]:""\}/);
   assert.match(createFolder, /\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}/);
 });
+
+
+test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const saveStart = ide.indexOf("const saveOne=useCallback");
+  const saveEnd = ide.indexOf("const save=useCallback", saveStart);
+  const saveOne = ide.slice(saveStart, saveEnd);
+  const syncStart = ide.indexOf("const syncWorkspaceState=useCallback");
+  const syncEnd = ide.indexOf("const edit=", syncStart);
+  const sync = ide.slice(syncStart, syncEnd);
+
+  assert.ok(saveStart >= 0 && saveEnd > saveStart, "single-file save handler should exist");
+  assert.match(saveOne, /Workspace refresh returned an invalid file map while resolving save conflict\./);
+  assert.match(saveOne, /Save response did not include a valid file map\./);
+  assert.match(saveOne, /Array\.isArray\(latestData\.files\)/);
+  assert.match(saveOne, /Array\.isArray\(serverFiles\)/);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart, "workspace sync state handler should exist");
+  assert.match(sync, /Workspace update did not include a valid file map\./);
+  assert.match(sync, /Array\.isArray\(data\.files\)/);
+});
