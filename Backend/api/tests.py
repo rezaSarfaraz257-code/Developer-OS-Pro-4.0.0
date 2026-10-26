@@ -78,6 +78,43 @@ class ProductionReadinessTests(APITestCase):
         self.assertTrue(response.data["checks"]["email"])
 
 
+class IDECapabilitiesReadinessTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-capabilities-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+
+    @patch("api.views._runner_request")
+    def test_runner_capabilities_are_degraded_when_execution_is_unavailable(self, runner_request):
+        runner_request.return_value = ({
+            "sandbox": {
+                "execution_available": False,
+                "unavailable_reason": "Strict mode requires per-execution isolation.",
+            },
+            "operations": {"execute": False, "snapshot": True},
+        }, None)
+
+        response = self.client.get("/api/ide/capabilities/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "degraded")
+        self.assertFalse(response.data["runner"]["sandbox"]["execution_available"])
+
+    @patch("api.views._runner_request")
+    def test_runner_capabilities_are_ready_when_execution_is_available(self, runner_request):
+        runner_request.return_value = ({
+            "sandbox": {"execution_available": True},
+            "operations": {"execute": True, "snapshot": True},
+        }, None)
+
+        response = self.client.get("/api/ide/capabilities/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ready")
+
+
 class ProjectApiSecurityTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="owner", password="long-test-password-123")
