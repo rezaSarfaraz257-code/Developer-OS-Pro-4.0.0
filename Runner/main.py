@@ -27,6 +27,7 @@ MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
+MAX_PREVIEW_RESPONSE_BYTES = 10_000_000
 TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
 MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
 MAX_CONCURRENT_EXECUTIONS = MAX_CONCURRENT
@@ -1757,14 +1758,50 @@ def preview_plan_api(payload: Workspace, authorization: str = Header(default="")
     safe_workspace(payload.workspace_id)
     return preview_plan(payload.files)
 
+def _bounded_preview_fetch(url, timeout=10):
+    """Fetch preview bytes without following redirects or allowing unbounded bodies."""
+    response = None
+    try:
+        response = requests.get(url, timeout=timeout, stream=True, allow_redirects=False)
+        declared = response.headers.get("content-length")
+        if declared:
+            try:
+                if int(declared) > MAX_PREVIEW_RESPONSE_BYTES:
+                    raise HTTPException(status_code=413, detail="Preview response exceeds the 10 MB limit.")
+            except ValueError:
+                pass
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_PREVIEW_RESPONSE_BYTES:
+                raise HTTPException(status_code=413, detail="Preview response exceeds the 10 MB limit.")
+            chunks.append(chunk)
+        return b"".join(chunks), response.status_code, response.headers.get("content-type", "text/plain")
+    except HTTPException:
+        raise
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
+    finally:
+        if response is not None:
+            response.close()
+
+
 @app.get("/preview/{workspace_id}/{path:path}")
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
     auth(authorization)
     port = _workspace_preview_port(workspace_id)
     # This endpoint is intentionally internal; Django owns the public proxy.
-    try:
-        response = requests.get(f"http://127.0.0.1:{port}/{path}", timeout=10)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
-    return Response(content=response.content, status_code=response.status_code, headers={"Content-Type": response.headers.get("content-type", "text/plain")})
+    # Redirects are never followed: preview code is untrusted and must not turn
+    # the control-plane proxy into an SSRF primitive.
+    content, upstream_status, content_type = _bounded_preview_fetch(
+        f"http://127.0.0.1:{port}/{path}", timeout=10
+    )
+    return Response(
+        content=content,
+        status_code=upstream_status,
+        headers={"Content-Type": content_type, "X-Content-Type-Options": "nosniff"},
+    )
 
