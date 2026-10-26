@@ -681,7 +681,7 @@ test("switching workspaces invalidates stale execution polling and pending UI ti
   const loader = ide.slice(loadStart, loadEnd > loadStart ? loadEnd : loadStart + 3000);
 
   assert.ok(loadStart >= 0, "workspace loader should exist");
-  assert.match(loader, /executionRunRef\.current\+\+/);
+  assert.match(loader, /executionRunRef\.current\+=1/);
   assert.match(loader, /if\(executionTimerRef\.current\)\{clearTimeout\(executionTimerRef\.current\);executionTimerRef\.current=null;\}/);
   assert.ok(loader.indexOf("executionRunRef.current++") < loader.indexOf("setWs(next)"), "old run output must be invalidated before the new workspace becomes active");
 });
