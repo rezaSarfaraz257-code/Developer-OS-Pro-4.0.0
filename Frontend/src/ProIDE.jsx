@@ -216,7 +216,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    try{
      if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a folder.")}
      const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"});
-     const next=d.files&&typeof d.files==="object"?d.files:{...refs.files.current,[folder+"/.gitkeep"]:""};const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
+     const next=d.files==null?{...refs.files.current,[folder+"/.gitkeep"]:""}:d.files;if(!next||typeof next!=="object"||Array.isArray(next))throw Error("Workspace response did not include a valid file map.");const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
      refs.files.current=next;refs.ws.current=nextWs;setFiles(next);setWs(nextWs);
      setExpanded(x=>{const n=new Set(x);const parts=folder.split("/");for(let i=1;i<=parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
      setSelected(new Set([folder]));setStatus("Folder created");
@@ -233,7 +233,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    try{
      if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a new file.")}
      const d=await explorerMutation({path:p,content:"",action:"create"});
-     const nextFiles=d.files||{...refs.files.current,[p]:""};
+     const nextFiles=d.files==null?{...refs.files.current,[p]:""}:d.files;if(!nextFiles||typeof nextFiles!=="object"||Array.isArray(nextFiles))throw Error("Workspace response did not include a valid file map.");
      const nextWs={...refs.ws.current,files:nextFiles,revision:d.revision??refs.ws.current.revision,active_file:d.active_file||p};
      refs.files.current=nextFiles;refs.ws.current=nextWs;refs.active.current=d.active_file||p;refs.dirty.current=false;dirtyPathsRef.current.clear();
      setFiles(nextFiles);setWs(nextWs);setActive(d.active_file||p);setTabs(t=>t.includes(p)?t:[...t,p]);setSelected(new Set([p]));setDirty(false);
