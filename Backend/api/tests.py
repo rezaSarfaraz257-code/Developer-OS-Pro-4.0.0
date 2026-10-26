@@ -7,7 +7,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.db import IntegrityError, connection
+from django.db import DatabaseError, IntegrityError, connection
 from django.test import override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -536,6 +536,68 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.data["stdout"], "ok\n")
         self.assertIn("files", response.data)
         self.assertIn("revision", response.data)
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated quota database outage"))
+    def test_ide_execute_fails_closed_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Quota fail-closed", "files": {"main.py": "print('blocked')"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/execute/",
+            {"command": "python3 main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated process quota database outage"))
+    def test_process_start_fails_closed_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Process quota fail-closed", "files": {"main.py": "print('blocked')"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/process/start/",
+            {"command": "python3 main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_process_command_does_not_consume_quota(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Invalid process command", "files": {}, "active_file": ""},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/process/start/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
 
     def test_ide_runner_terminal_states_are_complete(self):
         terminal_states = {"success", "completed", "failed", "timeout", "cancelled"}
