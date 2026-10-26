@@ -4267,8 +4267,6 @@ def _safe_preview_proxy_path(path):
         return None
     return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
 
-def ide_preview_proxy_api(request, pk, preview_path=""):'()*+,;=:@")
-
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws = _workspace_for_user(pk, request.user)
     safe_preview_path = _safe_preview_proxy_path(preview_path)
