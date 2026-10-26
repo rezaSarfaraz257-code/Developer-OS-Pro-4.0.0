@@ -1085,7 +1085,13 @@ function Profile({ onProfileUpdate }) {
     let active = true;
     setLoadError("");
     apiFetch("/profile/")
-      .then(response => response.json())
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(formatApiError(data, "Could not load your profile. Please try again."));
+        }
+        return data;
+      })
       .then(data => {
         if (active) {
           setProfile(data);
