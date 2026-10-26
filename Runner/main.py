@@ -465,12 +465,9 @@ def safe_rel(path):
     if not raw or len(raw) > 500 or raw.startswith("/") or re.match(r"^[A-Za-z]:/", raw):
         raise ValueError("unsafe path")
     parts = raw.split("/")
-    if any(part in {"", ".", ".."} for part in parts) or raw.startswith(".git/") or "/.git/" in raw:
+    if any(part in {"", ".", ".."} for part in parts) or ".git" in parts:
         raise ValueError("unsafe path")
-    normalized = "/".join(parts)
-    if normalized.startswith(".git/"):
-        raise ValueError("unsafe path")
-    return normalized
+    return "/".join(parts)
 
 def _write_workspace_file(root, rel, content):
     """Write beneath a workspace using directory FDs and O_NOFOLLOW.
