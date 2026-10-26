@@ -2297,9 +2297,11 @@ def ide_capabilities_api(request):
             "error": error,
             "plan": plan,
         }, status=200)
+    sandbox = data.get("sandbox") if isinstance(data, dict) else None
+    execution_available = isinstance(sandbox, dict) and sandbox.get("execution_available") is True
     limits = PLAN_LIMITS[plan]
     return Response({
-        "status": "ready",
+        "status": "ready" if execution_available else "degraded",
         "plan": plan,
         "limits": {
             "ide_runs_month": limits["ide_runs_month"],
