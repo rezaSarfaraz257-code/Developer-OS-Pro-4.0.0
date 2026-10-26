@@ -4255,8 +4255,6 @@ def ide_preview_start_api(request, pk):
     data["public_preview"]=f"/api/ide/workspaces/{ws.id}/preview/"
     return Response(data)
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def _safe_preview_proxy_path(path):
     """Reject traversal and encode route data so it cannot alter the upstream URL."""
     from urllib.parse import quote, unquote
@@ -4267,6 +4265,8 @@ def _safe_preview_proxy_path(path):
         return None
     return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws = _workspace_for_user(pk, request.user)
     safe_preview_path = _safe_preview_proxy_path(preview_path)
