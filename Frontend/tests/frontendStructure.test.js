@@ -519,6 +519,19 @@ test("IDE workspace retry is pending-aware and clears loading only for the curre
   assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
 });
 
+test("Explorer mutation refreshes authoritative files before replacing local state when response omits files", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function applyExplorerState(");
+  const end = ide.indexOf("async function movePath(", start);
+  const apply = ide.slice(start, end);
+  assert.match(apply, /let next=response\?\.files&&typeof response\.files==="object"\?response\.files:null/);
+  assert.match(apply, /if\(!next\)\{/);
+  assert.match(apply, /const refresh=await apiFetch\(/);
+  assert.match(apply, /if\(!refresh\.ok\|\|!latest\.files\|\|typeof latest\.files!=="object"\)throw Error/);
+  assert.match(apply, /next=latest\.files/);
+  assert.doesNotMatch(apply, /const next=d\?\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
+});
+
 test("creating a folder preserves the existing Explorer tree when mutation response omits files", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function newFolder()");
