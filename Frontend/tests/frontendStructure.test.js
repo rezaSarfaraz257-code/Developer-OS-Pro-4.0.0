@@ -588,7 +588,7 @@ test("creating a folder preserves the existing Explorer tree when mutation respo
   const end = ide.indexOf("async function newFile()", start);
   const createFolder = ide.slice(start, end);
   assert.match(createFolder, /const d=await explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\}\)/);
-  assert.match(createFolder, /d\.files&&typeof d\.files==="object"\?d\.files:\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}/);
+  assert.match(createFolder, /d\.files==null\?\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}:d\.files/);\n  assert.match(createFolder, /Array\.isArray\(next\)/);
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
@@ -710,10 +710,10 @@ test("switching workspaces invalidates stale execution polling and pending UI ti
 
 test("IDE create-file and create-folder reject malformed Explorer file maps without corrupting local state", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const folderStart = ide.indexOf("async function newFolder()");
   const fileStart = ide.indexOf("async function newFile()");
-  const fileEnd = ide.indexOf("async function newFolder()", fileStart);
-  const folderStart = fileEnd;
-  const folderEnd = ide.indexOf("async function renamePath(", folderStart);
+  const fileEnd = ide.indexOf("async function renamePath(", fileStart);
+  const folderEnd = fileStart;
   const createFile = ide.slice(fileStart, fileEnd);
   const createFolder = ide.slice(folderStart, folderEnd);
 
