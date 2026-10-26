@@ -1,6 +1,7 @@
 import main
 import unittest
 import time
+import subprocess
 import tempfile
 import os
 from unittest.mock import patch
@@ -358,6 +359,18 @@ def test_timeout_job_stream_reports_done():
         result = main.job_output_stream(job_id, cursor=0, authorization="Bearer test-token")
     assert result["done"] is True
     assert result["status"] == "timeout"
+
+
+def test_timeout_execution_persists_partial_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
 
 
 def test_concurrent_workspace_limits():
