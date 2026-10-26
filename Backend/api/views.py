@@ -2804,6 +2804,16 @@ def ide_execute_api(request, pk):
         if not _workspace_write_allowed(ws, request.user):
             return Response({"error": "You have read-only access to this workspace."}, status=403)
 
+        stage = "command_validation"
+        raw_command = request.data.get("command")
+        if not isinstance(raw_command, str) or not raw_command.strip() or len(raw_command) > 2000:
+            return Response({"error": "A command up to 2,000 characters is required."}, status=400)
+        command = raw_command.strip()
+
+        submitted_files = request.data.get("files")
+        if submitted_files is not None and not isinstance(submitted_files, dict):
+            return Response({"error": "Workspace files must be an object."}, status=400)
+
         stage = "usage_limit"
         usage_warning = None
         try:
@@ -2825,11 +2835,6 @@ def ide_execute_api(request, pk):
                 "limit": limit,
             }, status=429)
 
-        stage = "command_validation"
-        command = str(request.data.get("command") or "").strip()
-        if not command or len(command) > 2000:
-            return Response({"error": "A command up to 2,000 characters is required."}, status=400)
-
         # Execution must remain functional even when telemetry/history persistence
         # is temporarily unavailable. A database write failure must never turn a
         # successful sandbox execution into a generic HTTP 500.
@@ -2840,9 +2845,6 @@ def ide_execute_api(request, pk):
         started = timezone.now()
 
         stage = "runner_payload"
-        submitted_files = request.data.get("files")
-        if submitted_files is not None and not isinstance(submitted_files, dict):
-            return Response({"error": "Workspace files must be an object."}, status=400)
         plan, _ = _plan_for(request.user)
         payload = {**_workspace_payload(ws), "command": command, "entitlement": {"plan": plan}}
         if isinstance(submitted_files, dict):
