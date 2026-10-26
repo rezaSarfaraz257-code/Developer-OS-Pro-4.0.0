@@ -548,6 +548,26 @@ test("IDE workspace retry is pending-aware and clears loading only for the curre
   assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
 });
 
+test("Explorer mutations cannot apply stale results after the selected workspace changes", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function applyExplorerState(");
+  const end = ide.indexOf("async function movePath(", start);
+  const apply = ide.slice(start, end);
+  assert.match(apply, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.match(apply, /refs\.ws\.current\?\.id!==expectedWorkspaceId/);
+  assert.match(apply, /Workspace changed before Explorer update could be applied/);
+  assert.match(apply, /apiFetch\(\`\/ide\/workspaces\/\$\{expectedWorkspaceId\}\/files\/\`\)/);
+  assert.match(apply, /Workspace changed while refreshing Explorer files/);
+  const move = ide.slice(ide.indexOf("async function movePath("), ide.indexOf("async function duplicatePath("));
+  const duplicate = ide.slice(ide.indexOf("async function duplicatePath("), ide.indexOf("async function renamePath("));
+  const rename = ide.slice(ide.indexOf("async function renamePath("), ide.indexOf("async function removeFile("));
+  const remove = ide.slice(ide.indexOf("async function removeFile("), ide.indexOf("async function run("));
+  assert.match(move, /expectedWorkspaceId:w\.id/);
+  assert.match(duplicate, /expectedWorkspaceId:w\.id/);
+  assert.match(rename, /expectedWorkspaceId:currentWs\.id/);
+  assert.match(remove, /expectedWorkspaceId:currentWs\.id/);
+});
+
 test("Explorer mutation refreshes authoritative files before replacing local state when response omits files", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function applyExplorerState(");
