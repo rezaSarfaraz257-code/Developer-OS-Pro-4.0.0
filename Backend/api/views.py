@@ -2277,17 +2277,19 @@ def _runner_request(method, path, payload, timeout=30):
             kwargs["json"] = payload
 
         response = None
-        # Render/free instances can briefly wake, restart or cold-start.
-        # Retry only transient transport/upstream failures with bounded backoff.
-        for attempt in range(3):
+        # GET is safe to retry. Never replay POST/other mutating requests after
+        # a timeout or gateway error: the runner may already have accepted an
+        # execution/process operation even when its response was lost.
+        max_attempts = 3 if method.upper() == "GET" else 1
+        for attempt in range(max_attempts):
             try:
                 response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
             except (requests.Timeout, requests.ConnectionError):
-                if attempt == 2:
+                if attempt + 1 >= max_attempts:
                     raise
                 time.sleep(0.25 * (2 ** attempt))
                 continue
-            if response.status_code not in {502, 503, 504} or attempt == 2:
+            if response.status_code not in {502, 503, 504} or attempt + 1 >= max_attempts:
                 break
             time.sleep(0.25 * (2 ** attempt))
 
