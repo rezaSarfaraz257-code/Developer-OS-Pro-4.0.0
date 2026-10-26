@@ -556,7 +556,7 @@ test("Explorer mutations cannot apply stale results after the selected workspace
   assert.match(apply, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
   assert.match(apply, /refs\.ws\.current\?\.id!==expectedWorkspaceId/);
   assert.match(apply, /Workspace changed before Explorer update could be applied/);
-  assert.match(apply, /apiFetch\(\`\/ide\/workspaces\/\$\{expectedWorkspaceId\}\/files\/\`\)/);
+  assert.ok(apply.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"));
   assert.match(apply, /Workspace changed while refreshing Explorer files/);
   const move = ide.slice(ide.indexOf("async function movePath("), ide.indexOf("async function duplicatePath("));
   const duplicate = ide.slice(ide.indexOf("async function duplicatePath("), ide.indexOf("async function renamePath("));
