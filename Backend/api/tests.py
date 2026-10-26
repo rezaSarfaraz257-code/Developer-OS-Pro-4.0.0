@@ -116,6 +116,16 @@ class IDEPreviewPortContractTests(APITestCase):
         )
         self.assertEqual(runner_request.call_count, 1)
 
+    def test_preview_proxy_path_helper_rejects_traversal_and_encodes_url_delimiters(self):
+        from .views import _safe_preview_proxy_path
+        for path in ("../admin", "src/../admin", "%2e%2e/admin", "bad\\npath", "a\\\\b"):
+            with self.subTest(path=path):
+                self.assertIsNone(_safe_preview_proxy_path(path))
+        self.assertEqual(
+            _safe_preview_proxy_path("app?token=x#fragment"),
+            "app%3Ftoken=x%23fragment",
+        )
+
     @patch("api.views.RUNNER_URL", "https://runner.test")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
     @patch("api.views.requests.get")
