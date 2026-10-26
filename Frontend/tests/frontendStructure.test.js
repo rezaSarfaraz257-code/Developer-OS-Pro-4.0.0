@@ -356,7 +356,7 @@ test("IDE workspace loads ignore out-of-order responses", () => {
   assert.match(ide, /const requestId=\+\+workspaceLoadRef\.current/);
   assert.match(ide, /if\(!saved\|\|requestId!==workspaceLoadRef\.current\)return/);
   assert.match(ide, /if\(requestId!==workspaceLoadRef\.current\)return/);
-  assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)setStatus/);
+  assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)\{const error=e\.message\|\|"Explorer load failed";setWorkspaceLoadError\(error\);setStatus\(error\)\}/);
 });
 
 
