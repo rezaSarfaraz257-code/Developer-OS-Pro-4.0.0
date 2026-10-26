@@ -45,7 +45,7 @@ export default function ProIDE({projectId,message,go}){
        const latest=await apiFetch(`/ide/workspaces/${w.id}/files/`);
        const latestData=await latest.json().catch(()=>({}));
        if(!latest.ok)throw Error(latestData.error||"Workspace refresh failed while resolving save conflict.");
-       const latestFilesFromServer=latestData.files&&typeof latestData.files==="object"?latestData.files:{};
+       if(!latestData.files||typeof latestData.files!=="object"||Array.isArray(latestData.files))throw Error("Workspace refresh returned an invalid file map while resolving save conflict.");const latestFilesFromServer=latestData.files;
        const latestFiles={...latestFilesFromServer};
        for(const dirtyPath of dirtyPathsRef.current){if(dirtyPath!==p&&typeof refs.files.current[dirtyPath]==="string")latestFiles[dirtyPath]=refs.files.current[dirtyPath];}
        revision=latestData.revision??revision;
@@ -75,7 +75,7 @@ export default function ProIDE({projectId,message,go}){
        d=await r.json().catch(()=>({}));
      }
      if(!r.ok)throw Error(d.error||d.detail||"Save failed");
-     const serverFiles=d.files&&typeof d.files==="object"?d.files:{...refs.files.current,[p]:content};
+     const serverFiles=d.files==null?{...refs.files.current,[p]:content}:d.files;if(!serverFiles||typeof serverFiles!=="object"||Array.isArray(serverFiles))throw Error("Save response did not include a valid file map.");
      const localFilesBeforeSave=refs.files.current;
      for(const dirtyPath of dirtyPathsRef.current){if(dirtyPath!==p&&typeof localFilesBeforeSave[dirtyPath]==="string")serverFiles[dirtyPath]=localFilesBeforeSave[dirtyPath];}
      const latestLocalContent=localFilesBeforeSave[p];
@@ -126,7 +126,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(terminalRetry.cur
 return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.current)clearTimeout(collabRetry.current);collab.current=null}},[ws?.id,collabReconnect]);
  const open=useCallback(async(p,line=1,column=1)=>{if(typeof p!=="string"||!p)return;if((dirtyPathsRef.current.has(refs.active.current)||refs.dirty.current)&&p!==refs.active.current){const saved=await save(true);if(!saved)return;}setActive(p);setTabs(t=>t.includes(p)?t:[...t,p]);setRecent(t=>[p,...t.filter(x=>x!==p)].slice(0,12));diagnosticsRequestRef.current+=1;const anyDirty=dirtyPathsRef.current.size>0;setDirty(anyDirty);refs.dirty.current=anyDirty;refs.dirtyBaseRevision.current=anyDirty?refs.ws.current?.revision??null:null;setDiagnostics([]);setStatus(anyDirty?"Unsaved changes":"Ready");setCursor({line,column});setQuickOpen(false)},[save]);
  const syncWorkspaceState=useCallback((data)=>{
-   const nextFiles=data?.files&&typeof data.files==="object"?data.files:refs.files.current;
+   if(data?.files!==undefined&&(!data.files||typeof data.files!=="object"||Array.isArray(data.files)))throw Error("Workspace update did not include a valid file map.");const nextFiles=data?.files??refs.files.current;
    const nextRevision=data?.revision??refs.ws.current?.revision;
    const nextActive=data?.active_file??refs.active.current;
    refs.files.current=nextFiles;
