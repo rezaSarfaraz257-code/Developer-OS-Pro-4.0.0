@@ -273,7 +273,7 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
     @patch("api.views._runner_request")
     @patch("api.views._consume_usage")
     def test_absolute_and_git_metadata_paths_are_rejected_in_execution_snapshot(self, consume_usage, runner_request):
-        for unsafe_path in ("/etc/passwd", "C:\\\\Windows\\\\win.ini", ".git/config", "src//main.py"):
+        for unsafe_path in ("/etc/passwd", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", "src/.git", "src//main.py"):
             with self.subTest(path=unsafe_path):
                 response = self.client.post(
                     f"/api/ide/workspaces/{self.workspace.pk}/execute/",
