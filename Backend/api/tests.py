@@ -79,6 +79,8 @@ class RunnerRequestRetrySafetyTests(APITestCase):
 
 class IDEPreviewPortContractTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-preview-port-contract",
             password="long-test-password-123",
@@ -413,6 +415,8 @@ class IDEJobStreamCursorValidationTests(APITestCase):
 
 class IDEProcessAuthorizationTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-process-readonly-user",
             password="long-test-password-123",
@@ -1317,6 +1321,8 @@ class BillingEntitlementSafetyTests(APITestCase):
 
 class IDEWorkspaceLifecycleRegressionTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
         self.client.force_authenticate(user=self.owner)
 
