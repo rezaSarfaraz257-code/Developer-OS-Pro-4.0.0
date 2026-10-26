@@ -1304,9 +1304,20 @@ function Settings({ go }) {
 export default function App() {
   const [authenticated,setAuthenticated]=useState(Boolean(getAccessToken()));
   const [user,setUser]=useState(null);
+  const [bootError,setBootError]=useState("");
+  const [bootAttempt,setBootAttempt]=useState(0);
   const [path,go]=useRoute();
 
-  useEffect(()=>{if(authenticated)apiFetch("/profile/").then(r=>r.json()).then(p=>setUser(p.user||p)).catch(()=>setAuthenticated(false));},[authenticated]);
+  useEffect(()=>{
+    if(!authenticated){setUser(null);setBootError("");return undefined;}
+    let active=true;
+    setBootError("");
+    apiFetch("/profile/")
+      .then(response=>response.json())
+      .then(profile=>{if(active){setUser(profile.user||profile);setBootError("");}})
+      .catch(error=>{if(active)setBootError(error.message||"Developer OS could not initialize your profile. Please retry.");});
+    return()=>{active=false;};
+  },[authenticated,bootAttempt]);
   useEffect(()=>{
     if(!authenticated) return;
     const referralCode = new URLSearchParams(window.location.search).get("ref");
@@ -1320,7 +1331,13 @@ export default function App() {
   useEffect(()=>{const f=()=>setAuthenticated(false);window.addEventListener("auth:expired",f);const k=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();document.querySelector(".global-search input")?.focus();}};window.addEventListener("keydown",k);return()=>{window.removeEventListener("auth:expired",f);window.removeEventListener("keydown",k)};},[]);
 
   if(!authenticated)return <Auth onReady={()=>setAuthenticated(true)}/>;
-  if(!user)return <div className="boot">INITIALIZING DEVELOPER OS <span>██████████</span></div>;
+  if(!user)return bootError ? (
+    <main className="boot" role="alert" aria-live="assertive">
+      <h1>Developer OS could not initialize</h1>
+      <p>{bootError}</p>
+      <button className="primary" type="button" onClick={()=>setBootAttempt(attempt=>attempt+1)}>Retry connection</button>
+    </main>
+  ) : <div className="boot" role="status" aria-live="polite">INITIALIZING DEVELOPER OS <span>██████████</span></div>;
 
   const projectMatch=path.match(/^\/projects\/(\d+)/);
   let current=path==="/"?"dashboard":path.split("/")[1]||"dashboard";
