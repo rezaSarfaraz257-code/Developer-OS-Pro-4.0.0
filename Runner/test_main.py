@@ -382,7 +382,7 @@ def test_timeout_job_stream_reports_done():
     assert main._set_job(job_id, status="running") is True
     assert main._set_job(job_id, status="timeout", finished_at=time.time(), exit_code=124) is True
     with patch("main.TOKEN", "test-token"):
-        result = main.job_output_stream(job_id, cursor=0, authorization="Bearer test-token")
+        result = main.job_output_stream(job_id, workspace_id="stream-timeout", cursor=0, authorization="Bearer test-token")
     assert result["done"] is True
     assert result["status"] == "timeout"
 
