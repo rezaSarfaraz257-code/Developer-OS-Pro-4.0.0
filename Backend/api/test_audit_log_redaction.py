@@ -36,7 +36,10 @@ class AuditMetadataRedactionTests(SimpleTestCase):
         result = _sanitize_audit_value({
             "refresh-token": "a",
             "apiKey": "b",
-            "db_password": "c",
+            "X-API-Key": "c",
+            "authorization_header": "d",
+            "secret_value": "e",
+            "db_password": "f",
             "safe_count": 3,
         })
         self.assertEqual(result, {"safe_count": 3})
