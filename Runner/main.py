@@ -508,7 +508,7 @@ def safe_rel(path):
     # Keep ordinary source-code filenames (including Unicode, spaces, dots,
     # brackets and common package punctuation) while rejecting control bytes,
     # alternate path syntax and filesystem-special characters at every level.
-    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     if any(
         part in {"", ".", ".."}
         or part.lower() == ".git"
