@@ -201,10 +201,9 @@ def _sanitize_audit_value(value, *, depth=0):
             normalized = "".join(char.lower() for char in key if char.isalnum())
             if (
                 normalized in _AUDIT_SECRET_KEYS
-                or normalized.endswith("password")
-                or normalized.endswith("secret")
-                or normalized.endswith("token")
-                or normalized.endswith("credential")
+                or "secret" in normalized
+                or normalized.endswith(("password", "passwd", "token", "credential", "credentials"))
+                or normalized.endswith(("apikey", "privatekey", "authorization", "cookie"))
             ):
                 continue
             safe[key] = _sanitize_audit_value(item, depth=depth + 1)
