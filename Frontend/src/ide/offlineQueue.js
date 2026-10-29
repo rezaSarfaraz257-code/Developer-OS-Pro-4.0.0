@@ -79,6 +79,24 @@ function parseWorkspaceRevision(value) {
 export function canSafelySyncOfflinePatches(patches, serverRevision) {
   if (!Array.isArray(patches) || patches.length === 0) return false;
 
+  // Treat the queue as untrusted input. A mixed-workspace batch must never be
+  // replayed against a single workspace endpoint, even if revisions happen to
+  // match. Normalize numeric/string IDs the same way as the queue helpers.
+  const workspaceIds = patches.map((patch) => patch?.workspace_id);
+  if (workspaceIds.some((id) => id == null || String(id).trim() === "")) {
+    return false;
+  }
+  if (new Set(workspaceIds.map(String)).size !== 1) return false;
+
+  // Each workspace/path should have only one current patch. Refuse ambiguous
+  // batches instead of depending on request order to resolve duplicate paths.
+  const paths = patches.map((patch) => patch?.path);
+  if (paths.some((path) => typeof path !== "string" || path.length === 0)) {
+    return false;
+  }
+  if (new Set(paths).size !== paths.length) return false;
+  if (patches.some((patch) => typeof patch?.content !== "string")) return false;
+
   // Missing server metadata must never coerce to revision 0. Offline replay
   // is destructive if it proceeds without an explicit, comparable revision.
   const currentRevision = parseWorkspaceRevision(serverRevision);
