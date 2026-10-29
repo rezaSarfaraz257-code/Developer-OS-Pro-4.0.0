@@ -91,6 +91,8 @@ class PreviewProxySecurityTests(APITestCase):
         self.assertEqual(response.content, b"<h1>ok</h1>")
         self.assertEqual(response["Cache-Control"], "no-store")
         self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response["Content-Security-Policy"], "sandbox allow-scripts allow-forms")
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
         self.assertEqual(get.call_args.args[0], f"https://runner.example/preview/{self.workspace.pk}/index.html")
         upstream.close.assert_called_once()
 
