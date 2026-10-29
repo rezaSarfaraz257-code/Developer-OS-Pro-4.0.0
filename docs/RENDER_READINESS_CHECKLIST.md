@@ -2,6 +2,17 @@
 
 Use this checklist when the public API responds to `/api/health/` but `/api/health/ready/` returns HTTP 503. Liveness means the process responds; readiness intentionally requires production dependencies and configuration.
 
+## Triage when liveness and readiness both return 503
+
+If `/api/health/live/` and `/api/health/ready/` both return HTTP 503 (or the host returns a platform-generated 503 before JSON is returned), treat this as a **service availability/startup incident**, not merely a failed readiness check. The readiness `checks` object is only diagnostic evidence if the application itself returned its JSON response.
+
+1. Open the Render API service and check service events/deploy history first. Confirm it is not suspended, deploying, repeatedly restarting, or failing its configured health check.
+2. Inspect logs around the latest deploy for the first startup/import/configuration/database exception and the process exit reason. Capture only the exception type, safe message, timestamp, and deployed commit; redact secrets and personal data.
+3. Verify the configured Render health-check path is the lightweight `/api/health/live/` endpoint, not a dependency-heavy readiness endpoint. Liveness must not require the database, Redis, SMTP, or worker.
+4. Confirm the deployed `RENDER_GIT_COMMIT`/release identity and compare it with the intended branch or commit. A green CI run for an undeployed commit cannot prove the live service is healthy.
+5. Once the application responds, inspect the JSON from `/api/health/ready/?format=json` and fix the specific false checks. If the origin still returns platform-level 503, use service logs/events to identify the startup or routing failure; do not infer which readiness dependency failed.
+6. Recheck all health endpoints after a successful restart/deploy. Do not silence health checks, loosen security settings, or report success based on the frontend loading alone.
+
 ## Required web-service environment
 
 Configure values in the Render API web service's Environment page. Never commit credentials to this repository or paste them into public issues.
