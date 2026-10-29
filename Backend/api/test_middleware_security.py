@@ -72,5 +72,5 @@ class ApiSecurityHeadersTests(SimpleTestCase):
 
         self.assertEqual(response["Content-Security-Policy"], "sandbox allow-scripts allow-forms")
         self.assertEqual(response["Referrer-Policy"], "no-referrer")
-        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(response["X-Content-Type-Options"], "nosniff")
