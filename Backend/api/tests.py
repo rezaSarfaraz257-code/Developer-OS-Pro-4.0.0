@@ -400,6 +400,10 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
 
 class IDEJobStreamCursorValidationTests(APITestCase):
     def setUp(self):
+        # The custom IP throttle uses shared cache state across test clients.
+        # Clear it here so cursor contract tests assert validation behavior,
+        # not the order in which unrelated API tests happened to run.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-job-cursor-user",
             password="long-test-password-123",
