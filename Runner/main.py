@@ -40,9 +40,29 @@ PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600"))
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
-RUNNER_SECURITY_LEVEL = os.environ.get("RUNNER_SECURITY_LEVEL", "strict").strip().lower()
-if RUNNER_SECURITY_LEVEL not in {"strict", "compat"}:
-    RUNNER_SECURITY_LEVEL = "strict"
+def _resolve_runner_security_level(raw=None, *, environment=None, render_service_id=None, render_git_commit=None):
+    """Never allow the trusted shared-container compatibility mode in production.
+
+    Render's deployment markers are treated as production even when the
+    application-specific ENVIRONMENT variable is missing or misconfigured.
+    Strict mode can still use a supported per-execution sandbox backend.
+    """
+    configured = os.environ.get("RUNNER_SECURITY_LEVEL", "strict") if raw is None else raw
+    level = str(configured).strip().lower()
+    if level not in {"strict", "compat"}:
+        level = "strict"
+
+    runtime_environment = os.environ.get("ENVIRONMENT", "") if environment is None else environment
+    service_id = os.environ.get("RENDER_SERVICE_ID", "") if render_service_id is None else render_service_id
+    git_commit = os.environ.get("RENDER_GIT_COMMIT", "") if render_git_commit is None else render_git_commit
+    is_production = str(runtime_environment).strip().lower() in {"production", "prod"}
+    is_render_deployment = bool(str(service_id).strip() or str(git_commit).strip())
+    if level == "compat" and (is_production or is_render_deployment):
+        return "strict"
+    return level
+
+
+RUNNER_SECURITY_LEVEL = _resolve_runner_security_level()
 # Managed runtimes such as Render can deny the Linux namespace/capabilities that
 # bubblewrap requires. Container-native mode is the production default.
 # bwrap remains opt-in for infrastructure that explicitly supports it.
