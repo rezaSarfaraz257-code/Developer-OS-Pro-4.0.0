@@ -200,22 +200,48 @@ def audit_security_event(user, action, *, organization=None, target_type="", tar
 
 
 def validate_remote_url(value: str, *, allow_hosts=None, allow_private=False) -> str:
-    """Validate an outbound URL and reject localhost/private/link-local targets."""
-    parsed = urlparse(str(value or ""))
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    """Validate an outbound URL and reject unsafe destinations before use.
+
+    Callers must still prevent DNS rebinding by pinning the validated address
+    at connection time; a validation-time DNS lookup alone cannot guarantee
+    that a later HTTP client connects to the same address.
+    """
+    raw = str(value or "").strip()
+    if not raw or any(ord(char) < 32 or ord(char) == 127 for char in raw):
+        raise ValueError("URL is empty or contains control characters.")
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Only absolute http(s) URLs are allowed.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("URLs containing embedded credentials are not allowed.")
+    scheme = parsed.scheme.lower()
     hostname = parsed.hostname.rstrip(".").lower()
-    if allow_hosts and hostname not in {h.lower() for h in allow_hosts}:
+    if not hostname:
+        raise ValueError("Destination host is invalid.")
+    if allow_hosts and hostname not in {str(host).rstrip(".").lower() for host in allow_hosts}:
         raise ValueError("Destination host is not allowed.")
     try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
-    except socket.gaierror as exc:
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError("Destination port is invalid.") from exc
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
+    except (socket.gaierror, OSError) as exc:
         raise ValueError("Destination host could not be resolved.") from exc
+    if not addresses:
+        raise ValueError("Destination host could not be resolved.")
     if not allow_private:
         for address in addresses:
-            ip = ipaddress.ip_address(address)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-                raise ValueError("Private or local destinations are not allowed.")
+            try:
+                ip = ipaddress.ip_address(address)
+            except ValueError as exc:
+                raise ValueError("Destination resolved to an invalid IP address.") from exc
+            # IPv4-mapped IPv6 addresses must be judged by their embedded IPv4
+            # address, not by the outer IPv6 address classification.
+            if getattr(ip, "ipv4_mapped", None) is not None:
+                ip = ip.ipv4_mapped
+            if not ip.is_global:
+                raise ValueError("Private or non-global destinations are not allowed.")
     return parsed.geturl()
 
 
