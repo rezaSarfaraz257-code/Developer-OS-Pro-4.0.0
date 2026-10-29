@@ -2847,9 +2847,12 @@ def ide_debug_api(request, pk):
     try:
         line = bounded_int("line", 0, 0, 10_000_000)
         column = bounded_int("column", 1, 1, 1_000_000)
-    except ValueError as exc:
-        field = str(exc) or "line/column"
-        return Response({"error": f"Invalid debugger {field}; value is outside the accepted range."}, status=400)
+    except ValueError:
+        # Never reflect exception text to the client; return a fixed, bounded message.
+        return Response(
+            {"error": "Invalid debugger line or column; value is outside the accepted range."},
+            status=400,
+        )
 
     path = request.data.get("path", "")
     condition = request.data.get("condition", "")
