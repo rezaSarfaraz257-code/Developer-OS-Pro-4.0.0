@@ -264,7 +264,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
      const refresh=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`);
      const latest=await refresh.json().catch(()=>({}));
      if(!refresh.ok||!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error(latest.error||latest.detail||`Workspace refresh failed after file operation (HTTP ${refresh.status})`);
-     if(refs.ws.current?.id!==expectedWorkspaceId)throw Error("Workspace changed while refreshing Explorer files. Retry the operation.");
+     if(refs.ws.current?.id!==expectedWorkspaceId)throw Error("Workspace changed while refreshing Explorer files. Retry the operation.");if(dirtyPathsRef.current.size||refs.dirty.current)throw Error("Editor changed while refreshing Explorer files. Your edits were preserved; save before retrying the file operation.");
      response={...response,...latest};
      next=latest.files;
    }
