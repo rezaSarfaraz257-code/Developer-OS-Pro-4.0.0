@@ -599,7 +599,7 @@ test("folder creation reconciles the authoritative Explorer state when mutation 
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
-test("IDE command submission without a workspace reports that the command was not sent", () => {test("IDE command submission without a workspace reports that the command was not sent", () => {
+test("IDE command submission without a workspace reports that the command was not sent", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function run(");
   const end = ide.indexOf("const onSaveKey", start);
