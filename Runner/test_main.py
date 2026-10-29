@@ -28,6 +28,70 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 main.JOB_OUTPUT.pop(job_id, None)
 
 
+class RunnerSecurityLevelResolutionTests(unittest.TestCase):
+    def test_compat_is_forced_strict_in_production(self):
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "compat",
+                environment="production",
+                render_service_id="",
+                render_git_commit="",
+            ),
+            "strict",
+        )
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "compat",
+                environment="prod",
+                render_service_id="",
+                render_git_commit="",
+            ),
+            "strict",
+        )
+
+    def test_compat_is_forced_strict_on_render_without_environment_marker(self):
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "compat",
+                environment="",
+                render_service_id="srv-runner",
+                render_git_commit="",
+            ),
+            "strict",
+        )
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "compat",
+                environment="development",
+                render_service_id="",
+                render_git_commit="abc123",
+            ),
+            "strict",
+        )
+
+    def test_compat_remains_available_for_local_ci_only(self):
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "compat",
+                environment="development",
+                render_service_id="",
+                render_git_commit="",
+            ),
+            "compat",
+        )
+
+    def test_unknown_security_level_fails_closed(self):
+        self.assertEqual(
+            main._resolve_runner_security_level(
+                "unsafe",
+                environment="development",
+                render_service_id="",
+                render_git_commit="",
+            ),
+            "strict",
+        )
+
+
 class RunnerSecurityTests(unittest.TestCase):
     def test_preview_path_rejects_traversal_and_control_characters(self):
         for path in ("../admin", "src/../admin", "%2e%2e/admin", "a\\\\b", "bad\\npath"):
