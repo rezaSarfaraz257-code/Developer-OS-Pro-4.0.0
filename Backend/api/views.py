@@ -4316,7 +4316,7 @@ def ide_preview_proxy_api(request, pk, preview_path=""):
         response["X-Content-Type-Options"] = "nosniff"
         # Preview HTML is user-controlled. A sandboxed document gets an opaque
         # origin and cannot read the app's localStorage/session state.
-        response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms"
+        response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms; frame-ancestors 'self'"
         response["Referrer-Policy"] = "no-referrer"
         return response
     except requests.RequestException as exc:
