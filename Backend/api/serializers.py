@@ -334,9 +334,9 @@ class CodeWorkspaceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Invalid file path.")
             # Keep the API and Runner path contracts aligned. Never silently
             # strip absolute prefixes or accept ambiguous path components.
-            normalized = filename.replace("\\\\", "/")
+            normalized = filename.replace("\\", "/")
             parts = normalized.split("/")
-            component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+            component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
             if (
                 not normalized
                 or normalized.startswith("/")
