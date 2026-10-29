@@ -567,7 +567,11 @@ test("Explorer mutations cannot apply stale results after the selected workspace
   assert.match(duplicate, /expectedWorkspaceId:w\.id/);
   assert.match(rename, /expectedWorkspaceId:currentWs\.id/);
   assert.match(remove, /expectedWorkspaceId:currentWs\.id/);
-  assert.match(ide, /const p=contextMenu\.path,workspaceId=refs\.ws\.current\?\.id;[\s\S]*?expectedWorkspaceId:workspaceId/);
+  assert.match(move, /explorerMutation\(\{action:"rename",path:from,to:target\},true,w\.id\)/);
+  assert.match(duplicate, /explorerMutation\(\{action:"create",path:target,content\},true,w\.id\)/);
+  assert.match(rename, /explorerMutation\(\{action:"rename",path,to:target\},true,currentWs\.id\)/);
+  assert.match(remove, /explorerDelete\(p,true,currentWs\.id\)/);
+  assert.match(ide, /const p=contextMenu\.path,workspaceId=refs\.ws\.current\?\.id;[\s\S]*?explorerDelete\(p,true,workspaceId\)[\s\S]*?expectedWorkspaceId:workspaceId/);
 });
 
 test("Explorer mutation refreshes authoritative files before replacing local state when response omits files", () => {
@@ -742,6 +746,14 @@ test("Explorer conflict retries refresh the target workspace without switching t
   assert.match(mutation, /Workspace changed while resolving the Explorer conflict/);
   assert.match(mutation, /latest\.revision/);
   assert.doesNotMatch(mutation, /await load\(w\)/);
+  const deleteStart = ide.indexOf("async function explorerDelete(");
+  const deleteEnd = ide.indexOf("async function newFolder(", deleteStart);
+  const deletion = ide.slice(deleteStart, deleteEnd);
+  assert.match(deletion, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.ok(deletion.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"), "delete conflict refresh must stay scoped to the captured workspace");
+  assert.match(deletion, /Workspace changed while resolving the delete conflict/);
+  assert.match(deletion, /latest\.revision/);
+  assert.doesNotMatch(deletion, /await load\(w\)/);
 });
 
 test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
