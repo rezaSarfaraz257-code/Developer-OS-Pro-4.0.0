@@ -11,6 +11,30 @@ from fastapi import HTTPException
 
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
+class RunnerEnvironmentLimitParsingTests(unittest.TestCase):
+    def test_invalid_integer_environment_value_uses_safe_default(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "not-a-number"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 7)
+
+    def test_integer_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "-100"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 1)
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "999"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 10)
+
+    def test_invalid_and_non_finite_float_environment_values_use_default(self):
+        for value in ("bad", "nan", "inf", "-inf"):
+            with self.subTest(value=value), patch.dict(os.environ, {"RUNNER_TEST_FLOAT": value}):
+                self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.5)
+
+    def test_float_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "-3.5"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.1)
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "50"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 2.0)
+
+
+
 
 class RunnerJobTenantIsolationTests(unittest.TestCase):
     def test_job_lookup_requires_matching_workspace(self):
