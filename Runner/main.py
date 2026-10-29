@@ -510,18 +510,24 @@ def safe_rel(path):
     return "/".join(parts)
 
 def _write_workspace_file(root, rel, content):
-    """Write beneath a workspace using directory FDs and O_NOFOLLOW.
+    """Write a validated relative path beneath a workspace without following symlinks.
 
-    Path-based symlink checks alone are vulnerable to a time-of-check/time-of-use
-    race when a running process can mutate the workspace concurrently.
+    Validate at the final filesystem boundary as well as at request parsing.
+    The directory-FD walk prevents a concurrent workspace process from swapping
+    a checked directory for a symlink between validation and file creation.
     """
+    # Do not rely on callers having validated user-controlled path data.
+    rel = safe_rel(rel)
+    parts = rel.split("/")
+    if any(not re.fullmatch(r"[^/\\\\\x00-\x1f\x7f]+", part) for part in parts):
+        raise ValueError("unsafe path")
+
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     root_fd = os.open(str(root), directory_flags)
     opened_dirs = []
     parent_fd = root_fd
     try:
-        parts = rel.split("/")
         for part in parts[:-1]:
             try:
                 os.mkdir(part, mode=0o700, dir_fd=parent_fd)
