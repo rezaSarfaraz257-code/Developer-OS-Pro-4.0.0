@@ -952,3 +952,28 @@ class PreviewProxySafetyTests(unittest.TestCase):
             main._bounded_preview_fetch("http://127.0.0.1:12345/chunked")
         self.assertEqual(ctx.exception.status_code, 413)
         upstream.close.assert_called_once()
+
+class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
+    def test_plan_memory_cannot_exceed_operator_configured_runner_budget(self):
+        # Test the child pre-exec callback without mutating the test process limits.
+        with patch("main.RUNNER_MEMORY_MB", 512), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=120, memory_mb=2048)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+    def test_lower_tier_memory_limit_is_preserved(self):
+        with patch("main.RUNNER_MEMORY_MB", 1024), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=30, memory_mb=256)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
+
