@@ -202,6 +202,7 @@ def _sanitize_audit_value(value, *, depth=0):
             if (
                 normalized in _AUDIT_SECRET_KEYS
                 or "secret" in normalized
+                or "authorization" in normalized
                 or normalized.endswith(("password", "passwd", "token", "credential", "credentials"))
                 or normalized.endswith(("apikey", "privatekey", "authorization", "cookie"))
             ):
