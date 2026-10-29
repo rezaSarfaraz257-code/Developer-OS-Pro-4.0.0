@@ -14,7 +14,9 @@ export function commandForFile(path, files) {
     filePath.split("/").some((segment) => !segment || segment === "." || segment === "..") ||
     [...filePath].some((character) => {
       const code = character.charCodeAt(0);
-      return code <= 0x1f || code === 0x7f;
+      // Reject C0, DEL, and C1 controls. These are not valid printable
+      // workspace path characters and can produce ambiguous terminal output.
+      return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
     }) ||
     !Object.prototype.hasOwnProperty.call(files ?? {}, filePath)
   ) {
