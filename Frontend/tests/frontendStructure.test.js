@@ -583,18 +583,19 @@ test("Explorer mutation refreshes authoritative files before replacing local sta
   assert.doesNotMatch(apply, /const next=d\?\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
 });
 
-test("creating a folder preserves the existing Explorer tree when mutation response omits files", () => {
+test("folder creation reconciles the authoritative Explorer state when mutation response omits files", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function newFolder()");
   const end = ide.indexOf("async function newFile()", start);
   const createFolder = ide.slice(start, end);
-  assert.match(createFolder, /const d=await explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\}\)/);
-  assert.match(createFolder, /d\.files==null\?\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}:d\.files/);
-  assert.match(createFolder, /Array\.isArray\(next\)/);
+  assert.match(createFolder, /explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\},true,w\.id\)/);
+  assert.match(createFolder, /await applyExplorerState\(d,\{expectedWorkspaceId:w\.id\}\)/);
+  assert.match(createFolder, /Workspace changed before folder creation/);
+  assert.match(createFolder, /Your edits were preserved/);
   assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
 });
 
-test("IDE command submission without a workspace reports that the command was not sent", () => {
+test("IDE command submission without a workspace reports that the command was not sent", () => {test("IDE command submission without a workspace reports that the command was not sent", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const start = ide.indexOf("async function run(");
   const end = ide.indexOf("const onSaveKey", start);
@@ -710,28 +711,40 @@ test("switching workspaces invalidates stale execution polling and pending UI ti
 });
 
 
-test("IDE create-file and create-folder reject malformed Explorer file maps without corrupting local state", () => {
+test("IDE create-file and create-folder preserve current workspace and editor state across async mutations", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const folderStart = ide.indexOf("async function newFolder()");
   const fileStart = ide.indexOf("async function newFile()");
   const fileEnd = ide.indexOf("async function renamePath(", fileStart);
-  const folderEnd = fileStart;
   const createFile = ide.slice(fileStart, fileEnd);
-  const createFolder = ide.slice(folderStart, folderEnd);
+  const createFolder = ide.slice(folderStart, fileStart);
 
   assert.ok(fileStart >= 0 && fileEnd > fileStart, "create-file handler should exist");
-  assert.ok(folderStart >= 0 && folderEnd > folderStart, "create-folder handler should exist");
-  for (const handler of [createFile, createFolder]) {
-    assert.match(handler, /d\.files==null\?/);
-    assert.match(handler, /typeof (?:nextFiles|next)!=="object"\|\|Array\.isArray\((?:nextFiles|next)\)/);
-    assert.match(handler, /Workspace response did not include a valid file map\./);
-  }
-  assert.match(createFile, /\{\.\.\.refs\.files\.current,\[p\]:""\}/);
-  assert.match(createFolder, /\{\.\.\.refs\.files\.current,\[folder\+"\/\.gitkeep"\]:""\}/);
+  assert.ok(folderStart >= 0 && fileStart > folderStart, "create-folder handler should exist");
+  assert.match(createFile, /Workspace changed before file creation/);
+  assert.match(createFile, /File was created in the previous workspace/);
+  assert.match(createFile, /Your edits were preserved/);
+  assert.match(createFile, /await applyExplorerState\(\{\.\.\.d,active_file:d\.active_file\|\|p\},\{expectedWorkspaceId:currentWs\.id\}\)/);
+  assert.match(createFolder, /Workspace changed before folder creation/);
+  assert.match(createFolder, /Folder was created in the previous workspace/);
+  assert.match(createFolder, /Your edits were preserved/);
+  assert.match(createFolder, /await applyExplorerState\(d,\{expectedWorkspaceId:w\.id\}\)/);
 });
 
+test("Explorer conflict retries refresh the target workspace without switching the active workspace", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function explorerMutation(");
+  const end = ide.indexOf("async function explorerDelete(", start);
+  const mutation = ide.slice(start, end);
+  assert.ok(start >= 0 && end > start, "Explorer mutation helper should exist");
+  assert.match(mutation, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.match(mutation, /apiFetch\(\`\/ide\/workspaces\/\$\{expectedWorkspaceId\}\/files\/\`\)/);
+  assert.match(mutation, /Workspace changed while resolving the Explorer conflict/);
+  assert.match(mutation, /latest\.revision/);
+  assert.doesNotMatch(mutation, /await load\(w\)/);
+});
 
-test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
+test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const saveStart = ide.indexOf("const saveFile=useCallback");
   const saveEnd = ide.indexOf("const save=useCallback", saveStart);
