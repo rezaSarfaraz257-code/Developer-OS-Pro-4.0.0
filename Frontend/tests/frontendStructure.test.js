@@ -738,13 +738,13 @@ test("Explorer conflict retries refresh the target workspace without switching t
   const mutation = ide.slice(start, end);
   assert.ok(start >= 0 && end > start, "Explorer mutation helper should exist");
   assert.match(mutation, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
-  assert.match(mutation, /apiFetch\(\`\/ide\/workspaces\/\$\{expectedWorkspaceId\}\/files\/\`\)/);
+  assert.ok(mutation.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"), "conflict refresh must stay scoped to the captured workspace");
   assert.match(mutation, /Workspace changed while resolving the Explorer conflict/);
   assert.match(mutation, /latest\.revision/);
   assert.doesNotMatch(mutation, /await load\(w\)/);
 });
 
-test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
+test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const saveStart = ide.indexOf("const saveFile=useCallback");
   const saveEnd = ide.indexOf("const save=useCallback", saveStart);
