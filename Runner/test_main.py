@@ -159,6 +159,13 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_allows_normal_workspace_paths(self):
         self.assertEqual(safe_rel("src/main.py"), "src/main.py")
         self.assertEqual(safe_rel("README.md"), "README.md")
+        self.assertEqual(safe_rel("src/components/My Component.jsx"), "src/components/My Component.jsx")
+        self.assertEqual(safe_rel("проект/файл.py"), "проект/файл.py")
+
+    def test_rejects_filesystem_special_characters_and_control_bytes(self):
+        for path in ("src/name\\x00.py", "src/name\\n.py", "src/name:stream", "src/name\\x7f.py", "src/.GIT/config"):
+            with self.subTest(path=repr(path)), self.assertRaises(ValueError):
+                safe_rel(path)
 
     def test_blocks_dangerous_commands(self):
         for command in ("rm -rf /", "docker ps", "curl https://example.com", "kill 1"):
