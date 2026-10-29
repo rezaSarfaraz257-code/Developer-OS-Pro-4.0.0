@@ -75,6 +75,23 @@ test("readiness contract requires every named production check", () => {
   assert.match(isReady(jsonInput({ status: "degraded", checks, version: "4.0.0", release_sha: "abc1234" })), /status is not ready/);
 });
 
+test("readiness HTTP 503 reports only allow-listed failed check names", () => {
+  const checks = Object.fromEntries(REQUIRED_READINESS_CHECKS.map(name => [name, true]));
+  checks.cache = false;
+  checks.worker = false;
+  const responseBody = {
+    status: "not_ready",
+    checks,
+    version: "4.0.0",
+    release_sha: "a".repeat(40),
+  };
+  const result = isReady(jsonInput(responseBody, false));
+  assert.match(result, /HTTP 503/);
+  assert.match(result, /cache, worker/);
+  assert.doesNotMatch(result, /DATABASE_URL|password|secret/i);
+  assert.match(isReady({ response: response(false), body: "<html>platform unavailable</html>" }), /HTTP 503/);
+});
+
 test("pricing contract accepts complete plans and rejects missing or invalid contracts", () => {
   const valid = validPricing();
   assert.equal(validatePricing(jsonInput(valid)), true);
@@ -219,6 +236,21 @@ test("origin-level diagnosis appears only when all API probes fail at the origin
   ]);
   assert.ok(mixedIncident.some(item => item.code === "API_ORIGIN_DEGRADED"));
   assert.ok(mixedIncident.some(item => item.code === "API_LIVENESS_ROUTE_MISSING"));
+});
+
+test("diagnostics identify a reachable API whose readiness gate is blocked", () => {
+  const diagnostics = diagnoseChecks([
+    { name: "api-liveness", ok: true, status: 200 },
+    { name: "api-health", ok: true, status: 200 },
+    { name: "api-readiness", ok: false, status: 503, error: "HTTP 503; failed or missing checks: cache, worker; status is not ready" },
+    { name: "api-pricing-contract", ok: true, status: 200 },
+    { name: "billing-provider-config", ok: true, status: 200 },
+  ]);
+  const readiness = diagnostics.find(item => item.code === "API_READINESS_BLOCKED");
+  assert.ok(readiness);
+  assert.match(readiness.message, /cache, worker/);
+  assert.match(readiness.action, /worker heartbeat/);
+  assert.equal(diagnostics.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
 });
 
 test("diagnostics identify missing liveness route and incomplete billing configuration", () => {
