@@ -564,6 +564,14 @@
 .dos-ide-pro .dos-overlay-search>input:focus{
   box-shadow:inset 0 0 0 1px rgba(99,230,255,.08),0 0 24px rgba(99,230,255,.04);
 }
+/* Focus mode expands the actual editor grid while preserving editor, dock and status state. */
+.dos-ide-pro.dos-focus-mode .dos-body{
+  grid-template-columns:48px minmax(0,1fr);
+}
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-inspector{
+  display:none;
+}
 .dos-ide-pro.dos-focus-mode .dos-activity button:not(.selected),
 .dos-ide-pro.dos-focus-mode .dos-inspector{
   opacity:.38;
@@ -4105,3 +4113,15 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 /* Global Search selected-result focus: keep keyboard and pointer selection visible. */
 .dos-ide-pro .dos-search-results button.selected{background:#103149;box-shadow:inset 2px 0 #55dcff}
 .dos-ide-pro .dos-search-results button:focus-visible{outline:2px solid #55dcff;outline-offset:-2px;background:#10263a}
+/* Workspace recovery stays visible in the IDE status row without covering editor controls. */
+.dos-status-retry{flex:0 0 auto;border:1px solid rgba(255,122,144,.45);border-radius:5px;background:rgba(255,122,144,.08);color:inherit;padding:3px 8px;font:inherit;font-size:11px;cursor:pointer;}
+.dos-status-retry:hover:not(:disabled){background:rgba(255,122,144,.16);}
+.dos-status-retry:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
+.dos-status-retry:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Workspace discovery errors remain visible without obscuring the workspace selector. */
+.dos-workspace-load-error{display:flex;align-items:center;gap:8px;max-width:min(420px,38vw);color:#ffb4bf;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.dos-workspace-load-error button{flex:0 0 auto;border:1px solid rgba(255,180,191,.5);border-radius:5px;background:rgba(255,180,191,.08);color:inherit;padding:4px 8px;font:inherit;cursor:pointer}
+.dos-workspace-load-error button:hover{background:rgba(255,180,191,.16)}
+.dos-workspace-load-error button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+@media(max-width:760px){.dos-workspace-load-error{max-width:100%;flex-wrap:wrap}}

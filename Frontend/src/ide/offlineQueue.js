@@ -21,7 +21,7 @@ export function queueWorkspacePatch(queue, patch) {
   if (
     !patch ||
     patch.workspace_id == null ||
-    String(patch.workspace_id).length === 0 ||
+    String(patch.workspace_id).trim().length === 0 ||
     typeof patch.path !== "string" ||
     typeof patch.content !== "string"
   ) {
@@ -65,16 +65,48 @@ export function removeWorkspacePatches(queue, workspaceId) {
 // Offline edits do not include a full base snapshot for each file. Only replay them
 // when the server is still at the exact revision they were based on; otherwise a
 // "latest revision" retry could silently overwrite another collaborator's changes.
+function parseWorkspaceRevision(value) {
+  if (
+    typeof value !== "number" &&
+    !(typeof value === "string" && /^\d+$/.test(value.trim()))
+  ) {
+    return null;
+  }
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
 export function canSafelySyncOfflinePatches(patches, serverRevision) {
   if (!Array.isArray(patches) || patches.length === 0) return false;
-  const revisions = patches.map((patch) => {
-    const base = patch?.base_revision;
-    if (base == null || (typeof base === "string" && base.trim() === "")) return Number.NaN;
-    return Number(base);
-  });
-  if (revisions.some((revision) => !Number.isFinite(revision))) return false;
+
+  // Treat the queue as untrusted input. A mixed-workspace batch must never be
+  // replayed against a single workspace endpoint, even if revisions happen to
+  // match. Normalize numeric/string IDs the same way as the queue helpers.
+  const workspaceIds = patches.map((patch) => patch?.workspace_id);
+  if (workspaceIds.some((id) => id == null || String(id).trim() === "")) {
+    return false;
+  }
+  if (new Set(workspaceIds.map(String)).size !== 1) return false;
+
+  // Each workspace/path should have only one current patch. Refuse ambiguous
+  // batches instead of depending on request order to resolve duplicate paths.
+  const paths = patches.map((patch) => patch?.path);
+  if (paths.some((path) => typeof path !== "string" || path.length === 0)) {
+    return false;
+  }
+  if (new Set(paths).size !== paths.length) return false;
+  if (patches.some((patch) => typeof patch?.content !== "string")) return false;
+
+  // Missing server metadata must never coerce to revision 0. Offline replay
+  // is destructive if it proceeds without an explicit, comparable revision.
+  const currentRevision = parseWorkspaceRevision(serverRevision);
+  if (currentRevision === null) return false;
+
+  const revisions = patches.map((patch) => parseWorkspaceRevision(patch?.base_revision));
+  if (revisions.some((revision) => revision === null)) return false;
+
   const uniqueRevisions = new Set(revisions);
-  return uniqueRevisions.size === 1 && Number(serverRevision) === revisions[0];
+  return uniqueRevisions.size === 1 && currentRevision === revisions[0];
 }
 
 
@@ -101,13 +133,14 @@ export function removeSyncedWorkspacePatches(queue, syncedPatches) {
 // The next write still uses optimistic concurrency, so a later external write
 // causes a conflict instead of being overwritten.
 export function rebaseWorkspacePatches(queue, workspaceId, revision) {
-  if (workspaceId == null || !Number.isFinite(Number(revision))) {
+  const parsedRevision = parseWorkspaceRevision(revision);
+  if (workspaceId == null || parsedRevision === null) {
     return Array.isArray(queue) ? queue : [];
   }
   return (Array.isArray(queue) ? queue : []).map((item) =>
     item && item.workspace_id != null &&
     String(item.workspace_id) === String(workspaceId)
-      ? { ...item, base_revision: Number(revision) }
+      ? { ...item, base_revision: parsedRevision }
       : item
   );
 }

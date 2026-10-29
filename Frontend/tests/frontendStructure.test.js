@@ -275,17 +275,23 @@ test("collaboration acknowledgements cannot clear newer or cross-workspace edits
 
 test("offline replay is allowed only against its exact base revision", () => {
   assert.equal(canSafelySyncOfflinePatches([
-    { path: "a.js", content: "A", base_revision: 12 },
-    { path: "b.js", content: "B", base_revision: 12 },
+    { workspace_id: "7", path: "a.js", content: "A", base_revision: 12 },
+    { workspace_id: 7, path: "b.js", content: "B", base_revision: 12 },
   ], 12), true);
-  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: 12 }], 13), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: "12" }], "12"), true);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: 12 }], 13), false);
   assert.equal(canSafelySyncOfflinePatches([
-    { path: "a.js", base_revision: 12 },
-    { path: "b.js", base_revision: 13 },
+    { workspace_id: 7, path: "a.js", content: "A", base_revision: 12 },
+    { workspace_id: 7, path: "b.js", content: "B", base_revision: 13 },
   ], 12), false);
-  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js" }], 12), false);
-  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: null }], 0), false);
-  assert.equal(canSafelySyncOfflinePatches([{ path: "a.js", base_revision: "" }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A" }], 12), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: null }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: "" }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: 0 }], null), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: 0 }], ""), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: "invalid" }], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: -1 }], -1), false);
+  assert.equal(canSafelySyncOfflinePatches([{ workspace_id: 7, path: "a.js", content: "A", base_revision: 1.5 }], 1.5), false);
   assert.equal(canSafelySyncOfflinePatches([], 12), false);
 });
 
@@ -315,6 +321,19 @@ test("offline sync checkpoints successful files and rebases only the same worksp
     { path: "legacy.txt", content: "recover me" },
   ]);
   assert.deepEqual(rebaseWorkspacePatches(queue, "7", Number.NaN), queue);
+  for (const invalidRevision of [null, undefined, "", " ", true, -1, 1.5, "invalid"]) {
+    assert.deepEqual(
+      rebaseWorkspacePatches(queue, "7", invalidRevision),
+      queue,
+      `invalid revision must not rewrite queued base revisions: ${String(invalidRevision)}`,
+    );
+  }
+  assert.deepEqual(rebaseWorkspacePatches(queue, "7", "6"), [
+    { ...queue[0], base_revision: 6 },
+    { ...queue[1], base_revision: 6 },
+    queue[2],
+    queue[3],
+  ]);
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /refs\.dirtyBaseRevision\.current=anyDirty\?revision:null/);
 });
@@ -356,7 +375,7 @@ test("IDE workspace loads ignore out-of-order responses", () => {
   assert.match(ide, /const requestId=\+\+workspaceLoadRef\.current/);
   assert.match(ide, /if\(!saved\|\|requestId!==workspaceLoadRef\.current\)return/);
   assert.match(ide, /if\(requestId!==workspaceLoadRef\.current\)return/);
-  assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)setStatus/);
+  assert.match(ide, /if\(requestId===workspaceLoadRef\.current\)\{const error=e\.message\|\|"Explorer load failed";setWorkspaceLoadError\(error\);setStatus\(error\)\}/);
 });
 
 
@@ -390,4 +409,378 @@ test("IDE tabs show unsaved state for each dirty file, including inactive tabs",
 test("IDE closing an individual inactive dirty tab saves before removing it", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /if\(dirtyPathsRef\.current\.has\(p\)\|\|\(p===active&&refs\.dirty\.current\)\)\{const saved=await save\(true\);if\(!saved\)return;\}const index=tabs\.indexOf\(p\)/);
+});
+
+
+test("save rechecks dirty tabs added while an earlier tab is saving", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const save = ide.match(/const save=useCallback\(async\(silent=false\)=>\{([\s\S]*?)\n \},\[saveFile\]\)/)?.[1] || "";
+
+  assert.match(save, /for\(let pass=0;pass<10;pass\+\+\)/);
+  assert.match(save, /const pending=\[\.\.\.dirtyPathsRef\.current\]/);
+  assert.match(save, /pending\.length===0&&!refs\.dirty\.current&&dirtyPathsRef\.current\.size===0/);
+  assert.match(save, /Edits are still changing\. Save again before continuing\./);
+  assert.match(save, /if\(!ok\)return false/);
+});
+
+
+test("Explorer move, duplicate, and rename preserve every dirty editor tab before replacing workspace state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const move = ide.match(/async function movePath\(from,toFolder\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const duplicate = ide.match(/async function duplicatePath\(path\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const rename = ide.match(/async function renamePath\(path\)\{([\s\S]*?)\n \}/)?.[1] || "";
+
+  for (const [name, body] of [["move", move], ["duplicate", duplicate], ["rename", rename]]) {
+    assert.match(body, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/, `${name} must detect inactive dirty tabs too`);
+    assert.match(body, /const saved=await save\(true\);if\(!saved\)/, `${name} must stop if saving pending edits fails`);
+    assert.ok(body.indexOf("await save(true)") < body.indexOf("await applyExplorerState") || !body.includes("await applyExplorerState"), `${name} must save before replacing workspace state`);
+  }
+  assert.ok(duplicate.indexOf("await save(true)") < duplicate.indexOf("const content=refs.files.current[path]"), "duplicate must read the latest source contents after saving dirty edits");
+});
+
+
+test("IDE workspace-changing and execution actions account for inactive dirty tabs", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\n/ )?.[1] || "";
+  const folder = ide.match(/async function newFolder\(\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const remove = ide.match(/async function removeFile\(\)\{([\s\S]*?)\n \}/)?.[1] || "";
+  const install = ide.match(/async function install\(\)\{([\s\S]*?)\n/ )?.[1] || "";
+  assert.match(load, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(folder, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(remove, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(install, /dirtyPathsRef\.current\.size\|\|refs\.dirty\.current/);
+  assert.match(ide, /lastRunnerBlockRef\.current="";\s*if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)\{const saved=await save\(true\);if\(!saved\)return;\}/);
+});
+
+test("active profile route exposes retryable accessible load errors instead of an endless spinner", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const profileStart = app.indexOf("function Profile({ onProfileUpdate }) {");
+  const settingsStart = app.indexOf("function Settings({ go }) {", profileStart);
+  const profile = app.slice(profileStart, settingsStart);
+
+  assert.ok(profileStart >= 0 && settingsStart > profileStart, "active Profile component should be present");
+  assert.match(profile, /const \[loadError, setLoadError\] = useState\(""/);
+  assert.match(profile, /\.then\(async response => \{/);
+  assert.match(profile, /if \(!response\.ok\) \{/);
+  assert.match(profile, /formatApiError\(data, "Could not load your profile\. Please try again\."\)/);
+  assert.match(profile, /\.catch\(error => \{\s*if \(active\) setLoadError\(error\.message/);
+  assert.match(profile, /if \(!profile\) return loadError \?/);
+  assert.match(profile, /role="alert"/);
+  assert.match(profile, /setLoadAttempt\(attempt => attempt \+ 1\)/);
+  assert.match(profile, /role="status" aria-live="polite"/);
+  assert.doesNotMatch(profile, /setSaveError\("Could not load your profile/);
+});
+
+test("app bootstrap preserves authentication on transient profile failures and offers retry", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const bootstrap = app.slice(app.indexOf("export default function App() {"));
+
+  assert.match(bootstrap, /const \[bootError,setBootError\]=useState\(""/);
+  assert.match(bootstrap, /\.then\(async response=>\{/);
+  assert.match(bootstrap, /if\(!response\.ok\) throw new Error\(formatApiError\(profile,"Developer OS could not initialize your profile\. Please retry\."\)\)/);
+  assert.match(bootstrap, /\.catch\(error=>\{if\(active\)setBootError/);
+  assert.doesNotMatch(bootstrap, /\.catch\(\(\)=>setAuthenticated\(false\)\)/);
+  assert.match(bootstrap, /Retry connection/);
+  assert.match(bootstrap, /role="alert" aria-live="assertive"/);
+  assert.match(bootstrap, /return\(\)=>\{active=false;\}/);
+});
+
+test("community feed distinguishes initial API failure from a genuinely empty feed", () => {
+  const feed = fs.readFileSync(path.resolve(srcDir, "CommunityFeed.jsx"), "utf8");
+
+  assert.match(feed, /posts\.length === 0 && error \?/);
+  assert.match(feed, /Community feed unavailable/);
+  assert.match(feed, /role="alert"/);
+  assert.match(feed, /Retry loading posts/);
+  assert.match(feed, /onClick=\{\(\) => void loadPosts\(\)\}/);
+  assert.match(feed, /The next great idea could be yours/);
+});
+
+test("Explore workflow cards describe selection rather than claiming execution", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  const workflowCard = app.slice(app.indexOf('tab==="workflows"&&visibleWorkflows.map'), app.indexOf('tab==="resources"&&visibleResources.map'));
+
+  assert.match(workflowCard, /SELECT PLAYBOOK/);
+  assert.match(workflowCard, /aria-pressed=\{selectedWorkflowId===w\.id\}/);
+  assert.match(workflowCard, /no workflow has been executed/);
+  assert.doesNotMatch(workflowCard, />START PLAYBOOK</);
+});
+
+test("notification read action reports API failures instead of clearing unread state", () => {
+  const app = fs.readFileSync(path.resolve(srcDir, "App.jsx"), "utf8");
+  assert.match(app, /const markNotificationsRead = async \(\) =>/);
+  assert.match(app, /if \(!response\.ok\) throw new Error\("Notifications could not be marked as read/);
+  assert.match(app, /catch \(error\) \{\s*setNotificationActionError/);
+  assert.match(app, /setNotifications\(previous => \(\{ \.\.\.previous, unread: 0 \}\)\)/);
+  assert.match(app, /notificationActionBusy \|\| !notifications\.unread/);
+  assert.match(app, /notificationActionError && <p role="alert">/);
+  assert.match(app, /onClick=\{markNotificationsRead\}/);
+});
+
+test("IDE workspace load failures expose an accessible retry action", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /\[workspaceLoadError,setWorkspaceLoadError\]=useState\(""/);
+  assert.match(ide, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
+  assert.match(ide, /role=\{workspaceLoadError\?"alert":"status"\}/);
+  assert.match(ide, /workspaceLoadError&&<button type="button" className="dos-status-retry" onClick=\{\(\)=>void load\(ws\|\|workspaces\[0\]\)\}/);
+  assert.ok(ide.includes('setWorkspaceLoadError("");setWorkspaceLoading(true);setStatus("Loading workspace…")'));
+  assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\(""\);setStatus\("Explorer synced/);
+});
+
+
+test("IDE workspace loads reject malformed file maps instead of showing a false empty workspace", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
+
+  assert.match(load, /if\(!d\.files\|\|typeof d\.files!=="object"\|\|Array\.isArray\(d\.files\)\)throw Error\("Workspace response did not include a valid file map\."\)/);
+  assert.match(load, /const f=d\.files;/);
+  assert.match(load, /r\.json\(\)\.catch\(\(\)=>\(\{\}\)\)/);
+  assert.match(load, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
+  assert.doesNotMatch(load, /const f=d\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
+});
+
+test("IDE workspace retry is pending-aware and clears loading only for the current request", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
+  assert.match(ide, /\[workspaceLoading,setWorkspaceLoading\]=useState\(false\)/);
+  assert.match(load, /setWorkspaceLoading\(true\);setStatus\("Loading workspace…"/);
+  assert.match(load, /finally\{if\(requestId===workspaceLoadRef\.current\)setWorkspaceLoading\(false\)\}/);
+  assert.match(ide, /disabled=\{workspaceLoading\|\|\(!ws&&!workspaces\.length\)\}/);
+  assert.match(ide, /workspaceLoading\?"Loading workspace…":"Retry workspace"/);
+});
+
+test("Explorer mutations cannot apply stale results after the selected workspace changes", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function applyExplorerState(");
+  const end = ide.indexOf("async function movePath(", start);
+  const apply = ide.slice(start, end);
+  assert.match(apply, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.match(apply, /refs\.ws\.current\?\.id!==expectedWorkspaceId/);
+  assert.match(apply, /Workspace changed before Explorer update could be applied/);
+  assert.ok(apply.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"));
+  assert.match(apply, /Workspace changed while refreshing Explorer files/);
+  assert.match(apply, /Editor changed while refreshing Explorer files\. Your edits were preserved/);
+  const move = ide.slice(ide.indexOf("async function movePath("), ide.indexOf("async function duplicatePath("));
+  const duplicate = ide.slice(ide.indexOf("async function duplicatePath("), ide.indexOf("async function renamePath("));
+  const rename = ide.slice(ide.indexOf("async function renamePath("), ide.indexOf("async function removeFile("));
+  const remove = ide.slice(ide.indexOf("async function removeFile("), ide.indexOf("async function run("));
+  assert.match(move, /expectedWorkspaceId:w\.id/);
+  assert.match(duplicate, /expectedWorkspaceId:w\.id/);
+  assert.match(rename, /expectedWorkspaceId:currentWs\.id/);
+  assert.match(remove, /expectedWorkspaceId:currentWs\.id/);
+  assert.match(move, /explorerMutation\(\{action:"rename",path:from,to:target\},true,w\.id\)/);
+  assert.match(duplicate, /explorerMutation\(\{action:"create",path:target,content\},true,w\.id\)/);
+  assert.match(rename, /explorerMutation\(\{action:"rename",path,to:target\},true,currentWs\.id\)/);
+  assert.match(remove, /explorerDelete\(p,true,currentWs\.id\)/);
+  assert.match(ide, /const p=contextMenu\.path,workspaceId=refs\.ws\.current\?\.id;[\s\S]*?explorerDelete\(p,true,workspaceId\)[\s\S]*?expectedWorkspaceId:workspaceId/);
+});
+
+test("Explorer mutation refreshes authoritative files before replacing local state when response omits files", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function applyExplorerState(");
+  const end = ide.indexOf("async function movePath(", start);
+  const apply = ide.slice(start, end);
+  assert.match(apply, /let next=response\?\.files&&typeof response\.files==="object"&&!Array\.isArray\(response\.files\)\?response\.files:null/);
+  assert.match(apply, /if\(!next\)\{/);
+  assert.match(apply, /const refresh=await apiFetch\(/);
+  assert.match(apply, /if\(!refresh\.ok\|\|!latest\.files\|\|typeof latest\.files!=="object"\|\|Array\.isArray\(latest\.files\)\)throw Error/);
+  assert.match(apply, /next=latest\.files/);
+  assert.doesNotMatch(apply, /const next=d\?\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
+});
+
+test("folder creation reconciles the authoritative Explorer state when mutation response omits files", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function newFolder()");
+  const end = ide.indexOf("async function newFile()", start);
+  const createFolder = ide.slice(start, end);
+  assert.match(createFolder, /explorerMutation\(\{path:folder\+"\/\.gitkeep",content:"",action:"create"\},true,w\.id\)/);
+  assert.match(createFolder, /await applyExplorerState\(d,\{expectedWorkspaceId:w\.id\}\)/);
+  assert.match(createFolder, /Workspace changed before folder creation/);
+  assert.match(createFolder, /Your edits were preserved/);
+  assert.doesNotMatch(createFolder, /const next=d\.files\|\|\{\}/);
+});
+
+test("IDE command submission without a workspace reports that the command was not sent", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function run(");
+  const end = ide.indexOf("const onSaveKey", start);
+  const run = ide.slice(start, end > start ? end : start + 5000);
+  assert.match(run, /if\(!ws\)\{const message="No workspace selected\./);
+  assert.match(run, /setStatus\("Command not sent · no workspace"\)/);
+  assert.match(run, /\[RUNNER\] \$\{message\}/);
+  assert.doesNotMatch(run, /if\(!ws\|\|!c\)return/);
+});
+
+test("IDE focus mode expands the editor grid and hides side panels without unmounting editor state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const css = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
+  assert.match(ide, /focusMode\?"dos-focus-mode":""/);
+  assert.match(ide, /aria-label=\{focusMode\?"Exit Focus Mode":"Focus code editor"\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body\s*\{\s*grid-template-columns:\s*48px minmax\(0,1fr\);\s*\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-explorer,\s*\.dos-ide-pro\.dos-focus-mode \.dos-body > \.dos-inspector\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /\.dos-ide-pro\.dos-focus-mode \.dos-activity/);
+});
+
+test("IDE rejects malformed array payloads when refreshing workspace file maps", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function applyExplorerState(d,");
+  const end = ide.indexOf("\n async function movePath(", start);
+  const refresh = ide.slice(start, end > start ? end : start + 2600);
+
+  assert.ok(start >= 0, "Explorer state reconciliation should exist");
+  assert.match(refresh, /!Array\.isArray\(response\.files\)/);
+  assert.match(refresh, /\|\|Array\.isArray\(latest\.files\)/);
+  assert.match(refresh, /Workspace refresh failed after file operation/);
+});
+
+
+test("IDE workspace and framework list failures are visible and retryable", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const initStart = ide.indexOf('Promise.all([apiFetch("/ide/workspaces/")');
+  const init = ide.slice(initStart, initStart + 1800);
+  assert.match(init, /if\(!a\.ok\)throw Error\(w\.error\|\|w\.detail\|\|`Workspace list failed \(HTTP \$\{a\.status\}\)`\)/);
+  assert.match(init, /if\(!b\.ok\)throw Error\(f\.error\|\|f\.detail\|\|`Framework list failed \(HTTP \$\{b\.status\}\)`\)/);
+  assert.match(init, /setWorkspaceListError\(error\);setStatus\(error\)/);
+  assert.match(init, /\[message,workspaceListRetry\]/);
+  assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
+  assert.match(ide, /Retry workspaces/);
+  assert.match(ide, /setWorkspaceListRetry\(value=>value\+1\)/);
+});
+
+
+test("offline collaboration sync cannot update a newly selected workspace from a stale socket", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("const workspacePatches=getWorkspacePatches(q,ws.id)");
+  const end = ide.indexOf("}catch(err){if(collab.current===socket)setStatus(", start);
+  const sync = ide.slice(start, end > start ? end : start + 5000);
+
+  assert.ok(start >= 0, "offline sync handler should exist");
+  assert.ok(end > start, "offline sync handler should have a bounded catch");
+  assert.ok(sync.indexOf("if(collab.current!==socket)return;const state=await r.json()") > sync.indexOf("const r=await apiFetch"), "stale socket must be checked after the workspace fetch");
+  assert.ok(sync.indexOf("if(collab.current!==socket)return;const wr=await apiFetch") > -1, "stale socket must be checked before each queued write");
+  assert.ok(sync.includes("if(collab.current===socket)setOfflineQueue(rebased);if(collab.current!==socket)return"), "stale socket must not mutate current UI state after a successful write");
+  assert.ok(sync.includes("const remaining=parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY));if(collab.current!==socket)return;setOfflineQueue(remaining)"), "stale socket must not apply the old workspace revision to the active workspace");
+});
+
+
+test("IDE context-menu Close Tab saves pending edits and keeps the tab open when saving fails", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function closeTab(path)");
+  const end = ide.indexOf("async function closeAll()", start);
+  const close = ide.slice(start, end > start ? end : start + 1800);
+
+  assert.ok(start >= 0, "guarded single-tab close handler should exist");
+  assert.match(close, /if\(dirtyPathsRef\.current\.size\|\|refs\.dirty\.current\)/);
+  assert.match(close, /const saved=await save\(true\);/);
+  assert.match(close, /if\(!saved\)\{setStatus\("Tab kept open · save failed"\);return;\}/);
+  assert.ok(close.indexOf("if(!saved)") < close.indexOf("setTabs(remaining)"), "tab removal must happen only after a successful save");
+  assert.match(close, /setPinned\(items=>items\.filter\(item=>item!==path\)\)/);
+  assert.match(ide, /<button onClick=\{\(\)=>closeTab\(contextMenu\.path\)\}>Close Tab<\/button>/);
+});
+
+
+test("IDE context-menu Delete saves pending edits before destructive Explorer mutations", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf('<button onClick={async()=>{const p=contextMenu.path,workspaceId=refs.ws.current?.id;setContextMenu(null);try{if(dirtyPathsRef.current.size');
+  const end = ide.indexOf(">Delete</button>", start);
+  const handler = ide.slice(start, end > start ? end : start + 900);
+
+  assert.ok(start >= 0, "context-menu delete handler should exist");
+  assert.match(handler, /const saved=await save\(true\)/);
+  assert.match(handler, /if\(!saved\)throw Error\("Save all pending edits before deleting a file\."\)/);
+  assert.ok(handler.indexOf("if(!saved)") < handler.indexOf("const d=await explorerDelete(p,true,workspaceId)"), "delete must not start before edits save");
+  assert.match(handler, /await applyExplorerState\(d,\{removed:p,expectedWorkspaceId:workspaceId\}\)/);
+  assert.match(handler, /catch\(e\)\{setStatus\(e\.message\|\|"Delete failed"\)\}/);
+});
+
+
+test("IDE command palette exposes an accessible modal and named controls", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /className="dos-palette" role="dialog" aria-modal="true" aria-labelledby="dos-command-palette-title"/);
+  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);
+  assert.match(ide, /aria-label="Close command palette"/);
+  assert.match(ide, /input aria-label="Filter commands" autoFocus/);
+});
+
+
+test("switching workspaces invalidates stale execution polling and pending UI timers", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const loadStart = ide.indexOf("const load=useCallback(async(item)=>");
+  const loadEnd = ide.indexOf("},[save]);", loadStart);
+  const loader = ide.slice(loadStart, loadEnd > loadStart ? loadEnd : loadStart + 3000);
+
+  assert.ok(loadStart >= 0, "workspace loader should exist");
+  assert.match(loader, /executionRunRef\.current\+=1/);
+  assert.match(loader, /if\(executionTimerRef\.current\)\{clearTimeout\(executionTimerRef\.current\);executionTimerRef\.current=null;\}/);
+  assert.ok(loader.indexOf("executionRunRef.current++") < loader.indexOf("setWs(next)"), "old run output must be invalidated before the new workspace becomes active");
+});
+
+
+test("IDE create-file and create-folder preserve current workspace and editor state across async mutations", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const folderStart = ide.indexOf("async function newFolder()");
+  const fileStart = ide.indexOf("async function newFile()");
+  const fileEnd = ide.indexOf("async function renamePath(", fileStart);
+  const createFile = ide.slice(fileStart, fileEnd);
+  const createFolder = ide.slice(folderStart, fileStart);
+
+  assert.ok(fileStart >= 0 && fileEnd > fileStart, "create-file handler should exist");
+  assert.ok(folderStart >= 0 && fileStart > folderStart, "create-folder handler should exist");
+  assert.match(createFile, /Workspace changed before file creation/);
+  assert.match(createFile, /File was created in the previous workspace/);
+  assert.match(createFile, /Your edits were preserved/);
+  assert.match(createFile, /await applyExplorerState\(\{\.\.\.d,active_file:d\.active_file\|\|p\},\{expectedWorkspaceId:currentWs\.id\}\)/);
+  assert.match(createFolder, /Workspace changed before folder creation/);
+  assert.match(createFolder, /Folder was created in the previous workspace/);
+  assert.match(createFolder, /Your edits were preserved/);
+  assert.match(createFolder, /await applyExplorerState\(d,\{expectedWorkspaceId:w\.id\}\)/);
+});
+
+test("Explorer conflict retries refresh the target workspace without switching the active workspace", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const start = ide.indexOf("async function explorerMutation(");
+  const end = ide.indexOf("async function explorerDelete(", start);
+  const mutation = ide.slice(start, end);
+  assert.ok(start >= 0 && end > start, "Explorer mutation helper should exist");
+  assert.match(mutation, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.ok(mutation.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"), "conflict refresh must stay scoped to the captured workspace");
+  assert.match(mutation, /Workspace changed while resolving the Explorer conflict/);
+  assert.match(mutation, /latest\.revision/);
+  assert.doesNotMatch(mutation, /await load\(w\)/);
+  const deleteStart = ide.indexOf("async function explorerDelete(");
+  const deleteEnd = ide.indexOf("async function newFolder(", deleteStart);
+  const deletion = ide.slice(deleteStart, deleteEnd);
+  assert.match(deletion, /expectedWorkspaceId=refs\.ws\.current\?\.id/);
+  assert.ok(deletion.includes("apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`)"), "delete conflict refresh must stay scoped to the captured workspace");
+  assert.match(deletion, /Workspace changed while resolving the delete conflict/);
+  assert.match(deletion, /latest\.revision/);
+  assert.doesNotMatch(deletion, /await load\(w\)/);
+});
+
+test("IDE save-conflict recovery and collaboration state reject malformed file maps", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const saveStart = ide.indexOf("const saveFile=useCallback");
+  const saveEnd = ide.indexOf("const save=useCallback", saveStart);
+  const saveOne = ide.slice(saveStart, saveEnd);
+  const syncStart = ide.indexOf("const syncWorkspaceState=useCallback");
+  const syncEnd = ide.indexOf("const edit=", syncStart);
+  const sync = ide.slice(syncStart, syncEnd);
+
+  assert.ok(saveStart >= 0 && saveEnd > saveStart, "single-file save handler should exist");
+  assert.match(saveOne, /Workspace refresh returned an invalid file map while resolving save conflict\./);
+  assert.match(saveOne, /Save response did not include a valid file map\./);
+  assert.match(saveOne, /Array\.isArray\(latestData\.files\)/);
+  assert.match(saveOne, /Array\.isArray\(serverFiles\)/);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart, "workspace sync state handler should exist");
+  assert.match(sync, /Workspace update did not include a valid file map\./);
+  assert.match(sync, /Array\.isArray\(data\.files\)/);
+});
+
+
+test("IDE AI apply and undo validate file maps before changing editor state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /AI patch response did not include a valid file map\./);
+  assert.match(ide, /AI undo response did not include a valid file map\./);
+  assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files\?\?files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
+  assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
 });

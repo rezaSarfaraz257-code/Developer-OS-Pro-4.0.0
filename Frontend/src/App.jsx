@@ -57,6 +57,8 @@ function Shell({ user, onLogout, children, go, current }) {
   const searchRef = useRef(null);
   const [notifications, setNotifications] = useState({ unread: 0, items: [] });
   const [openNotif, setOpenNotif] = useState(false);
+  const [notificationActionError, setNotificationActionError] = useState("");
+  const [notificationActionBusy, setNotificationActionBusy] = useState(false);
   const [plan, setPlan] = useState("free");
 
   useEffect(() => {
@@ -95,6 +97,20 @@ function Shell({ user, onLogout, children, go, current }) {
       `${label} ${path}`.toLocaleLowerCase().includes(query)
     );
   }, [commands, search]);
+  const markNotificationsRead = async () => {
+    if (notificationActionBusy) return;
+    setNotificationActionBusy(true);
+    setNotificationActionError("");
+    try {
+      const response = await apiFetch("/notifications/", { method: "PATCH", body: JSON.stringify({}) });
+      if (!response.ok) throw new Error("Notifications could not be marked as read. Please try again.");
+      setNotifications(previous => ({ ...previous, unread: 0 }));
+    } catch (error) {
+      setNotificationActionError(error?.message || "Notifications could not be marked as read. Please try again.");
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
 
   const runSearch = (e) => {
     if (e.key !== "Enter" || !search.trim()) return;
@@ -173,7 +189,8 @@ function Shell({ user, onLogout, children, go, current }) {
             </div>
           </div>}
           {openNotif && <div className="notif-pop">
-            <div className="pop-head"><b>Notifications</b><button onClick={() => apiFetch("/notifications/", {method:"PATCH",body:JSON.stringify({})}).then(() => setNotifications(n => ({...n, unread:0})))}>Mark read</button></div>
+            <div className="pop-head"><b>Notifications</b><button type="button" disabled={notificationActionBusy || !notifications.unread} aria-busy={notificationActionBusy} onClick={markNotificationsRead}>{notificationActionBusy ? "Marking read…" : "Mark read"}</button></div>
+            {notificationActionError && <p role="alert">{notificationActionError}</p>}
             {(notifications.items || []).slice(0, 8).map(n => <div className="notif" key={n.id}><b>{n.title}</b><span>{n.body}</span></div>)}
             {!notifications.items?.length && <div className="empty">No notifications.</div>}
           </div>}
@@ -702,6 +719,7 @@ function Explore() {
   const [favoriteBusy, setFavoriteBusy] = useState([]);
   const [workspaceBusy, setWorkspaceBusy] = useState([]);
   const [compact, setCompact] = useState(false);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
   const searchRef = useRef(null);
   const toastTimer = useRef(null);
 
@@ -959,7 +977,7 @@ function Explore() {
             <div className="explore-card-footer"><button type="button" disabled={workspaceBusy.includes(t.id)} onClick={()=>void addToWorkspace(t)}>{workspaceBusy.includes(t.id)?"CREATING WORKSPACE…":"＋ ADD TO WORKSPACE"}</button><i aria-hidden="true">→</i></div>
           </article>
         })}
-        {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button onClick={()=>setToast(`Workflow “${w.title}” selected`)}>START PLAYBOOK</button><i>→</i></div></article>)}
+        {tab==="workflows"&&visibleWorkflows.map(w=><article className="explore-card workflow-card" key={w.id}><div className="explore-card-top"><span className="explore-tag">{w.level||"WORKFLOW"}</span><span>{w.duration||"PLAYBOOK"}</span></div><div className="explore-icon">↗</div><h3>{w.title}</h3><p>{w.summary||"A repeatable engineering playbook for moving from intent to delivery."}</p><ol>{(Array.isArray(w.steps)?w.steps:[]).slice(0,3).map((step,i)=><li key={i}>{typeof step==="string"?step:JSON.stringify(step)}</li>)}</ol><div className="explore-card-footer"><button type="button" className={selectedWorkflowId===w.id?"active":""} aria-pressed={selectedWorkflowId===w.id} onClick={()=>{setSelectedWorkflowId(selectedWorkflowId===w.id?null:w.id);notify(selectedWorkflowId===w.id?"Workflow selection cleared.":"Workflow “"+w.title+"” selected for review; no workflow has been executed.");}}>{selectedWorkflowId===w.id?"✓ SELECTED":"SELECT PLAYBOOK"}</button><i aria-hidden="true">→</i></div></article>)}
         {tab==="projects"&&visiblePublicProjects.map(p=><article className="explore-card public-project-card" key={p.id}>
           <div className="explore-card-top"><span className="explore-tag">{p.category||"PROJECT"}</span><span className="public-project-status">{p.status||"In Progress"}</span></div>
           <div className="explore-icon">◈</div><h3>{p.title||"Untitled project"}</h3><p>{p.description||"A community project shared on Developer OS."}</p>
@@ -1057,23 +1075,35 @@ function Profile({ onProfileUpdate }) {
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const avatarInputRef = useRef(null);
 
   useEffect(() => {
     let active = true;
+    setLoadError("");
     apiFetch("/profile/")
-      .then(response => response.json())
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(formatApiError(data, "Could not load your profile. Please try again."));
+        }
+        return data;
+      })
       .then(data => {
         if (active) {
           setProfile(data);
+          setLoadError("");
           onProfileUpdate?.(data);
         }
       })
-      .catch(() => { if (active) setSaveError("Could not load your profile. Please refresh and try again."); });
+      .catch(error => {
+        if (active) setLoadError(error.message || "Could not load your profile. Please try again.");
+      });
     return () => { active = false; };
-  }, [onProfileUpdate]);
+  }, [onProfileUpdate, loadAttempt]);
 
   useEffect(() => {
     if (!avatarFile) {
@@ -1161,7 +1191,15 @@ function Profile({ onProfileUpdate }) {
     }
   };
 
-  if (!profile) return <div className="page loading">LOADING PROFILE...</div>;
+  if (!profile) return loadError ? (
+    <main className="page" aria-labelledby="profile-load-error-title">
+      <section className="panel" role="alert">
+        <h1 id="profile-load-error-title">Profile unavailable</h1>
+        <p>{loadError}</p>
+        <button className="primary" type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry loading profile</button>
+      </section>
+    </main>
+  ) : <div className="page loading" role="status" aria-live="polite">LOADING PROFILE...</div>;
   const profileName = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Developer";
   const initials = profileName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "D";
   const displayedAvatar = avatarFile ? avatarPreview : (removeAvatar ? "" : profile.avatar_url);
@@ -1290,9 +1328,24 @@ function Settings({ go }) {
 export default function App() {
   const [authenticated,setAuthenticated]=useState(Boolean(getAccessToken()));
   const [user,setUser]=useState(null);
+  const [bootError,setBootError]=useState("");
+  const [bootAttempt,setBootAttempt]=useState(0);
   const [path,go]=useRoute();
 
-  useEffect(()=>{if(authenticated)apiFetch("/profile/").then(r=>r.json()).then(p=>setUser(p.user||p)).catch(()=>setAuthenticated(false));},[authenticated]);
+  useEffect(()=>{
+    if(!authenticated){setUser(null);setBootError("");return undefined;}
+    let active=true;
+    setBootError("");
+    apiFetch("/profile/")
+      .then(async response=>{
+        const profile=await response.json().catch(()=>({}));
+        if(!response.ok) throw new Error(formatApiError(profile,"Developer OS could not initialize your profile. Please retry."));
+        return profile;
+      })
+      .then(profile=>{if(active){setUser(profile.user||profile);setBootError("");}})
+      .catch(error=>{if(active)setBootError(error.message||"Developer OS could not initialize your profile. Please retry.");});
+    return()=>{active=false;};
+  },[authenticated,bootAttempt]);
   useEffect(()=>{
     if(!authenticated) return;
     const referralCode = new URLSearchParams(window.location.search).get("ref");
@@ -1306,7 +1359,13 @@ export default function App() {
   useEffect(()=>{const f=()=>setAuthenticated(false);window.addEventListener("auth:expired",f);const k=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();document.querySelector(".global-search input")?.focus();}};window.addEventListener("keydown",k);return()=>{window.removeEventListener("auth:expired",f);window.removeEventListener("keydown",k)};},[]);
 
   if(!authenticated)return <Auth onReady={()=>setAuthenticated(true)}/>;
-  if(!user)return <div className="boot">INITIALIZING DEVELOPER OS <span>██████████</span></div>;
+  if(!user)return bootError ? (
+    <main className="boot" role="alert" aria-live="assertive">
+      <h1>Developer OS could not initialize</h1>
+      <p>{bootError}</p>
+      <button className="primary" type="button" onClick={()=>setBootAttempt(attempt=>attempt+1)}>Retry connection</button>
+    </main>
+  ) : <div className="boot" role="status" aria-live="polite">INITIALIZING DEVELOPER OS <span>██████████</span></div>;
 
   const projectMatch=path.match(/^\/projects\/(\d+)/);
   let current=path==="/"?"dashboard":path.split("/")[1]||"dashboard";
