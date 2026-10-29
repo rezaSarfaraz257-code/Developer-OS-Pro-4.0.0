@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -23,20 +23,40 @@ ROOT.mkdir(parents=True, exist_ok=True)
 # Read the control-plane credential once, then remove it from the process
 # environment so untrusted child code cannot inherit or trivially inspect it.
 TOKEN = os.environ.pop("IDE_RUNNER_TOKEN", "")
+
+
+def _bounded_int_env(name, default, minimum, maximum):
+    """Parse an integer environment setting defensively and clamp its range."""
+    try:
+        value = int(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError, AttributeError):
+        value = int(default)
+    return max(int(minimum), min(int(maximum), value))
+
+
+def _bounded_float_env(name, default, minimum, maximum):
+    """Parse a finite float environment setting defensively and clamp its range."""
+    try:
+        value = float(os.environ.get(name, str(default)).strip())
+        if not math.isfinite(value):
+            value = float(default)
+    except (TypeError, ValueError, AttributeError):
+        value = float(default)
+    return max(float(minimum), min(float(maximum), value))
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 MAX_PREVIEW_RESPONSE_BYTES = 10_000_000
-TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
-MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+TIMEOUT = _bounded_int_env("RUNNER_TIMEOUT_SECONDS", 120, 5, 120)
+MAX_CONCURRENT = _bounded_int_env("RUNNER_MAX_CONCURRENT", 4, 1, 64)
 MAX_CONCURRENT_EXECUTIONS = MAX_CONCURRENT
 MAX_CONCURRENT_PROCESSES = MAX_CONCURRENT
-MAX_WORKSPACE_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
-RUNNER_MEMORY_MB = max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768"))))
+MAX_WORKSPACE_CONCURRENT = _bounded_int_env("RUNNER_MAX_WORKSPACE_CONCURRENT", 1, 1, 16)
+RUNNER_MEMORY_MB = _bounded_int_env("RUNNER_MEMORY_MB", 768, 128, 2048)
 MAX_OUTPUT_BYTES = MAX_OUTPUT
 MAX_PROCESS_DURATION = TIMEOUT
-PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
+PROCESS_TTL = _bounded_int_env("RUNNER_PROCESS_TTL_SECONDS", 3600, 300, 86400)
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
@@ -79,7 +99,7 @@ MAX_COMMAND = 2_000
 SCHEDULER_LOCK = threading.RLock()
 SCHEDULER_ACTIVE = {}
 SCHEDULER_MAX_PER_WORKSPACE = MAX_WORKSPACE_CONCURRENT
-CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
+CANCEL_GRACE_SECONDS = _bounded_int_env("RUNNER_CANCEL_GRACE_SECONDS", 3, 1, 30)
 
 class FairScheduler:
     """Deterministic round-robin scheduler with per-workspace concurrency."""
@@ -148,11 +168,11 @@ def _scheduler_metric(key, value=1):
 
 JOB_LOCK = threading.RLock()
 JOBS = {}
-JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
+JOB_RETENTION_SECONDS = _bounded_int_env("RUNNER_JOB_RETENTION_SECONDS", 3600, 60, 86400)
 JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
-JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
-STREAM_WAIT_SECONDS = max(0.1, min(5.0, float(os.environ.get("RUNNER_STREAM_WAIT_SECONDS", "0.5"))))
+JOB_OUTPUT_MAX_BYTES = _bounded_int_env("RUNNER_JOB_OUTPUT_MAX_BYTES", 262144, 4096, 4194304)
+STREAM_WAIT_SECONDS = _bounded_float_env("RUNNER_STREAM_WAIT_SECONDS", 0.5, 0.1, 5.0)
 
 
 
@@ -192,8 +212,8 @@ def _job_output_snapshot(job_id):
         return JOB_OUTPUT.get(job_id, "")
 
 
-JOB_MAX_RETRIES = max(0, min(3, int(os.environ.get("RUNNER_JOB_MAX_RETRIES", "2"))))
-JOB_RETRY_BASE_SECONDS = max(0.1, float(os.environ.get("RUNNER_JOB_RETRY_BASE_SECONDS", "0.5")))
+JOB_MAX_RETRIES = _bounded_int_env("RUNNER_JOB_MAX_RETRIES", 2, 0, 3)
+JOB_RETRY_BASE_SECONDS = _bounded_float_env("RUNNER_JOB_RETRY_BASE_SECONDS", 0.5, 0.1, 10.0)
 
 def _retry_delay(attempt):
     return min(10.0, JOB_RETRY_BASE_SECONDS * (2 ** max(0, attempt - 1)))
@@ -880,7 +900,7 @@ def _capability_manifest():
         "runtimes": _runtime_info(),
         "limits": {
             "timeout_seconds": TIMEOUT,
-            "memory_mb": max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768")))),
+            "memory_mb": _bounded_int_env("RUNNER_MEMORY_MB", 768, 128, 2048),
             "max_concurrent": MAX_CONCURRENT,
             "max_workspace_concurrent": SCHEDULER_MAX_PER_WORKSPACE,
             "cancel_grace_seconds": CANCEL_GRACE_SECONDS,
@@ -1192,12 +1212,12 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
 PROCESS_LOCK = threading.RLock()
 PROCESSES = {}
 PROCESS_SEQ = 0
-PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
-PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
+PREVIEW_PORT_BASE = _bounded_int_env("IDE_PREVIEW_PORT_BASE", 10000, 1024, 65535)
+PREVIEW_PORT_SPAN = _bounded_int_env("IDE_PREVIEW_PORT_SPAN", 1000, 1, 10000)
 MAX_PROCESSES_PER_WORKSPACE = 4
 MAX_PROCESS_OUTPUT = 200_000
 PROCESS_TAIL_BYTES = 16_384
-PROCESS_RETENTION_SECONDS = max(300, int(os.environ.get("RUNNER_PROCESS_RETENTION_SECONDS", "1800")))
+PROCESS_RETENTION_SECONDS = _bounded_int_env("RUNNER_PROCESS_RETENTION_SECONDS", 1800, 300, 86400)
 METRICS_LOCK = threading.RLock()
 METRICS = {
     "exec_total": 0, "exec_success": 0, "exec_failed": 0,
@@ -1394,8 +1414,8 @@ def _preview_command_for_port(command, port):
 
 PREVIEW_LOCK = threading.RLock()
 PREVIEWS = {}
-WATCHDOG_INTERVAL = max(2, int(os.environ.get("RUNNER_WATCHDOG_INTERVAL_SECONDS", "5")))
-WATCHDOG_MAX_RESTARTS = max(0, int(os.environ.get("RUNNER_MAX_PREVIEW_RESTARTS", "2")))
+WATCHDOG_INTERVAL = _bounded_int_env("RUNNER_WATCHDOG_INTERVAL_SECONDS", 5, 2, 60)
+WATCHDOG_MAX_RESTARTS = _bounded_int_env("RUNNER_MAX_PREVIEW_RESTARTS", 2, 0, 10)
 
 def _watchdog():
     while True:
