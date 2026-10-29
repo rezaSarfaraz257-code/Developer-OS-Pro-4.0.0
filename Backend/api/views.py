@@ -4314,6 +4314,10 @@ def ide_preview_proxy_api(request, pk, preview_path=""):
         response = HttpResponse(b"".join(chunks), status=upstream.status_code, content_type=content_type)
         response["Cache-Control"] = "no-store"
         response["X-Content-Type-Options"] = "nosniff"
+        # Preview HTML is user-controlled. A sandboxed document gets an opaque
+        # origin and cannot read the app's localStorage/session state.
+        response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms"
+        response["Referrer-Policy"] = "no-referrer"
         return response
     except requests.RequestException as exc:
         return Response({"error": f"Preview unavailable: {exc.__class__.__name__}", "code": "preview_unavailable"}, status=502)
