@@ -1515,7 +1515,7 @@ class WorkspacePathValidationRegressionTests(APITestCase):
         serializer = CodeWorkspaceSerializer()
         unsafe_paths = (
             "/etc/passwd",
-            r"C:\\Windows\\win.ini",
+            r"C:\Windows\win.ini",
             "../secret.txt",
             "src/../secret.txt",
             ".git/config",
