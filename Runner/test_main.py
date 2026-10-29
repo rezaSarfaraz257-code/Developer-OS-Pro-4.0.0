@@ -11,6 +11,32 @@ from fastapi import HTTPException
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
 
+class WorkspaceFilesystemBoundaryTests(unittest.TestCase):
+    def test_filesystem_writer_revalidates_traversal_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            outside = Path(temp) / "escape.txt"
+            for unsafe in ("../escape.txt", "/tmp/escape.txt", "nested/../../escape.txt"):
+                with self.subTest(path=unsafe), self.assertRaises(ValueError):
+                    main._write_workspace_file(root, unsafe, "must not escape")
+            self.assertFalse(outside.exists())
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_filesystem_writer_does_not_follow_symlink_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            target = Path(temp) / "outside"
+            root.mkdir()
+            target.mkdir()
+            (root / "linked").symlink_to(target, target_is_directory=True)
+            with self.assertRaises((ValueError, OSError)):
+                main._write_workspace_file(root, "linked/escape.txt", "must not escape")
+            self.assertFalse((target / "escape.txt").exists())
+
+
+
+
 class RunnerJobTenantIsolationTests(unittest.TestCase):
     def test_job_lookup_requires_matching_workspace(self):
         job_id = main._new_job("workspace-a")
