@@ -21,7 +21,7 @@ export function queueWorkspacePatch(queue, patch) {
   if (
     !patch ||
     patch.workspace_id == null ||
-    String(patch.workspace_id).length === 0 ||
+    String(patch.workspace_id).trim().length === 0 ||
     typeof patch.path !== "string" ||
     typeof patch.content !== "string"
   ) {
