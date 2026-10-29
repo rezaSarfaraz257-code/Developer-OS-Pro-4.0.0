@@ -1,4 +1,5 @@
 from io import BytesIO
+import re
 import warnings
 
 from django.contrib.auth.models import User
@@ -331,13 +332,32 @@ class CodeWorkspaceSerializer(serializers.ModelSerializer):
         for filename, content in value.items():
             if not isinstance(filename, str) or len(filename) > 500:
                 raise serializers.ValidationError("Invalid file path.")
-            # Prevent path traversal before anything reaches the runner.
-            normalized = filename.replace("\\", "/").lstrip("/")
-            if ".." in normalized.split("/") or normalized in {"", "."}:
+            # Keep the API and Runner path contracts aligned. Never silently
+            # strip absolute prefixes or accept ambiguous path components.
+            normalized = filename.replace("\\\\", "/")
+            parts = normalized.split("/")
+            component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+            if (
+                not normalized
+                or normalized.startswith("/")
+                or re.match(r"^[A-Za-z]:", normalized)
+                or any(
+                    part in {"", ".", ".."}
+                    or part.lower() == ".git"
+                    or not component_pattern.fullmatch(part)
+                    for part in parts
+                )
+            ):
                 raise serializers.ValidationError("Invalid workspace path.")
-            if not isinstance(content, str) or len(content) > 1_000_000:
+            if not isinstance(content, str):
+                raise serializers.ValidationError("Each workspace file must contain text.")
+            try:
+                content_bytes = len(content.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise serializers.ValidationError("Workspace files must contain valid UTF-8 text.") from exc
+            if content_bytes > 1_000_000:
                 raise serializers.ValidationError("Each text file must be 1 MB or smaller.")
-            total += len(content.encode("utf-8"))
+            total += content_bytes
         if total > 50_000_000:
             raise serializers.ValidationError("Workspace source must be 50 MB or smaller.")
         return value
