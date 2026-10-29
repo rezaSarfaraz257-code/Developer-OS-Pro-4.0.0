@@ -18,6 +18,15 @@ Configure values in the Render API web service's Environment page. Never commit 
 
 Keep the bounded database pool defaults unless the database provider's connection limits and the total number of web/worker processes have been reviewed. Never solve readiness by disabling TLS, weakening host validation, switching production email to the console backend, or using an unsafe runner fallback.
 
+## Runner isolation (production release gate)
+
+- Keep `RUNNER_SECURITY_LEVEL=strict` on deployed runners. The Runner now forces strict mode when `ENVIRONMENT=production|prod` or Render deployment markers are present, even if `RUNNER_SECURITY_LEVEL=compat` was mistakenly configured.
+- `compat` is only for trusted local/CI execution. It does not provide per-execution tenant isolation and must never be used as a production workaround.
+- With strict mode and `RUNNER_SANDBOX_MODE=container`, execution intentionally returns HTTP 503 because a shared service container is not a per-execution security boundary.
+- Set `RUNNER_SANDBOX_MODE=bwrap` only on a host where Bubblewrap can create the required namespaces and the isolation checks pass in that actual runtime. Do not disable strict mode or skip the checks to make execution appear available.
+- If the host denies the required namespace/capability operations, keep execution blocked and deploy the Runner to an isolated runtime that supports per-execution sandboxing.
+- Before production approval, execute a real test program as an untrusted tenant and verify output/exit status, timeout and cancellation cleanup, quota enforcement, and that another tenant cannot read files, environment values, process output, or secrets.
+
 ## Background worker
 
 The default Render deployment starts the durable worker in the API container when Render runtime variables are present. Keep `BACKGROUND_WORKER_MODE` unset or set to `embedded` unless a separate worker is actually deployed and healthy.
