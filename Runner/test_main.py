@@ -649,6 +649,18 @@ def test_scheduler_metrics_snapshot_contract():
     assert scheduler.snapshot()["active"] == {}
 
 
+def test_scheduler_runtime_snapshot_uses_locked_public_snapshot():
+    scheduler = main.FairScheduler(max_per_workspace=2)
+    scheduler.acquire("snapshot-a")
+    scheduler.acquire("snapshot-b")
+    with patch.object(main, "FAIR_SCHEDULER", scheduler):
+        snapshot = main._scheduler_snapshot()
+    assert snapshot["active"] == 2
+    assert snapshot["workspaces"] == {"snapshot-a": 1, "snapshot-b": 1}
+    scheduler.release("snapshot-a")
+    scheduler.release("snapshot-b")
+
+
 def test_scheduler_metrics_fields_are_numeric():
     snapshot = main._scheduler_snapshot()
     for key in ("queued", "active", "rejected", "completed", "total_wait_ms"):

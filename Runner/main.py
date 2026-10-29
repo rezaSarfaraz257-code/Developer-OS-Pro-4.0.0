@@ -309,11 +309,15 @@ def _cleanup_jobs():
 
 
 def _scheduler_snapshot():
+    # Read scheduler state through its own lock instead of reaching into its
+    # private mutable dictionary. This keeps snapshots consistent while jobs
+    # acquire or release workspace slots.
+    scheduler_state = FAIR_SCHEDULER.snapshot()
     with SCHEDULER_LOCK:
         return {
             **SCHEDULER_METRICS,
-            "active": sum(FAIR_SCHEDULER._active.values()),
-            "workspaces": dict(FAIR_SCHEDULER._active),
+            "active": sum(scheduler_state["active"].values()),
+            "workspaces": scheduler_state["active"],
         }
 
 
