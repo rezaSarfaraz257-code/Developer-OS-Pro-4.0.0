@@ -47,6 +47,7 @@ test("invalid patches cannot enter the offline queue", () => {
   const original = [{ workspace_id: 3, path: "a.js", content: "keep" }];
   assert.strictEqual(queueWorkspacePatch(original, { workspace_id: 3, path: "b.js", content: null }), original);
   assert.strictEqual(queueWorkspacePatch(original, { workspace_id: "", path: "b.js", content: "x" }), original);
+  assert.strictEqual(queueWorkspacePatch(original, { workspace_id: "   ", path: "b.js", content: "x" }), original);
 });
 
 test("workspace filtering and removal do not cross workspace boundaries or discard legacy entries", () => {
@@ -88,6 +89,9 @@ test("offline replay requires one explicit, safe, matching base revision", () =>
   assert.equal(canSafelySyncOfflinePatches([
     { ...patches[0], workspace_id: "" },
   ], 12), false, "unscoped edits cannot be replayed into a workspace");
+  assert.equal(canSafelySyncOfflinePatches([
+    { ...patches[0], workspace_id: "   " },
+  ], 12), false, "whitespace-only workspace IDs cannot be replayed");
 });
 
 test("successful replay removes only exact saved versions and preserves newer queued edits", () => {
