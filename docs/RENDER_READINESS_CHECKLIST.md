@@ -57,3 +57,30 @@ Check Render logs for API startup and worker startup/restart messages. Do not ex
 7. Confirm the reported `release_sha` matches the intended deployed commit before treating a code change as live.
 
 The public `/api/status/` endpoint reports incidents and is not a substitute for readiness. A passing CI run validates the tested commit and CI environment; it does not prove Render's runtime environment is configured correctly.
+
+
+## Readiness failure decision matrix
+
+The API's readiness view deliberately returns HTTP 503 when required checks fail. Use the JSON `checks` field to identify the failed names; if the platform returns a non-JSON 503, use Render service events and application logs instead.
+
+| Failed check | Verify first | Safe remediation |
+| --- | --- | --- |
+| `database` | The database service is reachable; `DATABASE_URL` points to the intended PostgreSQL instance; the configured default Django engine is PostgreSQL in production. | Correct the service URL/credentials or database availability. Keep SSL verification and the production database requirement enabled. |
+| `secret_key` | `DJANGO_SECRET_KEY` is present and is not Django's insecure development default. | Generate a unique high-entropy secret in the hosting dashboard. Do not commit it or print it in logs. |
+| `allowed_hosts` | `ALLOWED_HOSTS` contains the API hostname and has no wildcard; production entries are not loopback-only. | Add only actual API hostnames. Do not use `*` to make the check pass. |
+| `email` | `EMAIL_HOST` and a real mail backend are configured; production is not using Django's console email backend. | Configure an authorized SMTP provider and verify delivery with a controlled test mailbox. Never paste SMTP credentials into logs or issues. |
+| `cache` | Redis is reachable; the Django default cache backend is Redis in production; `CACHE_URL` is present and matches that backend. | Correct the Redis URL/TLS/authentication and restart the service. Do not substitute local-memory cache in production just to pass readiness. |
+| `worker` | A `background-worker` heartbeat was written within 90 seconds; no `running` job has a stale/missing lock. | Verify the embedded worker is starting, or configure `BACKGROUND_WORKER_MODE=external` only when a separate healthy worker uses the same release and database. Inspect safe worker logs and stale jobs before restarting/recovering work. |
+
+Important implementation detail: the worker check becomes mandatory in production/Render runtime, while the database, secret, host, email, and cache checks are part of the production readiness gate. Do not infer which check failed from the HTTP status alone.
+
+## Evidence required before marking the release ready
+
+Record these non-secret facts in the PR or release notes:
+
+- The full CI run ID and green result for runner, backend, frontend, PostgreSQL restore, Docker Compose, and static operational gates.
+- The deployed release SHA and the intended commit SHA.
+- The live liveness, database health, and readiness HTTP statuses; include only allow-listed check names, never raw environment values.
+- A real isolated-runner test result covering execution output/exit status, timeout/cancellation cleanup, quotas, and cross-tenant isolation.
+
+If the last two items are not available, the branch can be CI-green but must not be described as fully production-verified.
