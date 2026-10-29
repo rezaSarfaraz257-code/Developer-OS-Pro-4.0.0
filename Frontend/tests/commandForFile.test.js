@@ -21,12 +21,16 @@ test("auto-run rejects paths that could escape or ambiguously address workspace 
     "src/../main.js": "",
     "src/main.js\nnode evil.js": "",
     "src/main.js": "",
+    "src/control\u0085.js": "",
+    "src/control\u009f.js": "",
   };
   assert.equal(commandForFile("../outside.js", files), "");
   assert.equal(commandForFile("/etc/passwd.js", files), "");
   assert.equal(commandForFile("src//main.js", files), "");
   assert.equal(commandForFile("src/../main.js", files), "");
   assert.equal(commandForFile("src/main.js\nnode evil.js", files), "");
+  assert.equal(commandForFile("src/control\u0085.js", files), "");
+  assert.equal(commandForFile("src/control\u009f.js", files), "");
   assert.equal(commandForFile("missing.js", files), "");
   assert.equal(commandForFile("README.md", { "README.md": "" }), "");
 });
