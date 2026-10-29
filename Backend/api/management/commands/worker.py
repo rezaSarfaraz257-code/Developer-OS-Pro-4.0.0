@@ -49,6 +49,35 @@ def recover_stale_jobs():
                 "status", "available_at", "locked_at", "locked_by",
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
             ])
+            if locked.status == "failed" and locked.kind == "data_export":
+                DataExportRequest.objects.filter(
+                    pk=locked.payload.get("export_id"),
+                    user_id=locked.payload.get("user_id"),
+                ).exclude(status__in=["ready", "expired"]).update(status="failed")
+
+def refresh_job_lease(job_id, worker):
+    """Extend a running job's lease only while this worker still owns it."""
+    return BackgroundJob.objects.filter(
+        pk=job_id,
+        status="running",
+        locked_by=worker,
+    ).update(locked_at=timezone.now()) == 1
+
+
+def _job_lease_loop(job_id, worker, stop_event, interval=30):
+    """Prevent legitimate long-running tasks from being mistaken for orphaned jobs."""
+    while not stop_event.wait(interval):
+        try:
+            close_old_connections()
+            if not refresh_job_lease(job_id, worker):
+                return
+        except Exception:
+            # A temporary database outage is observable; stale recovery remains
+            # the fallback if the lease cannot be extended before its deadline.
+            logger.exception("Background job lease refresh failed job_id=%s worker_id=%s", job_id, worker)
+        finally:
+            close_old_connections()
+
 
 def _heartbeat_loop(worker, stop_event):
     """Keep a durable liveness lease fresh and recover from transient DB errors."""
@@ -165,6 +194,14 @@ class Command(BaseCommand):
                 time.sleep(max(0.1, options["sleep"]))
                 continue
 
+            lease_stop = threading.Event()
+            lease_thread = threading.Thread(
+                target=_job_lease_loop,
+                args=(job.pk, worker, lease_stop),
+                name=f"developer-os-job-lease-{job.pk}",
+                daemon=True,
+            )
+            lease_thread.start()
             try:
                 result = execute(job)
                 job.status = "succeeded"
@@ -182,9 +219,26 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
+            finally:
+                lease_stop.set()
+                lease_thread.join(timeout=2)
 
+            # Release the durable lease and persist related terminal state atomically.
+            # A permanently failed export must not remain visibly "running" forever;
+            # retryable failures intentionally keep the export in its running state.
+            job.locked_at = None
+            job.locked_by = ""
             try:
-                job.save(update_fields=["status", "result", "error", "available_at", "finished_at", "last_error_at", "dead_lettered_at"])
+                with transaction.atomic():
+                    job.save(update_fields=[
+                        "status", "result", "error", "available_at", "finished_at",
+                        "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
+                    ])
+                    if job.kind == "data_export" and job.status == "failed":
+                        DataExportRequest.objects.filter(
+                            pk=job.payload.get("export_id"),
+                            user_id=job.payload.get("user_id"),
+                        ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the
                 # long-lived worker alive; stale-lease recovery reconciles the

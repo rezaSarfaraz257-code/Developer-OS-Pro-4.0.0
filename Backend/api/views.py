@@ -2277,17 +2277,19 @@ def _runner_request(method, path, payload, timeout=30):
             kwargs["json"] = payload
 
         response = None
-        # Render/free instances can briefly wake, restart or cold-start.
-        # Retry only transient transport/upstream failures with bounded backoff.
-        for attempt in range(3):
+        # GET is safe to retry. Never replay POST/other mutating requests after
+        # a timeout or gateway error: the runner may already have accepted an
+        # execution/process operation even when its response was lost.
+        max_attempts = 3 if method.upper() == "GET" else 1
+        for attempt in range(max_attempts):
             try:
                 response = requests.request(method, f"{RUNNER_URL}{path}", **kwargs)
             except (requests.Timeout, requests.ConnectionError):
-                if attempt == 2:
+                if attempt + 1 >= max_attempts:
                     raise
                 time.sleep(0.25 * (2 ** attempt))
                 continue
-            if response.status_code not in {502, 503, 504} or attempt == 2:
+            if response.status_code not in {502, 503, 504} or attempt + 1 >= max_attempts:
                 break
             time.sleep(0.25 * (2 ** attempt))
 
@@ -2296,12 +2298,12 @@ def _runner_request(method, path, payload, timeout=30):
         try:
             data = response.json() if response.content else {}
         except ValueError:
-            preview = response.text[:500].strip() if response.text else ""
+            # Upstream HTML/text may contain stack traces or internal details.
+            # Report the status and a stable code without forwarding its body.
             return None, {
                 "error": f"Runner returned a non-JSON response (HTTP {response.status_code}).",
                 "code": "runner_invalid_response",
                 "status": response.status_code,
-                "details": preview,
             }
 
         if response.status_code >= 400:
@@ -2354,8 +2356,14 @@ def ide_capabilities_api(request):
             "plan": plan,
         }, status=200)
     limits = PLAN_LIMITS[plan]
+    sandbox = data.get("sandbox") if isinstance(data.get("sandbox"), dict) else {}
+    execution_available = sandbox.get("execution_available")
+    # A reachable Runner is not necessarily ready to execute code. Strict mode
+    # intentionally disables execution when the host cannot enforce per-run
+    # isolation; report that degraded capability instead of a false "ready".
+    runner_status = "ready" if execution_available is True else "degraded"
     return Response({
-        "status": "ready",
+        "status": runner_status,
         "plan": plan,
         "limits": {
             "ide_runs_month": limits["ide_runs_month"],
@@ -2601,6 +2609,7 @@ def ide_workspace_sync_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_install_framework_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2635,6 +2644,7 @@ def ide_install_framework_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2794,40 +2804,101 @@ def ide_lsp_notifications_api(request, pk):
 @permission_classes([IsAuthenticated])
 @throttle_classes([RunnerRateThrottle])
 def ide_debug_api(request, pk):
-    """Debugger orchestration contract for the isolated runner.
+    """Proxy a validated debugger action to the isolated runner.
 
-    The Django API never executes user code itself. It forwards debugger
-    commands to the configured sandbox runner, which owns the actual DAP/
-    runtime process.
+    Validate all caller-controlled fields before consuming quota. Starting a
+    debug session is billable execution and must fail closed if quota state
+    cannot be read and durably updated.
     """
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
+
     action = str(request.data.get("action") or "status").strip().lower()
-    if action == "start":
-        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
-        if not allowed:
-            return Response({"error": "Monthly IDE execution limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
-    allowed_actions = {"start", "continue", "pause", "step_over", "step_into", "step_out", "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack", "variables", "scopes", "watch", "status"}
+    allowed_actions = {
+        "start", "continue", "pause", "step_over", "step_into", "step_out",
+        "stop", "set_breakpoint", "remove_breakpoint", "evaluate", "stack",
+        "variables", "scopes", "watch", "status",
+    }
     if action not in allowed_actions:
         return Response({"error": "Unsupported debugger action."}, status=400)
+
+    def bounded_int(field, default, minimum, maximum):
+        raw = request.data.get(field, default)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(field)
+        if value < minimum or value > maximum:
+            raise ValueError(field)
+        return value
+
+    try:
+        line = bounded_int("line", 0, 0, 10_000_000)
+        column = bounded_int("column", 1, 1, 1_000_000)
+    except ValueError:
+        # Never reflect exception text to the client; return a fixed, bounded message.
+        return Response(
+            {"error": "Invalid debugger line or column; value is outside the accepted range."},
+            status=400,
+        )
+
+    path = request.data.get("path", "")
+    condition = request.data.get("condition", "")
+    expression = request.data.get("expression", "")
+    session_id = request.data.get("session_id", "")
+    if not all(isinstance(value, str) for value in (path, condition, expression, session_id)):
+        return Response({"error": "Debugger path, condition, expression, and session_id must be strings."}, status=400)
+    if len(path) > 1000 or len(condition) > 1000 or len(expression) > 4000 or len(session_id) > 200:
+        return Response({"error": "Debugger input exceeds the allowed length."}, status=400)
+
+    breakpoints = request.data.get("breakpoints", [])
+    if not isinstance(breakpoints, list) or len(breakpoints) > 200:
+        return Response({"error": "Breakpoints must be a list containing at most 200 items."}, status=400)
+    if any(not isinstance(item, dict) for item in breakpoints):
+        return Response({"error": "Each breakpoint must be an object."}, status=400)
+
+    if action == "start":
+        try:
+            allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+        except (DatabaseError, IntegrityError):
+            logger.exception("IDE debugger quota enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+            return Response({
+                "error": "Debugger quota could not be verified. Please retry shortly.",
+                "code": "usage_enforcement_unavailable",
+                "stage": "usage_limit",
+            }, status=503)
+        if not allowed:
+            return Response({
+                "error": "Monthly IDE execution limit reached.",
+                "plan": plan,
+                "used": used,
+                "limit": limit,
+            }, status=429)
+
     payload = {
         **_workspace_payload(ws),
         "action": action,
-        "path": str(request.data.get("path") or "")[:1000],
-        "line": int(request.data.get("line") or 0),
-        "column": int(request.data.get("column") or 1),
-        "condition": str(request.data.get("condition") or "")[:1000],
-        "expression": str(request.data.get("expression") or "")[:4000],
-        "breakpoints": request.data.get("breakpoints") or [],
-        "session_id": str(request.data.get("session_id") or "")[:200],
+        "path": path,
+        "line": line,
+        "column": column,
+        "condition": condition,
+        "expression": expression,
+        "breakpoints": breakpoints,
+        "session_id": session_id,
     }
     data, error = _runner_request("POST", "/debug", payload, timeout=35)
     if error:
         return Response(error, status=503)
+    if not isinstance(data, dict):
+        logger.error("IDE debugger returned an invalid response payload: workspace=%s", ws.id)
+        return Response({
+            "error": "Debugger returned an invalid response. Please retry shortly.",
+            "code": "runner_invalid_response",
+        }, status=503)
     return Response({
         "session_id": data.get("session_id"),
-        "state": data.get("state", "paused" if action in {"pause","step_over","step_into","step_out"} else "ready"),
+        "state": data.get("state", "paused" if action in {"pause", "step_over", "step_into", "step_out"} else "ready"),
         "thread_id": data.get("thread_id"),
         "frame": data.get("frame"),
         "stack": data.get("stack", []),
@@ -2856,16 +2927,29 @@ def ide_execute_api(request, pk):
         if not _workspace_write_allowed(ws, request.user):
             return Response({"error": "You have read-only access to this workspace."}, status=403)
 
+        stage = "command_validation"
+        command = request.data.get("command")
+        if not isinstance(command, str) or not command.strip() or len(command) > 2000:
+            return Response({"error": "A command up to 2,000 characters is required."}, status=400)
+        command = command.strip()
+
+        stage = "runner_payload"
+        submitted_files = request.data.get("files")
+        if submitted_files is not None and not isinstance(submitted_files, dict):
+            return Response({"error": "Workspace files must be an object."}, status=400)
+
         stage = "usage_limit"
-        usage_warning = None
         try:
             allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
         except (DatabaseError, IntegrityError):
-            # Usage telemetry must never make the actual sandbox unavailable.
-            # This also keeps IDE usable during a rolling schema migration.
-            logger.exception("IDE usage metering unavailable: user=%s", getattr(request.user, "pk", None))
-            allowed, used, limit, plan = True, None, None, "free"
-            usage_warning = "Usage metering temporarily unavailable; execution was allowed."
+            # Execution quotas are an authorization boundary, not optional telemetry.
+            # Fail closed when usage cannot be durably checked/consumed.
+            logger.exception("IDE usage enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+            return Response({
+                "error": "Execution quota could not be verified. Please retry shortly.",
+                "code": "usage_enforcement_unavailable",
+                "stage": "usage_limit",
+            }, status=503)
         if not allowed:
             return Response({
                 "error": "Monthly IDE execution limit reached.",
@@ -2873,11 +2957,6 @@ def ide_execute_api(request, pk):
                 "used": used,
                 "limit": limit,
             }, status=429)
-
-        stage = "command_validation"
-        command = str(request.data.get("command") or "").strip()
-        if not command or len(command) > 2000:
-            return Response({"error": "A command up to 2,000 characters is required."}, status=400)
 
         # Execution must remain functional even when telemetry/history persistence
         # is temporarily unavailable. A database write failure must never turn a
@@ -2888,10 +2967,6 @@ def ide_execute_api(request, pk):
         execution = None
         started = timezone.now()
 
-        stage = "runner_payload"
-        submitted_files = request.data.get("files")
-        if submitted_files is not None and not isinstance(submitted_files, dict):
-            return Response({"error": "Workspace files must be an object."}, status=400)
         plan, _ = _plan_for(request.user)
         payload = {**_workspace_payload(ws), "command": command, "entitlement": {"plan": plan}}
         if isinstance(submitted_files, dict):
@@ -2983,7 +3058,7 @@ def ide_execute_api(request, pk):
             "files": dict(ws.files or {}),
             "revision": int(ws.revision or 0),
         }
-        warnings = [x for x in [usage_warning, sync_warning] if x]
+        warnings = [sync_warning] if sync_warning else []
         if warnings:
             response_data["warnings"] = warnings
         return Response(response_data)
@@ -4020,12 +4095,39 @@ def ide_build_api(request, pk):
 @throttle_classes([RunnerRateThrottle])
 def ide_process_start_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user): return Response({"error":"Read-only workspace."}, status=403)
-    command = str(request.data.get("command") or "").strip()
-    if not command: return Response({"error":"Command is required."}, status=400)
-    plan, _ = _plan_for(request.user)
-    data, error = _runner_request("POST","/process/start",{**_workspace_payload(ws),"command":command,"entitlement":{"plan":plan}},timeout=30)
-    if error: return Response(error,status=503)
+    if not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "Read-only workspace."}, status=403)
+
+    command = request.data.get("command")
+    if not isinstance(command, str) or not command.strip() or len(command) > 2000:
+        return Response({"error": "A command up to 2,000 characters is required."}, status=400)
+    command = command.strip()
+
+    try:
+        allowed, used, limit, plan = _consume_usage(request.user, "ide_runs_month", 1)
+    except (DatabaseError, IntegrityError):
+        logger.exception("IDE process quota enforcement unavailable: user=%s", getattr(request.user, "pk", None))
+        return Response({
+            "error": "Process quota could not be verified. Please retry shortly.",
+            "code": "usage_enforcement_unavailable",
+            "stage": "usage_limit",
+        }, status=503)
+    if not allowed:
+        return Response({
+            "error": "Monthly IDE execution limit reached.",
+            "plan": plan,
+            "used": used,
+            "limit": limit,
+        }, status=429)
+
+    data, error = _runner_request(
+        "POST",
+        "/process/start",
+        {**_workspace_payload(ws), "command": command, "entitlement": {"plan": plan}},
+        timeout=30,
+    )
+    if error:
+        return Response(error, status=503)
     return Response(data, status=201)
 
 @api_view(["GET"])
@@ -4040,11 +4142,17 @@ def ide_processes_api(request, pk):
 @permission_classes([IsAuthenticated])
 def ide_job_stream_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
-    cursor = request.query_params.get("cursor", "0")
+    raw_cursor = request.query_params.get("cursor", "0")
+    try:
+        cursor = int(raw_cursor)
+    except (TypeError, ValueError, OverflowError):
+        return Response({"error": "Cursor must be a non-negative integer."}, status=400)
+    if cursor < 0 or cursor > 2_147_483_647:
+        return Response({"error": "Cursor must be a non-negative integer in the supported range."}, status=400)
     data, error = _runner_request(
         "GET",
-        f"/jobs/{job_id}/stream?cursor={cursor}",
-        {"workspace_id": str(ws.id)},
+        f"/jobs/{job_id}/stream",
+        {"workspace_id": str(ws.id), "cursor": cursor},
         timeout=10,
     )
     if error:
@@ -4066,7 +4174,7 @@ def ide_job_cancel_api(request, pk, job_id):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel", {"workspace_id": str(ws.id)}, timeout=15)
+    data, error = _runner_request("POST", f"/jobs/{job_id}/cancel?workspace_id={ws.id}", {"workspace_id": str(ws.id)}, timeout=15)
     if error:
         return Response(error, status=503)
     return Response(data)
@@ -4074,12 +4182,15 @@ def ide_job_cancel_api(request, pk, job_id):
 @api_view(["GET","POST"])
 @permission_classes([IsAuthenticated])
 def ide_process_detail_api(request, pk, process_id):
-    ws=_workspace_for_user(pk,request.user)
-    payload={"workspace_id":str(ws.id)}
-    method="GET" if request.method=="GET" else "POST"
-    path=f"/process/{process_id}" + ("/stop" if method=="POST" else "")
-    data,error=_runner_request(method,path,payload,timeout=15)
-    if error:return Response(error,status=503)
+    ws = _workspace_for_user(pk, request.user)
+    if request.method == "POST" and not _workspace_write_allowed(ws, request.user):
+        return Response({"error": "You have read-only access to this workspace."}, status=403)
+    payload = {"workspace_id": str(ws.id)}
+    method = "GET" if request.method == "GET" else "POST"
+    path = f"/process/{process_id}" + ("/stop" if method == "POST" else "")
+    data, error = _runner_request(method, path, payload, timeout=15)
+    if error:
+        return Response(error, status=503)
     return Response(data)
 
 @api_view(["POST"])

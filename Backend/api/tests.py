@@ -1,4 +1,5 @@
 import os
+import requests
 from contextlib import contextmanager
 from io import BytesIO
 import hashlib
@@ -6,10 +7,10 @@ import hmac
 import json
 import tempfile
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
-from django.db import IntegrityError, connection
+from django.db import DatabaseError, IntegrityError, connection
 from django.test import override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -21,7 +22,59 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import APIKey, BillingEvent, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+from .models import APIKey, BackgroundJob, BillingEvent, DataExportRequest, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
+
+
+class RunnerRequestRetrySafetyTests(APITestCase):
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated lost response"))
+    @patch("api.views.time.sleep")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_mutating_runner_request_is_not_replayed(self, sleep, request):
+        from . import views
+        data, error = views._runner_request(
+            "POST", "/exec", {"command": "python main.py"}, timeout=1
+        )
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        request.assert_called_once()
+        sleep.assert_not_called()
+
+    @patch("api.views.requests.request")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_non_json_runner_body_is_not_exposed_to_api_clients(self, request):
+        from . import views
+        response = Mock()
+        response.status_code = 500
+        response.content = b"<html>internal traceback with secret-value</html>"
+        response.text = "internal traceback with secret-value"
+        response.json.side_effect = ValueError("not JSON")
+        request.return_value = response
+
+        data, error = views._runner_request("GET", "/capabilities", {}, timeout=1)
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_invalid_response")
+        self.assertEqual(error["status"], 500)
+        self.assertNotIn("details", error)
+        self.assertNotIn("secret-value", json.dumps(error))
+        self.assertNotIn("traceback", json.dumps(error).lower())
+
+
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated unavailable runner"))
+    @patch("api.views.time.sleep")
+    @patch("api.views.RUNNER_URL", "https://runner.test")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    def test_get_runner_request_uses_bounded_retries(self, sleep, request):
+        from . import views
+        data, error = views._runner_request("GET", "/capabilities", {}, timeout=1)
+
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
 
 
 class ProductionReadinessTests(APITestCase):
@@ -76,6 +129,233 @@ class ProductionReadinessTests(APITestCase):
         ):
             response = self.client.get("/api/health/ready/")
         self.assertTrue(response.data["checks"]["email"])
+
+
+class IDEExecutionQuotaFailClosedTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-quota-fail-closed",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Quota fail-closed regression",
+            files={"main.py": "print('must not run')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated quota database outage"))
+    def test_execution_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {"command": "python main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_execution_payload_does_not_consume_quota(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
+    def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "start"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_debug_start_validates_parameters_before_consuming_quota(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "start", "line": "not-an-integer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+
+    @patch("api.views._runner_request", return_value=(None, None))
+    def test_debugger_rejects_malformed_runner_response(self, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/debug/",
+            {"action": "status"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_response")
+        runner_request.assert_called_once()
+
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated process quota database outage"))
+    def test_process_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/process/start/",
+            {"command": "python main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_process_command_does_not_consume_quota(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/process/start/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+
+class IDEJobStreamCursorValidationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-job-cursor-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Job cursor validation",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    def test_malformed_cursor_is_rejected_before_runner_request(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=0%26workspace_id%3D999"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"job_id": "job-1", "output": "", "cursor": 12, "done": False}, None))
+    def test_valid_cursor_and_workspace_scope_are_forwarded_as_query_params(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=12"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        runner_request.assert_called_once_with(
+            "GET",
+            "/jobs/job-1/stream",
+            {"workspace_id": str(self.workspace.pk), "cursor": 12},
+            timeout=10,
+        )
+
+    @patch("api.views._runner_request")
+    def test_negative_cursor_is_rejected(self, runner_request):
+        response = self.client.get(
+            f"/api/ide/workspaces/{self.workspace.pk}/jobs/job-1/stream/?cursor=-1"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        runner_request.assert_not_called()
+
+
+class IDEProcessAuthorizationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-process-readonly-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Read-only process authorization",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    @patch("api.views._runner_request")
+    @patch("api.views._workspace_write_allowed", return_value=False)
+    def test_read_only_workspace_cannot_stop_process(self, write_allowed, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/process/process-123/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["error"], "You have read-only access to this workspace.")
+        write_allowed.assert_called_once()
+        runner_request.assert_not_called()
+
+
+class IDECapabilitiesReadinessTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-capabilities-user",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+
+    @patch("api.views._runner_request")
+    def test_runner_capabilities_are_degraded_when_execution_is_unavailable(self, runner_request):
+        runner_request.return_value = ({
+            "sandbox": {
+                "execution_available": False,
+                "unavailable_reason": "Strict mode requires per-execution isolation.",
+            },
+            "operations": {"execute": False, "snapshot": True},
+        }, None)
+
+        response = self.client.get("/api/ide/capabilities/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "degraded")
+        self.assertFalse(response.data["runner"]["sandbox"]["execution_available"])
+
+    @patch("api.views._runner_request")
+    def test_runner_capabilities_are_ready_when_execution_is_available(self, runner_request):
+        runner_request.return_value = ({
+            "sandbox": {"execution_available": True},
+            "operations": {"execute": True, "snapshot": True},
+        }, None)
+
+        response = self.client.get("/api/ide/capabilities/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ready")
 
 
 class ProjectApiSecurityTests(APITestCase):
@@ -976,6 +1256,205 @@ class StripeWebhookFailClosedTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertEqual(second.data["duplicate"], True)
         self.assertEqual(BillingEvent.objects.filter(event_id="evt_duplicate_test").count(), 1)
+
+
+class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
+    def test_job_lease_refresh_extends_only_the_current_owners_running_job(self):
+        from .management.commands.worker import refresh_job_lease
+
+        old_lease = timezone.now() - timedelta(minutes=2)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=old_lease,
+            locked_by="worker-current",
+        )
+
+        self.assertTrue(refresh_job_lease(job.pk, "worker-current"))
+        job.refresh_from_db()
+        self.assertGreater(job.locked_at, old_lease)
+
+        refreshed_lease = job.locked_at
+        self.assertFalse(refresh_job_lease(job.pk, "worker-other"))
+        job.refresh_from_db()
+        self.assertEqual(job.locked_by, "worker-current")
+        self.assertEqual(job.locked_at, refreshed_lease)
+
+    def test_job_lease_refresh_does_not_revive_completed_jobs(self):
+        from .management.commands.worker import refresh_job_lease
+
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="succeeded",
+            locked_at=None,
+            locked_by="",
+        )
+        self.assertFalse(refresh_job_lease(job.pk, "worker-current"))
+        job.refresh_from_db()
+        self.assertEqual(job.status, "succeeded")
+        self.assertIsNone(job.locked_at)
+
+    def test_stale_running_job_is_requeued_with_backoff_and_lease_cleared(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker:1",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertGreater(job.available_at, timezone.now())
+        self.assertIn("Recovered stale worker lease.", job.error)
+        self.assertIsNotNone(job.last_error_at)
+        self.assertIsNone(job.finished_at)
+
+    def test_stale_running_job_at_attempt_limit_is_dead_lettered(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker:2",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIn("Recovered stale worker lease.", job.error)
+
+    def test_stale_export_dead_letter_marks_request_failed(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        user = User.objects.create_user(username="stale-export-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=20),
+            locked_by="dead-worker:export",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(export.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+
+    @patch("api.management.commands.worker.execute", return_value={"ok": True})
+    def test_successful_job_persistence_releases_worker_lease(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=2)
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.result, {"ok": True})
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("expected failure"))
+    def test_failed_job_persistence_releases_worker_lease(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=1)
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.finished_at)
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("export failed"))
+    def test_permanently_failed_export_marks_request_failed_atomically(self, execute):
+        from .management.commands.worker import Command
+
+        user = User.objects.create_user(username="export-failure-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="queued",
+            max_attempts=1,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(export.status, "failed")
+        self.assertIsNotNone(job.finished_at)
+        execute.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("temporary export failure"))
+    def test_retryable_export_failure_does_not_mark_request_failed(self, execute):
+        from .management.commands.worker import Command
+
+        user = User.objects.create_user(username="export-retry-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="queued",
+            max_attempts=3,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        export.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(export.status, "running")
+        self.assertIsNone(job.finished_at)
+        execute.assert_called_once()
+
+    def test_recent_running_job_is_not_recovered(self):
+        from .management.commands.worker import recover_stale_jobs
+
+        job = BackgroundJob.objects.create(
+            kind="test",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="active-worker:1",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "active-worker:1")
 
 
 class BackgroundWorkerReadinessTests(APITestCase):

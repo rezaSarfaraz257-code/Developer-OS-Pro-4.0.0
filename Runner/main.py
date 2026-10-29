@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -197,6 +197,7 @@ VALID_JOB_TRANSITIONS = {
     "running": {"running", "completed", "failed", "timeout", "cancelled"},
     "completed": {"completed"},
     "failed": {"failed"},
+    "timeout": {"timeout"},
     "cancelled": {"cancelled"},
 }
 
@@ -218,6 +219,14 @@ def _job_snapshot(job_id):
     with JOB_LOCK:
         job = JOBS.get(job_id)
         return dict(job) if job else None
+
+def _job_for_workspace(job_id, workspace_id):
+    """Return a job only to callers scoped to the workspace that created it."""
+    job = _job_snapshot(job_id)
+    if not job or str(job.get("workspace_id")) != str(workspace_id):
+        # Deliberately use the same response for unknown and foreign jobs.
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
 
 def _terminate_process_group(proc, *, grace_seconds=None):
     if proc is None or proc.poll() is not None:
@@ -285,10 +294,18 @@ def _cancel_job(job_id):
 
 def _cleanup_jobs():
     cutoff = time.time() - JOB_RETENTION_SECONDS
+    expired_ids = []
     with JOB_LOCK:
         for job_id, job in list(JOBS.items()):
             if job["finished_at"] and job["finished_at"] < cutoff:
                 JOBS.pop(job_id, None)
+                expired_ids.append(job_id)
+    # Output buffers have a separate lock. Clean them after releasing JOB_LOCK
+    # to avoid nested-lock ordering and bound memory across long-lived runners.
+    if expired_ids:
+        with JOB_OUTPUT_LOCK:
+            for job_id in expired_ids:
+                JOB_OUTPUT.pop(job_id, None)
 
 
 def _scheduler_snapshot():
@@ -420,12 +437,60 @@ def safe_rel(path):
     if not raw or len(raw) > 500 or raw.startswith("/") or re.match(r"^[A-Za-z]:/", raw):
         raise ValueError("unsafe path")
     parts = raw.split("/")
-    if any(part in {"", ".", ".."} for part in parts) or raw.startswith(".git/") or "/.git/" in raw:
+    # Keep ordinary source-code filenames (including Unicode, spaces, dots,
+    # brackets and common package punctuation) while rejecting control bytes,
+    # alternate path syntax and filesystem-special characters at every level.
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
+    if any(
+        part in {"", ".", ".."}
+        or part.lower() == ".git"
+        or not component_pattern.fullmatch(part)
+        for part in parts
+    ):
         raise ValueError("unsafe path")
-    normalized = "/".join(parts)
-    if normalized.startswith(".git/"):
+    return "/".join(parts)
+
+def _write_workspace_file(root, rel, content):
+    """Write a validated relative path beneath a workspace without following symlinks.
+
+    Validate at the final filesystem boundary as well as at request parsing.
+    The directory-FD walk prevents a concurrent workspace process from swapping
+    a checked directory for a symlink between validation and file creation.
+    """
+    # Do not rely on callers having validated user-controlled path data.
+    rel = safe_rel(rel)
+    parts = rel.split("/")
+    if any(not re.fullmatch(r"[^/\\\\\x00-\x1f\x7f]+", part) for part in parts):
         raise ValueError("unsafe path")
-    return normalized
+
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(str(root), directory_flags)
+    opened_dirs = []
+    parent_fd = root_fd
+    try:
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+            child_fd = os.open(part, directory_flags, dir_fd=parent_fd)
+            opened_dirs.append(child_fd)
+            parent_fd = child_fd
+
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow
+        file_fd = os.open(parts[-1], flags, 0o600, dir_fd=parent_fd)
+        with os.fdopen(file_fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError("unsafe path") from exc
+        raise
+    finally:
+        for directory_fd in reversed(opened_dirs):
+            os.close(directory_fd)
+        os.close(root_fd)
+
 
 def write_snapshot(root, files):
     if len(files) > MAX_FILES:
@@ -438,19 +503,7 @@ def write_snapshot(root, files):
         total += len(content.encode())
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
-        target = root / rel
-        root_resolved = root.resolve()
-        parent = target.parent
-        parent.mkdir(parents=True, exist_ok=True)
-        # Never follow a pre-existing symlink out of the workspace.
-        if any(part.is_symlink() for part in [parent, *parent.parents] if part != root and part.exists()):
-            raise ValueError("unsafe path")
-        resolved = target.resolve(strict=False)
-        if resolved != root_resolved and root_resolved not in resolved.parents:
-            raise ValueError("unsafe path")
-        if target.exists() and target.is_symlink():
-            raise ValueError("unsafe path")
-        target.write_text(content, encoding="utf-8")
+        _write_workspace_file(root, rel, content)
 
 def snapshot(root):
     out = {}
@@ -653,12 +706,23 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         if "proc" in locals():
             _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
+        timeout_message = f"Execution timed out after {int(policy['timeout'])} seconds."
+        partial_stdout = exc.stdout or ""
+        if isinstance(partial_stdout, bytes):
+            partial_stdout = partial_stdout.decode("utf-8", errors="replace")
+        elif not isinstance(partial_stdout, str):
+            partial_stdout = str(partial_stdout) if partial_stdout else ""
+        partial_stdout = partial_stdout[-MAX_OUTPUT:]
+        # Keep pre-timeout output available to synchronous and streaming clients.
+        if partial_stdout:
+            _append_job_output(job_id, partial_stdout)
+        _append_job_output(job_id, timeout_message + "\n")
         _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
-                 error=f"Execution timed out after {int(policy['timeout'])} seconds.")
+                 error=timeout_message)
         return {
             "job_id": job_id, "status": "timeout", "exit_code": 124,
-            "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": f"Execution timed out after {int(policy['timeout'])} seconds.",
+            "stdout": partial_stdout,
+            "stderr": timeout_message,
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except Exception as exc:
@@ -813,21 +877,18 @@ def ready(authorization: str = Header(default="")):
         raise HTTPException(status_code=503, detail=f"Runner not ready: {exc.__class__.__name__}")
 
 @app.post("/jobs/{job_id}/cancel")
-def cancel_job(job_id: str, authorization: str = Header(default="")):
+def cancel_job(job_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
-    job = _job_snapshot(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     result = _cancel_job(job_id)
     if not result:
         raise HTTPException(status_code=404, detail="Job not found.")
     return result
 
 @app.get("/jobs/{job_id}/stream")
-def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
+def job_output_stream(job_id: str, workspace_id: str, cursor: int = 0, authorization: str = Header(default="")):
     auth(authorization)
-    if not _job_snapshot(job_id):
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     start = time.monotonic()
     current = max(0, int(cursor or 0))
     while time.monotonic() - start < STREAM_WAIT_SECONDS:
@@ -835,27 +896,23 @@ def job_output_stream(job_id: str, cursor: int = 0, authorization: str = Header(
         if chunk:
             return {"job_id": job_id, "output": chunk, "cursor": next_cursor, "done": False}
         job = _job_snapshot(job_id)
-        if job and job["status"] in ("completed", "failed", "cancelled"):
+        if job and job["status"] in TERMINAL_JOB_STATES:
             return {"job_id": job_id, "output": "", "cursor": current, "done": True, "status": job["status"]}
         time.sleep(0.05)
     job = _job_snapshot(job_id)
-    return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in ("completed","failed","cancelled")), "status": job["status"] if job else "unknown"}
+    return {"job_id": job_id, "output": "", "cursor": current, "done": bool(job and job["status"] in TERMINAL_JOB_STATES), "status": job["status"] if job else "unknown"}
 
 @app.get("/jobs/{job_id}/output")
-def job_output(job_id: str, cursor: int = 0, authorization: str = Header(default="")):
+def job_output(job_id: str, workspace_id: str, cursor: int = 0, authorization: str = Header(default="")):
     auth(authorization)
-    if not _job_snapshot(job_id):
-        raise HTTPException(status_code=404, detail="Job not found.")
+    _job_for_workspace(job_id, workspace_id)
     chunk, next_cursor = _job_output_slice(job_id, cursor)
     return {"job_id": job_id, "output": chunk, "cursor": next_cursor}
 
 @app.get("/jobs/{job_id}")
-def job_status(job_id: str, authorization: str = Header(default="")):
+def job_status(job_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
-    job = _job_snapshot(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    return job
+    return _job_for_workspace(job_id, workspace_id)
 
 @app.get("/queue")
 def queue_status(authorization: str = Header(default="")):
@@ -880,18 +937,7 @@ def process_stop(process_id: str, workspace_id: str, authorization: str = Header
     if not item or str(item["workspace_id"]) != str(workspace_id):
         raise HTTPException(status_code=404, detail="Process not found.")
     proc = item["popen"]
-    if proc.poll() is None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-        try:
-            proc.wait(timeout=CANCEL_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
+    _terminate_process_group(proc)
     _metric("process_stopped")
     return _process_state(process_id)
 
@@ -902,14 +948,8 @@ def process_cancel(process_id: str, workspace_id: str, authorization: str = Head
         item=PROCESSES.get(str(process_id))
     if not item or str(item["workspace_id"]) != str(workspace_id):
         raise HTTPException(status_code=404, detail="Process not found.")
-    proc=item["popen"]
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=CANCEL_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=1)
+    proc = item["popen"]
+    _terminate_process_group(proc)
     _metric("process_stopped")
     return _process_state(process_id)
 
@@ -1206,19 +1246,10 @@ def _stop_process(pid):
         if not item:
             raise HTTPException(status_code=404, detail="Process not found.")
         proc = item["popen"]
-        if proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError, OSError):
-                    pass
-        return _process_state(pid)
+    # Terminate the process group, not just the shell parent. This also reaps
+    # descendants started by build tools, dev servers, and package scripts.
+    _terminate_process_group(proc)
+    return _process_state(pid)
 
 def _workspace_preview_port(workspace_id):
     return PREVIEW_PORT_BASE + (int(workspace_id) % PREVIEW_PORT_SPAN)
@@ -1515,14 +1546,6 @@ def process_get(pid: str, workspace_id: str, authorization: str = Header(default
     if state["workspace_id"] != str(workspace_id):
         raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
     return state
-
-@app.post("/process/{pid}/stop")
-def process_stop(pid: str, workspace_id: str, authorization: str = Header(default="")):
-    auth(authorization)
-    state = _process_state(pid)
-    if state["workspace_id"] != str(workspace_id):
-        raise HTTPException(status_code=403, detail="Process/workspace mismatch.")
-    return _stop_process(pid)
 
 @app.get("/processes")
 def process_list(workspace_id: str, authorization: str = Header(default="")):

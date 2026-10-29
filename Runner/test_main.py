@@ -1,13 +1,56 @@
 import main
 import unittest
 import time
+import subprocess
 import tempfile
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
 
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
+
+
+class WorkspaceFilesystemBoundaryTests(unittest.TestCase):
+    def test_filesystem_writer_revalidates_traversal_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            outside = Path(temp) / "escape.txt"
+            for unsafe in ("../escape.txt", "/tmp/escape.txt", "nested/../../escape.txt"):
+                with self.subTest(path=unsafe), self.assertRaises(ValueError):
+                    main._write_workspace_file(root, unsafe, "must not escape")
+            self.assertFalse(outside.exists())
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_filesystem_writer_does_not_follow_symlink_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            target = Path(temp) / "outside"
+            root.mkdir()
+            target.mkdir()
+            (root / "linked").symlink_to(target, target_is_directory=True)
+            with self.assertRaises((ValueError, OSError)):
+                main._write_workspace_file(root, "linked/escape.txt", "must not escape")
+            self.assertFalse((target / "escape.txt").exists())
+
+
+
+
+class RunnerJobTenantIsolationTests(unittest.TestCase):
+    def test_job_lookup_requires_matching_workspace(self):
+        job_id = main._new_job("workspace-a")
+        try:
+            job = main._job_for_workspace(job_id, "workspace-a")
+            self.assertEqual(job["workspace_id"], "workspace-a")
+            with self.assertRaises(HTTPException) as ctx:
+                main._job_for_workspace(job_id, "workspace-b")
+            self.assertEqual(ctx.exception.status_code, 404)
+        finally:
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+            with main.JOB_OUTPUT_LOCK:
+                main.JOB_OUTPUT.pop(job_id, None)
 
 
 class RunnerSecurityTests(unittest.TestCase):
@@ -341,13 +384,185 @@ def test_output_buffer_cleanup_for_finished_job():
     assert len(main._job_output_snapshot(job_id)) <= main.JOB_OUTPUT_MAX_BYTES
 
 
+def test_expired_job_cleanup_also_releases_output_buffer():
+    job_id = main._new_job("expired-cleanup")
+    main._append_job_output(job_id, "stale output")
+    expired_at = time.time() - main.JOB_RETENTION_SECONDS - 1
+    assert main._set_job(job_id, status="completed", finished_at=expired_at) is True
+    main._cleanup_jobs()
+    assert main._job_snapshot(job_id) is None
+    assert main._job_output_snapshot(job_id) == ""
+
+
 def test_retry_delay_is_bounded():
     assert main._retry_delay(1) <= 10
     assert main._retry_delay(100) <= 10
 
 
-def test_stream_terminal_status_is_supported():
-    assert {"completed", "failed", "cancelled"}.issuperset({"completed", "failed", "cancelled"})
+def test_stream_terminal_status_includes_timeout():
+    assert main.TERMINAL_JOB_STATES == {"completed", "failed", "timeout", "cancelled"}
+
+
+def test_timeout_job_stream_reports_done():
+    job_id = main._new_job("stream-timeout")
+    assert main._set_job(job_id, status="running") is True
+    assert main._set_job(job_id, status="timeout", finished_at=time.time(), exit_code=124) is True
+    with patch("main.TOKEN", "test-token"):
+        result = main.job_output_stream(job_id, workspace_id="stream-timeout", cursor=0, authorization="Bearer test-token")
+    assert result["done"] is True
+    assert result["status"] == "timeout"
+
+
+def test_timeout_execution_persists_partial_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
+
+
+def test_timeout_execution_decodes_byte_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
+
+
+def test_job_endpoints_hide_foreign_workspace_jobs():
+    job_id = main._new_job("workspace-owner")
+    assert main._set_job(job_id, status="running", started_at=time.time()) is True
+    with patch("main.TOKEN", "test-token"):
+        endpoints = (
+            lambda: main.job_status(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+            lambda: main.job_output(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.job_output_stream(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.cancel_job(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+        )
+        for endpoint in endpoints:
+            try:
+                endpoint()
+            except HTTPException as exc:
+                assert exc.status_code == 404
+            else:
+                raise AssertionError("A foreign workspace must not access another workspace's job")
+    assert main._job_snapshot(job_id)["status"] == "running"
+
+
+def test_process_stop_and_cancel_terminate_entire_process_group():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"test-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-process-group",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+
+        def terminate_group(proc, grace_seconds=None):
+            proc.poll.return_value = 0
+
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch(
+                "main._terminate_process_group", side_effect=terminate_group
+            ) as terminate:
+                result = getattr(main, endpoint_name)(
+                    process_id,
+                    "workspace-process-group",
+                    "Bearer runner-test-token",
+                )
+            terminate.assert_called_once_with(popen)
+            assert result["status"] == "success"
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
+
+
+def test_process_stop_and_cancel_hide_foreign_workspace_processes():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"foreign-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-owner",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch("main._terminate_process_group") as terminate:
+                try:
+                    getattr(main, endpoint_name)(
+                        process_id,
+                        "workspace-other",
+                        "Bearer runner-test-token",
+                    )
+                except HTTPException as exc:
+                    assert exc.status_code == 404
+                else:
+                    raise AssertionError("A foreign workspace must not control this process")
+                terminate.assert_not_called()
+                assert popen.poll() is None
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
+
+
+def test_process_stop_route_is_registered_once():
+    stop_routes = [
+        route.path
+        for route in main.app.routes
+        if "POST" in getattr(route, "methods", set())
+        and route.path in {"/process/{process_id}/stop", "/process/{pid}/stop"}
+    ]
+    assert stop_routes == ["/process/{process_id}/stop"]
+
+
+def test_write_snapshot_writes_nested_and_root_files_safely():
+    with tempfile.TemporaryDirectory() as root_tmp:
+        root = Path(root_tmp)
+        main.write_snapshot(root, {
+            "src/main.py": "print('safe')\n",
+            "README.md": "workspace",
+        })
+        assert (root / "src" / "main.py").read_text(encoding="utf-8") == "print('safe')\n"
+        assert (root / "README.md").read_text(encoding="utf-8") == "workspace"
+
+
+def test_write_snapshot_rejects_symlink_before_creating_external_directories():
+    with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+        root = Path(root_tmp)
+        outside_target = Path(outside_tmp) / "should-not-be-created"
+        (root / "escape").symlink_to(outside_target, target_is_directory=True)
+
+        try:
+            main.write_snapshot(root, {"escape/file.txt": "must not escape"})
+        except ValueError as exc:
+            assert "unsafe path" in str(exc)
+        else:
+            raise AssertionError("A symlinked workspace parent must be rejected")
+
+        assert not outside_target.exists()
 
 
 def test_concurrent_workspace_limits():
