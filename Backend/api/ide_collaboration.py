@@ -12,11 +12,14 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .models import CodeWorkspace, WorkspaceCollaborationSession, WorkspaceFileRevision, WorkspaceFileLock, WorkspaceCRDTOperation
+from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
 
 class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        token=parse_qs(self.scope.get("query_string",b"").decode()).get("token",[None])[0]
-        if not token: await self.close(code=4401); return
+        protocols = self.scope.get("subprotocols") or []
+        token = extract_websocket_token(self.scope)
+        if not token or APP_SUBPROTOCOL not in protocols:
+            await self.close(code=4401); return
         try:
             access=AccessToken(token); self.user_id=int(access["user_id"])
             self.user=await sync_to_async(User.objects.get)(pk=self.user_id)
@@ -28,7 +31,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         self.client_id=parse_qs(self.scope.get("query_string",b"").decode()).get("client",[uuid.uuid4().hex[:16]])[0]
         self.group_name=f"ide.workspace.{self.workspace.id}"
         await self.channel_layer.group_add(self.group_name,self.channel_name)
-        await self.accept()
+        await self.accept(subprotocol=APP_SUBPROTOCOL)
         await sync_to_async(WorkspaceCollaborationSession.objects.update_or_create)(
             workspace=self.workspace,user=self.user,client_id=self.client_id,
             defaults={"cursor":{},"selection":{}}
