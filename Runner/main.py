@@ -505,7 +505,16 @@ def safe_rel(path):
     if not raw or len(raw) > 500 or raw.startswith("/") or re.match(r"^[A-Za-z]:/", raw):
         raise ValueError("unsafe path")
     parts = raw.split("/")
-    if any(part in {"", ".", ".."} for part in parts) or ".git" in parts:
+    # Keep ordinary source-code filenames (including Unicode, spaces, dots,
+    # brackets and common package punctuation) while rejecting control bytes,
+    # alternate path syntax and filesystem-special characters at every level.
+    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    if any(
+        part in {"", ".", ".."}
+        or part.lower() == ".git"
+        or not component_pattern.fullmatch(part)
+        for part in parts
+    ):
         raise ValueError("unsafe path")
     return "/".join(parts)
 
