@@ -78,7 +78,10 @@ class ApiSecurityHeadersMiddleware:
                 )
             response["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
             response["Cross-Origin-Resource-Policy"] = "same-site"
-            response["X-Frame-Options"] = "DENY"
+            # Preview documents are intentionally sandboxed and must be embeddable
+            # by the same-origin IDE iframe. Keep all other API responses unframeable.
+            is_ide_preview = bool(re.match(r"^/api/ide/workspaces/\\d+/preview(?:/|$)", request.path))
+            response["X-Frame-Options"] = "SAMEORIGIN" if is_ide_preview else "DENY"
             if "Referrer-Policy" not in response:
                 response["Referrer-Policy"] = "same-origin"
             response["X-Content-Type-Options"] = "nosniff"
