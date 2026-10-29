@@ -12,7 +12,10 @@ export function commandForFile(path, files) {
     !filePath ||
     filePath.startsWith("/") ||
     filePath.split("/").some((segment) => !segment || segment === "." || segment === "..") ||
-    /[\u0000-\u001f\u007f]/.test(filePath) ||
+    [...filePath].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    }) ||
     !Object.prototype.hasOwnProperty.call(files ?? {}, filePath)
   ) {
     return "";
