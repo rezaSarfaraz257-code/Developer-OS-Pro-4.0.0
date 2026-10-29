@@ -1511,6 +1511,7 @@ class BackgroundWorkerReadinessTests(APITestCase):
 class WorkspacePathValidationRegressionTests(APITestCase):
     def test_workspace_serializer_rejects_unsafe_and_ambiguous_paths(self):
         from .serializers import CodeWorkspaceSerializer
+        from rest_framework.exceptions import ValidationError
         serializer = CodeWorkspaceSerializer()
         unsafe_paths = (
             "/etc/passwd",
@@ -1525,7 +1526,7 @@ class WorkspacePathValidationRegressionTests(APITestCase):
         )
         for path in unsafe_paths:
             with self.subTest(path=path):
-                with self.assertRaises(Exception):
+                with self.assertRaises(ValidationError):
                     serializer.validate_files({path: "content"})
 
     def test_workspace_serializer_accepts_normal_unicode_and_spaced_paths(self):
