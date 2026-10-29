@@ -80,7 +80,7 @@ class ApiSecurityHeadersMiddleware:
             response["Cross-Origin-Resource-Policy"] = "same-site"
             # Preview documents are intentionally sandboxed and must be embeddable
             # by the same-origin IDE iframe. Keep all other API responses unframeable.
-            is_ide_preview = bool(re.match(r"^/api/ide/workspaces/\\d+/preview(?:/|$)", request.path))
+            is_ide_preview = bool(re.match(r"^/api/ide/workspaces/\d+/preview(?:/|$)", request.path))
             response["X-Frame-Options"] = "SAMEORIGIN" if is_ide_preview else "DENY"
             if "Referrer-Policy" not in response:
                 response["Referrer-Policy"] = "same-origin"
