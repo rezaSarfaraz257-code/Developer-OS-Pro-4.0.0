@@ -1,7 +1,5 @@
 import asyncio
 import json
-from urllib.parse import parse_qs
-
 import requests
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
