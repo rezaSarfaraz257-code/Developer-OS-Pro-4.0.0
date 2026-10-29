@@ -178,17 +178,21 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    }
    setStatus(remaining.length?"Unpinned tabs closed · changes saved":"All tabs closed · changes saved");
  }
- async function explorerMutation(payload,retry=true){
+ async function explorerMutation(payload,retry=true,expectedWorkspaceId=refs.ws.current?.id){
    const w=refs.ws.current;
    if(!w) throw Error("No workspace selected.");
-   const body={...payload,revision:w.revision};
-   let r=await apiFetch(`/ide/workspaces/${w.id}/files/`,{method:"POST",body:JSON.stringify(body)});
+   if(expectedWorkspaceId==null||String(w.id)!==String(expectedWorkspaceId))throw Error("Workspace changed before the Explorer operation could start. Retry in the current workspace.");
+   let r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:w.revision})});
    let d=await r.json().catch(()=>({}));
    if(!r.ok&&r.status===409&&retry){
-     await load(w);
-     const latest=refs.ws.current;
-     if(!latest) throw Error("Workspace is no longer available.");
-     r=await apiFetch(`/ide/workspaces/${latest.id}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:latest.revision})});
+     if(String(refs.ws.current?.id)!==String(expectedWorkspaceId))throw Error("Workspace changed while resolving the Explorer conflict. Retry in the current workspace.");
+     const refresh=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`);
+     const latest=await refresh.json().catch(()=>({}));
+     if(!refresh.ok)throw Error(latest.error||latest.detail||`Workspace refresh failed while resolving Explorer conflict (HTTP ${refresh.status})`);
+     if(!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error("Workspace refresh returned an invalid file map while resolving Explorer conflict.");
+     if(latest.revision==null)throw Error("Workspace refresh did not include a revision; the Explorer operation was not retried.");
+     if(String(refs.ws.current?.id)!==String(expectedWorkspaceId))throw Error("Workspace changed while resolving the Explorer conflict. Retry in the current workspace.");
+     r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:latest.revision})});
      d=await r.json().catch(()=>({}));
    }
    if(!r.ok){
@@ -215,9 +219,11 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    if(!folder)return;
    try{
      if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a folder.")}
-     const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"});
-     const next=d.files==null?{...refs.files.current,[folder+"/.gitkeep"]:""}:d.files;if(!next||typeof next!=="object"||Array.isArray(next))throw Error("Workspace response did not include a valid file map.");const nextWs={...refs.ws.current,files:next,revision:d.revision??refs.ws.current.revision};
-     refs.files.current=next;refs.ws.current=nextWs;setFiles(next);setWs(nextWs);
+     if(String(refs.ws.current?.id)!==String(w.id))throw Error("Workspace changed before folder creation. Retry in the current workspace.");
+     const d=await explorerMutation({path:folder+"/.gitkeep",content:"",action:"create"},true,w.id);
+     if(String(refs.ws.current?.id)!==String(w.id))throw Error("Folder was created in the previous workspace; reopen it to refresh the Explorer.");
+     if(dirtyPathsRef.current.size||refs.dirty.current)throw Error("The editor changed while creating the folder. Your edits were preserved; refresh the Explorer after saving.");
+     await applyExplorerState(d,{expectedWorkspaceId:w.id});
      setExpanded(x=>{const n=new Set(x);const parts=folder.split("/");for(let i=1;i<=parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
      setSelected(new Set([folder]));setStatus("Folder created");
    }catch(e){setStatus(e.message||"Create folder failed")}
@@ -232,11 +238,12 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const p=raw.trim().replace(/\\/g,"/").replace(/^\/+|\/+$/g,"");if(!p)return;
    try{
      if(dirtyPathsRef.current.size||refs.dirty.current){const saved=await save(true);if(!saved)throw Error("Save all pending edits before creating a new file.")}
-     const d=await explorerMutation({path:p,content:"",action:"create"});
-     const nextFiles=d.files==null?{...refs.files.current,[p]:""}:d.files;if(!nextFiles||typeof nextFiles!=="object"||Array.isArray(nextFiles))throw Error("Workspace response did not include a valid file map.");
-     const nextWs={...refs.ws.current,files:nextFiles,revision:d.revision??refs.ws.current.revision,active_file:d.active_file||p};
-     refs.files.current=nextFiles;refs.ws.current=nextWs;refs.active.current=d.active_file||p;refs.dirty.current=false;dirtyPathsRef.current.clear();
-     setFiles(nextFiles);setWs(nextWs);setActive(d.active_file||p);setTabs(t=>t.includes(p)?t:[...t,p]);setSelected(new Set([p]));setDirty(false);
+     if(String(refs.ws.current?.id)!==String(currentWs.id))throw Error("Workspace changed before file creation. Retry in the current workspace.");
+     const d=await explorerMutation({path:p,content:"",action:"create"},true,currentWs.id);
+     if(String(refs.ws.current?.id)!==String(currentWs.id))throw Error("File was created in the previous workspace; reopen it to refresh the Explorer.");
+     if(dirtyPathsRef.current.size||refs.dirty.current)throw Error("The editor changed while creating the file. Your edits were preserved; refresh the Explorer after saving.");
+     await applyExplorerState({...d,active_file:d.active_file||p},{expectedWorkspaceId:currentWs.id});
+     setActive(d.active_file||p);setTabs(t=>t.includes(p)?t:[...t,p]);setSelected(new Set([p]));
      setExpanded(x=>{const n=new Set(x);const parts=p.split("/");for(let i=1;i<parts.length;i++)n.add(parts.slice(0,i).join("/"));return n});
      setStatus("File created");
    }catch(e){setStatus(e.message||"Create failed")}
