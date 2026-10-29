@@ -1,6 +1,7 @@
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework.test import APITestCase
 
 from api.models import CodeWorkspace
@@ -20,6 +21,12 @@ class PreviewProxySecurityTests(APITestCase):
             files={"index.html": "<h1>safe</h1>"},
             active_file="index.html",
         )
+
+    def tearDown(self):
+        # Django TestCase rolls database rows back, but cache throttle entries
+        # are external to that transaction and can leak across reused test IDs.
+        cache.clear()
+        super().tearDown()
 
     def _upstream(self, *, status=200, headers=None, chunks=(b"ok",)):
         response = Mock()
