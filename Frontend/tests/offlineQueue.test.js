@@ -73,6 +73,21 @@ test("offline replay requires one explicit, safe, matching base revision", () =>
   assert.equal(canSafelySyncOfflinePatches([{ ...patches[0], base_revision: undefined }], 0), false);
   assert.equal(canSafelySyncOfflinePatches([{ ...patches[0], base_revision: Number.MAX_SAFE_INTEGER + 1 }], 0), false);
   assert.equal(canSafelySyncOfflinePatches([], 0), false);
+  assert.equal(canSafelySyncOfflinePatches([
+    { ...patches[0], workspace_id: 7 },
+    { ...patches[1], workspace_id: 8 },
+  ], 12), false, "one replay batch must never span workspaces");
+  assert.equal(canSafelySyncOfflinePatches([
+    { ...patches[0], workspace_id: 7 },
+    { ...patches[1], workspace_id: "7" },
+  ], 12), true, "numeric and string forms of the same workspace ID are equivalent");
+  assert.equal(canSafelySyncOfflinePatches([
+    patches[0],
+    { ...patches[1], path: patches[0].path },
+  ], 12), false, "duplicate paths make replay order ambiguous");
+  assert.equal(canSafelySyncOfflinePatches([
+    { ...patches[0], workspace_id: "" },
+  ], 12), false, "unscoped edits cannot be replayed into a workspace");
 });
 
 test("successful replay removes only exact saved versions and preserves newer queued edits", () => {
