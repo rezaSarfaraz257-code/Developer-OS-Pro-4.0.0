@@ -1669,7 +1669,7 @@ PREVIEW_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
     auth(authorization)
     try:
-        safe_path = safe_rel(path).as_posix() if path else ""
+        safe_path = safe_rel(path) if path else ""
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid preview path.")
     port = _workspace_preview_port(workspace_id)
