@@ -348,6 +348,19 @@ export function diagnoseChecks(checks) {
     }
   }
 
+  const readiness = byName.get("api-readiness");
+  if (readiness && !readiness.ok && readiness.status !== null && readiness.status >= 500) {
+    const failedCheckSummary = /failed or missing checks: ([a-z_, ]+)/i.exec(readiness.error || "")?.[1];
+    diagnostics.push({
+      severity: "critical",
+      code: "API_READINESS_BLOCKED",
+      message: failedCheckSummary
+        ? `API readiness returned HTTP ${readiness.status}; required checks not passing: ${failedCheckSummary.trim()}.`
+        : `API readiness returned HTTP ${readiness.status}; the endpoint is reachable but is not ready for production traffic.`,
+      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency or worker check. Verify service configuration and worker heartbeat; do not change the readiness status to green or disable required checks without fixing the underlying condition.",
+    });
+  }
+
   const pricing = byName.get("api-pricing-contract");
   if (pricing && !pricing.ok && pricing.status !== null && pricing.status >= 200 && pricing.status < 300) {
     diagnostics.push({
