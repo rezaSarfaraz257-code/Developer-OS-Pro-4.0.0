@@ -4251,19 +4251,7 @@ def _safe_preview_proxy_path(path):
         or any(part in {".", ".."} for part in raw.split("/"))
     ):
         return None
-    return quote(raw.lstrip("/"), safe="/-._~!@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def ide_preview_proxy_api(request, pk, preview_path=""):
-    ws=_workspace_for_user(pk,request.user)
-    headers={"Authorization":f"Bearer {RUNNER_TOKEN}"}
-    port=int(os.environ.get("IDE_PREVIEW_PORT_BASE","10000")) + (int(ws.id) % int(os.environ.get("IDE_PREVIEW_PORT_SPAN","1000")))
-    try:
-        response=requests.get(f"{RUNNER_URL}/preview/{ws.id}/{preview_path.lstrip('/')}",headers=headers,timeout=15)
-    except requests.RequestException as exc:
-        return Response({"error":f"Preview unavailable: {exc.__class__.__name__}"},status=502)
-    content_type=response.headers.get("Content-Type","text/plain")
-    return HttpResponse(response.content,status=response.status_code,content_type=content_type)
-'()*+,;=:@")
+    return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
 
 
 @api_view(["GET"])
@@ -4332,6 +4320,7 @@ def ide_preview_proxy_api(request, pk, preview_path=""):
     finally:
         if upstream is not None:
             upstream.close()
+
 
 # =========================================================
 # PUBLIC COMMUNITY FEED
