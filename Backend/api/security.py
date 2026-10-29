@@ -183,17 +183,50 @@ def require_project_access(project, user, *, manage=False):
     return project
 
 
+_AUDIT_SECRET_KEYS = {
+    "token", "password", "passwd", "secret", "authorization", "proxyauthorization",
+    "apikey", "accesstoken", "refreshtoken", "clientsecret", "clienttoken",
+    "cookie", "setcookie", "privatekey", "credential", "credentials",
+}
+
+
+def _sanitize_audit_value(value, *, depth=0):
+    """Return bounded JSON-safe audit metadata with secrets removed recursively."""
+    if depth > 6:
+        return "[truncated]"
+    if isinstance(value, dict):
+        safe = {}
+        for raw_key, item in list(value.items())[:100]:
+            key = str(raw_key)[:80]
+            normalized = "".join(char.lower() for char in key if char.isalnum())
+            if (
+                normalized in _AUDIT_SECRET_KEYS
+                or normalized.endswith("password")
+                or normalized.endswith("secret")
+                or normalized.endswith("token")
+                or normalized.endswith("credential")
+            ):
+                continue
+            safe[key] = _sanitize_audit_value(item, depth=depth + 1)
+        return safe
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_audit_value(item, depth=depth + 1) for item in value[:50]]
+    if isinstance(value, str):
+        return value[:500]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:500]
+
+
 def audit_security_event(user, action, *, organization=None, target_type="", target_id="", metadata=None):
-    safe_meta = {}
-    for key, value in (metadata or {}).items():
-        if key.lower() in {"token", "password", "secret", "authorization", "api_key", "access_token", "refresh_token"}:
-            continue
-        safe_meta[str(key)[:80]] = str(value)[:500]
+    # Metadata may contain nested request/provider objects. Redact recursively
+    # before persistence so secrets cannot leak through an innocent outer key.
+    safe_meta = _sanitize_audit_value(metadata if isinstance(metadata, dict) else {})
     return AuditLog.objects.create(
         user=user if getattr(user, "is_authenticated", False) else None,
         organization=organization,
-        action=action[:120],
-        target_type=target_type[:80],
+        action=str(action)[:120],
+        target_type=str(target_type)[:80],
         target_id=str(target_id or "")[:120],
         metadata=safe_meta,
     )
