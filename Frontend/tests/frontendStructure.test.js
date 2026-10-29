@@ -687,7 +687,7 @@ test("IDE context-menu Delete saves pending edits before destructive Explorer mu
   assert.ok(start >= 0, "context-menu delete handler should exist");
   assert.match(handler, /const saved=await save\(true\)/);
   assert.match(handler, /if\(!saved\)throw Error\("Save all pending edits before deleting a file\."\)/);
-  assert.ok(handler.indexOf("if(!saved)") < handler.indexOf("const d=await explorerDelete(p)"), "delete must not start before edits save");
+  assert.ok(handler.indexOf("if(!saved)") < handler.indexOf("const d=await explorerDelete(p,true,workspaceId)"), "delete must not start before edits save");
   assert.match(handler, /await applyExplorerState\(d,\{removed:p,expectedWorkspaceId:workspaceId\}\)/);
   assert.match(handler, /catch\(e\)\{setStatus\(e\.message\|\|"Delete failed"\)\}/);
 });
