@@ -163,7 +163,7 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertEqual(safe_rel("проект/файл.py"), "проект/файл.py")
 
     def test_rejects_filesystem_special_characters_and_control_bytes(self):
-        for path in ("src/name\\x00.py", "src/name\\n.py", "src/name:stream", "src/name\\x7f.py", "src/.GIT/config"):
+        for path in ("src/name\x00.py", "src/name\n.py", "src/name:stream", "src/name\x7f.py", "src/.GIT/config"):
             with self.subTest(path=repr(path)), self.assertRaises(ValueError):
                 safe_rel(path)
 
