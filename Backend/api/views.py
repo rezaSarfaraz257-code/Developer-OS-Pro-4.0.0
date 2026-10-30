@@ -4224,9 +4224,9 @@ def ide_job_stream_api(request, pk, job_id):
     try:
         cursor = int(raw_cursor)
     except (TypeError, ValueError, OverflowError):
-        return Response({"error": "Cursor must be a non-negative integer."}, status=400)
+        return Response({"error": "Cursor must be a non-negative integer.", "code": "invalid_job_cursor"}, status=400)
     if cursor < 0 or cursor > 2_147_483_647:
-        return Response({"error": "Cursor must be a non-negative integer in the supported range."}, status=400)
+        return Response({"error": "Cursor must be a non-negative integer in the supported range.", "code": "invalid_job_cursor"}, status=400)
     data, error = _runner_request(
         "GET",
         f"/jobs/{job_id}/stream",
