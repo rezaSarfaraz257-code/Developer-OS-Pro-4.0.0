@@ -1369,6 +1369,13 @@ def _preview_command(command, port):
                 command,
                 count=1,
             )
+        if re.search(r"\brunserver\s+\d+(?:\s|$)", command):
+            return re.sub(
+                r"(\brunserver\s+)\d+",
+                lambda match: match.group(1) + f"0.0.0.0:{port}",
+                command,
+                count=1,
+            )
         return command + f" 0.0.0.0:{port}"
 
     for flag in ("--server.port", "--port"):
