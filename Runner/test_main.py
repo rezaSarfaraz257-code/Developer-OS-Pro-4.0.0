@@ -816,3 +816,67 @@ class PreviewPortRoutingTests(unittest.TestCase):
             for method in (route.methods or set())
         ]
         self.assertEqual(routes.count(("/preview/start", "POST")), 1)
+
+
+class PreviewProxySecurityTests(unittest.TestCase):
+    def _upstream(self, *, status=200, headers=None, chunks=(b"ok",)):
+        response = Mock()
+        response.status_code = status
+        response.headers = headers or {"Content-Type": "text/html"}
+        response.iter_content.return_value = iter(chunks)
+        response.close = Mock()
+        return response
+
+    def test_preview_proxy_rejects_traversal_before_request(self):
+        with patch("main.auth"), patch("main.requests.get") as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "../exec", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 400)
+        get.assert_not_called()
+
+    def test_preview_proxy_disables_redirects(self):
+        upstream = self._upstream(status=302, headers={"Location": "http://169.254.169.254/"})
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertTrue(get.call_args.kwargs["stream"])
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_caps_declared_response_size(self):
+        upstream = self._upstream(headers={"Content-Length": str(main.PREVIEW_MAX_RESPONSE_BYTES + 1)})
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        upstream.iter_content.assert_not_called()
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_caps_streamed_response_without_length(self):
+        upstream = self._upstream(
+            headers={"Content-Type": "application/octet-stream"},
+            chunks=(b"x" * main.PREVIEW_MAX_RESPONSE_BYTES, b"y"),
+        )
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_returns_bounded_content(self):
+        upstream = self._upstream(headers={"Content-Type": "text/html"}, chunks=(b"<h1>", b"ok</h1>"))
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            response = main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.body, b"<h1>ok</h1>")
+        self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/index.html")
+        upstream.close.assert_called_once()
