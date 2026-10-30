@@ -80,6 +80,11 @@ if "runner_internal:" not in compose or "internal: true" not in compose:
     errors.append("Runner network must remain internal-only")
 if "RUNNER_ALLOW_NETWORK: ${RUNNER_ALLOW_NETWORK:-false}" not in compose:
     errors.append("Runner outbound network must default to disabled")
+if compose.count("RUNNER_SANDBOX_MODE: ${RUNNER_SANDBOX_MODE:-bwrap}") != 2:
+    errors.append("Backend and Runner Compose services must default to the isolated Bubblewrap backend")
+runner_dockerfile = (ROOT / "Runner/Dockerfile").read_text(encoding="utf-8", errors="replace")
+if "RUNNER_SECURITY_LEVEL=strict" not in runner_dockerfile or "RUNNER_SANDBOX_MODE=bwrap" not in runner_dockerfile:
+    errors.append("Runner image must default to strict Bubblewrap isolation")
 if "SEED_CATALOG_ON_STARTUP: ${SEED_CATALOG_ON_STARTUP:-false}" not in compose:
     errors.append("Production Compose must not mutate catalog data by default at startup")
 
