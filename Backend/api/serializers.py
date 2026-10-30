@@ -337,13 +337,17 @@ class CodeWorkspaceSerializer(serializers.ModelSerializer):
             normalized = filename.replace("\\", "/")
             parts = normalized.split("/")
             component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
+            reserved_runtime_roots = {
+                ".git", "node_modules", ".venv", ".home", ".tmp",
+                ".cache", ".npm-cache", ".pip-cache",
+            }
             if (
                 not normalized
                 or normalized.startswith("/")
                 or re.match(r"^[A-Za-z]:", normalized)
                 or any(
                     part in {"", ".", ".."}
-                    or part.lower() == ".git"
+                    or part.casefold() in reserved_runtime_roots
                     or not component_pattern.fullmatch(part)
                     for part in parts
                 )
