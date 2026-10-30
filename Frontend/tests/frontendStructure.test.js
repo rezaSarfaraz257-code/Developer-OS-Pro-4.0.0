@@ -787,7 +787,7 @@ test("IDE AI apply and undo validate file maps before changing editor state", ()
 
 test("API proxy preserves backend endpoint-specific CSP and frame policy", () => {
   const nginx = fs.readFileSync(path.resolve(testsDir, "../nginx.conf"), "utf8");
-  const apiLocation = nginx.split("location /api/ {")[1]?.split("\\n  }")[0] || "";
+  const apiLocation = nginx.split("location /api/ {")[1]?.split("\n  }")[0] || "";
 
   // Nginx inherits server-level add_header directives unless a location
   // defines its own. The API proxy must not inherit the SPA's frame denial.
