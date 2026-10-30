@@ -56,6 +56,23 @@ class RunnerEnvironmentLimitParsingTests(unittest.TestCase):
 
 
 
+class RunnerCommandScriptBoundaryTests(unittest.TestCase):
+    def test_user_command_text_is_written_to_private_script_not_subprocess_argv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            command_text = "echo safe; python -c 'print(1)'"
+            script = main._create_command_script(root, command_text)
+            self.assertTrue(script.is_file())
+            self.assertEqual(script.read_text(encoding="utf-8"), command_text + "\n")
+            self.assertEqual(script.parent.name, ".runner-runtime")
+            self.assertEqual(script.stat().st_mode & 0o777, 0o600)
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+                argv = _sandbox_command(root, script)
+            self.assertNotIn(command_text, " ".join(argv))
+            self.assertEqual(argv, ["bash", script.relative_to(root).as_posix()])
+            main._remove_command_script(script)
+            self.assertFalse(script.exists())
+
 class WorkspaceFilesystemBoundaryTests(unittest.TestCase):
     def test_filesystem_writer_revalidates_traversal_paths(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -113,15 +130,22 @@ class RunnerSecurityTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 run_command(Path("/tmp"), command)
 
-    def test_container_native_execution_policy_is_available_without_nested_sandbox(self):
-        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.shutil.which", return_value=None):
-            command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
-            self.assertEqual(command[:2], ["bash", "-lc"])
+    def test_container_native_execution_policy_uses_generated_script_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = main._create_command_script(root, "python -c 'print(1)'")
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.shutil.which", return_value=None):
+                command = _sandbox_command(root, script, allow_network=False)
+            self.assertEqual(command[0], "bash")
+            self.assertEqual(command[1], script.relative_to(root).as_posix())
+            self.assertNotIn("python -c", " ".join(command))
+            self.assertEqual(script.read_text(encoding="utf-8"), "python -c 'print(1)'\\n")
+            main._remove_command_script(script)
 
     def test_strict_container_execution_fails_closed_without_tenant_isolation(self):
         with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("per-execution isolation", ctx.exception.detail)
 
@@ -131,19 +155,19 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_bubblewrap_mode_fails_closed_when_unavailable(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value=None):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
 
     def test_bwrap_runtime_failure_fails_closed(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=False):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
 
     def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
-            command = _sandbox_command(Path("/tmp"), "npm install react", allow_network=True)
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
             self.assertNotIn("--unshare-net", command)
 
     def test_capability_manifest_is_machine_readable(self):
