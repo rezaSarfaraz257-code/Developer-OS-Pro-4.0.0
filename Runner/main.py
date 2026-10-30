@@ -60,9 +60,21 @@ PROCESS_TTL = _bounded_int_env("RUNNER_PROCESS_TTL_SECONDS", 3600, 300, 86400)
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
-RUNNER_SECURITY_LEVEL = os.environ.get("RUNNER_SECURITY_LEVEL", "strict").strip().lower()
-if RUNNER_SECURITY_LEVEL not in {"strict", "compat"}:
-    RUNNER_SECURITY_LEVEL = "strict"
+def _effective_runner_security_level(environ=None):
+    """Never allow shared-container compatibility mode on a managed production host."""
+    env = os.environ if environ is None else environ
+    requested = str(env.get("RUNNER_SECURITY_LEVEL", "strict")).strip().lower()
+    if requested not in {"strict", "compat"}:
+        requested = "strict"
+    managed_production = (
+        str(env.get("ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+        or str(env.get("RENDER", "")).strip().lower() == "true"
+        or any(env.get(name) for name in ("RENDER_SERVICE_ID", "RENDER_GIT_COMMIT", "RENDER_EXTERNAL_URL"))
+    )
+    return "strict" if managed_production else requested
+
+
+RUNNER_SECURITY_LEVEL = _effective_runner_security_level()
 # Prefer per-execution Bubblewrap isolation by default. If the host denies namespace creation,
 # strict mode reports execution unavailable; it must never fall back to a shared container.
 SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "bwrap").strip().lower()
@@ -766,6 +778,10 @@ def _normalize_command(command):
 def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn):
     """Run a command in its own process group and terminate the group on timeout."""
     proc = subprocess.Popen(
+        # User-authored commands are the product's intended execution input. In
+        # managed production this boundary is reachable only through strict
+        # per-execution Bubblewrap isolation; compatibility mode is local/CI only.
+        # codeql[py/command-line-injection]
         argv,
         # Pass an argv sequence without invoking a shell; user input is never shell-parsed.
         shell=False,

@@ -31,7 +31,7 @@ Keep the bounded database pool defaults unless the database provider's connectio
 
 ## Runner isolation (production release gate)
 
-- Keep `RUNNER_SECURITY_LEVEL=strict` on deployed runners. The Runner now forces strict mode when `ENVIRONMENT=production|prod` or Render deployment markers are present, even if `RUNNER_SECURITY_LEVEL=compat` was mistakenly configured.
+- Keep `RUNNER_SECURITY_LEVEL=strict` on deployed runners. The Runner now forces strict mode when `ENVIRONMENT=production|prod`, `RENDER=true`, or Render deployment markers are present, even if `RUNNER_SECURITY_LEVEL=compat` was mistakenly configured.
 - `compat` is only for trusted local/CI execution. It does not provide per-execution tenant isolation and must never be used as a production workaround.
 - With strict mode and `RUNNER_SANDBOX_MODE=container`, execution intentionally returns HTTP 503 because a shared service container is not a per-execution security boundary.
 - Set `RUNNER_SANDBOX_MODE=bwrap` only on a host where Bubblewrap can create the required namespaces and the isolation checks pass in that actual runtime. Do not disable strict mode or skip the checks to make execution appear available.

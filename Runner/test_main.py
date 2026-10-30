@@ -12,6 +12,23 @@ from fastapi import HTTPException
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
 class RunnerEnvironmentLimitParsingTests(unittest.TestCase):
+    def test_managed_production_forces_strict_runner_isolation(self):
+        for env in (
+            {"RUNNER_SECURITY_LEVEL": "compat", "ENVIRONMENT": "production"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER": "true"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_SERVICE_ID": "srv-test"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_GIT_COMMIT": "a" * 40},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_EXTERNAL_URL": "https://runner.example.test"},
+        ):
+            with self.subTest(env=env):
+                self.assertEqual(main._effective_runner_security_level(env), "strict")
+
+    def test_compat_mode_remains_available_only_without_managed_production_markers(self):
+        self.assertEqual(
+            main._effective_runner_security_level({"RUNNER_SECURITY_LEVEL": "compat"}),
+            "compat",
+        )
+
     def test_invalid_integer_environment_value_uses_safe_default(self):
         with patch.dict(os.environ, {"RUNNER_TEST_INT": "not-a-number"}):
             self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 7)
