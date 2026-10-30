@@ -719,6 +719,9 @@ class WorkspaceSnapshotReconciliationTests(unittest.TestCase):
             (root / "old.py").write_text("stale = True\n", encoding="utf-8")
             (root / "stale-dir").mkdir()
             (root / "stale-dir" / "old.txt").write_text("stale", encoding="utf-8")
+            outside = Path(temp) / "outside.txt"
+            outside.write_text("must remain outside", encoding="utf-8")
+            (root / "escape-link").symlink_to(outside)
             for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
                 (root / name).mkdir()
                 (root / name / "keep.txt").write_text("preserve", encoding="utf-8")
@@ -727,6 +730,8 @@ class WorkspaceSnapshotReconciliationTests(unittest.TestCase):
 
             self.assertFalse((root / "old.py").exists())
             self.assertFalse((root / "stale-dir").exists())
+            self.assertFalse((root / "escape-link").exists())
+            self.assertEqual(outside.read_text(encoding="utf-8"), "must remain outside")
             self.assertEqual((root / "src/main.py").read_text(encoding="utf-8"), "print('fresh')\n")
             for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
                 self.assertEqual((root / name / "keep.txt").read_text(encoding="utf-8"), "preserve")
