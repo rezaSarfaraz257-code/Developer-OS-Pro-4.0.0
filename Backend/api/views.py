@@ -163,6 +163,42 @@ def health_api(request):
         ))
 
 
+def _secure_runner_ready():
+    """Require a live, strictly isolated Runner before production traffic is ready."""
+    runner_url = str(globals().get("RUNNER_URL", "") or "").strip().rstrip("/")
+    runner_token = str(globals().get("RUNNER_TOKEN", "") or "").strip()
+    if not runner_url or not runner_token:
+        return False
+
+    try:
+        response = requests.get(
+            f"{runner_url}/capabilities",
+            headers={"Authorization": f"Bearer {runner_token}"},
+            timeout=(2, 4),
+            allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+    except (requests.RequestException, ValueError, AttributeError):
+        return False
+
+    sandbox = payload.get("sandbox") if isinstance(payload, dict) else None
+    operations = payload.get("operations") if isinstance(payload, dict) else None
+    return bool(
+        isinstance(sandbox, dict)
+        and sandbox.get("backend") == "bwrap"
+        and sandbox.get("mode") == "bubblewrap"
+        and sandbox.get("security_level") == "strict"
+        and sandbox.get("execution_available") is True
+        and sandbox.get("trusted_shared_container") is False
+        and sandbox.get("preview_network_bridge") is True
+        and sandbox.get("network_enforcement") == "isolated"
+        and isinstance(operations, dict)
+        and all(operations.get(name) is True for name in ("execute", "process", "install", "preview"))
+    )
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -172,7 +208,7 @@ def readiness_api(request):
         or os.environ.get("RENDER_GIT_COMMIT", "").strip()
     )
     strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
-    checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False}
+    checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False, "runner": False}
 
     try:
         with connection.cursor() as cursor:
@@ -240,7 +276,13 @@ def readiness_api(request):
     except Exception:
         checks["worker"] = False
 
+    # A healthy API is not production-ready if its code-execution boundary is
+    # unavailable, shared-container compatibility is active, or egress is open.
+    checks["runner"] = _secure_runner_ready() if strict_runtime else False
+
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
+    if strict_runtime:
+        mandatory.append("runner")
     worker_required = (
         getattr(settings, "IS_PRODUCTION", False)
         or is_platform_runtime
