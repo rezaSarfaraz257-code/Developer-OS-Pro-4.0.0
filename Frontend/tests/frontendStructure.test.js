@@ -784,3 +784,16 @@ test("IDE AI apply and undo validate file maps before changing editor state", ()
   assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files\?\?files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
   assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
 });
+
+test("API proxy preserves backend endpoint-specific CSP and frame policy", () => {
+  const nginx = fs.readFileSync(path.resolve(testsDir, "../nginx.conf"), "utf8");
+  const apiLocation = nginx.split("location /api/ {")[1]?.split("\\n  }")[0] || "";
+
+  // Nginx inherits server-level add_header directives unless a location
+  // defines its own. The API proxy must not inherit the SPA's frame denial.
+  assert.match(apiLocation, /add_header X-Content-Type-Options "nosniff" always;/);
+  assert.doesNotMatch(apiLocation, /add_header (?:Content-Security-Policy|X-Frame-Options)/);
+  assert.match(apiLocation, /proxy_pass \\$\\{BACKEND_URL\\}\\/api\\//);
+  assert.match(nginx, /add_header X-Frame-Options "DENY" always;/);
+  assert.match(nginx, /add_header Content-Security-Policy "[^"]*frame-ancestors 'none'/);
+});
