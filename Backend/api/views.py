@@ -172,7 +172,8 @@ def _secure_runner_ready():
 
     try:
         response = requests.get(
-            f"{runner_url}/health",
+            f"{runner_url}/capabilities",
+            headers={"Authorization": f"Bearer {runner_token}"},
             timeout=(2, 4),
             allow_redirects=False,
         )
@@ -182,13 +183,15 @@ def _secure_runner_ready():
     except (requests.RequestException, ValueError, AttributeError):
         return False
 
+    sandbox = payload.get("sandbox") if isinstance(payload, dict) else None
     return bool(
-        isinstance(payload, dict)
-        and payload.get("status") == "ok"
-        and payload.get("execution_available") is True
-        and payload.get("sandbox_backend") == "bwrap"
-        and payload.get("sandbox") == "bubblewrap"
-        and payload.get("network_policy") == "isolated-by-default"
+        isinstance(sandbox, dict)
+        and sandbox.get("backend") == "bwrap"
+        and sandbox.get("mode") == "bubblewrap"
+        and sandbox.get("security_level") == "strict"
+        and sandbox.get("execution_available") is True
+        and sandbox.get("trusted_shared_container") is False
+        and sandbox.get("network_enforcement") == "isolated"
     )
 
 
