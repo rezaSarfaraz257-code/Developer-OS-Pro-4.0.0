@@ -16,14 +16,6 @@ def create_ai_runtime_models(apps, schema_editor):
         create_model_if_missing(apps, schema_editor, name)
 
 
-def drop_ai_runtime_models(apps, schema_editor):
-    for name in ("AIMessage", "AIConversation", "IDEExecution", "FrameworkInstallation", "CodeWorkspace", "Subscription"):
-        Model = apps.get_model("api", name)
-        table = Model._meta.db_table
-        if table in schema_editor.connection.introspection.table_names():
-            schema_editor.delete_model(Model)
-
-
 class Migration(migrations.Migration):
     dependencies = [
         ("api", "0017_mature_saas_control_plane"),
@@ -34,7 +26,10 @@ class Migration(migrations.Migration):
             database_operations=[
                 migrations.RunPython(
                     create_ai_runtime_models,
-                    drop_ai_runtime_models,
+                    # Some tables may predate this migration. Without a durable
+                    # ownership marker, deleting them on rollback can destroy
+                    # production data. Prefer a non-destructive rollback.
+                    migrations.RunPython.noop,
                 ),
             ],
             state_operations=[
@@ -68,9 +63,7 @@ class Migration(migrations.Migration):
                         ("owner", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="code_workspaces", to="auth.user")),
                         ("project", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name="code_workspaces", to="api.project")),
                     ],
-                    options={
-                        "indexes": [models.Index(fields=["owner", "-updated_at"], name="api_codework_owner_i_8f5a7c_idx")],
-                    },
+                    options={"indexes": [models.Index(fields=["owner", "-updated_at"], name="api_codework_owner_i_8f5a7c_idx")]},
                 ),
                 migrations.CreateModel(
                     name="FrameworkInstallation",
