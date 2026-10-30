@@ -204,7 +204,15 @@ def validate_remote_url(value: str, *, allow_hosts=None, allow_private=False) ->
     parsed = urlparse(str(value or ""))
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Only absolute http(s) URLs are allowed.")
+    # User-info is unnecessary for supported outbound integrations and can
+    # leak credentials through logs, redirects, or downstream HTTP clients.
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("URLs containing embedded credentials are not allowed.")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise ValueError("Destination port is invalid.")
     hostname = parsed.hostname.rstrip(".").lower()
+    if not hostname or "%" in hostname:
+        raise ValueError("Destination hostname is invalid.")
     if allow_hosts and hostname not in {h.lower() for h in allow_hosts}:
         raise ValueError("Destination host is not allowed.")
     try:
