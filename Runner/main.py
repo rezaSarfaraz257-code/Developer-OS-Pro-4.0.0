@@ -557,7 +557,7 @@ def _write_workspace_file(root, rel, content):
 
 PRESERVED_WORKSPACE_DIRS = {
     ".git", ".home", ".tmp", ".cache", ".npm-cache", ".pip-cache",
-    "node_modules", ".venv",
+    ".runner-runtime", "node_modules", ".venv",
 }
 
 
@@ -623,7 +623,7 @@ def replace_workspace_snapshot(root, files):
 def snapshot(root):
     out = {}
     total = 0
-    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home", ".tmp", ".cache"}
+    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home", ".tmp", ".cache", ".runner-runtime"}
     for p in root.rglob("*"):
         rel = p.relative_to(root)
         if p.is_symlink() or not p.is_file() or any(part in skip for part in rel.parts):
@@ -679,14 +679,73 @@ def _bwrap_runtime_available():
         return False
 
 
-def _sandbox_command(root, command, allow_network=False):
-    """Return an execution command only when the selected isolation is safe.
+def _create_command_script(root, command):
+    """Persist user-authored shell text as a private workspace file."""
+    if not isinstance(command, str) or not command or len(command) > MAX_COMMAND or "\x00" in command:
+        raise HTTPException(status_code=400, detail="Invalid command.")
+    try:
+        payload = command.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise HTTPException(status_code=400, detail="Command must be valid UTF-8.") from exc
+    if not payload.endswith(b"\n"):
+        payload += b"\n"
 
-    A service container is not, by itself, a tenant boundary: multiple
-    executions share its kernel and filesystem namespace. Strict production
-    mode therefore refuses shared-container execution. Compatibility mode is
-    reserved for trusted local/CI environments only.
-    """
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(str(root), directory_flags)
+    runtime_fd = None
+    script_fd = None
+    filename = f"command-{uuid.uuid4().hex}.sh"
+    try:
+        try:
+            os.mkdir(".runner-runtime", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        runtime_fd = os.open(".runner-runtime", directory_flags, dir_fd=root_fd)
+        os.fchmod(runtime_fd, 0o700)
+        script_fd = os.open(
+            filename,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=runtime_fd,
+        )
+        with os.fdopen(script_fd, "wb") as handle:
+            script_fd = None
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="Unable to prepare a safe execution script.") from exc
+    finally:
+        if script_fd is not None:
+            os.close(script_fd)
+        if runtime_fd is not None:
+            os.close(runtime_fd)
+        os.close(root_fd)
+    return root / ".runner-runtime" / filename
+
+
+def _remove_command_script(path):
+    if path is None:
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _sandbox_command(root, command_file, allow_network=False):
+    """Return a fixed shell launcher for a generated script inside the workspace."""
+    try:
+        relative = Path(command_file).relative_to(Path(root))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid execution script path.")
+    if (
+        len(relative.parts) != 2
+        or relative.parts[0] != ".runner-runtime"
+        or not re.fullmatch(r"command-[0-9a-f]{32}\.sh", relative.name)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid execution script path.")
+
     if SANDBOX_MODE == "container":
         if RUNNER_SECURITY_LEVEL == "strict":
             raise HTTPException(
@@ -697,7 +756,7 @@ def _sandbox_command(root, command, allow_network=False):
                     "RUNNER_SANDBOX_MODE=bwrap on a runtime that supports it."
                 ),
             )
-        return ["bash", "-lc", "cd " + shlex.quote(str(root)) + " && " + command]
+        return ["bash", str(relative)]
 
     bwrap = shutil.which("bwrap")
     if not bwrap:
@@ -722,7 +781,7 @@ def _sandbox_command(root, command, allow_network=False):
     args.extend([
         "--setenv", "PATH", "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "--setenv", "HOME", "/workspace/.home",
-        "--", "bash", "-lc", command,
+        "--", "bash", f"/workspace/{relative.as_posix()}",
     ])
     return args
 
@@ -775,42 +834,39 @@ def _normalize_command(command):
         command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
     return command
 
-def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn):
-    """Run a command in its own process group and terminate the group on timeout."""
-    proc = subprocess.Popen(
-        # User-authored commands are the product's intended execution input. In
-        # managed production this boundary is reachable only through strict
-        # per-execution Bubblewrap isolation; compatibility mode is local/CI only.
-        # codeql[py/command-line-injection]
-        argv,
-        # Pass an argv sequence without invoking a shell; user input is never shell-parsed.
-        shell=False,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-        preexec_fn=preexec_fn,
-    )
+def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
+    """Run a fixed-argv script in its own process group and terminate descendants on timeout."""
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        # subprocess.run(timeout=...) only kills its direct child. Keep the
-        # Popen handle so descendants in the same process group are terminated.
-        _terminate_process_group(proc, grace_seconds=0.1)
+        proc = subprocess.Popen(
+            argv,
+            shell=False,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            preexec_fn=preexec_fn,
+        )
         try:
-            stdout, stderr = proc.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
                 stdout, stderr = proc.communicate(timeout=1)
             except subprocess.TimeoutExpired:
-                stdout, stderr = exc.output or "", exc.stderr or ""
-        stdout = stdout or exc.output or ""
-        stderr = stderr or exc.stderr or ""
-        raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
-    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+                _terminate_process_group(proc, grace_seconds=0.1)
+                try:
+                    stdout, stderr = proc.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    stdout, stderr = exc.output or "", exc.stderr or ""
+            stdout = stdout or exc.output or ""
+            stderr = stderr or exc.stderr or ""
+            raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+    finally:
+        _remove_command_script(cleanup_path)
 
 
 def run_command(root, command, *, allow_network=False, entitlement=None):
@@ -851,13 +907,20 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
     _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
-            proc = _run_process_with_timeout(
-                _sandbox_command(root, command, allow_network=allow_network),
-                cwd=root,
-                env=env,
-                timeout=min(TIMEOUT, int(policy["timeout"])),
-                preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
-            )
+            command_file = _create_command_script(root, command)
+            try:
+                argv = _sandbox_command(root, command_file, allow_network=allow_network)
+                proc = _run_process_with_timeout(
+                    argv,
+                    cwd=root,
+                    env=env,
+                    timeout=min(TIMEOUT, int(policy["timeout"])),
+                    preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
+                    cleanup_path=command_file,
+                )
+            except Exception:
+                _remove_command_script(command_file)
+                raise
         finished = time.time()
         final_status = _job_snapshot(job_id) or {}
         cancelled = final_status.get("status") == "cancelled"
@@ -1364,18 +1427,23 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
     }
     _safe_process_env(env, env_extra)
     (root / ".home").mkdir(exist_ok=True)
-    argv = _sandbox_command(root, command, allow_network=allow_network)
+    command_file = _create_command_script(root, command)
     try:
+        argv = _sandbox_command(root, command_file, allow_network=allow_network)
         proc = subprocess.Popen(
-            argv, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            argv, shell=False, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, start_new_session=True, preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
         )
+    except HTTPException:
+        _remove_command_script(command_file)
+        raise
     except Exception as exc:
+        _remove_command_script(command_file)
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
     with PROCESS_LOCK:
         PROCESSES[process_id] = {
             "id": process_id, "workspace_id": root.name, "command": command,
-            "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
+            "command_file": command_file, "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
             "kind": "process",
         }
     threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
@@ -1393,6 +1461,7 @@ def _reap_processes():
         with PROCESS_LOCK:
             item = PROCESSES.pop(pid, None)
         if item:
+            _remove_command_script(item.get("command_file"))
             for stream in (item.get("stdout"), item.get("stderr")):
                 try:
                     if hasattr(stream, "close"):
@@ -1410,6 +1479,8 @@ def _process_state(pid):
         state = "running" if code is None else ("success" if code == 0 else "failed")
         if code is not None and item.get("finished_at") is None:
             item["finished_at"] = time.time()
+        if code is not None and item.get("command_file"):
+            _remove_command_script(item.pop("command_file", None))
         return {
             "id": item["id"], "workspace_id": item["workspace_id"], "command": item["command"],
             "status": state, "exit_code": code,
