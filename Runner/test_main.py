@@ -800,12 +800,16 @@ class PreviewPortRoutingTests(unittest.TestCase):
         with patch.object(main, "SANDBOX_MODE", "bwrap"), patch.object(
             main, "RUNNER_SECURITY_LEVEL", "strict"
         ), patch.object(main, "_bwrap_runtime_available", return_value=True):
-            self.assertFalse(main._capability_manifest()["operations"]["preview"])
+            capabilities = main._capability_manifest()["operations"]
+            self.assertFalse(capabilities["preview"])
+            self.assertFalse(capabilities["install"])
 
         with patch.object(main, "SANDBOX_MODE", "container"), patch.object(
             main, "RUNNER_SECURITY_LEVEL", "compat"
         ):
-            self.assertTrue(main._capability_manifest()["operations"]["preview"])
+            capabilities = main._capability_manifest()["operations"]
+            self.assertTrue(capabilities["preview"])
+            self.assertTrue(capabilities["install"])
 
     def test_preview_start_fails_closed_when_network_bridge_is_missing(self):
         payload = main.PreviewRequest(workspace_id="workspace-1", command="npm run dev")
@@ -814,6 +818,19 @@ class PreviewPortRoutingTests(unittest.TestCase):
         ):
             with self.assertRaises(HTTPException) as ctx:
                 main.preview_start(payload, authorization="Bearer test")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_package_install_fails_closed_without_registry_egress_policy(self):
+        payload = main.InstallRequest(
+            workspace_id="workspace-1",
+            command="uv pip install --python .venv/bin/python fastapi",
+            files={},
+        )
+        with patch.object(main, "auth"), patch.object(
+            main, "_capability_manifest", return_value={"operations": {"install": False}}
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.install(payload, authorization="Bearer test")
         self.assertEqual(ctx.exception.status_code, 503)
 
     def test_preview_start_route_is_registered_exactly_once(self):
