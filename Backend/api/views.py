@@ -184,6 +184,7 @@ def _secure_runner_ready():
 
     return bool(
         isinstance(payload, dict)
+        and payload.get("status") == "ok"
         and payload.get("execution_available") is True
         and payload.get("sandbox_backend") == "bwrap"
         and payload.get("sandbox") == "bubblewrap"
