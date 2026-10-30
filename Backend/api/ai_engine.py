@@ -26,7 +26,8 @@ from .serializers import AIConversationSerializer, AIMessageSerializer
 logger = logging.getLogger("developer_os.ai")
 
 MAX_CONTEXT_CHARS = int(os.getenv("AI_MAX_CONTEXT_CHARS", "60000"))
-MAX_HISTORY_MESSAGES = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16"))
+MAX_HISTORY_MESSAGES = max(0, int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16")))
+MAX_HISTORY_CHARS = max(0, int(os.getenv("AI_MAX_HISTORY_CHARS", "24000")))
 AI_TIMEOUT = (5, int(os.getenv("AI_TIMEOUT_SECONDS", "45")))
 
 
@@ -168,9 +169,20 @@ def _instructions(action: str | None = None) -> str:
 
 def _build_input(message: str, context: dict[str, Any], history: list[dict[str, str]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for item in history[-MAX_HISTORY_MESSAGES:]:
-        if item.get("role") in {"user", "assistant"} and item.get("content"):
-            items.append({"role": item["role"], "content": item["content"]})
+    remaining_history_chars = MAX_HISTORY_CHARS
+    bounded_history: list[dict[str, str]] = []
+    # Prefer the newest conversation turns when the stored transcript is large.
+    for item in reversed(history[-MAX_HISTORY_MESSAGES:]):
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = item.get("content")
+        if not isinstance(content, str) or not content or remaining_history_chars <= 0:
+            continue
+        bounded = content[:remaining_history_chars]
+        if bounded:
+            bounded_history.append({"role": item["role"], "content": bounded})
+            remaining_history_chars -= len(bounded)
+    items.extend(reversed(bounded_history))
     items.append({
         "role": "user",
         "content": (
