@@ -35,7 +35,7 @@ def _provider_config() -> dict[str, str]:
     # Resolve at request time so deployment environment changes are honored.
     key = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").strip()
     base = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
-    model = (os.getenv("AI_MODEL") or "gpt-6-luna").strip()
+    model = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
     protocol = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
     return {"key": key, "base": base, "model": model, "protocol": protocol}
 
