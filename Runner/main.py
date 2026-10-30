@@ -496,23 +496,75 @@ def _write_workspace_file(root, rel, content):
         os.close(root_fd)
 
 
-def write_snapshot(root, files):
+PRESERVED_WORKSPACE_DIRS = {
+    ".git", ".home", ".tmp", ".cache", ".npm-cache", ".pip-cache",
+    "node_modules", ".venv",
+}
+
+
+def _validated_snapshot(files):
+    """Validate a complete snapshot before touching the existing workspace."""
+    if not isinstance(files, dict):
+        raise ValueError("workspace files must be an object")
     if len(files) > MAX_FILES:
         raise ValueError(f"workspace exceeds {MAX_FILES} files")
+
+    normalized = {}
     total = 0
-    for rel, content in files.items():
-        rel = safe_rel(rel)
-        if not isinstance(content, str) or len(content.encode()) > MAX_FILE:
+    for raw_path, content in files.items():
+        rel = safe_rel(raw_path)
+        first_component = rel.split("/", 1)[0]
+        if first_component in PRESERVED_WORKSPACE_DIRS:
+            raise ValueError("reserved runtime directory")
+        if rel in normalized:
+            raise ValueError("duplicate normalized workspace path")
+        if not isinstance(content, str):
+            raise ValueError("workspace file content must be text")
+        try:
+            encoded = content.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("workspace file content must be valid UTF-8") from exc
+        if len(encoded) > MAX_FILE:
             raise ValueError("file too large")
-        total += len(content.encode())
+        total += len(encoded)
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
+        normalized[rel] = content
+    return normalized
+
+
+def write_snapshot(root, files):
+    """Write a validated snapshot without deleting existing workspace files."""
+    validated = _validated_snapshot(files)
+    for rel, content in validated.items():
+        _write_workspace_file(root, rel, content)
+
+
+def replace_workspace_snapshot(root, files):
+    """Reconcile source files while retaining generated dependencies and Git state.
+
+    The full incoming payload is validated before deletion, so malformed input
+    cannot partially erase a previously usable workspace.
+    """
+    validated = _validated_snapshot(files)
+    for child in root.iterdir():
+        if (
+            child.name in PRESERVED_WORKSPACE_DIRS
+            and child.is_dir()
+            and not child.is_symlink()
+        ):
+            continue
+        if child.is_symlink() or not child.is_dir():
+            child.unlink()
+        else:
+            shutil.rmtree(child)
+    for rel, content in validated.items():
         _write_workspace_file(root, rel, content)
 
 def snapshot(root):
     out = {}
     total = 0
-    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home"}
+    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home", ".tmp", ".cache"}
     for p in root.rglob("*"):
         rel = p.relative_to(root)
         if p.is_symlink() or not p.is_file() or any(part in skip for part in rel.parts):
@@ -1008,11 +1060,8 @@ def capabilities(authorization: str = Header(default="")):
 def sync(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    # Keep dependency directories, but replace source tree so the database is the source of truth.
-    for child in root.iterdir():
-        if child.name not in {".npm-cache", ".pip-cache", ".home", "node_modules", ".venv"}:
-            shutil.rmtree(child) if child.is_dir() else child.unlink()
-    write_snapshot(root, payload.files)
+    with _workspace_lock(payload.workspace_id):
+        replace_workspace_snapshot(root, payload.files)
     return {"status": "synced", "files": snapshot(root)}
 
 @app.post("/snapshot")
@@ -1032,7 +1081,7 @@ def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
 def build_api(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files or {})
+    replace_workspace_snapshot(root, payload.files or {})
     try:
         plan = build_plan(payload.files or {})
     except (ValueError, TypeError) as exc:
@@ -1067,7 +1116,7 @@ def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(de
 def install(payload: InstallRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
+    replace_workspace_snapshot(root, payload.files)
     # Package/framework provisioning is the only runner operation allowed to
     # use egress. Normal user execution remains network-isolated by default.
     result = run_command(root, payload.command, allow_network=True)
@@ -1086,7 +1135,7 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
         # an older execute request from overwriting a newer editor save.
         started=time.time()
         with _workspace_lock(payload.workspace_id):
-            write_snapshot(root, files)
+            replace_workspace_snapshot(root, files)
             result=run_command(root, payload.command, entitlement=payload.entitlement)
         _metric("exec_total")
         _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
@@ -1303,6 +1352,38 @@ class PreviewRequest(Workspace):
     allow_network: bool = False
     env: dict[str, str] = Field(default_factory=dict)
 
+def _preview_command(command, port):
+    """Bind common framework development servers to the Runner's assigned port."""
+    command = str(command or "").strip()
+    port = int(port)
+    if not command or not 1024 <= port <= 65535:
+        raise ValueError("Invalid preview command or port.")
+
+    if re.search(r"\bmanage\.py\s+runserver\b", command):
+        if re.search(r"\brunserver\s+[^\s]+:\d+", command):
+            return re.sub(
+                r"(\brunserver\s+[^\s]+:)\d+",
+                lambda match: match.group(1) + str(port),
+                command,
+                count=1,
+            )
+        return command + f" 0.0.0.0:{port}"
+
+    for flag in ("--server.port", "--port"):
+        match = re.search(rf"(?<![\w.-]){re.escape(flag)}(?:=|\s+)\d+", command)
+        if match:
+            return command[:match.start()] + f"{flag} {port}" + command[match.end():]
+
+    if re.search(r"\bstreamlit\s+run\b", command):
+        return command + f" --server.port {port}"
+    if re.search(r"\b(?:uvicorn|flask)\b", command):
+        return command + f" --port {port}"
+    if re.search(r"\bnpm\s+run\b", command):
+        return command + f" --port {port}"
+    # Framework-specific application code can use PORT when no CLI flag exists.
+    return command
+
+
 def _preview_state(preview_id):
     with PREVIEW_LOCK:
         item = PREVIEWS.get(str(preview_id))
@@ -1331,17 +1412,15 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
-        if payload.files:
-            write_snapshot(root, payload.files)
+        replace_workspace_snapshot(root, payload.files)
     port = int(payload.port or _workspace_preview_port(payload.workspace_id))
     if not (1024 <= port <= 65535):
         raise HTTPException(status_code=400, detail="Invalid preview port.")
     command = payload.command.strip() or f"python3 -m http.server {port}"
-    # Bind preview servers to localhost inside the runner; the deployment proxy
-    # is responsible for exposing an authenticated preview route.
-    if "127.0.0.1" not in command and "localhost" not in command:
-        command = command
-    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=payload.env)
+    command = _preview_command(command, port)
+    # Frameworks receive the assigned port through both CLI flags and PORT.
+    process_env = {**(payload.env or {}), "PORT": str(port)}
+    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=process_env)
     with PROCESS_LOCK:
         proc = PROCESSES[str(pid)]["popen"]
     with PREVIEW_LOCK:
@@ -1419,7 +1498,7 @@ def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     if payload.files:
-        write_snapshot(root, payload.files)
+        replace_workspace_snapshot(root, payload.files)
     try:
         return debug_handle(
             payload.action, root=root, session_id=payload.session_id, path=payload.path,
@@ -1487,7 +1566,7 @@ def symbols_api(payload: SymbolRequest, authorization: str = Header(default=""))
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     if payload.files:
-        write_snapshot(root, payload.files)
+        replace_workspace_snapshot(root, payload.files)
     try:
         if payload.action == "symbols":
             return {"symbols": symbol_index(root, payload.query, payload.path)}
@@ -1538,7 +1617,7 @@ def process_start(payload: ProcessStartRequest, authorization: str = Header(defa
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
-        write_snapshot(root, payload.files)
+        replace_workspace_snapshot(root, payload.files)
     pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env, entitlement=payload.entitlement)
     _metric("process_started")
     return _process_state(pid)
@@ -1563,7 +1642,7 @@ def process_list(workspace_id: str, authorization: str = Header(default="")):
 def git_api(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
+    replace_workspace_snapshot(root, payload.files)
     try:
         args = json.loads(payload.command)
     except Exception:
@@ -1626,7 +1705,7 @@ def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(defa
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
     if payload.files:
-        write_snapshot(root, payload.files)
+        replace_workspace_snapshot(root, payload.files)
     return ai_plan(payload.model_dump(), payload.files)
 
 class AIPatchRequest(Workspace):
@@ -1646,21 +1725,6 @@ def preview_plan_api(payload: Workspace, authorization: str = Header(default="")
     auth(authorization)
     safe_workspace(payload.workspace_id)
     return preview_plan(payload.files)
-
-@app.post("/preview/start")
-def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
-    auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    port = _workspace_preview_port(payload.workspace_id)
-    command = str(payload.command or "").strip()
-    if not command:
-        raise HTTPException(status_code=400, detail="Preview command is required.")
-    # The command is supplied by a trusted framework preset on the API side.
-    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
-        raise HTTPException(status_code=400, detail="Preview command blocked.")
-    pid = _start_process(root, command + f" --port {port}" if "--port" not in command and "runserver" not in command else command, allow_network=False, env_extra={"PORT": str(port)})
-    return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
 
 @app.get("/preview/{workspace_id}/{path:path}")
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
