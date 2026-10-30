@@ -72,7 +72,7 @@ CACHE_URL = os.getenv("CACHE_URL", "")
 # AI gateway configuration. Never commit the API key.
 AI_API_KEY = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").strip()
 AI_API_URL = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
-AI_MODEL = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
+AI_MODEL = (os.getenv("AI_MODEL") or "gpt-6-luna").strip()
 AI_API_PROTOCOL = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
 AI_API_KEY_CONFIGURED = bool(AI_API_KEY)
 ALLOW_LOCAL_BILLING = env_bool("ALLOW_LOCAL_BILLING")

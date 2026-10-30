@@ -11,8 +11,52 @@ class IntelligenceEngineTests(SimpleTestCase):
         with patch.dict(os.environ, {}, clear=True):
             config = _provider_config()
         self.assertEqual(config["base"], "https://api.openai.com/v1")
-        self.assertEqual(config["model"], "gpt-5.6-luna")
+        self.assertEqual(config["model"], "gpt-6-luna")
         self.assertEqual(config["protocol"], "responses")
+
+    def test_selected_workspace_files_respect_global_context_limit(self):
+        context = {
+            "workspace": {
+                "id": 7,
+                "name": "large workspace",
+                "files": {f"src/file_{index}.py": "x" * 12000 for index in range(20)},
+            },
+            "projects": [],
+            "tasks": [],
+        }
+        bounded = _compact_context(context)
+        self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
+        self.assertTrue(bounded["context_truncated"])
+        self.assertEqual(bounded["workspace"]["id"], 7)
+
+    def test_workspace_inventory_files_respect_global_context_limit(self):
+        context = {
+            "workspaces": [
+                {"id": index, "files": {f"file_{item}.py": "y" * 12000 for item in range(12)}}
+                for index in range(5)
+            ],
+        }
+        bounded = _compact_context(context)
+        self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
+
+    def test_zero_history_limit_disables_history(self):
+        from api import ai_engine
+        with patch.object(ai_engine, "MAX_HISTORY_MESSAGES", 0):
+            items = ai_engine._build_input("current", {}, [{"role": "user", "content": "old"}])
+        self.assertEqual(len(items), 1)
+
+    def test_history_is_bounded_by_total_character_budget(self):
+        from api.ai_engine import _build_input
+        history = [
+            {"role": "user", "content": "u" * 20000},
+            {"role": "assistant", "content": "a" * 20000},
+            {"role": "user", "content": "latest"},
+        ]
+        items = _build_input("current", {}, history)
+        bounded_history = items[:-1]
+        self.assertLessEqual(sum(len(item["content"]) for item in bounded_history), 24000)
+        self.assertEqual(bounded_history[-1]["content"], "latest")
+        self.assertEqual(items[-1]["role"], "user")
 
     def test_extracts_responses_output_text(self):
         payload = {"output": [{"content": [{"text": "diagnosis"}]}, {"content": [{"text": "fix"}]}]}
@@ -38,9 +82,9 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertTrue(post.call_args.kwargs["url"].endswith("/responses"))
 
 
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
     @patch("api.ai_engine.requests.post")
-    def test_gpt_5_6_luna_uses_responses_without_temperature(self, post):
+    def test_gpt_6_luna_uses_responses_without_temperature(self, post):
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"output_text": "ok"}
@@ -49,10 +93,10 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertEqual(error, None)
         self.assertEqual(answer, "ok")
         payload = post.call_args.kwargs["json"]
-        self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertEqual(payload["model"], "gpt-6-luna")
         self.assertNotIn("temperature", payload)
 
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
     @patch("api.ai_engine.requests.post")
     def test_provider_http_errors_are_structured(self, post):
         import requests
