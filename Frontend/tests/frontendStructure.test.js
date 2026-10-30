@@ -793,7 +793,7 @@ test("API proxy preserves backend endpoint-specific CSP and frame policy", () =>
   // defines its own. The API proxy must not inherit the SPA's frame denial.
   assert.match(apiLocation, /add_header X-Content-Type-Options "nosniff" always;/);
   assert.doesNotMatch(apiLocation, /add_header (?:Content-Security-Policy|X-Frame-Options)/);
-  assert.match(apiLocation, /proxy_pass \\$\\{BACKEND_URL\\}\\/api\\//);
+  assert.match(apiLocation, /proxy_pass \$\{BACKEND_URL\}\/api\//);
   assert.match(nginx, /add_header X-Frame-Options "DENY" always;/);
   assert.match(nginx, /add_header Content-Security-Policy "[^"]*frame-ancestors 'none'/);
 });
