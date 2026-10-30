@@ -7,6 +7,7 @@ from django.test import Client as DjangoTestClient, RequestFactory, override_set
 from django.urls import reverse
 
 from .operational_health import liveness_api
+from .views import _secure_runner_ready
 
 
 class LivenessApiTests(TestCase):
@@ -223,3 +224,54 @@ class RenderReadinessFailClosedRegressionTests(TestCase):
         self.assertFalse(checks["email"])
         self.assertFalse(checks["cache"])
         self.assertFalse(checks["worker"])
+
+
+
+class SecureRunnerReadinessTests(TestCase):
+    @patch("api.views.RUNNER_URL", "http://runner:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_accepts_only_live_bubblewrap_with_network_disabled(self, get):
+        get.return_value.status_code = 200
+        get.return_value.json.return_value = {
+            "status": "ok",
+            "execution_available": True,
+            "sandbox_backend": "bwrap",
+            "sandbox": "bubblewrap",
+            "network_policy": "isolated-by-default",
+        }
+
+        self.assertTrue(_secure_runner_ready())
+        get.assert_called_once_with(
+            "http://runner:8080/health",
+            timeout=(2, 4),
+            allow_redirects=False,
+        )
+
+    @patch("api.views.RUNNER_URL", "http://runner:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_rejects_unavailable_or_compatibility_runner(self, get):
+        unsafe_payloads = (
+            {"execution_available": False, "sandbox_backend": "bwrap", "sandbox": "bubblewrap", "network_policy": "isolated-by-default"},
+            {"execution_available": True, "sandbox_backend": "container", "sandbox": "container-native", "network_policy": "container-runtime-policy"},
+            {"execution_available": True, "sandbox_backend": "bwrap", "sandbox": "bubblewrap", "network_policy": "provisioning-network"},
+        )
+        for payload in unsafe_payloads:
+            with self.subTest(payload=payload):
+                get.return_value.status_code = 200
+                get.return_value.json.return_value = payload
+                self.assertFalse(_secure_runner_ready())
+
+    @patch("api.views.RUNNER_URL", "http://runner:8080")
+    @patch("api.views.RUNNER_TOKEN", "")
+    @patch("api.views.requests.get")
+    def test_rejects_missing_control_plane_token_without_network_call(self, get):
+        self.assertFalse(_secure_runner_ready())
+        get.assert_not_called()
+
+    @patch("api.views.RUNNER_URL", "http://runner:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get", side_effect=__import__("requests").RequestException("offline"))
+    def test_runner_network_failure_fails_closed(self, _get):
+        self.assertFalse(_secure_runner_ready())
