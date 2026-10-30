@@ -115,6 +115,19 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 main.JOB_OUTPUT.pop(job_id, None)
 
 
+class RunnerWorkspaceIdNormalizationTests(unittest.TestCase):
+    def test_workspace_id_is_integer_normalized_before_path_construction(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            path = main.safe_workspace("00042")
+            self.assertEqual(path, Path(tmp) / "42")
+            self.assertEqual(path.parent, Path(tmp))
+
+    def test_non_numeric_or_oversized_workspace_ids_are_rejected(self):
+        for value in ("../etc", "1/../2", "9" * 25, "-1", "1.5"):
+            with self.subTest(value=value):
+                with self.assertRaises(HTTPException):
+                    main.safe_workspace(value)
+
 class RunnerSecurityTests(unittest.TestCase):
     def test_rejects_absolute_and_traversal_paths(self):
         for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", ".runner-runtime/owned.sh", "a//b", ""):

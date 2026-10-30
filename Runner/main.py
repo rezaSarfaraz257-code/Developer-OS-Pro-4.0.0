@@ -484,9 +484,18 @@ def _workspace_lock(workspace_id):
         return WORKSPACE_LOCKS.setdefault(key, threading.RLock())
 
 def safe_workspace(workspace_id):
-    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+    raw_id = str(workspace_id)
+    if not re.fullmatch(r"[0-9]{1,19}", raw_id):
         raise HTTPException(status_code=400, detail="Invalid workspace id")
-    p = ROOT / str(workspace_id)
+    try:
+        normalized_id = int(raw_id, 10)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    if normalized_id < 0 or normalized_id > 9_223_372_036_854_775_807:
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    # Convert to a bounded integer before constructing a filesystem path.
+    # This prevents path syntax from crossing the workspace-root boundary.
+    p = ROOT / str(normalized_id)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
