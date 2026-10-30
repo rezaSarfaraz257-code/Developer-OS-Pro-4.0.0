@@ -27,7 +27,7 @@ jobs:
         run: docker build --pull --provenance=false --sbom=false -t developer-os-runner:security ./Runner
 
       - name: Generate runner image SBOM
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.3
         with:
           image: developer-os-runner:security
           format: spdx-json
