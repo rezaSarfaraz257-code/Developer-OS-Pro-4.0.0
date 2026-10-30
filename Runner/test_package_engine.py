@@ -15,7 +15,7 @@ class PythonPackageManagerTests(unittest.TestCase):
         self.assertEqual(
             plan.command,
             "if [ ! -x .venv/bin/python ]; then uv venv .venv --python python3; fi && "
-            "uv pip install --python .venv/bin/python -r requirements.txt",
+            "uv pip install --only-binary :all: --python .venv/bin/python -r requirements.txt",
         )
 
     @patch("package_engine.shutil.which", return_value="/usr/local/bin/uv")
@@ -32,7 +32,7 @@ class PythonPackageManagerTests(unittest.TestCase):
             manager="pip",
             package="fastapi",
         )
-        self.assertIn("--python .venv/bin/python fastapi", add_plan.command)
+        self.assertIn("--only-binary :all: --python .venv/bin/python fastapi", add_plan.command)
         self.assertIn("uv pip uninstall --python .venv/bin/python fastapi", remove_plan.command)
 
     @patch("package_engine.shutil.which")
