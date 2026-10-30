@@ -23,6 +23,8 @@ The frontend currently pins `monaco-editor@0.55.1` in `Frontend/package.json` an
 
 Strict Bubblewrap execution currently isolates each process in a network namespace. The Runner must not expose preview ports by disabling that isolation. Until a dedicated, policy-enforced preview network bridge is implemented, the Runner reports preview as unavailable in Bubblewrap mode and production readiness must remain false for the full IDE contract.
 
+The Runner image now carries a pinned `uv` binary and uses a per-workspace `.venv`; the system `pip` executable remains absent from the runtime image. Python framework presets and the package planner use that workspace environment. However, package installation is deliberately disabled in strict Bubblewrap mode until registry-restricted egress is available. A production release must prove that package downloads cannot reach arbitrary internet hosts, cloud metadata endpoints or internal control-plane services.
+
 ## Important
 
 “100%” here means all defined release gates have passed; it does not mean software can mathematically contain zero bugs. Production monitoring, rollback and incident response remain part of normal SaaS operation.
