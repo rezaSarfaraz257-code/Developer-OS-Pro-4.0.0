@@ -1647,21 +1647,6 @@ def preview_plan_api(payload: Workspace, authorization: str = Header(default="")
     safe_workspace(payload.workspace_id)
     return preview_plan(payload.files)
 
-@app.post("/preview/start")
-def preview_start(payload: ExecRequest, authorization: str = Header(default="")):
-    auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    port = _workspace_preview_port(payload.workspace_id)
-    command = str(payload.command or "").strip()
-    if not command:
-        raise HTTPException(status_code=400, detail="Preview command is required.")
-    # The command is supplied by a trusted framework preset on the API side.
-    if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
-        raise HTTPException(status_code=400, detail="Preview command blocked.")
-    pid = _start_process(root, command + f" --port {port}" if "--port" not in command and "runserver" not in command else command, allow_network=False, env_extra={"PORT": str(port)})
-    return {**_process_state(pid), "port": port, "preview_path": f"/api/ide/workspaces/{payload.workspace_id}/preview/"}
-
 PREVIEW_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 
