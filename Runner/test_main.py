@@ -130,6 +130,11 @@ class RunnerSecurityTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 run_command(Path("/tmp"), command)
 
+    def test_runner_runtime_directory_is_reserved_from_tenant_snapshots(self):
+        from main import _validated_snapshot
+        with self.assertRaises(ValueError):
+            _validated_snapshot({".runner-runtime/command-owned.sh": "echo attacker"})
+
     def test_container_native_execution_policy_uses_generated_script_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -727,10 +727,19 @@ def _create_command_script(root, command):
 def _remove_command_script(path):
     if path is None:
         return
+    target = Path(path)
+    parent_fd = None
     try:
-        Path(path).unlink(missing_ok=True)
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        parent_fd = os.open(str(target.parent), flags)
+        os.unlink(target.name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
     except OSError:
         pass
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
 
 
 def _sandbox_command(root, command_file, allow_network=False):
