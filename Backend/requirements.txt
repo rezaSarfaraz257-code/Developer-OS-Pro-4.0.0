@@ -14,7 +14,7 @@ gunicorn==23.0.0
 psycopg[binary,pool]==3.3.6
 whitenoise==6.12.0
 channels>=4.3.2,<5
-redis>=6.0,<7
+redis>=8.1.0,<9
 boto3>=1.43.119,<2
 python-json-logger==3.3.0
 
