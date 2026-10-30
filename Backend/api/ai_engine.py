@@ -171,8 +171,9 @@ def _build_input(message: str, context: dict[str, Any], history: list[dict[str, 
     items: list[dict[str, Any]] = []
     remaining_history_chars = MAX_HISTORY_CHARS
     bounded_history: list[dict[str, str]] = []
+    recent_history = history[-MAX_HISTORY_MESSAGES:] if MAX_HISTORY_MESSAGES else []
     # Prefer the newest conversation turns when the stored transcript is large.
-    for item in reversed(history[-MAX_HISTORY_MESSAGES:]):
+    for item in reversed(recent_history):
         if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
             continue
         content = item.get("content")
