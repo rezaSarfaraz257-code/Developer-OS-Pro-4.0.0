@@ -11,7 +11,7 @@ class IntelligenceEngineTests(SimpleTestCase):
         with patch.dict(os.environ, {}, clear=True):
             config = _provider_config()
         self.assertEqual(config["base"], "https://api.openai.com/v1")
-        self.assertEqual(config["model"], "gpt-5.6-luna")
+        self.assertEqual(config["model"], "gpt-6-luna")
         self.assertEqual(config["protocol"], "responses")
 
     def test_selected_workspace_files_respect_global_context_limit(self):
@@ -82,9 +82,9 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertTrue(post.call_args.kwargs["url"].endswith("/responses"))
 
 
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
     @patch("api.ai_engine.requests.post")
-    def test_gpt_5_6_luna_uses_responses_without_temperature(self, post):
+    def test_gpt_6_luna_uses_responses_without_temperature(self, post):
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"output_text": "ok"}
@@ -93,10 +93,10 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertEqual(error, None)
         self.assertEqual(answer, "ok")
         payload = post.call_args.kwargs["json"]
-        self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertEqual(payload["model"], "gpt-6-luna")
         self.assertNotIn("temperature", payload)
 
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-5.6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key", "AI_MODEL": "gpt-6-luna", "AI_API_URL": "https://api.openai.com/v1"}, clear=False)
     @patch("api.ai_engine.requests.post")
     def test_provider_http_errors_are_structured(self, post):
         import requests
