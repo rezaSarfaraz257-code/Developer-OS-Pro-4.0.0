@@ -1747,8 +1747,10 @@ PREVIEW_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
     auth(authorization)
     try:
-        safe_path = safe_rel(path) if path else ""
-    except ValueError:
+        from urllib.parse import unquote
+        decoded_path = unquote(path, errors="strict") if path else ""
+        safe_path = safe_rel(decoded_path) if decoded_path else ""
+    except (ValueError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="Invalid preview path.")
     port = _workspace_preview_port(workspace_id)
     # This endpoint is internal, but the preview application is user-controlled.
