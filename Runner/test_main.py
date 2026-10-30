@@ -709,3 +709,110 @@ def test_scheduler_queue_position_disappears_after_release():
     with main.SCHEDULER_LOCK:
         main.SCHEDULER_WAITING.pop("busy", None)
     assert main._scheduler_queue_position("busy") == 0
+
+
+class WorkspaceSnapshotReconciliationTests(unittest.TestCase):
+    def test_replaces_stale_source_and_preserves_runtime_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "old.py").write_text("stale = True\n", encoding="utf-8")
+            (root / "stale-dir").mkdir()
+            (root / "stale-dir" / "old.txt").write_text("stale", encoding="utf-8")
+            for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
+                (root / name).mkdir()
+                (root / name / "keep.txt").write_text("preserve", encoding="utf-8")
+
+            main.replace_workspace_snapshot(root, {"src/main.py": "print('fresh')\n"})
+
+            self.assertFalse((root / "old.py").exists())
+            self.assertFalse((root / "stale-dir").exists())
+            self.assertEqual((root / "src/main.py").read_text(encoding="utf-8"), "print('fresh')\n")
+            for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
+                self.assertEqual((root / name / "keep.txt").read_text(encoding="utf-8"), "preserve")
+
+    def test_invalid_snapshot_does_not_mutate_existing_workspace(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "existing.py").write_text("keep = True\n", encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                main.replace_workspace_snapshot(
+                    root,
+                    {"new.py": "new = True\n", "../escape.py": "bad"},
+                )
+
+            self.assertEqual((root / "existing.py").read_text(encoding="utf-8"), "keep = True\n")
+            self.assertFalse((root / "new.py").exists())
+
+    def test_runtime_dependency_paths_are_not_user_snapshot_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "existing.py").write_text("keep = True\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                main.replace_workspace_snapshot(root, {"node_modules/evil.js": "bad"})
+            self.assertTrue((root / "existing.py").exists())
+
+
+class PreviewPortRoutingTests(unittest.TestCase):
+    def test_vite_and_next_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("npm run dev -- --host 0.0.0.0", 12042),
+            "npm run dev -- --host 0.0.0.0 --port 12042",
+        )
+        self.assertEqual(
+            main._preview_command("npm run dev -- --hostname 0.0.0.0 --port 3000", 12042),
+            "npm run dev -- --hostname 0.0.0.0 --port 12042",
+        )
+
+    def test_django_and_uvicorn_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("python3 manage.py runserver 0.0.0.0:8000", 12042),
+            "python3 manage.py runserver 0.0.0.0:12042",
+        )
+        self.assertEqual(
+            main._preview_command("uvicorn app:app --host 0.0.0.0 --port 8000", 12042),
+            "uvicorn app:app --host 0.0.0.0 --port 12042",
+        )
+
+    def test_streamlit_and_flask_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("streamlit run app.py --server.address 0.0.0.0", 12042),
+            "streamlit run app.py --server.address 0.0.0.0 --server.port 12042",
+        )
+        self.assertEqual(
+            main._preview_command("flask --app app run --host 0.0.0.0", 12042),
+            "flask --app app run --host 0.0.0.0 --port 12042",
+        )
+
+    def test_preview_is_not_advertised_in_bubblewrap_without_a_network_bridge(self):
+        with patch.object(main, "SANDBOX_MODE", "bwrap"), patch.object(
+            main, "RUNNER_SECURITY_LEVEL", "strict"
+        ), patch.object(main, "_bwrap_runtime_available", return_value=True):
+            self.assertFalse(main._capability_manifest()["operations"]["preview"])
+
+        with patch.object(main, "SANDBOX_MODE", "container"), patch.object(
+            main, "RUNNER_SECURITY_LEVEL", "compat"
+        ):
+            self.assertTrue(main._capability_manifest()["operations"]["preview"])
+
+    def test_preview_start_fails_closed_when_network_bridge_is_missing(self):
+        payload = main.PreviewRequest(workspace_id="workspace-1", command="npm run dev")
+        with patch.object(main, "auth"), patch.object(
+            main, "_capability_manifest", return_value={"operations": {"preview": False}}
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_start(payload, authorization="Bearer test")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_preview_start_route_is_registered_exactly_once(self):
+        from fastapi.routing import APIRoute
+        routes = [
+            (route.path, method)
+            for route in main.app.routes
+            if isinstance(route, APIRoute)
+            for method in (route.methods or set())
+        ]
+        self.assertEqual(routes.count(("/preview/start", "POST")), 1)
