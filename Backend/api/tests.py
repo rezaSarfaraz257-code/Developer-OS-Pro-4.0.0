@@ -175,6 +175,37 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_not_called()
 
     @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_unsafe_execution_snapshot_is_rejected_before_quota_or_runner(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {
+                "command": "python main.py",
+                "files": {"../secrets.txt": "must-not-run"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_workspace_files")
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_absolute_and_git_metadata_paths_are_rejected_in_execution_snapshot(self, consume_usage, runner_request):
+        for unsafe_path in ("/etc/passwd", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", "src/.git", "src//main.py"):
+            with self.subTest(path=unsafe_path):
+                response = self.client.post(
+                    f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+                    {"command": "python main.py", "files": {unsafe_path: "x"}},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, unsafe_path)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
     def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
         response = self.client.post(
@@ -245,6 +276,10 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
 
 class IDEJobStreamCursorValidationTests(APITestCase):
     def setUp(self):
+        # The custom IP throttle uses shared cache state across test clients.
+        # Clear it here so cursor contract tests assert validation behavior,
+        # not the order in which unrelated API tests happened to run.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-job-cursor-user",
             password="long-test-password-123",
@@ -293,6 +328,8 @@ class IDEJobStreamCursorValidationTests(APITestCase):
 
 class IDEProcessAuthorizationTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-process-readonly-user",
             password="long-test-password-123",
@@ -318,6 +355,29 @@ class IDEProcessAuthorizationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["error"], "You have read-only access to this workspace.")
         write_allowed.assert_called_once()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_foreign_workspace_cannot_read_processes_jobs_or_preview(self, runner_request):
+        from .models import CodeWorkspace
+        other = User.objects.create_user(
+            username="ide-process-foreign-owner",
+            password="long-test-password-123",
+        )
+        foreign_workspace = CodeWorkspace.objects.create(
+            owner=other,
+            name="Private foreign workspace",
+            files={"main.py": "print('private')"},
+        )
+        paths = (
+            f"/api/ide/workspaces/{foreign_workspace.pk}/processes/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/jobs/private-job/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/preview/",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         runner_request.assert_not_called()
 
 
@@ -849,7 +909,7 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         workspace_id = response.data["id"]
         revision = response.data["revision"]
-        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", ".git/config", "src//app.py"):
+        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", ".", "./main.py", "src//app.py"):
             response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": path, "content": "x", "revision": revision}, format="json")
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, path)
 
@@ -1174,6 +1234,8 @@ class BillingEntitlementSafetyTests(APITestCase):
 
 class IDEWorkspaceLifecycleRegressionTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
         self.client.force_authenticate(user=self.owner)
 

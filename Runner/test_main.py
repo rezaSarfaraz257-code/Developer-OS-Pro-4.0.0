@@ -10,6 +10,33 @@ from fastapi import HTTPException
 
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
+class RunnerEnvironmentLimitParsingTests(unittest.TestCase):
+    def test_invalid_integer_environment_value_uses_safe_default(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "not-a-number"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 7)
+
+    def test_integer_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "-100"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 1)
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "999"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 10)
+
+    def test_invalid_and_non_finite_float_environment_values_use_default(self):
+        for value in ("bad", "nan", "inf", "-inf"):
+            with self.subTest(value=value), patch.dict(os.environ, {"RUNNER_TEST_FLOAT": value}):
+                self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.5)
+
+    def test_float_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "-3.5"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.1)
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "50"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 2.0)
+
+
+
+
+
+
 
 class WorkspaceFilesystemBoundaryTests(unittest.TestCase):
     def test_filesystem_writer_revalidates_traversal_paths(self):
@@ -421,7 +448,7 @@ def test_timeout_job_stream_reports_done():
 def test_timeout_execution_persists_partial_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -433,7 +460,7 @@ def test_timeout_execution_persists_partial_output_for_streaming_clients():
 def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -991,3 +1018,127 @@ class PreviewProxySecurityTests(unittest.TestCase):
         self.assertEqual(response.body, b"<h1>ok</h1>")
         self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/index.html")
         upstream.close.assert_called_once()
+
+
+class ProcessEnvironmentBoundsTests(unittest.TestCase):
+    def test_process_environment_rejects_runtime_hijacking_and_bounds_entries(self):
+        base = {"PATH": "/usr/bin"}
+        supplied = {
+            "SAFE_VALUE": "allowed",
+            "LD_PRELOAD": "/tmp/evil.so",
+            "PYTHONPATH": "/tmp/evil",
+            **{f"EXTRA_{index}": "x" for index in range(main.MAX_PROCESS_ENV_VARS + 10)},
+        }
+
+        result = main._safe_process_env(base, supplied)
+
+        self.assertEqual(result["SAFE_VALUE"], "allowed")
+        self.assertNotIn("LD_PRELOAD", result)
+        self.assertNotIn("PYTHONPATH", result)
+        self.assertLessEqual(
+            sum(1 for key in result if key not in {"PATH"}),
+            main.MAX_PROCESS_ENV_VARS,
+        )
+
+    def test_process_environment_skips_malformed_unicode_values(self):
+        result = main._safe_process_env({}, {"SAFE_VALUE": "ok", "BAD_VALUE": "bad" + chr(0xD800)})
+        self.assertEqual(result["SAFE_VALUE"], "ok")
+        self.assertNotIn("BAD_VALUE", result)
+
+    def test_process_environment_enforces_total_byte_budget(self):
+        base = {}
+        supplied = {"FIRST": "a" * 4000, "SECOND": "b" * 4000, "THIRD": "c" * 4000,
+                    "FOURTH": "d" * 4000, "FIFTH": "e" * 4000}
+
+        result = main._safe_process_env(base, supplied)
+
+        total = sum(len(key.encode("utf-8")) + len(value.encode("utf-8")) for key, value in result.items())
+        self.assertLessEqual(total, main.MAX_PROCESS_ENV_BYTES)
+        self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
+
+def test_timeout_runner_terminates_process_group_and_preserves_output():
+    process = Mock()
+    process.communicate.side_effect = [
+        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
+        ("partial", "warning"),
+    ]
+    with patch("main.subprocess.Popen", return_value=process), patch(
+        "main._terminate_process_group"
+    ) as terminate:
+        result_error = None
+        try:
+            main._run_process_with_timeout(
+                ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
+            )
+        except subprocess.TimeoutExpired as exc:
+            result_error = exc
+    terminate.assert_called_once_with(process, grace_seconds=0.1)
+    assert result_error is not None
+    assert result_error.output == "partial"
+    assert result_error.stderr == "warning"
+
+
+def test_terminate_process_group_signals_descendants_after_leader_exits():
+    process = Mock()
+    process.pid = 12345
+    process.poll.return_value = 0
+    process.wait.return_value = 0
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            raise ProcessLookupError
+
+    with patch("main.os.killpg", side_effect=kill_group) as killpg:
+        main._terminate_process_group(process, grace_seconds=0.1)
+    calls = killpg.call_args_list
+    assert calls[0].args == (12345, main.signal.SIGTERM)
+    assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
+
+def test_execution_timeout_kills_descendant_processes():
+    with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:
+        root = Path(tmp)
+        marker = root / "descendant-survived"
+        child_code = "import time; time.sleep(0.4); open('descendant-survived', 'w').write('alive')"
+        parent_code = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            "time.sleep(10)"
+        )
+        timed_out = False
+        try:
+            main._run_process_with_timeout(
+                [sys.executable, "-c", parent_code],
+                cwd=root,
+                env={"PATH": os.environ.get("PATH", "")},
+                timeout=0.1,
+                preexec_fn=lambda: None,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        time.sleep(1.0)
+        assert timed_out
+        assert not marker.exists(), "A child process survived the execution timeout"
+
+class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
+    def test_plan_memory_cannot_exceed_operator_configured_runner_budget(self):
+        # Test the child pre-exec callback without mutating the test process limits.
+        with patch("main.RUNNER_MEMORY_MB", 512), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=120, memory_mb=2048)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+    def test_lower_tier_memory_limit_is_preserved(self):
+        with patch("main.RUNNER_MEMORY_MB", 1024), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=30, memory_mb=256)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))

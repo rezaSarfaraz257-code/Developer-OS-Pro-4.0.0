@@ -120,16 +120,29 @@ export function isHealthy({ response, body, result = {} }) {
 }
 
 export function isReady({ response, body, result = {} }) {
-  if (!response.ok) return `HTTP ${response.status}`;
   let json;
-  try { json = JSON.parse(body); } catch { return "readiness response was not valid JSON"; }
-  const checks = json.checks || {};
+  try { json = JSON.parse(body); } catch {
+    return response.ok ? "readiness response was not valid JSON" : `HTTP ${response.status}`;
+  }
+  const checks = json?.checks && typeof json.checks === "object" ? json.checks : {};
   const missing = REQUIRED_READINESS_CHECKS.filter(name => checks[name] !== true);
   const versionMatches = json.version === EXPECTED_RELEASE_VERSION;
   const shaMatches = hasReleaseSha(json.release_sha);
   const statusProblem = json.status === "ready" ? "" : "status is not ready";
+  const checkSummary = missing.length
+    ? `failed or missing checks: ${missing.join(", ")}`
+    : "no failed required checks were reported";
+  // Django intentionally returns structured readiness diagnostics with HTTP
+  // 503. Preserve the failure status while surfacing only allow-listed check
+  // names; never log or echo arbitrary response bodies or configuration values.
+  if (!response.ok) {
+    if (response.status >= 500 && Object.keys(checks).length > 0) {
+      return `HTTP ${response.status}; ${checkSummary}; ${statusProblem || "status is ready"}`;
+    }
+    return `HTTP ${response.status}`;
+  }
   if (!(json.status === "ready" && missing.length === 0 && versionMatches && shaMatches)) {
-    return `readiness contract has failed or missing required checks: ${missing.join(", ") || "none"}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be real`;
+    return `readiness contract has ${checkSummary}; ${statusProblem}; release version must be ${EXPECTED_RELEASE_VERSION} and release SHA must be real`;
   }
   return matchesExpectedReleaseSha(json, result)
     ? true : "readiness release SHA does not match the expected repository revision";
@@ -360,6 +373,19 @@ export function diagnoseChecks(checks) {
         action: `Inspect the sanitized ${label} failure and authorized service diagnostics. Do not treat HTTP 2xx alone as proof of operational ${label}.`,
       });
     }
+  }
+
+  const readiness = byName.get("api-readiness");
+  if (readiness && !readiness.ok && readiness.status !== null && readiness.status >= 500) {
+    const failedCheckSummary = /failed or missing checks: ([a-z_, ]+)/i.exec(readiness.error || "")?.[1];
+    diagnostics.push({
+      severity: "critical",
+      code: "API_READINESS_BLOCKED",
+      message: failedCheckSummary
+        ? `API readiness returned HTTP ${readiness.status}; required checks not passing: ${failedCheckSummary.trim()}.`
+        : `API readiness returned HTTP ${readiness.status}; the endpoint is reachable but is not ready for production traffic.`,
+      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency or worker check. Verify service configuration and worker heartbeat; do not change the readiness status to green or disable required checks without fixing the underlying condition.",
+    });
   }
 
   const pricing = byName.get("api-pricing-contract");
