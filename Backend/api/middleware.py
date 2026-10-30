@@ -69,13 +69,20 @@ class ApiSecurityHeadersMiddleware:
     def __call__(self, request):
         response = self.get_response(request)
         if request.path.startswith("/api/"):
-            response["Content-Security-Policy"] = (
-                "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
-                "form-action 'none'"
-            )
+            # Endpoint-specific policies (for example, sandboxed untrusted IDE
+            # previews) are stricter and must not be overwritten globally.
+            if "Content-Security-Policy" not in response:
+                response["Content-Security-Policy"] = (
+                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                    "form-action 'none'"
+                )
             response["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
             response["Cross-Origin-Resource-Policy"] = "same-site"
-            response["X-Frame-Options"] = "DENY"
-            response["Referrer-Policy"] = "same-origin"
+            # Preview documents are intentionally sandboxed and must be embeddable
+            # by the same-origin IDE iframe. Keep all other API responses unframeable.
+            is_ide_preview = bool(re.match(r"^/api/ide/workspaces/\d+/preview(?:/|$)", request.path))
+            response["X-Frame-Options"] = "SAMEORIGIN" if is_ide_preview else "DENY"
+            if "Referrer-Policy" not in response:
+                response["Referrer-Policy"] = "same-origin"
             response["X-Content-Type-Options"] = "nosniff"
         return response

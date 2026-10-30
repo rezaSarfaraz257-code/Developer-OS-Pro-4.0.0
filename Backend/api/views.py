@@ -4236,18 +4236,95 @@ def ide_preview_start_api(request, pk):
     data["public_preview"]=f"/api/ide/workspaces/{ws.id}/preview/"
     return Response(data)
 
+IDE_PREVIEW_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
+
+def _safe_preview_proxy_path(path):
+    """Reject traversal and quote preview paths before composing the runner URL."""
+    from urllib.parse import quote, unquote
+
+    raw = unquote(str(path or ""))
+    if (
+        len(raw) > 2048
+        or "\\" in raw
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw)
+        or any(part in {".", ".."} for part in raw.split("/"))
+    ):
+        return None
+    return quote(raw.lstrip("/"), safe="/-._~!$&'()*+,;=:@")
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ide_preview_proxy_api(request, pk, preview_path=""):
-    ws=_workspace_for_user(pk,request.user)
-    headers={"Authorization":f"Bearer {RUNNER_TOKEN}"}
-    port=int(os.environ.get("IDE_PREVIEW_PORT_BASE","10000")) + (int(ws.id) % int(os.environ.get("IDE_PREVIEW_PORT_SPAN","1000")))
+    ws = _workspace_for_user(pk, request.user)
+    safe_path = _safe_preview_proxy_path(preview_path)
+    if safe_path is None:
+        return Response({"error": "Invalid preview path.", "code": "preview_path_invalid"}, status=400)
+    if not RUNNER_URL or not RUNNER_TOKEN:
+        return Response({"error": "Preview service is not configured.", "code": "preview_not_configured"}, status=503)
+
+    headers = {"Authorization": f"Bearer {RUNNER_TOKEN}", "Accept": "*/*"}
+    url = f"{RUNNER_URL.rstrip('/')}/preview/{ws.id}/{safe_path}"
+    upstream = None
     try:
-        response=requests.get(f"{RUNNER_URL}/preview/{ws.id}/{preview_path.lstrip('/')}",headers=headers,timeout=15)
+        upstream = requests.get(
+            url,
+            headers=headers,
+            timeout=(3.05, 15),
+            allow_redirects=False,
+            stream=True,
+        )
+        # Never follow a user-controlled preview redirect from the privileged
+        # API server. This prevents redirects from becoming an SSRF primitive.
+        if 300 <= upstream.status_code < 400:
+            return Response(
+                {"error": "Preview upstream redirects are not allowed.", "code": "preview_redirect_blocked"},
+                status=502,
+            )
+
+        raw_length = upstream.headers.get("Content-Length")
+        if raw_length:
+            try:
+                if int(raw_length) > IDE_PREVIEW_MAX_RESPONSE_BYTES:
+                    return Response(
+                        {"error": "Preview response exceeds the size limit.", "code": "preview_response_too_large"},
+                        status=502,
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Preview upstream returned an invalid response length.", "code": "preview_invalid_response"},
+                    status=502,
+                )
+
+        chunks = []
+        total = 0
+        for chunk in upstream.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > IDE_PREVIEW_MAX_RESPONSE_BYTES:
+                return Response(
+                    {"error": "Preview response exceeds the size limit.", "code": "preview_response_too_large"},
+                    status=502,
+                )
+            chunks.append(chunk)
+
+        content_type = upstream.headers.get("Content-Type", "text/plain")
+        response = HttpResponse(b"".join(chunks), status=upstream.status_code, content_type=content_type)
+        response["Cache-Control"] = "no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        # Preview HTML is user-controlled. A sandboxed document gets an opaque
+        # origin and cannot read the app's localStorage/session state.
+        response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms; frame-ancestors 'self'"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
     except requests.RequestException as exc:
-        return Response({"error":f"Preview unavailable: {exc.__class__.__name__}"},status=502)
-    content_type=response.headers.get("Content-Type","text/plain")
-    return HttpResponse(response.content,status=response.status_code,content_type=content_type)
+        return Response({"error": f"Preview unavailable: {exc.__class__.__name__}", "code": "preview_unavailable"}, status=502)
+    finally:
+        if upstream is not None:
+            upstream.close()
+
 
 # =========================================================
 # PUBLIC COMMUNITY FEED

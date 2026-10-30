@@ -56,3 +56,21 @@ class ApiSecurityHeadersTests(SimpleTestCase):
 
         self.assertNotIn("X-Frame-Options", response)
         self.assertNotIn("Referrer-Policy", response)
+
+
+    def test_api_middleware_preserves_endpoint_specific_csp_and_referrer_policy(self):
+        request = self.factory.get("/api/ide/workspaces/1/preview/index.html")
+
+        def preview_response(_request):
+            response = HttpResponse("preview")
+            response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms"
+            response["Referrer-Policy"] = "no-referrer"
+            return response
+
+        middleware = ApiSecurityHeadersMiddleware(preview_response)
+        response = middleware(request)
+
+        self.assertEqual(response["Content-Security-Policy"], "sandbox allow-scripts allow-forms")
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "SAMEORIGIN")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
