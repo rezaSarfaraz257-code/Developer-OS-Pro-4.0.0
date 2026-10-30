@@ -1718,9 +1718,10 @@ def observability_api(authorization: str = Header(default="")):
 def ai_engineering_plan_api(payload: AIRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    if payload.files:
-        replace_workspace_snapshot(root, payload.files)
-    return ai_plan(payload.model_dump(), payload.files)
+    with _workspace_lock(payload.workspace_id):
+        if payload.files:
+            replace_workspace_snapshot(root, payload.files)
+        return ai_plan(payload.model_dump(), payload.files)
 
 class AIPatchRequest(Workspace):
     patch: list = Field(default_factory=list)
