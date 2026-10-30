@@ -75,22 +75,56 @@ def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
 
     result["context_truncated"] = True
     result["_context_note"] = "Large or malformed workspace context was bounded by the server."
-    for _ in range(12):
+
+    def serialized_size(value: dict[str, Any]) -> int:
+        return len(json.dumps(value, default=str, ensure_ascii=False))
+
+    def shrink_workspace_files() -> bool:
+        changed = False
+        for workspace_key in ("workspace", "workspaces"):
+            value = result.get(workspace_key)
+            entries = [value] if isinstance(value, dict) else value if isinstance(value, list) else []
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("files"), dict):
+                    continue
+                files = entry["files"]
+                # Halve file payloads on each pass. This also handles a single
+                # selected workspace, which cannot be reduced by list slicing.
+                for path, content in list(files.items()):
+                    if isinstance(content, str) and content:
+                        files[path] = content[: len(content) // 2]
+                        changed = True
+                    elif not isinstance(content, str):
+                        files.pop(path, None)
+                        changed = True
+        return changed
+
+    # Bound both workspace shapes (one selected workspace or an inventory) and
+    # ordinary collections. The previous implementation only sliced lists, so
+    # a single workspace dict with many files could exceed the advertised cap.
+    for _ in range(32):
         try:
-            if len(json.dumps(result, default=str, ensure_ascii=False)) <= MAX_CONTEXT_CHARS:
-                break
+            if serialized_size(result) <= MAX_CONTEXT_CHARS:
+                return result
         except (TypeError, ValueError):
             break
-        reduced = False
+
+        changed = shrink_workspace_files()
         for key in ("snippets", "notes", "tasks", "activities", "projects", "workspaces"):
             value = result.get(key)
             if isinstance(value, list) and value:
-                result[key] = value[:max(0, len(value) // 2)]
-                reduced = True
-                break
-        if not reduced:
+                result[key] = value[: max(0, len(value) // 2)]
+                changed = True
+        if not changed:
             break
-    return result
+
+    # Never pass an oversized context to the provider if an unusual scalar,
+    # key, or custom object prevented the structured reductions above.
+    return {
+        "context_truncated": True,
+        "_context_note": "Project context exceeded the server limit; only a safe context summary was retained.",
+        "context_keys": [str(key)[:80] for key in list(context.keys())[:40]],
+    }
 
 
 def _safe_workspace_context(user, project_id=None, workspace_id=None):
