@@ -19,7 +19,8 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip uninstall -y setuptools msgpack \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"'
+    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
+    && /opt/venv/bin/uv --version
 FROM node:26-bookworm-slim
 
 # Keep Debian security packages current, then remove package metadata/cache.
@@ -62,6 +63,7 @@ COPY --from=builder /opt/venv/bin/uv /usr/local/bin/uv
 COPY . .
 RUN python3 -m compileall -q . \
     && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
+    && /usr/local/bin/uv --version \
     && /opt/venv/bin/python -c "from importlib import metadata; assert metadata.version('urllib3') == '2.8.0'; assert not any((d.metadata.get('Name') or '').lower() in {'pip', 'setuptools', 'msgpack'} for d in metadata.distributions())" \
     && ! dpkg-query -W -f='${binary:Package}\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' \
     && mkdir -p /workspaces \
