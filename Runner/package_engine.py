@@ -93,9 +93,9 @@ def build_plan(files: dict[str, Any], action: str, package: str="", manager: str
             args = ["uv", "pip", "install", "--only-binary", ":all:", "--python", ".venv/bin/python"]
             args.extend([package_name] if package_name else ["-r", "requirements.txt"])
         elif action == "add":
-            args = ["uv", "pip", "install", "--python", ".venv/bin/python", package_name]
+            args = ["uv", "pip", "install", "--only-binary", ":all:", "--python", ".venv/bin/python", package_name]
         elif action == "remove":
-            args = ["uv", "pip", "uninstall", "--yes", "--python", ".venv/bin/python", package_name]
+            args = ["uv", "pip", "uninstall", "--python", ".venv/bin/python", package_name]
         else:
             args = ["uv", "pip", "install", "--upgrade", "--only-binary", ":all:", "--python", ".venv/bin/python"]
             args.extend([package_name] if package_name else ["-r", "requirements.txt"])
