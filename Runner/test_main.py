@@ -4,6 +4,7 @@ import time
 import subprocess
 import tempfile
 import os
+import sys
 from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
