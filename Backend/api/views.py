@@ -184,6 +184,7 @@ def _secure_runner_ready():
         return False
 
     sandbox = payload.get("sandbox") if isinstance(payload, dict) else None
+    operations = payload.get("operations") if isinstance(payload, dict) else None
     return bool(
         isinstance(sandbox, dict)
         and sandbox.get("backend") == "bwrap"
@@ -192,6 +193,8 @@ def _secure_runner_ready():
         and sandbox.get("execution_available") is True
         and sandbox.get("trusted_shared_container") is False
         and sandbox.get("network_enforcement") == "isolated"
+        and isinstance(operations, dict)
+        and all(operations.get(name) is True for name in ("execute", "process", "install", "preview"))
     )
 
 
