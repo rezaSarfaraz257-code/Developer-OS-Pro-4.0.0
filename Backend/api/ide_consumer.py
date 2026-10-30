@@ -1,7 +1,5 @@
 import asyncio
 import json
-from urllib.parse import parse_qs
-
 import requests
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -10,6 +8,7 @@ from django.contrib.auth.models import User
 
 from .models import CodeWorkspace
 from .views import RUNNER_URL, RUNNER_TOKEN, _workspace_access_queryset
+from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
 
 class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, code):
@@ -19,8 +18,9 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         self.stream_task = None
 
     async def connect(self):
-        token = parse_qs(self.scope.get("query_string", b"").decode()).get("token", [None])[0]
-        if not token:
+        protocols = self.scope.get("subprotocols") or []
+        token = extract_websocket_token(self.scope)
+        if not token or APP_SUBPROTOCOL not in protocols:
             await self.close(code=4401); return
         try:
             access = AccessToken(token)
@@ -33,7 +33,7 @@ class IDETerminalConsumer(AsyncJsonWebsocketConsumer):
         if not allowed:
             await self.close(code=4403); return
         self.stream_task = None
-        await self.accept()
+        await self.accept(subprotocol=APP_SUBPROTOCOL)
         await self.send_json({"type":"ready","workspace_id":self.workspace_id})
 
     def _workspace_plan(self):

@@ -785,6 +785,16 @@ test("IDE AI apply and undo validate file maps before changing editor state", ()
   assert.match(ide, /const nextFiles=d\.workspace\?\.files\?\?d\.files;if\(!nextFiles\|\|typeof nextFiles!=="object"\|\|Array\.isArray\(nextFiles\)\)/);
 });
 
+
+test("IDE WebSocket JWTs are sent in subprotocols, never query strings", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const tick = String.fromCharCode(96);
+  assert.ok(ide.includes('new WebSocket(socketUrl,["developer-os",' + tick + 'auth.' + '$' + '{token}' + tick + '])'));
+  assert.ok(ide.includes('new WebSocket(url,["developer-os",' + tick + 'auth.' + '$' + '{token}' + tick + '])'));
+  assert.ok(!ide.includes('terminal/?token=' + '$' + '{encodeURIComponent(token)}'));
+  assert.ok(!ide.includes('collaboration/?token=' + '$' + '{encodeURIComponent(token)}'));
+});
+
 test("API proxy preserves backend endpoint-specific CSP and frame policy", () => {
   const nginx = fs.readFileSync(path.resolve(testsDir, "../nginx.conf"), "utf8");
   const apiLocation = nginx.split("location /api/ {")[1]?.split("\n  }")[0] || "";
