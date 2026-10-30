@@ -163,6 +163,34 @@ def health_api(request):
         ))
 
 
+def _secure_runner_ready():
+    """Require a live, strictly isolated Runner before production traffic is ready."""
+    runner_url = str(globals().get("RUNNER_URL", "") or "").strip().rstrip("/")
+    runner_token = str(globals().get("RUNNER_TOKEN", "") or "").strip()
+    if not runner_url or not runner_token:
+        return False
+
+    try:
+        response = requests.get(
+            f"{runner_url}/health",
+            timeout=(2, 4),
+            allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+    except (requests.RequestException, ValueError, AttributeError):
+        return False
+
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("execution_available") is True
+        and payload.get("sandbox_backend") == "bwrap"
+        and payload.get("sandbox") == "bubblewrap"
+        and payload.get("network_policy") == "isolated-by-default"
+    )
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -172,7 +200,7 @@ def readiness_api(request):
         or os.environ.get("RENDER_GIT_COMMIT", "").strip()
     )
     strict_runtime = bool(getattr(settings, "IS_PRODUCTION", False) or is_platform_runtime)
-    checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False}
+    checks = {"database": False, "secret_key": False, "allowed_hosts": False, "email": False, "cache": False, "worker": False, "runner": False}
 
     try:
         with connection.cursor() as cursor:
@@ -240,7 +268,13 @@ def readiness_api(request):
     except Exception:
         checks["worker"] = False
 
+    # A healthy API is not production-ready if its code-execution boundary is
+    # unavailable, shared-container compatibility is active, or egress is open.
+    checks["runner"] = _secure_runner_ready()
+
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
+    if strict_runtime:
+        mandatory.append("runner")
     worker_required = (
         getattr(settings, "IS_PRODUCTION", False)
         or is_platform_runtime
