@@ -39,6 +39,12 @@ class IntelligenceEngineTests(SimpleTestCase):
         bounded = _compact_context(context)
         self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
 
+    def test_zero_history_limit_disables_history(self):
+        from api import ai_engine
+        with patch.object(ai_engine, "MAX_HISTORY_MESSAGES", 0):
+            items = ai_engine._build_input("current", {}, [{"role": "user", "content": "old"}])
+        self.assertEqual(len(items), 1)
+
     def test_history_is_bounded_by_total_character_budget(self):
         from api.ai_engine import _build_input
         history = [
