@@ -241,6 +241,7 @@ class SecureRunnerReadinessTests(TestCase):
                 "security_level": "strict",
                 "execution_available": True,
                 "trusted_shared_container": False,
+                "preview_network_bridge": True,
                 "network_enforcement": "isolated",
             },
             "operations": {
@@ -265,7 +266,7 @@ class SecureRunnerReadinessTests(TestCase):
     def test_rejects_unavailable_or_compatibility_runner(self, get):
         safe_operations = {"execute": True, "process": True, "install": True, "preview": True}
         unsafe_payloads = (
-            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": False, "trusted_shared_container": False, "network_enforcement": "isolated"}, "operations": safe_operations},
+            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": False, "trusted_shared_container": False, "preview_network_bridge": False, "network_enforcement": "isolated"}, "operations": safe_operations},
             {"sandbox": {"backend": "container", "mode": "container-native", "security_level": "compat", "execution_available": True, "trusted_shared_container": True, "network_enforcement": "container-runtime-policy"}, "operations": safe_operations},
             {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": True, "trusted_shared_container": False, "network_enforcement": "provisioning-network"}, "operations": safe_operations},
             {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": True, "trusted_shared_container": False, "network_enforcement": "isolated"}, "operations": {"execute": True, "process": True, "install": True, "preview": False}},
