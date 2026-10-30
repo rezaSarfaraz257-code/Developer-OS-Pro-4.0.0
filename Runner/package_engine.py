@@ -84,7 +84,7 @@ def build_plan(files: dict[str, Any], action: str, package: str="", manager: str
 
     if mid == "pip":
         package_name = _package_name(package) if package else ""
-        has_requirements = any(str(path).replace("\\\\", "/").strip("/") == "requirements.txt" for path in files)
+        has_requirements = any(str(path).replace("\\", "/").strip("/") == "requirements.txt" for path in files)
         if action in {"install", "update"} and not package_name and not has_requirements:
             raise ValueError("requirements.txt is required for this pip operation.")
         if action in {"add", "remove"} and not package_name:
