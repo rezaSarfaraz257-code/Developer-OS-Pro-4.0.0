@@ -801,7 +801,7 @@ test("API proxy preserves backend endpoint-specific CSP and frame policy", () =>
 test("cached static Nginx locations retain the full frontend security policy", () => {
   const nginx = fs.readFileSync(path.resolve(testsDir, "../nginx.conf"), "utf8");
   for (const marker of ["location = /index.html {", "location /assets/ {"]) {
-    const block = nginx.split(marker)[1]?.split("\\n  }")[0] || "";
+    const block = nginx.split(marker)[1]?.split("\n  }")[0] || "";
     assert.match(block, /add_header X-Content-Type-Options "nosniff" always;/);
     assert.match(block, /add_header X-Frame-Options "DENY" always;/);
     assert.match(block, /add_header Content-Security-Policy "[^"]*frame-ancestors 'none'/);
