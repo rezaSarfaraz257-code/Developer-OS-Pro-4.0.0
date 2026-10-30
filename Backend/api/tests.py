@@ -175,6 +175,37 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
         runner_request.assert_not_called()
 
     @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_unsafe_execution_snapshot_is_rejected_before_quota_or_runner(self, consume_usage, runner_request):
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+            {
+                "command": "python main.py",
+                "files": {"../secrets.txt": "must-not-run"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_workspace_files")
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_absolute_and_git_metadata_paths_are_rejected_in_execution_snapshot(self, consume_usage, runner_request):
+        for unsafe_path in ("/etc/passwd", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", "src/.git", "src//main.py"):
+            with self.subTest(path=unsafe_path):
+                response = self.client.post(
+                    f"/api/ide/workspaces/{self.workspace.pk}/execute/",
+                    {"command": "python main.py", "files": {unsafe_path: "x"}},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, unsafe_path)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     @patch("api.views._consume_usage", side_effect=DatabaseError("simulated debugger quota database outage"))
     def test_debug_start_is_blocked_when_quota_cannot_be_verified(self, consume_usage, runner_request):
         response = self.client.post(
@@ -245,6 +276,10 @@ class IDEExecutionQuotaFailClosedTests(APITestCase):
 
 class IDEJobStreamCursorValidationTests(APITestCase):
     def setUp(self):
+        # The custom IP throttle uses shared cache state across test clients.
+        # Clear it here so cursor contract tests assert validation behavior,
+        # not the order in which unrelated API tests happened to run.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-job-cursor-user",
             password="long-test-password-123",
@@ -293,6 +328,8 @@ class IDEJobStreamCursorValidationTests(APITestCase):
 
 class IDEProcessAuthorizationTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-process-readonly-user",
             password="long-test-password-123",
@@ -318,6 +355,29 @@ class IDEProcessAuthorizationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["error"], "You have read-only access to this workspace.")
         write_allowed.assert_called_once()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_foreign_workspace_cannot_read_processes_jobs_or_preview(self, runner_request):
+        from .models import CodeWorkspace
+        other = User.objects.create_user(
+            username="ide-process-foreign-owner",
+            password="long-test-password-123",
+        )
+        foreign_workspace = CodeWorkspace.objects.create(
+            owner=other,
+            name="Private foreign workspace",
+            files={"main.py": "print('private')"},
+        )
+        paths = (
+            f"/api/ide/workspaces/{foreign_workspace.pk}/processes/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/jobs/private-job/",
+            f"/api/ide/workspaces/{foreign_workspace.pk}/preview/",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         runner_request.assert_not_called()
 
 
@@ -837,6 +897,141 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("files", response.data)
         self.assertIn("revision", response.data)
 
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_execute_command_does_not_consume_quota(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Invalid execute command", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/execute/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated quota database outage"))
+    def test_ide_execute_fails_closed_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Quota fail-closed", "files": {"main.py": "print('blocked')"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/execute/",
+            {"command": "python3 main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage", side_effect=DatabaseError("simulated process quota database outage"))
+    def test_process_start_fails_closed_when_quota_cannot_be_verified(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Process quota fail-closed", "files": {"main.py": "print('blocked')"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/process/start/",
+            {"command": "python3 main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "usage_enforcement_unavailable")
+        self.assertEqual(response.data["stage"], "usage_limit")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    @patch("api.views._consume_usage")
+    def test_invalid_process_command_does_not_consume_quota(self, consume_usage, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Invalid process command", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace.data['id']}/process/start/",
+            {"command": {"unexpected": "object"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        consume_usage.assert_not_called()
+        runner_request.assert_not_called()
+
+    @patch("api.views.time.sleep")
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("ambiguous transport failure"))
+    @patch("api.views.RUNNER_TOKEN", "test-token")
+    @patch("api.views.RUNNER_URL", "http://runner.test")
+    def test_runner_does_not_retry_mutating_post_requests(self, request_mock, sleep_mock):
+        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+            "POST", "/exec", {}, timeout=1
+        )
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request_mock.call_count, 1)
+        sleep_mock.assert_not_called()
+
+    @patch("api.views.time.sleep")
+    @patch("api.views.requests.request", side_effect=requests.ConnectionError("temporary transport failure"))
+    @patch("api.views.RUNNER_TOKEN", "test-token")
+    @patch("api.views.RUNNER_URL", "http://runner.test")
+    def test_runner_retries_safe_get_requests_with_bounded_attempts(self, request_mock, sleep_mock):
+        data, error = __import__("api.views", fromlist=["_runner_request"])._runner_request(
+            "GET", "/capabilities", {}, timeout=1
+        )
+        self.assertIsNone(data)
+        self.assertEqual(error["code"], "runner_unreachable")
+        self.assertEqual(request_mock.call_count, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+
+    @patch("api.views._runner_request")
+    def test_invalid_job_stream_cursor_is_rejected_before_runner_request(self, runner_request):
+        workspace = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Cursor validation", "files": {"main.py": "print(1)"}, "active_file": "main.py"},
+            format="json",
+        )
+        self.assertEqual(workspace.status_code, status.HTTP_201_CREATED)
+        response = self.client.get(
+            f"/api/ide/workspaces/{workspace.data['id']}/jobs/job-test/stream/?cursor=not-a-number"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_job_cursor")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"sandbox": {"execution_available": False, "mode": "unavailable"}}, None))
+    def test_ide_capabilities_report_degraded_without_isolated_execution(self, runner_request):
+        response = self.client.get("/api/ide/capabilities/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "degraded")
+
+    @patch("api.views._runner_request", return_value=({"sandbox": {"execution_available": True, "mode": "bubblewrap"}}, None))
+    def test_ide_capabilities_report_ready_with_isolated_execution(self, runner_request):
+        response = self.client.get("/api/ide/capabilities/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ready")
+
     def test_ide_runner_terminal_states_are_complete(self):
         terminal_states = {"success", "completed", "failed", "timeout", "cancelled"}
         self.assertEqual(
@@ -849,7 +1044,7 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         workspace_id = response.data["id"]
         revision = response.data["revision"]
-        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", ".git/config", "src//app.py"):
+        for path in ("../secret.txt", "src/../secret.txt", "/absolute.txt", "C:\\\\Windows\\\\win.ini", ".git/config", "src/.git/config", ".", "./main.py", "src//app.py"):
             response = self.client.post(f"/api/ide/workspaces/{workspace_id}/files/", {"action": "create", "path": path, "content": "x", "revision": revision}, format="json")
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, path)
 
@@ -1174,6 +1369,8 @@ class BillingEntitlementSafetyTests(APITestCase):
 
 class IDEWorkspaceLifecycleRegressionTests(APITestCase):
     def setUp(self):
+        # Keep shared API throttle cache state from leaking between test classes.
+        cache.clear()
         self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
         self.client.force_authenticate(user=self.owner)
 
@@ -1506,6 +1703,52 @@ class BackgroundWorkerReadinessTests(APITestCase):
             response = self.client.get("/api/health/ready/")
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    def test_stale_worker_job_is_requeued_with_bounded_backoff(self):
+        from .models import BackgroundJob
+        from .management.commands.worker import recover_stale_jobs
+
+        stale_time = timezone.now() - timedelta(minutes=20)
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "test@example.test"},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=stale_time,
+            locked_by="dead-worker",
+        )
+
+        recover_stale_jobs()
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, "queued")
+        self.assertGreater(job.available_at, timezone.now())
+        self.assertLessEqual(job.available_at, timezone.now() + timedelta(seconds=5))
+        self.assertIn("Recovered stale worker lease.", job.error)
+        self.assertIsNotNone(job.last_error_at)
+
+    def test_exhausted_stale_worker_job_is_dead_lettered(self):
+        from .models import BackgroundJob
+        from .management.commands.worker import recover_stale_jobs
+
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "test@example.test"},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=20),
+            locked_by="dead-worker",
+        )
+
+        recover_stale_jobs()
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIn("Recovered stale worker lease.", job.error)
 
 
 class WorkspacePathValidationRegressionTests(APITestCase):
