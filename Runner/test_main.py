@@ -1063,7 +1063,7 @@ def test_timeout_runner_terminates_process_group_and_preserves_output():
         subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
         ("partial", "warning"),
     ]
-    with patch("main.subprocess.Popen", return_value=process), patch(
+    with patch("main.subprocess.Popen", return_value=process) as popen, patch(
         "main._terminate_process_group"
     ) as terminate:
         result_error = None
@@ -1073,6 +1073,8 @@ def test_timeout_runner_terminates_process_group_and_preserves_output():
             )
         except subprocess.TimeoutExpired as exc:
             result_error = exc
+    popen.assert_called_once()
+    assert popen.call_args.kwargs["shell"] is False
     terminate.assert_called_once_with(process, grace_seconds=0.1)
     assert result_error is not None
     assert result_error.output == "partial"

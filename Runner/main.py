@@ -767,6 +767,8 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn):
     """Run a command in its own process group and terminate the group on timeout."""
     proc = subprocess.Popen(
         argv,
+        # Pass an argv sequence without invoking a shell; user input is never shell-parsed.
+        shell=False,
         cwd=cwd,
         env=env,
         stdout=subprocess.PIPE,
