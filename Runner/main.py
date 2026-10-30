@@ -506,7 +506,7 @@ def safe_rel(path):
     component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     if any(
         part in {"", ".", ".."}
-        or part.lower() == ".git"
+        or part.lower() in {".git", ".runner-runtime"}
         or not component_pattern.fullmatch(part)
         for part in parts
     ):

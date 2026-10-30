@@ -117,7 +117,7 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
 
 class RunnerSecurityTests(unittest.TestCase):
     def test_rejects_absolute_and_traversal_paths(self):
-        for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", "a//b", ""):
+        for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", ".runner-runtime/owned.sh", "a//b", ""):
             with self.assertRaises(ValueError):
                 safe_rel(path)
 
