@@ -844,6 +844,7 @@ def _capability_manifest():
             "mode": ("container-native" if trusted_compat else ("bubblewrap" if sandbox_available else "unavailable")),
             "security_level": RUNNER_SECURITY_LEVEL,
             "trusted_shared_container": trusted_compat,
+            "preview_network_bridge": trusted_compat,
             "execution_available": sandbox_available,
             "unavailable_reason": sandbox_unavailable_reason,
             "process_boundary": True,
