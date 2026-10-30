@@ -14,7 +14,7 @@ MANAGERS = {
     "pnpm": {"binary":"pnpm","manifest":"package.json","lockfiles":["pnpm-lock.yaml"],"install":["install"],"add":["add"],"remove":["remove"],"update":["update"]},
     "yarn": {"binary":"yarn","manifest":"package.json","lockfiles":["yarn.lock"],"install":["install"],"add":["add"],"remove":["remove"],"update":["upgrade"]},
     "pip": {"binary":"uv","manifest":"requirements.txt","lockfiles":[],"install":["pip","install"],"add":["pip","install"],"remove":["pip","uninstall"],"update":["pip","install","--upgrade"]},
-    "uv": {"binary":"uv","manifest":"pyproject.toml","lockfiles":["uv.lock"],"install":["sync"],"add":["add"],"remove":["remove"],"update":["lock","--upgrade"]},
+    "uv": {"binary":"uv","manifest":"pyproject.toml","lockfiles":["uv.lock"],"install":["sync","--no-build"],"add":["add"],"remove":["remove"],"update":["lock","--upgrade"]},
     "poetry": {"binary":"poetry","manifest":"pyproject.toml","lockfiles":["poetry.lock"],"install":["install"],"add":["add"],"remove":["remove"],"update":["update"]},
     "cargo": {"binary":"cargo","manifest":"Cargo.toml","lockfiles":["Cargo.lock"],"install":["fetch"],"add":["add"],"remove":["remove"],"update":["update"]},
     "go": {"binary":"go","manifest":"go.mod","lockfiles":["go.sum"],"install":["mod","download"],"add":["get"],"remove":["mod","tidy"],"update":["get","-u"]},
@@ -90,14 +90,14 @@ def build_plan(files: dict[str, Any], action: str, package: str="", manager: str
         if action in {"add", "remove"} and not package_name:
             raise ValueError(f"A package name is required for pip {action}.")
         if action == "install":
-            args = ["uv", "pip", "install", "--python", ".venv/bin/python"]
+            args = ["uv", "pip", "install", "--only-binary", ":all:", "--python", ".venv/bin/python"]
             args.extend([package_name] if package_name else ["-r", "requirements.txt"])
         elif action == "add":
             args = ["uv", "pip", "install", "--python", ".venv/bin/python", package_name]
         elif action == "remove":
             args = ["uv", "pip", "uninstall", "--yes", "--python", ".venv/bin/python", package_name]
         else:
-            args = ["uv", "pip", "install", "--upgrade", "--python", ".venv/bin/python"]
+            args = ["uv", "pip", "install", "--upgrade", "--only-binary", ":all:", "--python", ".venv/bin/python"]
             args.extend([package_name] if package_name else ["-r", "requirements.txt"])
         command = " ".join(_quote(x) for x in args)
         command = (
