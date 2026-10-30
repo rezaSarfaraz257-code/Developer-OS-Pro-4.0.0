@@ -1062,7 +1062,7 @@ def sync(payload: Workspace, authorization: str = Header(default="")):
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         replace_workspace_snapshot(root, payload.files)
-    return {"status": "synced", "files": snapshot(root)}
+        return {"status": "synced", "files": snapshot(root)}
 
 @app.post("/snapshot")
 def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
@@ -1081,15 +1081,16 @@ def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
 def build_api(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    replace_workspace_snapshot(root, payload.files or {})
-    try:
-        plan = build_plan(payload.files or {})
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)[:500])
-    started = time.monotonic()
-    result = run_command(root, plan["strategy"]["command"])
-    artifacts = artifact_manifest(payload.files or {}, str(root))
-    return {"status":"success" if result.get("exit_code")==0 else "failed","plan":plan,"result":result,"artifacts":artifacts,"duration_ms":int((time.monotonic()-started)*1000)}
+    with _workspace_lock(payload.workspace_id):
+        replace_workspace_snapshot(root, payload.files or {})
+        try:
+            plan = build_plan(payload.files or {})
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)[:500])
+        started = time.monotonic()
+        result = run_command(root, plan["strategy"]["command"])
+        artifacts = artifact_manifest(payload.files or {}, str(root))
+        return {"status":"success" if result.get("exit_code")==0 else "failed","plan":plan,"result":result,"artifacts":artifacts,"duration_ms":int((time.monotonic()-started)*1000)}
 
 
 def build_plan_api(payload: Workspace, authorization: str = Header(default="")):
@@ -1116,11 +1117,11 @@ def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(de
 def install(payload: InstallRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    replace_workspace_snapshot(root, payload.files)
-    # Package/framework provisioning is the only runner operation allowed to
-    # use egress. Normal user execution remains network-isolated by default.
-    result = run_command(root, payload.command, allow_network=True)
-    return result
+    with _workspace_lock(payload.workspace_id):
+        replace_workspace_snapshot(root, payload.files)
+        # Package/framework provisioning is the only runner operation allowed to
+        # use egress. Normal user execution remains network-isolated by default.
+        return run_command(root, payload.command, allow_network=True)
 
 @app.post("/exec")
 def execute(payload: ExecRequest, authorization: str = Header(default="")):
@@ -1420,8 +1421,6 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
             ),
         )
     root = safe_workspace(payload.workspace_id)
-    with _workspace_lock(payload.workspace_id):
-        replace_workspace_snapshot(root, payload.files)
     port = int(payload.port or _workspace_preview_port(payload.workspace_id))
     if not (1024 <= port <= 65535):
         raise HTTPException(status_code=400, detail="Invalid preview port.")
@@ -1429,7 +1428,9 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
     command = _preview_command(command, port)
     # Frameworks receive the assigned port through both CLI flags and PORT.
     process_env = {**(payload.env or {}), "PORT": str(port)}
-    pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=process_env)
+    with _workspace_lock(payload.workspace_id):
+        replace_workspace_snapshot(root, payload.files)
+        pid = _start_process(root, command, allow_network=payload.allow_network, env_extra=process_env)
     with PROCESS_LOCK:
         proc = PROCESSES[str(pid)]["popen"]
     with PREVIEW_LOCK:
@@ -1506,16 +1507,17 @@ class DebugRequest(Workspace):
 def debug_api(payload: DebugRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    if payload.files:
-        replace_workspace_snapshot(root, payload.files)
-    try:
-        return debug_handle(
-            payload.action, root=root, session_id=payload.session_id, path=payload.path,
-            line=payload.line, column=payload.column, condition=payload.condition,
-            expression=payload.expression, breakpoints=payload.breakpoints
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    with _workspace_lock(payload.workspace_id):
+        if payload.files:
+            replace_workspace_snapshot(root, payload.files)
+        try:
+            return debug_handle(
+                payload.action, root=root, session_id=payload.session_id, path=payload.path,
+                line=payload.line, column=payload.column, condition=payload.condition,
+                expression=payload.expression, breakpoints=payload.breakpoints
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
 class SymbolRequest(Workspace):
     action: str = "symbols"
@@ -1574,30 +1576,31 @@ def format_api(payload: Workspace, authorization: str = Header(default="")):
 def symbols_api(payload: SymbolRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    if payload.files:
-        replace_workspace_snapshot(root, payload.files)
-    try:
-        if payload.action == "symbols":
-            return {"symbols": symbol_index(root, payload.query, payload.path)}
-        if payload.action == "references":
-            return {"references": symbol_references(root, payload.name, payload.path)}
-        if payload.action == "rename_preview":
-            return {"preview": symbol_rename_preview(root, payload.old, payload.new, payload.path)}
-        if payload.action == "rename_diff":
-            return {"preview": symbol_rename_diff(root, payload.old, payload.new, payload.path)}
-        if payload.action == "code_actions":
-            return {"actions": symbol_code_actions(root, payload.path, payload.line)}
-        if payload.action == "diagnostics":
-            return {"diagnostics": symbol_diagnostics(root, payload.path)}
-        if payload.action == "definitions":
-            return {"definitions": symbol_definitions(root, payload.name, payload.path)}
-        if payload.action == "hover":
-            return {"hover": symbol_hover(root, payload.name, payload.path, payload.line)}
-        if payload.action == "completion":
-            return {"completions": symbol_completion(root, payload.query, payload.path)}
-        raise HTTPException(status_code=400, detail="Unsupported symbol action.")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    with _workspace_lock(payload.workspace_id):
+        if payload.files:
+            replace_workspace_snapshot(root, payload.files)
+        try:
+            if payload.action == "symbols":
+                return {"symbols": symbol_index(root, payload.query, payload.path)}
+            if payload.action == "references":
+                return {"references": symbol_references(root, payload.name, payload.path)}
+            if payload.action == "rename_preview":
+                return {"preview": symbol_rename_preview(root, payload.old, payload.new, payload.path)}
+            if payload.action == "rename_diff":
+                return {"preview": symbol_rename_diff(root, payload.old, payload.new, payload.path)}
+            if payload.action == "code_actions":
+                return {"actions": symbol_code_actions(root, payload.path, payload.line)}
+            if payload.action == "diagnostics":
+                return {"diagnostics": symbol_diagnostics(root, payload.path)}
+            if payload.action == "definitions":
+                return {"definitions": symbol_definitions(root, payload.name, payload.path)}
+            if payload.action == "hover":
+                return {"hover": symbol_hover(root, payload.name, payload.path, payload.line)}
+            if payload.action == "completion":
+                return {"completions": symbol_completion(root, payload.query, payload.path)}
+            raise HTTPException(status_code=400, detail="Unsupported symbol action.")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/process/{process_id}/input")
 def process_input(process_id: str, payload: ProcessInputRequest, authorization: str = Header(default="")):
@@ -1627,7 +1630,7 @@ def process_start(payload: ProcessStartRequest, authorization: str = Header(defa
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         replace_workspace_snapshot(root, payload.files)
-    pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env, entitlement=payload.entitlement)
+        pid = _start_process(root, payload.command, allow_network=payload.allow_network, env_extra=payload.env, entitlement=payload.entitlement)
     _metric("process_started")
     return _process_state(pid)
 
@@ -1651,14 +1654,15 @@ def process_list(workspace_id: str, authorization: str = Header(default="")):
 def git_api(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
     root = safe_workspace(payload.workspace_id)
-    replace_workspace_snapshot(root, payload.files)
-    try:
-        args = json.loads(payload.command)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Git payload command must be a JSON array.")
-    if not args or not isinstance(args, list):
-        raise HTTPException(status_code=400, detail="Git arguments required.")
-    return _git_run(root, args)
+    with _workspace_lock(payload.workspace_id):
+        replace_workspace_snapshot(root, payload.files)
+        try:
+            args = json.loads(payload.command)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Git payload command must be a JSON array.")
+        if not args or not isinstance(args, list):
+            raise HTTPException(status_code=400, detail="Git arguments required.")
+        return _git_run(root, args)
 
 class AIRequest(Workspace):
     action: str = "fix"
