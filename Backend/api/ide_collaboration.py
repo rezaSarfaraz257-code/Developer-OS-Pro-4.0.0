@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from .models import CodeWorkspace, WorkspaceCollaborationSession, WorkspaceFileRevision, WorkspaceFileLock, WorkspaceCRDTOperation
 from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
-from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object)
+from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object, validate_client_id, validate_websocket_message)
 
 class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
@@ -29,7 +29,11 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4401); return
         allowed=await sync_to_async(self._allowed)()
         if not allowed: await self.close(code=4403); return
-        self.client_id=parse_qs(self.scope.get("query_string",b"").decode()).get("client",[uuid.uuid4().hex[:16]])[0]
+        raw_client_id=parse_qs(self.scope.get("query_string",b"").decode()).get("client",[uuid.uuid4().hex[:16]])[0]
+        try:
+            self.client_id=validate_client_id(raw_client_id)
+        except ValueError:
+            await self.close(code=4400); return
         self.group_name=f"ide.workspace.{self.workspace.id}"
         await self.channel_layer.group_add(self.group_name,self.channel_name)
         await self.accept(subprotocol=APP_SUBPROTOCOL)
@@ -49,6 +53,8 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             await sync_to_async(WorkspaceCollaborationSession.objects.filter(workspace=self.workspace,user=self.user,client_id=self.client_id).delete)()
 
     async def receive_json(self, content, **kwargs):
+        if not validate_websocket_message(content):
+            await self.send_json({"type":"error","reason":"invalid_or_oversized_message"}); return
         kind=str(content.get("type") or "")
         if kind=="presence":
             cursor = bounded_json_object(content.get("cursor"))
@@ -144,7 +150,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             ws.files=files; ws.revision=(ws.revision or 0)+1; ws.save(update_fields={"files","revision"})
             blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
             WorkspaceCRDTOperation.objects.create(workspace=ws,path=path,operation_id=opid,actor_id=self.client_id,lamport=lamport,kind=kind,position=pos,delete_count=count,text=inserted,update_blob=blob,author=self.user)
-            return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":text,"content":next_content,"client_id":self.client_id}}
+            return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":inserted,"content":next_content,"client_id":self.client_id}}
 
     def _presence_snapshot(self):
         now=timezone.now()
