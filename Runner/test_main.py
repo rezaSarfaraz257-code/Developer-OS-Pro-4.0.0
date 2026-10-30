@@ -144,7 +144,7 @@ class RunnerSecurityTests(unittest.TestCase):
             self.assertEqual(command[0], "bash")
             self.assertEqual(command[1], script.relative_to(root).as_posix())
             self.assertNotIn("python -c", " ".join(command))
-            self.assertEqual(script.read_text(encoding="utf-8"), "python -c 'print(1)'\\n")
+            self.assertEqual(script.read_text(encoding="utf-8"), "python -c 'print(1)'\n")
             main._remove_command_script(script)
 
     def test_strict_container_execution_fails_closed_without_tenant_isolation(self):
