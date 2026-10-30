@@ -873,7 +873,7 @@ def _capability_manifest():
             "process": sandbox_available,
             "git": True,
             "preview": trusted_compat,
-            "install": sandbox_available,
+            "install": trusted_compat,
             "debug": bool(sandbox_available and debug_capability()["available"]),
             "lsp": True,
         },
@@ -1117,6 +1117,14 @@ def package_plan_api(payload: PackagePlanRequest, authorization: str = Header(de
 @app.post("/install")
 def install(payload: InstallRequest, authorization: str = Header(default="")):
     auth(authorization)
+    if not _capability_manifest()["operations"]["install"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Package installation is disabled in the isolated Runner until "
+                "a registry-restricted egress proxy is configured."
+            ),
+        )
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         replace_workspace_snapshot(root, payload.files)
