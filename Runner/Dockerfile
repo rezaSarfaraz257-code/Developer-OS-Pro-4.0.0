@@ -55,7 +55,7 @@ WORKDIR /app
 
 # Fail closed: production execution must use a real sandbox backend.
 ENV RUNNER_SECURITY_LEVEL=strict \
-    RUNNER_SANDBOX_MODE=container \
+    RUNNER_SANDBOX_MODE=bwrap \
     RUNNER_ALLOW_NETWORK=false
 
 COPY --from=builder /opt/venv /opt/venv
