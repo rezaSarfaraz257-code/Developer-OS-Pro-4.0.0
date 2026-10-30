@@ -1739,14 +1739,56 @@ def preview_plan_api(payload: Workspace, authorization: str = Header(default="")
     safe_workspace(payload.workspace_id)
     return preview_plan(payload.files)
 
+PREVIEW_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
+
 @app.get("/preview/{workspace_id}/{path:path}")
 def preview_proxy(workspace_id: str, path: str, authorization: str = Header(default="")):
     auth(authorization)
-    port = _workspace_preview_port(workspace_id)
-    # This endpoint is intentionally internal; Django owns the public proxy.
     try:
-        response = requests.get(f"http://127.0.0.1:{port}/{path}", timeout=10)
-    except Exception as exc:
+        safe_path = safe_rel(path) if path else ""
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid preview path.")
+    port = _workspace_preview_port(workspace_id)
+    # This endpoint is internal, but the preview application is user-controlled.
+    # Never follow its redirects from the privileged Runner process.
+    upstream = None
+    try:
+        upstream = requests.get(
+            f"http://127.0.0.1:{port}/{safe_path}",
+            timeout=(3.05, 10),
+            allow_redirects=False,
+            stream=True,
+        )
+        if 300 <= upstream.status_code < 400:
+            raise HTTPException(status_code=502, detail="Preview redirects are not allowed.")
+
+        raw_length = upstream.headers.get("Content-Length")
+        if raw_length:
+            try:
+                if int(raw_length) > PREVIEW_MAX_RESPONSE_BYTES:
+                    raise HTTPException(status_code=502, detail="Preview response exceeds the size limit.")
+            except ValueError:
+                raise HTTPException(status_code=502, detail="Preview response length is invalid.")
+
+        chunks = []
+        total = 0
+        for chunk in upstream.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > PREVIEW_MAX_RESPONSE_BYTES:
+                raise HTTPException(status_code=502, detail="Preview response exceeds the size limit.")
+            chunks.append(chunk)
+
+        return Response(
+            content=b"".join(chunks),
+            status_code=upstream.status_code,
+            headers={"Content-Type": upstream.headers.get("Content-Type", "text/plain")},
+        )
+    except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Preview unavailable: {exc.__class__.__name__}")
-    return Response(content=response.content, status_code=response.status_code, headers={"Content-Type": response.headers.get("content-type", "text/plain")})
+    finally:
+        if upstream is not None:
+            upstream.close()
 
