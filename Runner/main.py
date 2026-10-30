@@ -1421,12 +1421,17 @@ def preview_start(payload: PreviewRequest, authorization: str = Header(default="
                 "will not be weakened to expose preview ports."
             ),
         )
-    root = safe_workspace(payload.workspace_id)
     port = int(payload.port or _workspace_preview_port(payload.workspace_id))
     if not (1024 <= port <= 65535):
         raise HTTPException(status_code=400, detail="Invalid preview port.")
-    command = payload.command.strip() or f"python3 -m http.server {port}"
-    command = _preview_command(command, port)
+    try:
+        command = _preview_command(
+            payload.command.strip() or f"python3 -m http.server {port}",
+            port,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    root = safe_workspace(payload.workspace_id)
     # Frameworks receive the assigned port through both CLI flags and PORT.
     process_env = {**(payload.env or {}), "PORT": str(port)}
     with _workspace_lock(payload.workspace_id):
