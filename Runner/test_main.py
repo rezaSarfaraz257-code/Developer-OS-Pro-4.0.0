@@ -233,7 +233,10 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
         root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
         (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
-        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+        # This is a trusted unit-test harness for process semantics, not a
+        # sandbox validation. Select the explicit compatibility container
+        # backend so the test does not depend on host Bubblewrap namespaces.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
             result = run_command(root, "python3 main.py")
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["exit_code"], 0)
@@ -259,7 +262,9 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_interactive_process_input_and_stop_contract(self):
         import main
         root = Path(tempfile.mkdtemp(prefix="developer-os-process-"))
-        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+        # Exercise stdin/stop behavior independently from Bubblewrap; strict
+        # isolation has dedicated fail-closed and container integration tests.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
             process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
         try:
             with main.PROCESS_LOCK:
