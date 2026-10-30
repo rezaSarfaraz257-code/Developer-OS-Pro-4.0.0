@@ -18,7 +18,7 @@ def validate_workspace_path(value: object) -> str:
         raise ValueError("Invalid workspace path.")
     if any(ord(char) < 32 or ord(char) == 127 for char in value):
         raise ValueError("Invalid workspace path.")
-    normalized = value.replace("\\\\", "/")
+    normalized = value.replace("\\", "/")
     if normalized.startswith("/") or _WINDOWS_DRIVE_RE.match(normalized):
         raise ValueError("Absolute paths are not allowed.")
     parts = normalized.split("/")
@@ -30,7 +30,7 @@ def validate_workspace_path(value: object) -> str:
 
 
 def validate_workspace_text(value: object) -> str:
-    if not isinstance(value, str) or "\\x00" in value:
+    if not isinstance(value, str) or "\x00" in value:
         raise ValueError("Workspace files must contain plain text.")
     try:
         size = len(value.encode("utf-8", errors="strict"))
