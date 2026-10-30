@@ -56,7 +56,7 @@ jobs:
       API_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://dos-o91y.onrender.com' }}
       EXPECTED_RELEASE_SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history lets the monitor verify the deployed Backend tree.
           fetch-depth: 0
