@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from .models import CodeWorkspace, WorkspaceCollaborationSession, WorkspaceFileRevision, WorkspaceFileLock, WorkspaceCRDTOperation
 from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
-from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object, validate_client_id, validate_websocket_message)
+from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object, validate_client_id, validate_websocket_message, MAX_CRDT_INSERT_BYTES)
 
 class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
@@ -66,14 +66,14 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         elif kind=="crdt-op":
             await self._crdt_receive(content)
         elif kind=="crdt-sync":
-            path = validate_workspace_path(content.get("path"))
             try:
+                path = validate_workspace_path(content.get("path"))
                 since = int(content.get("since_lamport") or 0)
             except (TypeError, ValueError, OverflowError):
                 await self.send_json({"type":"crdt-reject","reason":"invalid_cursor"}); return
             if since < 0 or since > 9_223_372_036_854_775_807:
                 await self.send_json({"type":"crdt-reject","reason":"invalid_cursor"}); return
-            ops = await sync_to_async(list)(WorkspaceCRDTOperation.objects.filter(workspace=self.workspace,path=path,lamport__gt=since).order_by("lamport")[:500])
+            ops = await sync_to_async(list)(WorkspaceCRDTOperation.objects.filter(workspace=self.workspace,path=path,lamport__gt=since).order_by("lamport")[:20])
             await self.send_json({"type":"crdt-sync","path":path,"operations":[{"operation_id":o.operation_id,"lamport":o.lamport,"kind":o.kind,"position":o.position,"delete_count":o.delete_count,"text":o.text,"update_blob":o.update_blob} for o in ops]})
         elif kind=="patch":
             result=await sync_to_async(self._apply_patch)(content)
@@ -135,6 +135,8 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
                 return {"type":"crdt-reject","reason":"invalid_operation"}
             try:
                 inserted = validate_workspace_text(content.get("text") or "") if kind == "insert" else ""
+                if len(inserted.encode("utf-8")) > MAX_CRDT_INSERT_BYTES:
+                    return {"type":"crdt-reject","reason":"operation_too_large"}
             except ValueError:
                 return {"type":"crdt-reject","reason":"invalid_content"}
             current=str((ws.files or {}).get(path,""))
