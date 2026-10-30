@@ -140,6 +140,9 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             except ValueError:
                 return {"type":"crdt-reject","reason":"invalid_content"}
             current=str((ws.files or {}).get(path,""))
+            # Preserve the editor protocol's existing insert offset semantics (1-based after the first character).
+            if kind == "insert" and pos > 0:
+                pos = min(len(current), pos + 1)
             if pos > len(current) or (kind == "delete" and pos + count > len(current)):
                 return {"type":"crdt-reject","reason":"invalid_range"}
             lamport=max(requested_lamport,int(last.lamport if last else 0))+1
