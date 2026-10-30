@@ -14,6 +14,31 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertEqual(config["model"], "gpt-5.6-luna")
         self.assertEqual(config["protocol"], "responses")
 
+    def test_selected_workspace_files_respect_global_context_limit(self):
+        context = {
+            "workspace": {
+                "id": 7,
+                "name": "large workspace",
+                "files": {f"src/file_{index}.py": "x" * 12000 for index in range(20)},
+            },
+            "projects": [],
+            "tasks": [],
+        }
+        bounded = _compact_context(context)
+        self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
+        self.assertTrue(bounded["context_truncated"])
+        self.assertEqual(bounded["workspace"]["id"], 7)
+
+    def test_workspace_inventory_files_respect_global_context_limit(self):
+        context = {
+            "workspaces": [
+                {"id": index, "files": {f"file_{item}.py": "y" * 12000 for item in range(12)}}
+                for index in range(5)
+            ],
+        }
+        bounded = _compact_context(context)
+        self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
+
     def test_extracts_responses_output_text(self):
         payload = {"output": [{"content": [{"text": "diagnosis"}]}, {"content": [{"text": "fix"}]}]}
         self.assertEqual(_extract_responses_text(payload), "diagnosis\nfix")
