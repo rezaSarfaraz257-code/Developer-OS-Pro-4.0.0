@@ -156,7 +156,10 @@ def health_api(request):
             "service": "developer-os-api",
             **release_identity(),
         }))
-    except Exception:
+    except Exception as exc:
+        # Keep diagnostics in server logs without exposing database details to
+        # unauthenticated health probes or leaking connection metadata.
+        logger.warning("Database health probe failed (%s).", type(exc).__name__)
         return _no_store_health_response(Response(
             {"status": "degraded", "database": "unavailable", **release_identity()},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -223,7 +226,10 @@ def readiness_api(request):
             if strict_runtime
             else True
         )
-    except Exception:
+    except Exception as exc:
+        # Health responses stay intentionally generic; operators can correlate
+        # failures using this sanitized server-side signal.
+        logger.warning("Database readiness probe failed (%s).", type(exc).__name__)
         checks["database"] = False
 
     checks["secret_key"] = bool(
@@ -2494,7 +2500,7 @@ def _safe_ide_path(value):
     path = str(value or "").replace("\\", "/").strip()
     if not path or len(path) > 500 or any(part in {"", ".", ".."} for part in path.split("/")):
         return None
-    if path.startswith(".git/") or "/.git/" in path or path == ".git":
+    if ".git" in path.split("/"):
         return None
     return path
 
@@ -2990,8 +2996,25 @@ def ide_execute_api(request, pk):
 
         stage = "runner_payload"
         submitted_files = request.data.get("files")
-        if submitted_files is not None and not isinstance(submitted_files, dict):
-            return Response({"error": "Workspace files must be an object."}, status=400)
+        if submitted_files is not None:
+            if not isinstance(submitted_files, dict):
+                return Response({"error": "Workspace files must be an object."}, status=400)
+            # Validate the exact snapshot before quota consumption or forwarding
+            # it to the runner. The runner repeats filesystem checks, but the
+            # API must reject malformed/oversized input consistently as well.
+            files_serializer = CodeWorkspaceSerializer(
+                ws,
+                data={"files": submitted_files},
+                partial=True,
+                context={"request": request},
+            )
+            if not files_serializer.is_valid():
+                return Response({
+                    "error": "Workspace files failed validation.",
+                    "code": "invalid_workspace_files",
+                    "details": files_serializer.errors,
+                }, status=400)
+            submitted_files = files_serializer.validated_data["files"]
 
         stage = "usage_limit"
         try:
@@ -4201,9 +4224,9 @@ def ide_job_stream_api(request, pk, job_id):
     try:
         cursor = int(raw_cursor)
     except (TypeError, ValueError, OverflowError):
-        return Response({"error": "Cursor must be a non-negative integer."}, status=400)
+        return Response({"error": "Cursor must be a non-negative integer.", "code": "invalid_job_cursor"}, status=400)
     if cursor < 0 or cursor > 2_147_483_647:
-        return Response({"error": "Cursor must be a non-negative integer in the supported range."}, status=400)
+        return Response({"error": "Cursor must be a non-negative integer in the supported range.", "code": "invalid_job_cursor"}, status=400)
     data, error = _runner_request(
         "GET",
         f"/jobs/{job_id}/stream",

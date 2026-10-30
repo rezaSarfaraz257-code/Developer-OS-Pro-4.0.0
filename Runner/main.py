@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -23,25 +23,58 @@ ROOT.mkdir(parents=True, exist_ok=True)
 # Read the control-plane credential once, then remove it from the process
 # environment so untrusted child code cannot inherit or trivially inspect it.
 TOKEN = os.environ.pop("IDE_RUNNER_TOKEN", "")
+
+
+
+def _bounded_int_env(name, default, minimum, maximum):
+    """Parse an integer environment setting defensively and clamp its range."""
+    try:
+        value = int(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError, AttributeError):
+        value = int(default)
+    return max(int(minimum), min(int(maximum), value))
+
+
+def _bounded_float_env(name, default, minimum, maximum):
+    """Parse a finite float environment setting defensively and clamp its range."""
+    try:
+        value = float(os.environ.get(name, str(default)).strip())
+        if not math.isfinite(value):
+            value = float(default)
+    except (TypeError, ValueError, AttributeError):
+        value = float(default)
+    return max(float(minimum), min(float(maximum), value))
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
-TIMEOUT = min(120, max(5, int(os.environ.get("RUNNER_TIMEOUT_SECONDS", "120"))))
-MAX_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_CONCURRENT", "4")))
+TIMEOUT = _bounded_int_env("RUNNER_TIMEOUT_SECONDS", 120, 5, 120)
+MAX_CONCURRENT = _bounded_int_env("RUNNER_MAX_CONCURRENT", 4, 1, 64)
 MAX_CONCURRENT_EXECUTIONS = MAX_CONCURRENT
 MAX_CONCURRENT_PROCESSES = MAX_CONCURRENT
-MAX_WORKSPACE_CONCURRENT = max(1, int(os.environ.get("RUNNER_MAX_WORKSPACE_CONCURRENT", "1")))
-RUNNER_MEMORY_MB = max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768"))))
+MAX_WORKSPACE_CONCURRENT = _bounded_int_env("RUNNER_MAX_WORKSPACE_CONCURRENT", 1, 1, 16)
+RUNNER_MEMORY_MB = _bounded_int_env("RUNNER_MEMORY_MB", 768, 128, 2048)
 MAX_OUTPUT_BYTES = MAX_OUTPUT
 MAX_PROCESS_DURATION = TIMEOUT
-PROCESS_TTL = max(300, int(os.environ.get("RUNNER_PROCESS_TTL_SECONDS", "3600")))
+PROCESS_TTL = _bounded_int_env("RUNNER_PROCESS_TTL_SECONDS", 3600, 300, 86400)
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
-RUNNER_SECURITY_LEVEL = os.environ.get("RUNNER_SECURITY_LEVEL", "strict").strip().lower()
-if RUNNER_SECURITY_LEVEL not in {"strict", "compat"}:
-    RUNNER_SECURITY_LEVEL = "strict"
+def _effective_runner_security_level(environ=None):
+    """Never allow shared-container compatibility mode on a managed production host."""
+    env = os.environ if environ is None else environ
+    requested = str(env.get("RUNNER_SECURITY_LEVEL", "strict")).strip().lower()
+    if requested not in {"strict", "compat"}:
+        requested = "strict"
+    managed_production = (
+        str(env.get("ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+        or str(env.get("RENDER", "")).strip().lower() == "true"
+        or any(env.get(name) for name in ("RENDER_SERVICE_ID", "RENDER_GIT_COMMIT", "RENDER_EXTERNAL_URL"))
+    )
+    return "strict" if managed_production else requested
+
+
+RUNNER_SECURITY_LEVEL = _effective_runner_security_level()
 # Prefer per-execution Bubblewrap isolation by default. If the host denies namespace creation,
 # strict mode reports execution unavailable; it must never fall back to a shared container.
 SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "bwrap").strip().lower()
@@ -57,7 +90,7 @@ MAX_COMMAND = 2_000
 SCHEDULER_LOCK = threading.RLock()
 SCHEDULER_ACTIVE = {}
 SCHEDULER_MAX_PER_WORKSPACE = MAX_WORKSPACE_CONCURRENT
-CANCEL_GRACE_SECONDS = max(1, int(os.environ.get("RUNNER_CANCEL_GRACE_SECONDS", "3")))
+CANCEL_GRACE_SECONDS = _bounded_int_env("RUNNER_CANCEL_GRACE_SECONDS", 3, 1, 30)
 
 class FairScheduler:
     """Deterministic round-robin scheduler with per-workspace concurrency."""
@@ -126,11 +159,11 @@ def _scheduler_metric(key, value=1):
 
 JOB_LOCK = threading.RLock()
 JOBS = {}
-JOB_RETENTION_SECONDS = max(60, int(os.environ.get("RUNNER_JOB_RETENTION_SECONDS", "3600")))
+JOB_RETENTION_SECONDS = _bounded_int_env("RUNNER_JOB_RETENTION_SECONDS", 3600, 60, 86400)
 JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
-JOB_OUTPUT_MAX_BYTES = max(4096, int(os.environ.get("RUNNER_JOB_OUTPUT_MAX_BYTES", "262144")))
-STREAM_WAIT_SECONDS = max(0.1, min(5.0, float(os.environ.get("RUNNER_STREAM_WAIT_SECONDS", "0.5"))))
+JOB_OUTPUT_MAX_BYTES = _bounded_int_env("RUNNER_JOB_OUTPUT_MAX_BYTES", 262144, 4096, 4194304)
+STREAM_WAIT_SECONDS = _bounded_float_env("RUNNER_STREAM_WAIT_SECONDS", 0.5, 0.1, 5.0)
 
 
 
@@ -170,8 +203,8 @@ def _job_output_snapshot(job_id):
         return JOB_OUTPUT.get(job_id, "")
 
 
-JOB_MAX_RETRIES = max(0, min(3, int(os.environ.get("RUNNER_JOB_MAX_RETRIES", "2"))))
-JOB_RETRY_BASE_SECONDS = max(0.1, float(os.environ.get("RUNNER_JOB_RETRY_BASE_SECONDS", "0.5")))
+JOB_MAX_RETRIES = _bounded_int_env("RUNNER_JOB_MAX_RETRIES", 2, 0, 3)
+JOB_RETRY_BASE_SECONDS = _bounded_float_env("RUNNER_JOB_RETRY_BASE_SECONDS", 0.5, 0.1, 10.0)
 
 def _retry_delay(attempt):
     return min(10.0, JOB_RETRY_BASE_SECONDS * (2 ** max(0, attempt - 1)))
@@ -228,28 +261,55 @@ def _job_for_workspace(job_id, workspace_id):
     return job
 
 def _terminate_process_group(proc, *, grace_seconds=None):
-    if proc is None or proc.poll() is not None:
+    if proc is None:
         return
     grace = CANCEL_GRACE_SECONDS if grace_seconds is None else max(0.1, float(grace_seconds))
+    # Managed children start a new session, so the leader PID is the process
+    # group ID. Do not rely on poll(): the leader may exit before its children.
+    group_id = proc.pid
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.terminate()
-        except (ProcessLookupError, OSError):
+        os.killpg(group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except (ProcessLookupError, OSError):
+                return
+        else:
             return
-    try:
-        proc.wait(timeout=grace)
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.kill()
-        except (ProcessLookupError, OSError):
+    except (PermissionError, OSError):
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except (ProcessLookupError, OSError):
+                return
+        else:
             return
+
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(group_id, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            # The group exists but cannot be probed; attempt the hard stop below.
+            break
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=min(0.05, max(0.001, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+        time.sleep(min(0.025, max(0.0, deadline - time.monotonic())))
+
+    try:
+        os.killpg(group_id, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
+                return
     try:
         proc.wait(timeout=1)
     except subprocess.TimeoutExpired:
@@ -424,9 +484,18 @@ def _workspace_lock(workspace_id):
         return WORKSPACE_LOCKS.setdefault(key, threading.RLock())
 
 def safe_workspace(workspace_id):
-    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+    raw_id = str(workspace_id)
+    if not re.fullmatch(r"[0-9]{1,19}", raw_id):
         raise HTTPException(status_code=400, detail="Invalid workspace id")
-    p = ROOT / str(workspace_id)
+    try:
+        normalized_id = int(raw_id, 10)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    if normalized_id < 0 or normalized_id > 9_223_372_036_854_775_807:
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    # Convert to a bounded integer before constructing a filesystem path.
+    # This prevents path syntax from crossing the workspace-root boundary.
+    p = ROOT / str(normalized_id)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -446,7 +515,7 @@ def safe_rel(path):
     component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     if any(
         part in {"", ".", ".."}
-        or part.lower() == ".git"
+        or part.lower() in {".git", ".runner-runtime"}
         or not component_pattern.fullmatch(part)
         for part in parts
     ):
@@ -497,7 +566,7 @@ def _write_workspace_file(root, rel, content):
 
 PRESERVED_WORKSPACE_DIRS = {
     ".git", ".home", ".tmp", ".cache", ".npm-cache", ".pip-cache",
-    "node_modules", ".venv",
+    ".runner-runtime", "node_modules", ".venv",
 }
 
 
@@ -563,7 +632,7 @@ def replace_workspace_snapshot(root, files):
 def snapshot(root):
     out = {}
     total = 0
-    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home", ".tmp", ".cache"}
+    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".npm-cache", ".pip-cache", ".home", ".tmp", ".cache", ".runner-runtime"}
     for p in root.rglob("*"):
         rel = p.relative_to(root)
         if p.is_symlink() or not p.is_file() or any(part in skip for part in rel.parts):
@@ -584,7 +653,9 @@ def snapshot(root):
 def _limit_process_resources(timeout_seconds=None, memory_mb=None):
     '''Apply per-execution POSIX limits before untrusted code starts.'''
     effective_timeout = min(TIMEOUT, int(timeout_seconds or TIMEOUT))
-    effective_memory = max(128, min(2048, int(memory_mb or RUNNER_MEMORY_MB)))
+    # The deployment-level memory budget is a hard ceiling; a higher plan
+    # entitlement must never override the operator's configured container budget.
+    effective_memory = max(128, min(RUNNER_MEMORY_MB, 2048, int(memory_mb or RUNNER_MEMORY_MB)))
     resource.setrlimit(resource.RLIMIT_CPU, (effective_timeout, effective_timeout + 2))
     resource.setrlimit(resource.RLIMIT_AS, (effective_memory * 1024 * 1024, effective_memory * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_WORKSPACE_BYTES, MAX_WORKSPACE_BYTES))
@@ -617,14 +688,82 @@ def _bwrap_runtime_available():
         return False
 
 
-def _sandbox_command(root, command, allow_network=False):
-    """Return an execution command only when the selected isolation is safe.
+def _create_command_script(root, command):
+    """Persist user-authored shell text as a private workspace file."""
+    if not isinstance(command, str) or not command or len(command) > MAX_COMMAND or "\x00" in command:
+        raise HTTPException(status_code=400, detail="Invalid command.")
+    try:
+        payload = command.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise HTTPException(status_code=400, detail="Command must be valid UTF-8.") from exc
+    if not payload.endswith(b"\n"):
+        payload += b"\n"
 
-    A service container is not, by itself, a tenant boundary: multiple
-    executions share its kernel and filesystem namespace. Strict production
-    mode therefore refuses shared-container execution. Compatibility mode is
-    reserved for trusted local/CI environments only.
-    """
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(str(root), directory_flags)
+    runtime_fd = None
+    script_fd = None
+    filename = f"command-{uuid.uuid4().hex}.sh"
+    try:
+        try:
+            os.mkdir(".runner-runtime", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        runtime_fd = os.open(".runner-runtime", directory_flags, dir_fd=root_fd)
+        os.fchmod(runtime_fd, 0o700)
+        script_fd = os.open(
+            filename,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=runtime_fd,
+        )
+        with os.fdopen(script_fd, "wb") as handle:
+            script_fd = None
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="Unable to prepare a safe execution script.") from exc
+    finally:
+        if script_fd is not None:
+            os.close(script_fd)
+        if runtime_fd is not None:
+            os.close(runtime_fd)
+        os.close(root_fd)
+    return root / ".runner-runtime" / filename
+
+
+def _remove_command_script(path):
+    if path is None:
+        return
+    target = Path(path)
+    parent_fd = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        parent_fd = os.open(str(target.parent), flags)
+        os.unlink(target.name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+
+
+def _sandbox_command(root, command_file, allow_network=False):
+    """Return a fixed shell launcher for a generated script inside the workspace."""
+    try:
+        relative = Path(command_file).relative_to(Path(root))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid execution script path.")
+    if (
+        len(relative.parts) != 2
+        or relative.parts[0] != ".runner-runtime"
+        or not re.fullmatch(r"command-[0-9a-f]{32}\.sh", relative.name)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid execution script path.")
+
     if SANDBOX_MODE == "container":
         if RUNNER_SECURITY_LEVEL == "strict":
             raise HTTPException(
@@ -635,7 +774,7 @@ def _sandbox_command(root, command, allow_network=False):
                     "RUNNER_SANDBOX_MODE=bwrap on a runtime that supports it."
                 ),
             )
-        return ["bash", "-lc", "cd " + shlex.quote(str(root)) + " && " + command]
+        return ["bash", str(relative)]
 
     bwrap = shutil.which("bwrap")
     if not bwrap:
@@ -660,7 +799,7 @@ def _sandbox_command(root, command, allow_network=False):
     args.extend([
         "--setenv", "PATH", "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "--setenv", "HOME", "/workspace/.home",
-        "--", "bash", "-lc", command,
+        "--", "bash", f"/workspace/{relative.as_posix()}",
     ])
     return args
 
@@ -671,18 +810,37 @@ DANGEROUS_ENV_KEYS = {
     "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "HOME", "TMPDIR",
 }
 
+MAX_PROCESS_ENV_VARS = 64
+MAX_PROCESS_ENV_BYTES = 16 * 1024
+
+
 def _safe_process_env(base_env, env_extra):
-    """Allow user environment variables without allowing runtime hijacking."""
-    if not env_extra:
+    """Apply a bounded allowlist to user-controlled process environment values."""
+    if not isinstance(env_extra, dict) or not env_extra:
         return base_env
-    for key, value in dict(env_extra).items():
+
+    accepted_bytes = 0
+    for index, (key, value) in enumerate(env_extra.items()):
+        # Bound iteration as well as accepted data so oversized payloads cannot
+        # cause unbounded work before the subprocess is even started.
+        if index >= MAX_PROCESS_ENV_VARS:
+            break
         key = str(key)
         value = str(value)
         if not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", key) or len(value) > 4000:
             continue
         if key in DANGEROUS_ENV_KEYS or key.startswith(("LD_", "DYLD_")):
             continue
+        try:
+            entry_bytes = len(key.encode("utf-8")) + len(value.encode("utf-8"))
+        except UnicodeEncodeError:
+            # JSON can carry escaped lone surrogates; do not let malformed
+            # Unicode crash a request while preparing the child environment.
+            continue
+        if accepted_bytes + entry_bytes > MAX_PROCESS_ENV_BYTES:
+            continue
         base_env[key] = value
+        accepted_bytes += entry_bytes
     return base_env
 
 def _normalize_command(command):
@@ -693,6 +851,41 @@ def _normalize_command(command):
     if re.match(r"^pip(?=\s|$)", command) and not shutil.which("pip") and shutil.which("pip3"):
         command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
     return command
+
+def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
+    """Run a fixed-argv script in its own process group and terminate descendants on timeout."""
+    try:
+        proc = subprocess.Popen(
+            argv,
+            shell=False,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            preexec_fn=preexec_fn,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            _terminate_process_group(proc, grace_seconds=0.1)
+            try:
+                stdout, stderr = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                _terminate_process_group(proc, grace_seconds=0.1)
+                try:
+                    stdout, stderr = proc.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    stdout, stderr = exc.output or "", exc.stderr or ""
+            stdout = stdout or exc.output or ""
+            stderr = stderr or exc.stderr or ""
+            raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+    finally:
+        _remove_command_script(cleanup_path)
+
 
 def run_command(root, command, *, allow_network=False, entitlement=None):
     command = _normalize_command(command)
@@ -732,11 +925,20 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
     _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
-            proc = subprocess.run(
-                _sandbox_command(root, command, allow_network=allow_network), cwd=root, env=env,
-                capture_output=True, text=True, timeout=min(TIMEOUT, int(policy['timeout'])), start_new_session=True,
-                preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
-            )
+            command_file = _create_command_script(root, command)
+            try:
+                argv = _sandbox_command(root, command_file, allow_network=allow_network)
+                proc = _run_process_with_timeout(
+                    argv,
+                    cwd=root,
+                    env=env,
+                    timeout=min(TIMEOUT, int(policy["timeout"])),
+                    preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
+                    cleanup_path=command_file,
+                )
+            except Exception:
+                _remove_command_script(command_file)
+                raise
         finished = time.time()
         final_status = _job_snapshot(job_id) or {}
         cancelled = final_status.get("status") == "cancelled"
@@ -758,8 +960,6 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
             "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
-        if "proc" in locals():
-            _terminate_process_group(proc, grace_seconds=0.1)
         finished = time.time()
         timeout_message = f"Execution timed out after {int(policy['timeout'])} seconds."
         partial_stdout = exc.stdout or ""
@@ -852,7 +1052,7 @@ def _capability_manifest():
         "runtimes": _runtime_info(),
         "limits": {
             "timeout_seconds": TIMEOUT,
-            "memory_mb": max(128, min(2048, int(os.environ.get("RUNNER_MEMORY_MB", "768")))),
+            "memory_mb": _bounded_int_env("RUNNER_MEMORY_MB", 768, 128, 2048),
             "max_concurrent": MAX_CONCURRENT,
             "max_workspace_concurrent": SCHEDULER_MAX_PER_WORKSPACE,
             "cancel_grace_seconds": CANCEL_GRACE_SECONDS,
@@ -1170,12 +1370,12 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
 PROCESS_LOCK = threading.RLock()
 PROCESSES = {}
 PROCESS_SEQ = 0
-PREVIEW_PORT_BASE = int(os.environ.get("IDE_PREVIEW_PORT_BASE", "10000"))
-PREVIEW_PORT_SPAN = int(os.environ.get("IDE_PREVIEW_PORT_SPAN", "1000"))
+PREVIEW_PORT_BASE = _bounded_int_env("IDE_PREVIEW_PORT_BASE", 10000, 1024, 65535)
+PREVIEW_PORT_SPAN = _bounded_int_env("IDE_PREVIEW_PORT_SPAN", 1000, 1, 10000)
 MAX_PROCESSES_PER_WORKSPACE = 4
 MAX_PROCESS_OUTPUT = 200_000
 PROCESS_TAIL_BYTES = 16_384
-PROCESS_RETENTION_SECONDS = max(300, int(os.environ.get("RUNNER_PROCESS_RETENTION_SECONDS", "1800")))
+PROCESS_RETENTION_SECONDS = _bounded_int_env("RUNNER_PROCESS_RETENTION_SECONDS", 1800, 300, 86400)
 METRICS_LOCK = threading.RLock()
 METRICS = {
     "exec_total": 0, "exec_success": 0, "exec_failed": 0,
@@ -1245,18 +1445,23 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
     }
     _safe_process_env(env, env_extra)
     (root / ".home").mkdir(exist_ok=True)
-    argv = _sandbox_command(root, command, allow_network=allow_network)
+    command_file = _create_command_script(root, command)
     try:
+        argv = _sandbox_command(root, command_file, allow_network=allow_network)
         proc = subprocess.Popen(
-            argv, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            argv, shell=False, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, start_new_session=True, preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
         )
+    except HTTPException:
+        _remove_command_script(command_file)
+        raise
     except Exception as exc:
+        _remove_command_script(command_file)
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
     with PROCESS_LOCK:
         PROCESSES[process_id] = {
             "id": process_id, "workspace_id": root.name, "command": command,
-            "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
+            "command_file": command_file, "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
             "kind": "process",
         }
     threading.Thread(target=_process_output_reader, args=(process_id, "stdout", proc.stdout), daemon=True).start()
@@ -1274,6 +1479,7 @@ def _reap_processes():
         with PROCESS_LOCK:
             item = PROCESSES.pop(pid, None)
         if item:
+            _remove_command_script(item.get("command_file"))
             for stream in (item.get("stdout"), item.get("stderr")):
                 try:
                     if hasattr(stream, "close"):
@@ -1291,6 +1497,8 @@ def _process_state(pid):
         state = "running" if code is None else ("success" if code == 0 else "failed")
         if code is not None and item.get("finished_at") is None:
             item["finished_at"] = time.time()
+        if code is not None and item.get("command_file"):
+            _remove_command_script(item.pop("command_file", None))
         return {
             "id": item["id"], "workspace_id": item["workspace_id"], "command": item["command"],
             "status": state, "exit_code": code,
@@ -1318,8 +1526,8 @@ def _workspace_preview_port(workspace_id):
 
 PREVIEW_LOCK = threading.RLock()
 PREVIEWS = {}
-WATCHDOG_INTERVAL = max(2, int(os.environ.get("RUNNER_WATCHDOG_INTERVAL_SECONDS", "5")))
-WATCHDOG_MAX_RESTARTS = max(0, int(os.environ.get("RUNNER_MAX_PREVIEW_RESTARTS", "2")))
+WATCHDOG_INTERVAL = _bounded_int_env("RUNNER_WATCHDOG_INTERVAL_SECONDS", 5, 2, 60)
+WATCHDOG_MAX_RESTARTS = _bounded_int_env("RUNNER_MAX_PREVIEW_RESTARTS", 2, 0, 10)
 
 def _watchdog():
     while True:

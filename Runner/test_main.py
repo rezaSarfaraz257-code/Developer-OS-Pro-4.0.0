@@ -4,12 +4,74 @@ import time
 import subprocess
 import tempfile
 import os
+import sys
 from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
 
 from main import MAX_COMMAND, safe_rel, run_command, _sandbox_command, _runtime_info
 
+class RunnerEnvironmentLimitParsingTests(unittest.TestCase):
+    def test_managed_production_forces_strict_runner_isolation(self):
+        for env in (
+            {"RUNNER_SECURITY_LEVEL": "compat", "ENVIRONMENT": "production"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER": "true"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_SERVICE_ID": "srv-test"},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_GIT_COMMIT": "a" * 40},
+            {"RUNNER_SECURITY_LEVEL": "compat", "RENDER_EXTERNAL_URL": "https://runner.example.test"},
+        ):
+            with self.subTest(env=env):
+                self.assertEqual(main._effective_runner_security_level(env), "strict")
+
+    def test_compat_mode_remains_available_only_without_managed_production_markers(self):
+        self.assertEqual(
+            main._effective_runner_security_level({"RUNNER_SECURITY_LEVEL": "compat"}),
+            "compat",
+        )
+
+    def test_invalid_integer_environment_value_uses_safe_default(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "not-a-number"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 7)
+
+    def test_integer_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "-100"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 1)
+        with patch.dict(os.environ, {"RUNNER_TEST_INT": "999"}):
+            self.assertEqual(main._bounded_int_env("RUNNER_TEST_INT", 7, 1, 10), 10)
+
+    def test_invalid_and_non_finite_float_environment_values_use_default(self):
+        for value in ("bad", "nan", "inf", "-inf"):
+            with self.subTest(value=value), patch.dict(os.environ, {"RUNNER_TEST_FLOAT": value}):
+                self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.5)
+
+    def test_float_environment_value_is_clamped(self):
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "-3.5"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 0.1)
+        with patch.dict(os.environ, {"RUNNER_TEST_FLOAT": "50"}):
+            self.assertEqual(main._bounded_float_env("RUNNER_TEST_FLOAT", 0.5, 0.1, 2.0), 2.0)
+
+
+
+
+
+
+
+class RunnerCommandScriptBoundaryTests(unittest.TestCase):
+    def test_user_command_text_is_written_to_private_script_not_subprocess_argv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            command_text = "echo safe; python -c 'print(1)'"
+            script = main._create_command_script(root, command_text)
+            self.assertTrue(script.is_file())
+            self.assertEqual(script.read_text(encoding="utf-8"), command_text + "\n")
+            self.assertEqual(script.parent.name, ".runner-runtime")
+            self.assertEqual(script.stat().st_mode & 0o777, 0o600)
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+                argv = _sandbox_command(root, script)
+            self.assertNotIn(command_text, " ".join(argv))
+            self.assertEqual(argv, ["bash", script.relative_to(root).as_posix()])
+            main._remove_command_script(script)
+            self.assertFalse(script.exists())
 
 class WorkspaceFilesystemBoundaryTests(unittest.TestCase):
     def test_filesystem_writer_revalidates_traversal_paths(self):
@@ -53,9 +115,22 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 main.JOB_OUTPUT.pop(job_id, None)
 
 
+class RunnerWorkspaceIdNormalizationTests(unittest.TestCase):
+    def test_workspace_id_is_integer_normalized_before_path_construction(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            path = main.safe_workspace("00042")
+            self.assertEqual(path, Path(tmp) / "42")
+            self.assertEqual(path.parent, Path(tmp))
+
+    def test_non_numeric_or_oversized_workspace_ids_are_rejected(self):
+        for value in ("../etc", "1/../2", "9" * 25, "-1", "1.5"):
+            with self.subTest(value=value):
+                with self.assertRaises(HTTPException):
+                    main.safe_workspace(value)
+
 class RunnerSecurityTests(unittest.TestCase):
     def test_rejects_absolute_and_traversal_paths(self):
-        for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", "a//b", ""):
+        for path in ("/etc/passwd", "C:/secret", "../secret", "a/../secret", "./secret", ".git/config", ".runner-runtime/owned.sh", "a//b", ""):
             with self.assertRaises(ValueError):
                 safe_rel(path)
 
@@ -68,15 +143,27 @@ class RunnerSecurityTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 run_command(Path("/tmp"), command)
 
-    def test_container_native_execution_policy_is_available_without_nested_sandbox(self):
-        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.shutil.which", return_value=None):
-            command = _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
-            self.assertEqual(command[:2], ["bash", "-lc"])
+    def test_runner_runtime_directory_is_reserved_from_tenant_snapshots(self):
+        from main import _validated_snapshot
+        with self.assertRaises(ValueError):
+            _validated_snapshot({".runner-runtime/command-owned.sh": "echo attacker"})
+
+    def test_container_native_execution_policy_uses_generated_script_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = main._create_command_script(root, "python -c 'print(1)'")
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.shutil.which", return_value=None):
+                command = _sandbox_command(root, script, allow_network=False)
+            self.assertEqual(command[0], "bash")
+            self.assertEqual(command[1], script.relative_to(root).as_posix())
+            self.assertNotIn("python -c", " ".join(command))
+            self.assertEqual(script.read_text(encoding="utf-8"), "python -c 'print(1)'\n")
+            main._remove_command_script(script)
 
     def test_strict_container_execution_fails_closed_without_tenant_isolation(self):
         with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("per-execution isolation", ctx.exception.detail)
 
@@ -86,19 +173,19 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_bubblewrap_mode_fails_closed_when_unavailable(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value=None):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
 
     def test_bwrap_runtime_failure_fails_closed(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=False):
             with self.assertRaises(HTTPException) as ctx:
-                _sandbox_command(Path("/tmp"), "python -c 'print(1)'", allow_network=False)
+                _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=False)
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
 
     def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
         with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
-            command = _sandbox_command(Path("/tmp"), "npm install react", allow_network=True)
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
             self.assertNotIn("--unshare-net", command)
 
     def test_capability_manifest_is_machine_readable(self):
@@ -421,7 +508,7 @@ def test_timeout_job_stream_reports_done():
 def test_timeout_execution_persists_partial_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -433,7 +520,7 @@ def test_timeout_execution_persists_partial_output_for_streaming_clients():
 def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
     timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
-    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main.subprocess.run", side_effect=timeout):
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
@@ -991,3 +1078,129 @@ class PreviewProxySecurityTests(unittest.TestCase):
         self.assertEqual(response.body, b"<h1>ok</h1>")
         self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/index.html")
         upstream.close.assert_called_once()
+
+
+class ProcessEnvironmentBoundsTests(unittest.TestCase):
+    def test_process_environment_rejects_runtime_hijacking_and_bounds_entries(self):
+        base = {"PATH": "/usr/bin"}
+        supplied = {
+            "SAFE_VALUE": "allowed",
+            "LD_PRELOAD": "/tmp/evil.so",
+            "PYTHONPATH": "/tmp/evil",
+            **{f"EXTRA_{index}": "x" for index in range(main.MAX_PROCESS_ENV_VARS + 10)},
+        }
+
+        result = main._safe_process_env(base, supplied)
+
+        self.assertEqual(result["SAFE_VALUE"], "allowed")
+        self.assertNotIn("LD_PRELOAD", result)
+        self.assertNotIn("PYTHONPATH", result)
+        self.assertLessEqual(
+            sum(1 for key in result if key not in {"PATH"}),
+            main.MAX_PROCESS_ENV_VARS,
+        )
+
+    def test_process_environment_skips_malformed_unicode_values(self):
+        result = main._safe_process_env({}, {"SAFE_VALUE": "ok", "BAD_VALUE": "bad" + chr(0xD800)})
+        self.assertEqual(result["SAFE_VALUE"], "ok")
+        self.assertNotIn("BAD_VALUE", result)
+
+    def test_process_environment_enforces_total_byte_budget(self):
+        base = {}
+        supplied = {"FIRST": "a" * 4000, "SECOND": "b" * 4000, "THIRD": "c" * 4000,
+                    "FOURTH": "d" * 4000, "FIFTH": "e" * 4000}
+
+        result = main._safe_process_env(base, supplied)
+
+        total = sum(len(key.encode("utf-8")) + len(value.encode("utf-8")) for key, value in result.items())
+        self.assertLessEqual(total, main.MAX_PROCESS_ENV_BYTES)
+        self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
+
+def test_timeout_runner_terminates_process_group_and_preserves_output():
+    process = Mock()
+    process.communicate.side_effect = [
+        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
+        ("partial", "warning"),
+    ]
+    with patch("main.subprocess.Popen", return_value=process) as popen, patch(
+        "main._terminate_process_group"
+    ) as terminate:
+        result_error = None
+        try:
+            main._run_process_with_timeout(
+                ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
+            )
+        except subprocess.TimeoutExpired as exc:
+            result_error = exc
+    popen.assert_called_once()
+    assert popen.call_args.kwargs["shell"] is False
+    terminate.assert_called_once_with(process, grace_seconds=0.1)
+    assert result_error is not None
+    assert result_error.output == "partial"
+    assert result_error.stderr == "warning"
+
+
+def test_terminate_process_group_signals_descendants_after_leader_exits():
+    process = Mock()
+    process.pid = 12345
+    process.poll.return_value = 0
+    process.wait.return_value = 0
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            raise ProcessLookupError
+
+    with patch("main.os.killpg", side_effect=kill_group) as killpg:
+        main._terminate_process_group(process, grace_seconds=0.1)
+    calls = killpg.call_args_list
+    assert calls[0].args == (12345, main.signal.SIGTERM)
+    assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
+
+def test_execution_timeout_kills_descendant_processes():
+    with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:
+        root = Path(tmp)
+        marker = root / "descendant-survived"
+        child_code = "import time; time.sleep(0.4); open('descendant-survived', 'w').write('alive')"
+        parent_code = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            "time.sleep(10)"
+        )
+        timed_out = False
+        try:
+            main._run_process_with_timeout(
+                [sys.executable, "-c", parent_code],
+                cwd=root,
+                env={"PATH": os.environ.get("PATH", "")},
+                timeout=0.1,
+                preexec_fn=lambda: None,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        time.sleep(1.0)
+        assert timed_out
+        assert not marker.exists(), "A child process survived the execution timeout"
+
+class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
+    def test_plan_memory_cannot_exceed_operator_configured_runner_budget(self):
+        # Test the child pre-exec callback without mutating the test process limits.
+        with patch("main.RUNNER_MEMORY_MB", 512), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=120, memory_mb=2048)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+    def test_lower_tier_memory_limit_is_preserved(self):
+        with patch("main.RUNNER_MEMORY_MB", 1024), patch("main.resource.setrlimit") as setrlimit:
+            main._limit_process_resources(timeout_seconds=30, memory_mb=256)
+
+        as_calls = [
+            call for call in setrlimit.call_args_list
+            if call.args[0] == main.resource.RLIMIT_AS
+        ]
+        self.assertEqual(len(as_calls), 1)
+        self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
