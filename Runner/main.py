@@ -871,7 +871,7 @@ def _capability_manifest():
             "execute": sandbox_available,
             "process": sandbox_available,
             "git": True,
-            "preview": True,
+            "preview": trusted_compat,
             "install": sandbox_available,
             "debug": bool(sandbox_available and debug_capability()["available"]),
             "lsp": True,
@@ -1410,6 +1410,15 @@ def _preview_health(item):
 @app.post("/preview/start")
 def preview_start(payload: PreviewRequest, authorization: str = Header(default="")):
     auth(authorization)
+    if not _capability_manifest()["operations"]["preview"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Preview is unavailable with the selected isolated sandbox. "
+                "A dedicated preview network bridge is required; execution isolation "
+                "will not be weakened to expose preview ports."
+            ),
+        )
     root = safe_workspace(payload.workspace_id)
     with _workspace_lock(payload.workspace_id):
         replace_workspace_snapshot(root, payload.files)
