@@ -28,3 +28,10 @@ Workspace paths reject absolute paths, traversal segments, `.git` paths and syml
 ## Why the distinction matters
 
 A regex command blacklist is defense-in-depth only. It cannot prove that arbitrary Python/Node code cannot inspect another process, filesystem path, kernel interface or credential. Production isolation therefore comes from the execution backend and runtime policy, while the application-level controls remain secondary safeguards.
+
+
+## Preview networking
+
+Bubblewrap execution uses a separate network namespace when user code runs without network access. The Runner's host-side authenticated preview proxy cannot reach a server bound only inside that isolated namespace. Therefore `operations.preview` is false and preview startup returns HTTP 503 in Bubblewrap mode until a dedicated bridge is available.
+
+Do not set `RUNNER_ALLOW_NETWORK=true` or enable per-preview shared networking to make the preview appear functional. A future bridge must provide explicit ingress from the authenticated proxy while denying arbitrary egress and access to host/container metadata and control-plane services.
