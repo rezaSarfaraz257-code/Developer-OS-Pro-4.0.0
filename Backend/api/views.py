@@ -274,7 +274,7 @@ def readiness_api(request):
 
     # A healthy API is not production-ready if its code-execution boundary is
     # unavailable, shared-container compatibility is active, or egress is open.
-    checks["runner"] = _secure_runner_ready()
+    checks["runner"] = _secure_runner_ready() if strict_runtime else False
 
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
     if strict_runtime:
