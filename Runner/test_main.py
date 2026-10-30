@@ -834,6 +834,21 @@ class PreviewProxySecurityTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         get.assert_not_called()
 
+    def test_preview_proxy_decodes_safe_quoted_path_once(self):
+        upstream = self._upstream()
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            main.preview_proxy("4", "assets/a%20b.js", "Bearer test")
+        self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/assets/a b.js")
+
+    def test_preview_proxy_rejects_encoded_traversal(self):
+        with patch("main.auth"), patch("main.requests.get") as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "%2e%2e/secret", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 400)
+        get.assert_not_called()
+
     def test_preview_proxy_disables_redirects(self):
         upstream = self._upstream(status=302, headers={"Location": "http://169.254.169.254/"})
         with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
