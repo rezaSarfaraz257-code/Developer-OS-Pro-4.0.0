@@ -817,3 +817,17 @@ test("cached static Nginx locations retain the full frontend security policy", (
     assert.match(block, /add_header Content-Security-Policy "[^"]*frame-ancestors 'none'/);
   }
 });
+
+test("Monaco workers use package-export-compatible paths", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  for (const worker of [
+    "editor/editor.worker",
+    "language/json/json.worker",
+    "language/css/css.worker",
+    "language/html/html.worker",
+    "language/typescript/ts.worker",
+  ]) {
+    assert.ok(editor.includes('from "monaco-editor/' + worker + '?worker"'));
+  }
+  assert.doesNotMatch(editor, /monaco-editor\/esm\/vs\//);
+});
