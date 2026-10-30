@@ -274,7 +274,7 @@ def validate_remote_url(value: str, *, allow_hosts=None, allow_private=False) ->
             if getattr(ip, "ipv4_mapped", None) is not None:
                 ip = ip.ipv4_mapped
             if not ip.is_global:
-                raise ValueError("Private or non-global destinations are not allowed.")
+                raise ValueError("Private or local (non-global) destinations are not allowed.")
     return parsed.geturl()
 
 
