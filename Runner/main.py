@@ -42,12 +42,11 @@ ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1",
 RUNNER_SECURITY_LEVEL = os.environ.get("RUNNER_SECURITY_LEVEL", "strict").strip().lower()
 if RUNNER_SECURITY_LEVEL not in {"strict", "compat"}:
     RUNNER_SECURITY_LEVEL = "strict"
-# Managed runtimes such as Render can deny the Linux namespace/capabilities that
-# bubblewrap requires. Container-native mode is the production default.
-# bwrap remains opt-in for infrastructure that explicitly supports it.
-SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "container").strip().lower()
+# Prefer per-execution Bubblewrap isolation by default. If the host denies namespace creation,
+# strict mode reports execution unavailable; it must never fall back to a shared container.
+SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "bwrap").strip().lower()
 if SANDBOX_MODE not in {"container", "bwrap"}:
-    SANDBOX_MODE = "container"
+    SANDBOX_MODE = "bwrap"
 EXEC_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT)
 WORKSPACE_LOCKS = {}
 WORKSPACE_LOCKS_GUARD = threading.Lock()
