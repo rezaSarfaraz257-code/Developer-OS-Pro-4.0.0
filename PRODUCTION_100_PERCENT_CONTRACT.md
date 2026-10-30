@@ -19,7 +19,11 @@ This release is considered **production-validated** only when the target CI/host
 
 ## IDE
 
-The product IDE is designed around a persistent project filesystem, isolated execution runner, package installation, framework presets, terminal, file operations, project binding and keyboard shortcuts. A full Monaco integration should be added as a pinned package during the connected CI build rather than silently depending on an unpinned external CDN. Until that package is vendored/pinned, the current editor remains the safe fallback and the release must not claim IDE parity with VS Code.
+The frontend currently pins `monaco-editor@0.55.1` in `Frontend/package.json` and bundles Monaco workers locally through Vite; it does not depend on an unpinned external editor CDN. This establishes the editor dependency, but does not by itself prove VS Code parity. Browser end-to-end coverage must still validate multi-file editing, save/recovery, language services, terminal, debugger, package installation and preview workflows.
+
+Strict Bubblewrap execution currently isolates each process in a network namespace. The Runner must not expose preview ports by disabling that isolation. Until a dedicated, policy-enforced preview network bridge is implemented, the Runner reports preview as unavailable in Bubblewrap mode and production readiness must remain false for the full IDE contract.
+
+The Runner image now carries a pinned `uv` binary and uses a per-workspace `.venv`; the system `pip` executable remains absent from the runtime image. Python framework presets and the package planner use that workspace environment. However, package installation is deliberately disabled in strict Bubblewrap mode until registry-restricted egress is available. A production release must prove that package downloads cannot reach arbitrary internet hosts, cloud metadata endpoints or internal control-plane services.
 
 ## Important
 

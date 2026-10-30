@@ -37,5 +37,5 @@ def test_entitlement_tiers_are_explicit_and_monotonic():
 
 def test_container_sandbox_policy_is_explicit():
     source=(ROOT / "main.py").read_text(encoding="utf-8")
-    assert 'SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "container")' in source
+    assert 'SANDBOX_MODE = os.environ.get("RUNNER_SANDBOX_MODE", "bwrap")' in source
     assert 'if SANDBOX_MODE == "container"' in source

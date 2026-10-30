@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS builder
+FROM node:26-bookworm-slim AS builder
 
 # Build the Python runtime in an isolated stage so vulnerable build-time package
 # layers cannot survive in the shipped runner image.
@@ -13,14 +13,15 @@ WORKDIR /build
 COPY requirements.txt .
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt 'urllib3==2.8.0' \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt 'urllib3==2.8.0' 'uv==0.13.6' \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade 'setuptools==84.0.0' \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -m pip uninstall -y setuptools msgpack \
     && /opt/venv/bin/python -m pip check \
     && /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"'
-FROM node:22-bookworm-slim
+    && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
+    && /opt/venv/bin/uv --version
+FROM node:26-bookworm-slim
 
 # Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
@@ -54,13 +55,15 @@ WORKDIR /app
 
 # Fail closed: production execution must use a real sandbox backend.
 ENV RUNNER_SECURITY_LEVEL=strict \
-    RUNNER_SANDBOX_MODE=container \
+    RUNNER_SANDBOX_MODE=bwrap \
     RUNNER_ALLOW_NETWORK=false
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/venv/bin/uv /usr/local/bin/uv
 COPY . .
 RUN python3 -m compileall -q . \
     && /opt/venv/bin/python -c 'import fastapi, requests, urllib3, uvicorn; assert urllib3.__version__ == "2.8.0"' \
+    && /usr/local/bin/uv --version \
     && /opt/venv/bin/python -c "from importlib import metadata; assert metadata.version('urllib3') == '2.8.0'; assert not any((d.metadata.get('Name') or '').lower() in {'pip', 'setuptools', 'msgpack'} for d in metadata.distributions())" \
     && ! dpkg-query -W -f='${binary:Package}\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' \
     && mkdir -p /workspaces \

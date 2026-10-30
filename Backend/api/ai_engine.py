@@ -26,7 +26,8 @@ from .serializers import AIConversationSerializer, AIMessageSerializer
 logger = logging.getLogger("developer_os.ai")
 
 MAX_CONTEXT_CHARS = int(os.getenv("AI_MAX_CONTEXT_CHARS", "60000"))
-MAX_HISTORY_MESSAGES = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16"))
+MAX_HISTORY_MESSAGES = max(0, int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16")))
+MAX_HISTORY_CHARS = max(0, int(os.getenv("AI_MAX_HISTORY_CHARS", "24000")))
 AI_TIMEOUT = (5, int(os.getenv("AI_TIMEOUT_SECONDS", "45")))
 
 
@@ -34,7 +35,7 @@ def _provider_config() -> dict[str, str]:
     # Resolve at request time so deployment environment changes are honored.
     key = (os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY") or "").strip()
     base = (os.getenv("AI_API_URL") or "https://api.openai.com/v1").strip().rstrip("/")
-    model = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
+    model = (os.getenv("AI_MODEL") or "gpt-6-luna").strip()
     protocol = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
     return {"key": key, "base": base, "model": model, "protocol": protocol}
 
@@ -75,22 +76,56 @@ def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
 
     result["context_truncated"] = True
     result["_context_note"] = "Large or malformed workspace context was bounded by the server."
-    for _ in range(12):
+
+    def serialized_size(value: dict[str, Any]) -> int:
+        return len(json.dumps(value, default=str, ensure_ascii=False))
+
+    def shrink_workspace_files() -> bool:
+        changed = False
+        for workspace_key in ("workspace", "workspaces"):
+            value = result.get(workspace_key)
+            entries = [value] if isinstance(value, dict) else value if isinstance(value, list) else []
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("files"), dict):
+                    continue
+                files = entry["files"]
+                # Halve file payloads on each pass. This also handles a single
+                # selected workspace, which cannot be reduced by list slicing.
+                for path, content in list(files.items()):
+                    if isinstance(content, str) and content:
+                        files[path] = content[: len(content) // 2]
+                        changed = True
+                    elif not isinstance(content, str):
+                        files.pop(path, None)
+                        changed = True
+        return changed
+
+    # Bound both workspace shapes (one selected workspace or an inventory) and
+    # ordinary collections. The previous implementation only sliced lists, so
+    # a single workspace dict with many files could exceed the advertised cap.
+    for _ in range(32):
         try:
-            if len(json.dumps(result, default=str, ensure_ascii=False)) <= MAX_CONTEXT_CHARS:
-                break
+            if serialized_size(result) <= MAX_CONTEXT_CHARS:
+                return result
         except (TypeError, ValueError):
             break
-        reduced = False
+
+        changed = shrink_workspace_files()
         for key in ("snippets", "notes", "tasks", "activities", "projects", "workspaces"):
             value = result.get(key)
             if isinstance(value, list) and value:
-                result[key] = value[:max(0, len(value) // 2)]
-                reduced = True
-                break
-        if not reduced:
+                result[key] = value[: max(0, len(value) // 2)]
+                changed = True
+        if not changed:
             break
-    return result
+
+    # Never pass an oversized context to the provider if an unusual scalar,
+    # key, or custom object prevented the structured reductions above.
+    return {
+        "context_truncated": True,
+        "_context_note": "Project context exceeded the server limit; only a safe context summary was retained.",
+        "context_keys": [str(key)[:80] for key in list(context.keys())[:40]],
+    }
 
 
 def _safe_workspace_context(user, project_id=None, workspace_id=None):
@@ -134,9 +169,21 @@ def _instructions(action: str | None = None) -> str:
 
 def _build_input(message: str, context: dict[str, Any], history: list[dict[str, str]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for item in history[-MAX_HISTORY_MESSAGES:]:
-        if item.get("role") in {"user", "assistant"} and item.get("content"):
-            items.append({"role": item["role"], "content": item["content"]})
+    remaining_history_chars = MAX_HISTORY_CHARS
+    bounded_history: list[dict[str, str]] = []
+    recent_history = history[-MAX_HISTORY_MESSAGES:] if MAX_HISTORY_MESSAGES else []
+    # Prefer the newest conversation turns when the stored transcript is large.
+    for item in reversed(recent_history):
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = item.get("content")
+        if not isinstance(content, str) or not content or remaining_history_chars <= 0:
+            continue
+        bounded = content[:remaining_history_chars]
+        if bounded:
+            bounded_history.append({"role": item["role"], "content": bounded})
+            remaining_history_chars -= len(bounded)
+    items.extend(reversed(bounded_history))
     items.append({
         "role": "user",
         "content": (

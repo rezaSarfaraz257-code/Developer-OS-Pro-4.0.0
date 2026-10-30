@@ -249,8 +249,8 @@ def validate_remote_url(value: str, *, allow_hosts=None, allow_private=False) ->
         raise ValueError("URLs containing embedded credentials are not allowed.")
     scheme = parsed.scheme.lower()
     hostname = parsed.hostname.rstrip(".").lower()
-    if not hostname:
-        raise ValueError("Destination host is invalid.")
+    if not hostname or "%" in hostname:
+        raise ValueError("Destination hostname is invalid.")
     if allow_hosts and hostname not in {str(host).rstrip(".").lower() for host in allow_hosts}:
         raise ValueError("Destination host is not allowed.")
     try:

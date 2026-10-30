@@ -16,7 +16,7 @@ Developer OS includes a persistent, project-scoped web IDE backed by an isolated
 
 ## Production setup
 
-Set `IDE_RUNNER_TOKEN` in `.env`. The runner is internal to Docker Compose and is not published to the public internet.
+Set `IDE_RUNNER_TOKEN` in `.env`. The runner is internal to Docker Compose and is not published to the public internet.\n\nDocker Compose defaults `RUNNER_SECURITY_LEVEL=strict` and `RUNNER_SANDBOX_MODE=bwrap`. Bubblewrap must be able to create the required per-execution namespaces on the host. If the host blocks namespace creation, execution remains unavailable; do not switch to shared-container compatibility for untrusted workloads. Preview and package installation remain disabled until policy-enforced preview ingress and registry-only egress bridges are deployed.
 
 The backend uses `IDE_RUNNER_URL=http://runner:8080`.
 

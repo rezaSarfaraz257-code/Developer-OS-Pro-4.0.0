@@ -233,7 +233,10 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
         root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
         (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
-        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+        # This is a trusted unit-test harness for process semantics, not a
+        # sandbox validation. Select the explicit compatibility container
+        # backend so the test does not depend on host Bubblewrap namespaces.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
             result = run_command(root, "python3 main.py")
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["exit_code"], 0)
@@ -259,7 +262,9 @@ class RunnerSecurityTests(unittest.TestCase):
     def test_interactive_process_input_and_stop_contract(self):
         import main
         root = Path(tempfile.mkdtemp(prefix="developer-os-process-"))
-        with patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+        # Exercise stdin/stop behavior independently from Bubblewrap; strict
+        # isolation has dedicated fail-closed and container integration tests.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
             process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
         try:
             with main.PROCESS_LOCK:
@@ -709,6 +714,218 @@ def test_scheduler_queue_position_disappears_after_release():
     with main.SCHEDULER_LOCK:
         main.SCHEDULER_WAITING.pop("busy", None)
     assert main._scheduler_queue_position("busy") == 0
+
+
+class WorkspaceSnapshotReconciliationTests(unittest.TestCase):
+    def test_replaces_stale_source_and_preserves_runtime_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "old.py").write_text("stale = True\n", encoding="utf-8")
+            (root / "stale-dir").mkdir()
+            (root / "stale-dir" / "old.txt").write_text("stale", encoding="utf-8")
+            outside = Path(temp) / "outside.txt"
+            outside.write_text("must remain outside", encoding="utf-8")
+            (root / "escape-link").symlink_to(outside)
+            for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
+                (root / name).mkdir()
+                (root / name / "keep.txt").write_text("preserve", encoding="utf-8")
+
+            main.replace_workspace_snapshot(root, {"src/main.py": "print('fresh')\n"})
+
+            self.assertFalse((root / "old.py").exists())
+            self.assertFalse((root / "stale-dir").exists())
+            self.assertFalse((root / "escape-link").exists())
+            self.assertEqual(outside.read_text(encoding="utf-8"), "must remain outside")
+            self.assertEqual((root / "src/main.py").read_text(encoding="utf-8"), "print('fresh')\n")
+            for name in (".git", ".venv", "node_modules", ".npm-cache", ".home"):
+                self.assertEqual((root / name / "keep.txt").read_text(encoding="utf-8"), "preserve")
+
+    def test_invalid_snapshot_does_not_mutate_existing_workspace(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "existing.py").write_text("keep = True\n", encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                main.replace_workspace_snapshot(
+                    root,
+                    {"new.py": "new = True\n", "../escape.py": "bad"},
+                )
+
+            self.assertEqual((root / "existing.py").read_text(encoding="utf-8"), "keep = True\n")
+            self.assertFalse((root / "new.py").exists())
+
+    def test_runtime_dependency_paths_are_not_user_snapshot_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"
+            root.mkdir()
+            (root / "existing.py").write_text("keep = True\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                main.replace_workspace_snapshot(root, {"node_modules/evil.js": "bad"})
+            self.assertTrue((root / "existing.py").exists())
+
+
+class PreviewPortRoutingTests(unittest.TestCase):
+    def test_vite_and_next_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("npm run dev -- --host 0.0.0.0", 12042),
+            "npm run dev -- --host 0.0.0.0 --port 12042",
+        )
+        self.assertEqual(
+            main._preview_command("npm run dev -- --hostname 0.0.0.0 --port 3000", 12042),
+            "npm run dev -- --hostname 0.0.0.0 --port 12042",
+        )
+
+    def test_django_and_uvicorn_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("python3 manage.py runserver 0.0.0.0:8000", 12042),
+            "python3 manage.py runserver 0.0.0.0:12042",
+        )
+        self.assertEqual(
+            main._preview_command("python3 manage.py runserver 8000", 12042),
+            "python3 manage.py runserver 0.0.0.0:12042",
+        )
+        self.assertEqual(
+            main._preview_command("uvicorn app:app --host 0.0.0.0 --port 8000", 12042),
+            "uvicorn app:app --host 0.0.0.0 --port 12042",
+        )
+
+    def test_streamlit_and_flask_commands_use_assigned_preview_port(self):
+        self.assertEqual(
+            main._preview_command("streamlit run app.py --server.address 0.0.0.0", 12042),
+            "streamlit run app.py --server.address 0.0.0.0 --server.port 12042",
+        )
+        self.assertEqual(
+            main._preview_command("flask --app app run --host 0.0.0.0", 12042),
+            "flask --app app run --host 0.0.0.0 --port 12042",
+        )
+
+    def test_preview_is_not_advertised_in_bubblewrap_without_a_network_bridge(self):
+        with patch.object(main, "SANDBOX_MODE", "bwrap"), patch.object(
+            main, "RUNNER_SECURITY_LEVEL", "strict"
+        ), patch.object(main, "_bwrap_runtime_available", return_value=True):
+            capabilities = main._capability_manifest()["operations"]
+            self.assertFalse(capabilities["preview"])
+            self.assertFalse(capabilities["install"])
+
+        with patch.object(main, "SANDBOX_MODE", "container"), patch.object(
+            main, "RUNNER_SECURITY_LEVEL", "compat"
+        ):
+            capabilities = main._capability_manifest()["operations"]
+            self.assertTrue(capabilities["preview"])
+            self.assertTrue(capabilities["install"])
+
+    def test_preview_start_fails_closed_when_network_bridge_is_missing(self):
+        payload = main.PreviewRequest(workspace_id="workspace-1", command="npm run dev")
+        with patch.object(main, "auth"), patch.object(
+            main, "_capability_manifest", return_value={"operations": {"preview": False}}
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_start(payload, authorization="Bearer test")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_package_install_fails_closed_without_registry_egress_policy(self):
+        payload = main.InstallRequest(
+            workspace_id="workspace-1",
+            command="uv pip install --python .venv/bin/python fastapi",
+            files={},
+        )
+        with patch.object(main, "auth"), patch.object(
+            main, "_capability_manifest", return_value={"operations": {"install": False}}
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.install(payload, authorization="Bearer test")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_preview_start_route_is_registered_exactly_once(self):
+        from fastapi.routing import APIRoute
+        routes = [
+            (route.path, method)
+            for route in main.app.routes
+            if isinstance(route, APIRoute)
+            for method in (route.methods or set())
+        ]
+        self.assertEqual(routes.count(("/preview/start", "POST")), 1)
+
+
+class PreviewProxySecurityTests(unittest.TestCase):
+    def _upstream(self, *, status=200, headers=None, chunks=(b"ok",)):
+        response = Mock()
+        response.status_code = status
+        response.headers = headers or {"Content-Type": "text/html"}
+        response.iter_content.return_value = iter(chunks)
+        response.close = Mock()
+        return response
+
+    def test_preview_proxy_rejects_traversal_before_request(self):
+        with patch("main.auth"), patch("main.requests.get") as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "../exec", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 400)
+        get.assert_not_called()
+
+    def test_preview_proxy_decodes_safe_quoted_path_once(self):
+        upstream = self._upstream()
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            main.preview_proxy("4", "assets/a%20b.js", "Bearer test")
+        self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/assets/a b.js")
+
+    def test_preview_proxy_rejects_encoded_traversal(self):
+        with patch("main.auth"), patch("main.requests.get") as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "%2e%2e/secret", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 400)
+        get.assert_not_called()
+
+    def test_preview_proxy_disables_redirects(self):
+        upstream = self._upstream(status=302, headers={"Location": "http://169.254.169.254/"})
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertTrue(get.call_args.kwargs["stream"])
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_caps_declared_response_size(self):
+        upstream = self._upstream(headers={"Content-Length": str(main.PREVIEW_MAX_RESPONSE_BYTES + 1)})
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        upstream.iter_content.assert_not_called()
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_caps_streamed_response_without_length(self):
+        upstream = self._upstream(
+            headers={"Content-Type": "application/octet-stream"},
+            chunks=(b"x" * main.PREVIEW_MAX_RESPONSE_BYTES, b"y"),
+        )
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(ctx.exception.status_code, 502)
+        upstream.close.assert_called_once()
+
+    def test_preview_proxy_returns_bounded_content(self):
+        upstream = self._upstream(headers={"Content-Type": "text/html"}, chunks=(b"<h1>", b"ok</h1>"))
+        with patch("main.auth"), patch("main._workspace_preview_port", return_value=1234), patch(
+            "main.requests.get", return_value=upstream
+        ) as get:
+            response = main.preview_proxy("4", "index.html", "Bearer test")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.body, b"<h1>ok</h1>")
+        self.assertEqual(get.call_args.args[0], "http://127.0.0.1:1234/index.html")
+        upstream.close.assert_called_once()
 
 
 

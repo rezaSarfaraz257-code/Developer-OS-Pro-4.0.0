@@ -7,13 +7,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 import re
+import shutil
 
 MANAGERS = {
     "npm": {"binary":"npm","manifest":"package.json","lockfiles":["package-lock.json"],"install":["install"],"add":["install"],"remove":["uninstall"],"update":["update"]},
     "pnpm": {"binary":"pnpm","manifest":"package.json","lockfiles":["pnpm-lock.yaml"],"install":["install"],"add":["add"],"remove":["remove"],"update":["update"]},
     "yarn": {"binary":"yarn","manifest":"package.json","lockfiles":["yarn.lock"],"install":["install"],"add":["add"],"remove":["remove"],"update":["upgrade"]},
-    "pip": {"binary":"pip","manifest":"requirements.txt","lockfiles":[],"install":["install"],"add":["install"],"remove":["uninstall"],"update":["install","--upgrade"]},
-    "uv": {"binary":"uv","manifest":"pyproject.toml","lockfiles":["uv.lock"],"install":["sync"],"add":["add"],"remove":["remove"],"update":["lock","--upgrade"]},
+    "pip": {"binary":"uv","manifest":"requirements.txt","lockfiles":[],"install":["pip","install"],"add":["pip","install"],"remove":["pip","uninstall"],"update":["pip","install","--upgrade"]},
+    "uv": {"binary":"uv","manifest":"pyproject.toml","lockfiles":["uv.lock"],"install":["sync","--no-build"],"add":["add"],"remove":["remove"],"update":["lock","--upgrade"]},
     "poetry": {"binary":"poetry","manifest":"pyproject.toml","lockfiles":["poetry.lock"],"install":["install"],"add":["add"],"remove":["remove"],"update":["update"]},
     "cargo": {"binary":"cargo","manifest":"Cargo.toml","lockfiles":["Cargo.lock"],"install":["fetch"],"add":["add"],"remove":["remove"],"update":["update"]},
     "go": {"binary":"go","manifest":"go.mod","lockfiles":["go.sum"],"install":["mod","download"],"add":["get"],"remove":["mod","tidy"],"update":["get","-u"]},
@@ -75,17 +76,43 @@ def build_plan(files: dict[str, Any], action: str, package: str="", manager: str
     if not action:
         raise ValueError("Unsupported package action.")
     spec=MANAGERS[mid]
+    if not shutil.which(spec["binary"]):
+        raise ValueError(f"{mid} is not installed in this Runner image.")
     verb=list(spec.get(action) or [])
     if not verb:
         raise ValueError(f"{mid} does not support '{action}' through the IDE policy.")
-    args=[spec["binary"],*verb]
-    if package:
-        args.append(_package_name(package))
-    # Package mutation runs with egress but disables lifecycle scripts where
-    # the ecosystem has a safe equivalent.
-    if mid in {"npm","pnpm","yarn"} and action in {"install","add","update"}:
-        args.append("--ignore-scripts")
-    command=" ".join(_quote(x) for x in args)
+
+    if mid == "pip":
+        package_name = _package_name(package) if package else ""
+        has_requirements = any(str(path).replace("\\", "/").strip("/") == "requirements.txt" for path in files)
+        if action in {"install", "update"} and not package_name and not has_requirements:
+            raise ValueError("requirements.txt is required for this pip operation.")
+        if action in {"add", "remove"} and not package_name:
+            raise ValueError(f"A package name is required for pip {action}.")
+        if action == "install":
+            args = ["uv", "pip", "install", "--only-binary", ":all:", "--python", ".venv/bin/python"]
+            args.extend([package_name] if package_name else ["-r", "requirements.txt"])
+        elif action == "add":
+            args = ["uv", "pip", "install", "--only-binary", ":all:", "--python", ".venv/bin/python", package_name]
+        elif action == "remove":
+            args = ["uv", "pip", "uninstall", "--python", ".venv/bin/python", package_name]
+        else:
+            args = ["uv", "pip", "install", "--upgrade", "--only-binary", ":all:", "--python", ".venv/bin/python"]
+            args.extend([package_name] if package_name else ["-r", "requirements.txt"])
+        command = " ".join(_quote(x) for x in args)
+        command = (
+            "if [ ! -x .venv/bin/python ]; then "
+            "uv venv .venv --python python3; fi && " + command
+        )
+    else:
+        args=[spec["binary"],*verb]
+        if package:
+            args.append(_package_name(package))
+        # Package mutation runs with egress but disables lifecycle scripts where
+        # the ecosystem has a safe equivalent.
+        if mid in {"npm","pnpm","yarn"} and action in {"install","add","update"}:
+            args.append("--ignore-scripts")
+        command=" ".join(_quote(x) for x in args)
     return PackagePlan(mid,action,command,True,spec["manifest"],tuple(spec["lockfiles"]))
 
 def _quote(value: str) -> str:
@@ -94,7 +121,20 @@ def _quote(value: str) -> str:
     return "'" + value.replace("'","'\\''") + "'"
 
 def capabilities() -> dict[str, Any]:
-    return {"managers":[{"id":k,"binary":v["binary"],"manifest":v["manifest"],"lockfiles":v["lockfiles"],"actions":[a for a in ("install","add","remove","update") if v.get(a)]} for k,v in MANAGERS.items()]}
+    """Advertise only package managers actually installed in this Runner image."""
+    return {
+        "managers": [
+            {
+                "id": key,
+                "binary": spec["binary"],
+                "manifest": spec["manifest"],
+                "lockfiles": spec["lockfiles"],
+                "actions": [action for action in ("install", "add", "remove", "update") if spec.get(action)],
+            }
+            for key, spec in MANAGERS.items()
+            if shutil.which(spec["binary"])
+        ]
+    }
 
 def plan_response(files: dict[str, Any], action: str, package: str="", manager: str="") -> dict[str, Any]:
     p=build_plan(files,action,package,manager)
