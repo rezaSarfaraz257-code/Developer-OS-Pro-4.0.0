@@ -1,5 +1,6 @@
 import json
 import os
+import requests
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -272,6 +273,6 @@ class SecureRunnerReadinessTests(TestCase):
 
     @patch("api.views.RUNNER_URL", "http://runner:8080")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
-    @patch("api.views.requests.get", side_effect=__import__("requests").RequestException("offline"))
+    @patch("api.views.requests.get", side_effect=requests.RequestException("offline"))
     def test_runner_network_failure_fails_closed(self, _get):
         self.assertFalse(_secure_runner_ready())
