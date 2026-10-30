@@ -659,7 +659,7 @@ def _sandbox_command(root, command, allow_network=False):
     if not allow_network and not ALLOW_NETWORK:
         args.append("--unshare-net")
     args.extend([
-        "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "--setenv", "PATH", "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "--setenv", "HOME", "/workspace/.home",
         "--", "bash", "-lc", command,
     ])
@@ -703,7 +703,7 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
     env = {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": f"{root / '.venv' / 'bin'}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"), "TMPDIR": str(root / ".tmp"),
         "XDG_CACHE_HOME": str(root / ".cache"), "npm_config_cache": str(root / ".npm-cache"),
         "PIP_CACHE_DIR": str(root / ".pip-cache"), "PYTHONUNBUFFERED": "1",
@@ -1223,7 +1223,7 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         PROCESS_SEQ += 1
         process_id = str(PROCESS_SEQ)
     env = {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": f"{root / '.venv' / 'bin'}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
         "TMPDIR": str(root / ".tmp"),
         "XDG_CACHE_HOME": str(root / ".cache"),
