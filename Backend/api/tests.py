@@ -1506,3 +1506,58 @@ class BackgroundWorkerReadinessTests(APITestCase):
             response = self.client.get("/api/health/ready/")
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class WorkspacePathValidationRegressionTests(APITestCase):
+    def test_workspace_serializer_rejects_unsafe_and_ambiguous_paths(self):
+        from .serializers import CodeWorkspaceSerializer
+        from rest_framework.exceptions import ValidationError
+        serializer = CodeWorkspaceSerializer()
+        unsafe_paths = (
+            "/etc/passwd",
+            r"C:\Windows\win.ini",
+            "../secret.txt",
+            "src/../secret.txt",
+            ".git/config",
+            "src/.GIT/config",
+            "node_modules/owned.js",
+            ".venv/lib/python/site-packages/owned.py",
+            ".home/secrets",
+            ".tmp/cache-file",
+            ".cache/metadata",
+            ".npm-cache/content",
+            ".pip-cache/content",
+            "src//main.py",
+            "./main.py",
+            "bad\npath.py",
+        )
+        for path in unsafe_paths:
+            with self.subTest(path=path):
+                with self.assertRaises(ValidationError):
+                    serializer.validate_files({path: "content"})
+
+    def test_workspace_serializer_accepts_normal_unicode_and_spaced_paths(self):
+        from .serializers import CodeWorkspaceSerializer
+        serializer = CodeWorkspaceSerializer()
+        files = {
+            "src/main.py": "print('safe')",
+            "folder name/hello@world.py": "print('ok')",
+            "模块/你好.py": "print('你好')",
+        }
+        self.assertEqual(serializer.validate_files(files), files)
+
+    def test_workspace_serializer_rejects_non_text_and_invalid_utf8_surrogates(self):
+        from .serializers import CodeWorkspaceSerializer
+        from rest_framework.exceptions import ValidationError
+        serializer = CodeWorkspaceSerializer()
+        with self.assertRaises(ValidationError):
+            serializer.validate_files({"main.py": 123})
+        with self.assertRaises(ValidationError):
+            serializer.validate_files({"main.py": "\ud800"})
+
+    def test_workspace_serializer_enforces_file_limit_in_utf8_bytes(self):
+        from .serializers import CodeWorkspaceSerializer
+        from rest_framework.exceptions import ValidationError
+        serializer = CodeWorkspaceSerializer()
+        with self.assertRaises(ValidationError):
+            serializer.validate_files({"main.py": "你" * 350_000})
