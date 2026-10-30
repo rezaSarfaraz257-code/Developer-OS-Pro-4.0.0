@@ -192,6 +192,7 @@ def _secure_runner_ready():
         and sandbox.get("security_level") == "strict"
         and sandbox.get("execution_available") is True
         and sandbox.get("trusted_shared_container") is False
+        and sandbox.get("preview_network_bridge") is True
         and sandbox.get("network_enforcement") == "isolated"
         and isinstance(operations, dict)
         and all(operations.get(name) is True for name in ("execute", "process", "install", "preview"))
