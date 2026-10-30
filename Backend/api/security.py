@@ -183,39 +183,98 @@ def require_project_access(project, user, *, manage=False):
     return project
 
 
+_AUDIT_SECRET_KEYS = {
+    "token", "password", "passwd", "secret", "authorization", "proxyauthorization",
+    "apikey", "accesstoken", "refreshtoken", "clientsecret", "clienttoken",
+    "cookie", "setcookie", "privatekey", "credential", "credentials",
+}
+
+
+def _sanitize_audit_value(value, *, depth=0):
+    """Return bounded JSON-safe audit metadata with secrets removed recursively."""
+    if depth > 6:
+        return "[truncated]"
+    if isinstance(value, dict):
+        safe = {}
+        for raw_key, item in list(value.items())[:100]:
+            key = str(raw_key)[:80]
+            normalized = "".join(char.lower() for char in key if char.isalnum())
+            if (
+                normalized in _AUDIT_SECRET_KEYS
+                or "secret" in normalized
+                or "authorization" in normalized
+                or normalized.endswith(("password", "passwd", "token", "credential", "credentials"))
+                or normalized.endswith(("apikey", "privatekey", "authorization", "cookie"))
+            ):
+                continue
+            safe[key] = _sanitize_audit_value(item, depth=depth + 1)
+        return safe
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_audit_value(item, depth=depth + 1) for item in value[:50]]
+    if isinstance(value, str):
+        return value[:500]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:500]
+
+
 def audit_security_event(user, action, *, organization=None, target_type="", target_id="", metadata=None):
-    safe_meta = {}
-    for key, value in (metadata or {}).items():
-        if key.lower() in {"token", "password", "secret", "authorization", "api_key", "access_token", "refresh_token"}:
-            continue
-        safe_meta[str(key)[:80]] = str(value)[:500]
+    # Metadata may contain nested request/provider objects. Redact recursively
+    # before persistence so secrets cannot leak through an innocent outer key.
+    safe_meta = _sanitize_audit_value(metadata if isinstance(metadata, dict) else {})
     return AuditLog.objects.create(
         user=user if getattr(user, "is_authenticated", False) else None,
         organization=organization,
-        action=action[:120],
-        target_type=target_type[:80],
+        action=str(action)[:120],
+        target_type=str(target_type)[:80],
         target_id=str(target_id or "")[:120],
         metadata=safe_meta,
     )
 
 
 def validate_remote_url(value: str, *, allow_hosts=None, allow_private=False) -> str:
-    """Validate an outbound URL and reject localhost/private/link-local targets."""
-    parsed = urlparse(str(value or ""))
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    """Validate an outbound URL and reject unsafe destinations before use.
+
+    Callers must still prevent DNS rebinding by pinning the validated address
+    at connection time; a validation-time DNS lookup alone cannot guarantee
+    that a later HTTP client connects to the same address.
+    """
+    raw = str(value or "").strip()
+    if not raw or any(ord(char) < 32 or ord(char) == 127 for char in raw):
+        raise ValueError("URL is empty or contains control characters.")
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Only absolute http(s) URLs are allowed.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("URLs containing embedded credentials are not allowed.")
+    scheme = parsed.scheme.lower()
     hostname = parsed.hostname.rstrip(".").lower()
-    if allow_hosts and hostname not in {h.lower() for h in allow_hosts}:
+    if not hostname:
+        raise ValueError("Destination host is invalid.")
+    if allow_hosts and hostname not in {str(host).rstrip(".").lower() for host in allow_hosts}:
         raise ValueError("Destination host is not allowed.")
     try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
-    except socket.gaierror as exc:
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError("Destination port is invalid.") from exc
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
+    except (socket.gaierror, OSError) as exc:
         raise ValueError("Destination host could not be resolved.") from exc
+    if not addresses:
+        raise ValueError("Destination host could not be resolved.")
     if not allow_private:
         for address in addresses:
-            ip = ipaddress.ip_address(address)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-                raise ValueError("Private or local destinations are not allowed.")
+            try:
+                ip = ipaddress.ip_address(address)
+            except ValueError as exc:
+                raise ValueError("Destination resolved to an invalid IP address.") from exc
+            # IPv4-mapped IPv6 addresses must be judged by their embedded IPv4
+            # address, not by the outer IPv6 address classification.
+            if getattr(ip, "ipv4_mapped", None) is not None:
+                ip = ip.ipv4_mapped
+            if not ip.is_global:
+                raise ValueError("Private or non-global destinations are not allowed.")
     return parsed.geturl()
 
 
