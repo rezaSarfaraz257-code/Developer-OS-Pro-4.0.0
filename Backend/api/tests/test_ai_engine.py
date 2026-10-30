@@ -39,6 +39,19 @@ class IntelligenceEngineTests(SimpleTestCase):
         bounded = _compact_context(context)
         self.assertLessEqual(len(__import__("json").dumps(bounded, ensure_ascii=False)), 60000)
 
+    def test_history_is_bounded_by_total_character_budget(self):
+        from api.ai_engine import _build_input
+        history = [
+            {"role": "user", "content": "u" * 20000},
+            {"role": "assistant", "content": "a" * 20000},
+            {"role": "user", "content": "latest"},
+        ]
+        items = _build_input("current", {}, history)
+        bounded_history = items[:-1]
+        self.assertLessEqual(sum(len(item["content"]) for item in bounded_history), 24000)
+        self.assertEqual(bounded_history[-1]["content"], "latest")
+        self.assertEqual(items[-1]["role"], "user")
+
     def test_extracts_responses_output_text(self):
         payload = {"output": [{"content": [{"text": "diagnosis"}]}, {"content": [{"text": "fix"}]}]}
         self.assertEqual(_extract_responses_text(payload), "diagnosis\nfix")
