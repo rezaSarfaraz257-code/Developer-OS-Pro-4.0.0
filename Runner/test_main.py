@@ -778,6 +778,10 @@ class PreviewPortRoutingTests(unittest.TestCase):
             "python3 manage.py runserver 0.0.0.0:12042",
         )
         self.assertEqual(
+            main._preview_command("python3 manage.py runserver 8000", 12042),
+            "python3 manage.py runserver 0.0.0.0:12042",
+        )
+        self.assertEqual(
             main._preview_command("uvicorn app:app --host 0.0.0.0 --port 8000", 12042),
             "uvicorn app:app --host 0.0.0.0 --port 12042",
         )
