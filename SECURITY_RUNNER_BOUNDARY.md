@@ -35,3 +35,8 @@ A regex command blacklist is defense-in-depth only. It cannot prove that arbitra
 Bubblewrap execution uses a separate network namespace when user code runs without network access. The Runner's host-side authenticated preview proxy cannot reach a server bound only inside that isolated namespace. Therefore `operations.preview` is false and preview startup returns HTTP 503 in Bubblewrap mode until a dedicated bridge is available.
 
 Do not set `RUNNER_ALLOW_NETWORK=true` or enable per-preview shared networking to make the preview appear functional. A future bridge must provide explicit ingress from the authenticated proxy while denying arbitrary egress and access to host/container metadata and control-plane services.
+
+
+## Package installation egress
+
+Python package installation uses a pinned `uv` executable and a workspace-local `.venv`; the runtime image does not ship system `pip`. In strict Bubblewrap mode, package installation remains disabled until a registry-restricted egress proxy is available. Do not enable unrestricted network access for package installation: user-controlled manifests and package indexes must not be able to reach cloud metadata, private network services, or Runner control-plane endpoints.
