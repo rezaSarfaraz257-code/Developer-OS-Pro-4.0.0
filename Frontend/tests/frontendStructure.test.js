@@ -818,6 +818,15 @@ test("cached static Nginx locations retain the full frontend security policy", (
   }
 });
 
+test("Monaco TypeScript defaults use the supported top-level API", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+
+  assert.match(editor, /monaco\.typescript\.javascriptDefaults/);
+  assert.match(editor, /if \(monaco\.typescript\?\.javascriptDefaults && monaco\.typescript\?\.typescriptDefaults\)/);
+  assert.match(editor, /monaco\.typescript\.typescriptDefaults/);
+  assert.doesNotMatch(editor, /monaco\.languages\.typescript/);
+});
+
 test("Monaco workers use package-export-compatible paths", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   for (const worker of [
