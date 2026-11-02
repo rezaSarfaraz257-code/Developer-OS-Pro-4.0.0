@@ -8,15 +8,19 @@ import htmlWorker from "monaco-editor/language/html/html.worker?worker";
 import tsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 
 globalThis.MonacoEnvironment={getWorker(_id,label){if(label==="json")return new jsonWorker();if(["css","scss","less"].includes(label))return new cssWorker();if(["html","handlebars","razor"].includes(label))return new htmlWorker();if(["typescript","javascript"].includes(label))return new tsWorker();return new editorWorker()}};
-monaco.typescript.javascriptDefaults.setEagerModelSync(true);monaco.typescript.typescriptDefaults.setEagerModelSync(true);
-const compiler={target:monaco.typescript.ScriptTarget.ES2022,allowNonTsExtensions:true,module:monaco.typescript.ModuleKind.ESNext,moduleResolution:monaco.typescript.ModuleResolutionKind.NodeJs,jsx:monaco.typescript.JsxEmit.ReactJSX,allowJs:true,checkJs:false,strict:false};
-monaco.typescript.javascriptDefaults.setCompilerOptions(compiler);monaco.typescript.typescriptDefaults.setCompilerOptions(compiler);
-const extraLibs={
-  javascript:[{content:'declare const process: any; declare const Buffer: any;'}],
-  typescript:[{content:'declare const process: any; declare const Buffer: any;'}]
-};
-monaco.typescript.javascriptDefaults.addExtraLib(extraLibs.javascript[0].content,"file:///developer-os/global.d.ts");
-monaco.typescript.typescriptDefaults.addExtraLib(extraLibs.typescript[0].content,"file:///developer-os/global.d.ts");
+// Monaco 0.55+ exposes language services under monaco.typescript.
+// Keep the application shell bootable if a custom/partial Monaco bundle omits them.
+if (monaco.typescript?.javascriptDefaults && monaco.typescript?.typescriptDefaults) {
+  monaco.typescript.javascriptDefaults.setEagerModelSync(true);monaco.typescript.typescriptDefaults.setEagerModelSync(true);
+  const compiler={target:monaco.typescript.ScriptTarget.ES2022,allowNonTsExtensions:true,module:monaco.typescript.ModuleKind.ESNext,moduleResolution:monaco.typescript.ModuleResolutionKind.NodeJs,jsx:monaco.typescript.JsxEmit.ReactJSX,allowJs:true,checkJs:false,strict:false};
+  monaco.typescript.javascriptDefaults.setCompilerOptions(compiler);monaco.typescript.typescriptDefaults.setCompilerOptions(compiler);
+  const extraLibs={
+    javascript:[{content:'declare const process: any; declare const Buffer: any;'}],
+    typescript:[{content:'declare const process: any; declare const Buffer: any;'}]
+  };
+  monaco.typescript.javascriptDefaults.addExtraLib(extraLibs.javascript[0].content,"file:///developer-os/global.d.ts");
+  monaco.typescript.typescriptDefaults.addExtraLib(extraLibs.typescript[0].content,"file:///developer-os/global.d.ts");
+}
 
 monaco.editor.defineTheme("developer-os-dark",{base:"vs-dark",inherit:true,rules:[{token:"comment",foreground:"4f7182",fontStyle:"italic"},{token:"keyword",foreground:"48ddff"},{token:"type",foreground:"8ad8ff"},{token:"string",foreground:"69f0b0"},{token:"number",foreground:"c69cff"},{token:"function",foreground:"a8e8ff"},{token:"variable",foreground:"d8edf5"}],colors:{"editor.background":"#02070c","editor.foreground":"#d8edf5","editorLineNumber.foreground":"#294451","editorLineNumber.activeForeground":"#4fe7ff","editorCursor.foreground":"#57efff","editor.selectionBackground":"#123c51","editor.inactiveSelectionBackground":"#0b2735","editor.lineHighlightBackground":"#06131b","editorIndentGuide.background1":"#0a202b","editorIndentGuide.activeBackground1":"#16475a","editorWidget.background":"#06131b","editorWidget.border":"#164457","editorSuggestWidget.background":"#06131b","editorSuggestWidget.border":"#1d5a70","editorSuggestWidget.selectedBackground":"#0c3444","editorHoverWidget.background":"#071923","editorHoverWidget.border":"#1b5368","editorBracketHighlight.foreground1":"#48ddff","editorBracketHighlight.foreground2":"#69f0b0","editorBracketHighlight.foreground3":"#c69cff","editorBracketHighlight.foreground4":"#ffcf70","editorOverviewRuler.border":"#00000000","minimap.background":"#030a10","minimap.selectionHighlight":"#164457","scrollbarSlider.background":"#12303c88","scrollbarSlider.hoverBackground":"#1c526688","scrollbarSlider.activeBackground":"#26758b99"}});
 const lang=p=>({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",html:"html",htm:"html",css:"css",scss:"scss",json:"json",md:"markdown",yaml:"yaml",yml:"yaml",sql:"sql",sh:"shell",bash:"shell",go:"go",rs:"rust",java:"java",php:"php",xml:"xml",vue:"html",c:"c",cpp:"cpp",h:"cpp",hpp:"cpp",txt:"plaintext",env:"plaintext"}[p.split(".").pop()?.toLowerCase()]||"plaintext");
