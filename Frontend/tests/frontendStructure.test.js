@@ -894,6 +894,7 @@ test("Web IDE editor tabs expose accessible tab semantics and keyboard navigatio
   assert.ok(ide.includes('className="dos-tab-close" aria-label={`Close ${p}`}'));
   assert.ok(workbench.includes(".dos-ide-pro .dos-tab-item > .dos-tab-close"));
   assert.match(ide, /e\.key==="ArrowRight"\|\|e\.key==="ArrowLeft"\|\|e\.key==="Home"\|\|e\.key==="End"/);
+  assert.ok(ide.includes("items[target]?.focus();items[target]?.click()"));
   assert.match(ide, /aria-label=\{`Close \$\{p\}`\}/);
   assert.ok(workbench.includes(".dos-ide-pro .dos-tab-list {"));
 });
