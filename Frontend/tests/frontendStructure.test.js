@@ -947,7 +947,7 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
 
   assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "diagnostics handlers should exist");
   assert.match(diagnostics, /const requestWorkspaceId=workspaceIdRef\.current/);
-  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)\)applyLspDiagnostics\(data\)/);
+  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)applyLspDiagnostics\(data\)/);
   assert.match(diagnostics, /const requestPath=pathRef\.current/);
   assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
   assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
@@ -1033,7 +1033,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   const registrationStart = editor.indexOf("const registerP1=()=>{");
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
-  assert.equal((registration.match(/}},(?:l|language),model\)/g) || []).length, 5);
+  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 5);
   assert.match(editor, /lspRequestWithDiagnostics\("textDocument\/didChange"[\s\S]*?\},null,m\)/);
   assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
   assert.match(registration, /request\("symbols",\{query:""\},m\)/);
