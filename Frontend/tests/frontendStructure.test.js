@@ -1048,6 +1048,15 @@ test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", (
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
 });
 
+test("Monaco rejects stale versioned LSP diagnostics after newer document changes", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /const incomingVersion=n\.params\?\.version/);
+  assert.match(editor, /incomingVersion<currentVersion/);
+  assert.match(editor, /ed\.__dosLspVersions\.set\(m\.uri\.toString\(\),version\)/);
+  assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
+  assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
+});
+
 test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /const marks=mapLspDiagnostics\(n\.params\?\.diagnostics,monaco\)/);
