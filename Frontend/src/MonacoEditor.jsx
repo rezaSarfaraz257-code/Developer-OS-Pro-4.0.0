@@ -102,11 +102,11 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
     p1Providers.push(monaco.languages.registerSignatureHelpProvider(language,{
       signatureHelpTriggerCharacters:["(",","],
       signatureHelpRetriggerCharacters:[")"],
-      provideSignatureHelp:async(model,pos,token)=>{
+      provideSignatureHelp:async(model,pos,token,context)=>{
         const response=await lspRequest("textDocument/signatureHelp",{
           textDocument:{uri:model.uri.toString()},
           position:{line:pos.lineNumber-1,character:pos.column-1},
-          context:{triggerKind:1,isRetrigger:false},
+          context:{triggerKind:context?.triggerKind??1,isRetrigger:context?.isRetrigger===true,...(context?.triggerCharacter?{triggerCharacter:context.triggerCharacter}:{})},
         },language,model);
         if(token?.isCancellationRequested||ed.getModel()!==model)return null;
         return mapLspSignatureHelp(response?.result);
