@@ -567,6 +567,7 @@
   min-height: 39px;
   padding: 0 7px 0 9px;
   border: 0;
+  border-top: 2px solid transparent;
   border-radius: 0;
   background: transparent;
   color: inherit;
@@ -574,7 +575,11 @@
   font: inherit;
 }
 .dos-ide-pro .dos-tab-item > .dos-tab[role="tab"].active {
-  background: transparent;
+  border-top-color: var(--accent, #55dcff);
+  background: linear-gradient(180deg, rgba(17, 31, 46, .98), rgba(10, 19, 29, .98));
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"].pinned:not(.active) {
+  border-top-color: #55dcff;
 }
 .dos-ide-pro .dos-tab-item > .dos-tab-close {
   flex: 0 0 26px;
