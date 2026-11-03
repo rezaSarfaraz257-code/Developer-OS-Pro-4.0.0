@@ -7,11 +7,17 @@ const COMPLETION_KIND_NAMES = [
 
 function toMonacoRange(range) {
   if (!range?.start || !range?.end) return null;
+  const coordinates = [
+    range.start.line, range.start.character, range.end.line, range.end.character,
+  ].map(Number);
+  if (coordinates.some(value => !Number.isInteger(value) || value < 0)) return null;
+  const [startLine, startColumn, endLine, endColumn] = coordinates;
+  if (endLine < startLine || (endLine === startLine && endColumn < startColumn)) return null;
   return {
-    startLineNumber: Number(range.start.line) + 1,
-    startColumn: Number(range.start.character) + 1,
-    endLineNumber: Number(range.end.line) + 1,
-    endColumn: Number(range.end.character) + 1,
+    startLineNumber: startLine + 1,
+    startColumn: startColumn + 1,
+    endLineNumber: endLine + 1,
+    endColumn: endColumn + 1,
   };
 }
 
