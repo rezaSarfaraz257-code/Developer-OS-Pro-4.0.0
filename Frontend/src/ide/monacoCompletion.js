@@ -72,3 +72,37 @@ export function mapLspCompletionItem(item, monaco, model, position) {
   }
   return completion;
 }
+export function mapLspWorkspaceEdit(workspaceEdit, monaco) {
+  if (!workspaceEdit || !monaco?.Uri?.parse) return { edits: [] };
+  const edits = [];
+  const seen = new Set();
+  const append = (uri, items) => {
+    if (typeof uri !== "string" || !Array.isArray(items)) return;
+    let resource;
+    try {
+      resource = monaco.Uri.parse(uri);
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const range = toMonacoRange(item?.range);
+      if (!range || typeof item?.newText !== "string") continue;
+      edits.push({ resource, textEdit: { range, text: item.newText } });
+    }
+  };
+
+  if (workspaceEdit.changes && typeof workspaceEdit.changes === "object") {
+    for (const [uri, items] of Object.entries(workspaceEdit.changes)) {
+      seen.add(uri);
+      append(uri, items);
+    }
+  }
+  if (Array.isArray(workspaceEdit.documentChanges)) {
+    for (const change of workspaceEdit.documentChanges) {
+      const uri = change?.textDocument?.uri;
+      if (typeof uri !== "string" || seen.has(uri)) continue;
+      append(uri, change.edits);
+    }
+  }
+  return { edits };
+}
