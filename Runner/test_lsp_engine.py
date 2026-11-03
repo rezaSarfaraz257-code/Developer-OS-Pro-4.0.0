@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import select
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -45,6 +47,27 @@ class LSPMessageFramingTests(unittest.TestCase):
             session.start()
 
         self.assertEqual(popen.call_args.kwargs["bufsize"], 0)
+
+    def test_real_unbuffered_pipe_keeps_next_frame_visible_to_select(self):
+        first = {"jsonrpc": "2.0", "method": "window/logMessage", "params": {"message": "one"}}
+        second = {"jsonrpc": "2.0", "method": "window/logMessage", "params": {"message": "two"}}
+        read_fd, write_fd = os.pipe()
+        reader = os.fdopen(read_fd, "rb", buffering=0)
+        try:
+            os.write(write_fd, _frame(first) + _frame(second))
+            session = LSPSession(".", [])
+            session.proc = SimpleNamespace(stdout=reader)
+
+            self.assertTrue(select.select([reader], [], [], 0.5)[0])
+            self.assertEqual(session._read_message(), first)
+            self.assertTrue(
+                select.select([reader], [], [], 0.5)[0],
+                "the second frame must remain visible to OS-level readiness checks",
+            )
+            self.assertEqual(session._read_message(), second)
+        finally:
+            reader.close()
+            os.close(write_fd)
 
     def test_message_body_reads_until_content_length_even_with_short_pipe_reads(self):
         message = {"jsonrpc": "2.0", "method": "window/logMessage", "params": {"message": "ready"}}
