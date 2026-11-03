@@ -354,9 +354,11 @@ test("LSP resource operations are detected explicitly instead of being silently 
       { kind: "delete", uri: "file:///workspace/remove.py" },
       { textDocument: { uri: "file:///workspace/main.py" }, edits: [] },
       { kind: "unknown", uri: "file:///workspace/unknown" },
+      { textDocument: { uri: "file:///workspace/malformed.py" } },
+      null,
     ],
   });
-  assert.deepEqual(operations.map(item => item.kind), ["create", "rename", "delete"]);
+  assert.deepEqual(operations.map(item => item?.kind || "malformed"), ["create", "rename", "delete", "unknown", "malformed", "malformed"]);
   assert.deepEqual(getUnsupportedLspResourceOperations(null), []);
   assert.deepEqual(getUnsupportedLspResourceOperations({ documentChanges: [] }), []);
 });
