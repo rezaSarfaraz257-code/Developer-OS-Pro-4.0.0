@@ -348,7 +348,6 @@ test("execution output is bounded and stale run responses cannot update the IDE"
   assert.match(ide, /async function install\(\).*const saved=await save\(true\);if\(!saved\)return/s);
   assert.match(ide, /setTerminal\(appendBoundedText\("",d\.output\|\|"Install completed\\n"\)\)/);
 });
-
 test("IDE WebSocket handlers ignore stale connections and bound terminal status output", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /if\(terminalSocket\.current!==socket\)return;/);
@@ -697,8 +696,7 @@ test("IDE context-menu Delete saves pending edits before destructive Explorer mu
 test("IDE command palette exposes an accessible modal and named controls", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /className="dos-palette" role="dialog" aria-modal="true" aria-labelledby="dos-command-palette-title"/);
-  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);
-  assert.match(ide, /aria-label="Close command palette"/);
+  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);  assert.match(ide, /aria-label="Close command palette"/);
   assert.match(ide, /input aria-label="Filter commands" autoFocus/);
 });
 
@@ -1047,9 +1045,8 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 });
 
 
-test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
-  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp \} from "\.\/ide\/monacoCompletion\.js"/);
+test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /import \\{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion \\} from "\\.\\/ide\\/monacoCompletion\\.js"/);
   assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
 });
@@ -1058,7 +1055,7 @@ test("Monaco rejects stale versioned LSP diagnostics after newer document change
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /const incomingVersion=n\.params\?\.version/);
   assert.match(editor, /incomingVersion<currentVersion/);
-  assert.match(editor, /ed\.__dosLspVersions\.set\(m\.uri\.toString\(\),version\)/);
+  assert.match(editor, /nextLspDocumentVersion\\(ed\\.__dosLspVersions,changedUri\\)/);
   assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
   assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
 });
@@ -1099,7 +1096,7 @@ test("Monaco definition and reference providers support LSP LocationLink results
 test("Monaco custom actions do not shadow native VS Code rename and references shortcuts", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   const customRename = editor.slice(editor.indexOf("const p1Actions="), editor.indexOf("const p1Refs="));
-  const customReferences = editor.slice(editor.indexOf("const p1Refs="), editor.indexOf("let lspVersion"));
+  const customReferences = editor.slice(editor.indexOf("const p1Refs="), editor.indexOf("const c=ed.onDidChangeModelContent"));
   const nativeRename = editor.slice(editor.indexOf("const renameSelection="), editor.indexOf("const references="));
   const nativeReferences = editor.slice(editor.indexOf("const references="), editor.indexOf("const openImport="));
   assert.doesNotMatch(customRename, /keybindings/);
