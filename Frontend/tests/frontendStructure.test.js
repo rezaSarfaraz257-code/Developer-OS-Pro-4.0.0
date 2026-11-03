@@ -863,3 +863,23 @@ test("Monaco workers use package-export-compatible paths", () => {
   }
   assert.doesNotMatch(editor, /monaco-editor\/esm\/vs\//);
 });
+
+
+test("Web IDE shell grid maps workbench regions to their actual direct DOM children", () => {
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes('<main className={`dos-editor-shell'));
+  assert.ok(ide.includes('<div className="dos-workbench-strip"'));
+  assert.ok(ide.includes('<div className="dos-tabs"'));
+  assert.ok(ide.includes('<div className="dos-editor-toolbar"'));
+  assert.ok(ide.includes('<div className={`dos-editors'));
+  assert.ok(ide.includes('<div className="dos-ide-dock"'));
+  assert.ok(ide.includes('<div className="dos-statusbar"'));
+  assert.ok(workbench.includes(".dos-editor-shell > .dos-workbench-strip { grid-row: 1; }"));
+  assert.match(workbench, /\.dos-editor-shell > \.dos-tabs[\s\S]*grid-row: 2/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-editor-toolbar[\s\S]*grid-row: 3/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-editors[\s\S]*grid-row: 4/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-ide-dock[\s\S]*grid-row: 5/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-statusbar[\s\S]*grid-row: 6/);
+  assert.match(workbench, /\.dos-editors\.split[\s\S]*grid-template-rows: minmax\(0, 1fr\) minmax\(0, \.72fr\)/);
+});
