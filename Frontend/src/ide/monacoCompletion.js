@@ -121,3 +121,26 @@ export function mapLspLocations(result, monaco) {
     }
   });
 }
+export function mapLspDiagnostics(diagnostics, monaco) {
+  if (!Array.isArray(diagnostics) || !monaco?.MarkerSeverity) return [];
+  const severity = {
+    1: monaco.MarkerSeverity.Error,
+    2: monaco.MarkerSeverity.Warning,
+    3: monaco.MarkerSeverity.Info,
+    4: monaco.MarkerSeverity.Hint,
+  };
+  return diagnostics.flatMap(diagnostic => {
+    const range = toMonacoRange(diagnostic?.range);
+    if (!range || typeof diagnostic?.message !== "string") return [];
+    const marker = {
+      ...range,
+      severity: severity[diagnostic.severity] ?? monaco.MarkerSeverity.Info,
+      message: diagnostic.message,
+      source: typeof diagnostic.source === "string" ? diagnostic.source : "LSP",
+    };
+    if (typeof diagnostic.code === "string" || typeof diagnostic.code === "number") {
+      marker.code = String(diagnostic.code);
+    }
+    return [marker];
+  });
+}
