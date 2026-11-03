@@ -1062,10 +1062,10 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 
 test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion \} from "\.\/ide\/monacoCompletion\.js"/);
-  assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
-  assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
-});
+  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /const unsupported=getUnsupportedLspResourceOperations\(ld\?\.result\);if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
+  assert.match(editor, /const safeActions=\[\]/);
+  assert.match(editor, /return \{actions:safeActions\}/);
 
 test("Monaco rejects stale versioned LSP diagnostics after newer document changes", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
