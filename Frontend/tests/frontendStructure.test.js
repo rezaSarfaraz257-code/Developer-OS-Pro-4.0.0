@@ -883,3 +883,15 @@ test("Web IDE shell grid maps workbench regions to their actual direct DOM child
   assert.match(workbench, /\.dos-editor-shell > \.dos-statusbar[\s\S]*grid-row: 6/);
   assert.match(workbench, /\.dos-editors\.split[\s\S]*grid-template-rows: minmax\(0, 1fr\) minmax\(0, \.72fr\)/);
 });
+
+
+test("Web IDE dock expansion has an active grid layout and terminal positioning context", () => {
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes('className="dos-ide-dock" data-expanded={dockOpen}'));
+  assert.ok(workbench.includes(".dos-editor-shell { position: relative; }"));
+  assert.ok(workbench.includes(".dos-editor-shell > .dos-ide-dock {\n  display: grid;"));
+  assert.ok(workbench.includes('grid-template-rows: 38px 0;'));
+  assert.ok(workbench.includes('visibility: hidden;'));
+  assert.ok(workbench.includes('.dos-editor-shell > .dos-terminal {\n  position: absolute;'));
+});
