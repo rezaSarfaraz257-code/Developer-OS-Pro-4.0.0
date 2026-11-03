@@ -860,6 +860,10 @@ test("Monaco language services follow workspace switches without stale workspace
   assert.match(editor, /\},\[path,workspaceId\]\)/);
   assert.match(editor, /method:"textDocument\/didClose"/);
   assert.doesNotMatch(editor, /syncOpen\(\);/);
+  const registration = editor.slice(editor.indexOf("const registerP1=()=>{"), editor.indexOf("registerP1();"));
+  assert.ok(registration.includes("registerDefinitionProvider"));
+  assert.doesNotMatch(registration, /if\(!workspaceIdRef\.current\)return;/);
+  assert.match(registration, /const token=getAccessToken\(\)/);
 });
 
 test("Monaco workers use package-export-compatible paths", () => {
