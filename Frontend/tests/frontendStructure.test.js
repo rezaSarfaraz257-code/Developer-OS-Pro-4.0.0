@@ -1004,3 +1004,17 @@ test("Monaco language-provider fallbacks stay bound to the originating file", ()
   assert.match(registration, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath\?data:\{\}/);
   assert.match(registration, /catch\{return \{\}\}/);
 });
+
+
+test("Monaco provider fallbacks are discarded when their originating model is no longer active", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const registrationStart = editor.indexOf("const registerP1=()=>{");
+  const registrationEnd = editor.indexOf("registerP1();", registrationStart);
+  const registration = editor.slice(registrationStart, registrationEnd);
+  assert.match(registration, /originModel&&ed\.getModel\(\)!==originModel/);
+  assert.match(registration, /originModel&&ed\.getModel\(\)!==originModel\)\?data:\{\}/);
+  for (const action of ["definitions", "hover", "completion"]) {
+    assert.ok(registration.includes('request("' + action + '",'));
+  }
+  assert.equal((registration.match(/},model\\)/g) || []).length, 3);
+});
