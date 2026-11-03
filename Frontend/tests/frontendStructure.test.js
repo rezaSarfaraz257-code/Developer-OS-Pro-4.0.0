@@ -1101,5 +1101,7 @@ test("Monaco registers guarded LSP signature help with VS Code-style triggers", 
   assert.ok(editor.includes('"textDocument/signatureHelp"'));
   assert.ok(editor.includes('signatureHelpTriggerCharacters:["(",","]'));
   assert.ok(editor.includes("token?.isCancellationRequested||ed.getModel()!==model"));
+  assert.ok(editor.includes("context?.triggerKind??1"));
+  assert.ok(editor.includes("context?.isRetrigger===true"));
   assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
 });
