@@ -94,6 +94,20 @@ test("LSP insert/replace edits prefer the replacement range and plain text forma
   assert.equal("insertTextRules" in item, false);
 });
 
+test("malformed LSP ranges are rejected in favor of Monaco's current word range", () => {
+  const item = mapLspCompletionItem({
+    label: "safeFallback",
+    textEdit: {
+      range: { start: { line: -1, character: 0 }, end: { line: 2, character: 4 } },
+      newText: "safeFallback",
+    },
+  }, monaco, model, position);
+
+  assert.deepEqual(item.range, {
+    startLineNumber: 4, startColumn: 3, endLineNumber: 4, endColumn: 8,
+  });
+});
+
 test("invalid completion inputs fail closed and missing edit ranges use the current word", () => {
   assert.equal(mapLspCompletionItem(null, monaco, model, position), null);
   assert.equal(mapLspCompletionItem({ label: "x" }, null, model, position), null);
