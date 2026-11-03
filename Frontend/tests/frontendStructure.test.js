@@ -938,3 +938,17 @@ test("Web IDE dock expansion has an active grid layout and terminal positioning 
   assert.ok(workbench.includes('visibility: hidden;'));
   assert.ok(workbench.includes('.dos-editor-shell > .dos-terminal {\n  position: absolute;'));
 });
+
+test("Monaco diagnostics ignore responses from a previous workspace or file", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const diagnosticsStart = editor.indexOf("const lspRequestWithDiagnostics=async");
+  const diagnosticsEnd = editor.indexOf("const p1Actions=", diagnosticsStart);
+  const diagnostics = editor.slice(diagnosticsStart, diagnosticsEnd);
+
+  assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "diagnostics handlers should exist");
+  assert.match(diagnostics, /const requestWorkspaceId=workspaceIdRef\.current/);
+  assert.match(diagnostics, /if\(workspaceIdRef\.current===requestWorkspaceId\)applyLspDiagnostics\(data\)/);
+  assert.match(diagnostics, /const requestPath=pathRef\.current/);
+  assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
+  assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
+});
