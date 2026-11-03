@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -14,6 +14,7 @@ const monaco = {
   languages: {
     CompletionItemKind: Object.fromEntries(kindNames.map((name, index) => [name, index + 1])),
     CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+    DocumentHighlightKind: { Text: 0, Read: 1, Write: 2 },
   },
 };
 const model = {
@@ -247,4 +248,32 @@ test("LSP diagnostics mapper handles missing payloads safely", () => {
   assert.deepEqual(mapLspDiagnostics(null, monaco), []);
   assert.deepEqual(mapLspDiagnostics({}, monaco), []);
   assert.deepEqual(mapLspDiagnostics([{ message: "x" }], monaco), []);
+});
+
+test("LSP document highlights map read/write/text kinds and valid ranges", () => {
+  const highlights = mapLspDocumentHighlights([
+    { kind: 1, range: { start: { line: 0, character: 1 }, end: { line: 0, character: 4 } } },
+    { kind: 2, range: { start: { line: 2, character: 0 }, end: { line: 2, character: 5 } } },
+    { kind: 3, range: { start: { line: 4, character: 2 }, end: { line: 4, character: 7 } } },
+    { kind: 99, range: { start: { line: 5, character: 0 }, end: { line: 5, character: 2 } } },
+    { kind: 1, range: { start: { line: -1, character: 0 }, end: { line: 0, character: 1 } } },
+    null,
+  ], monaco);
+
+  assert.equal(highlights.length, 4);
+  assert.deepEqual(highlights.map(item => item.kind), [
+    monaco.languages.DocumentHighlightKind.Text,
+    monaco.languages.DocumentHighlightKind.Read,
+    monaco.languages.DocumentHighlightKind.Write,
+    monaco.languages.DocumentHighlightKind.Text,
+  ]);
+  assert.deepEqual(highlights[0].range, {
+    startLineNumber: 1, startColumn: 2, endLineNumber: 1, endColumn: 5,
+  });
+});
+
+test("LSP document highlight mapper safely handles missing results", () => {
+  assert.deepEqual(mapLspDocumentHighlights(null, monaco), []);
+  assert.deepEqual(mapLspDocumentHighlights({}, monaco), []);
+  assert.deepEqual(mapLspDocumentHighlights([{ range: {} }], monaco), []);
 });
