@@ -414,3 +414,23 @@ test("LSP document symbols fail closed when the server result is not an array", 
   assert.deepEqual(mapLspDocumentSymbols(null, monaco), []);
   assert.deepEqual(mapLspDocumentSymbols([], null), []);
 });
+test("LSP document symbol mapping bounds oversized and deeply nested server responses", () => {
+  const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } };
+  const oversized = Array.from({ length: 700 }, (_, index) => ({
+    name: "symbol" + index, kind: 12, range,
+  }));
+  assert.equal(mapLspDocumentSymbols(oversized, monaco).length, 500);
+
+  let nested = { name: "depth-40", kind: 12, range };
+  for (let depth = 39; depth >= 0; depth--) {
+    nested = { name: "depth-" + depth, kind: 5, range, children: [nested] };
+  }
+  const bounded = mapLspDocumentSymbols([nested], monaco)[0];
+  let depth = 1;
+  let current = bounded;
+  while (current.children?.length) {
+    depth += 1;
+    current = current.children[0];
+  }
+  assert.equal(depth, 32);
+});
