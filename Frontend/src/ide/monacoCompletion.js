@@ -219,10 +219,17 @@ const LSP_SYMBOL_KIND_NAMES = [
 
 export function mapLspDocumentSymbols(symbols, monaco) {
   if (!Array.isArray(symbols) || !monaco?.languages?.SymbolKind) return [];
-  const mapSymbol = symbol => {
+  // Language servers are external processes. Bound the outline payload so a
+  // pathological response cannot monopolize the UI thread or recurse forever.
+  const MAX_SYMBOLS = 500;
+  const MAX_DEPTH = 32;
+  let mappedCount = 0;
+  const mapSymbol = (symbol, depth = 0) => {
+    if (mappedCount >= MAX_SYMBOLS || depth >= MAX_DEPTH) return null;
     const sourceRange = symbol?.range || symbol?.location?.range;
     const range = toMonacoRange(sourceRange);
     if (!range || typeof symbol?.name !== "string" || !symbol.name) return null;
+    mappedCount += 1;
     const selectionRange = toMonacoRange(symbol.selectionRange) || range;
     const kindName = LSP_SYMBOL_KIND_NAMES[Number(symbol.kind) - 1];
     const mapped = {
@@ -237,10 +244,24 @@ export function mapLspDocumentSymbols(symbols, monaco) {
     if (typeof symbol.containerName === "string" && symbol.containerName) mapped.containerName = symbol.containerName;
     if (Array.isArray(symbol.tags) && symbol.tags.includes(1)) mapped.tags = [1];
     if (symbol.deprecated === true) mapped.tags = [1];
-    if (Array.isArray(symbol.children)) mapped.children = symbol.children.map(mapSymbol).filter(Boolean);
+    if (Array.isArray(symbol.children) && depth + 1 < MAX_DEPTH && mappedCount < MAX_SYMBOLS) {
+      mapped.children = [];
+      for (const child of symbol.children) {
+        if (mappedCount >= MAX_SYMBOLS) break;
+        const mappedChild = mapSymbol(child, depth + 1);
+        if (mappedChild) mapped.children.push(mappedChild);
+      }
+      if (!mapped.children.length) delete mapped.children;
+    }
     return mapped;
   };
-  return symbols.map(mapSymbol).filter(Boolean);
+  const result = [];
+  for (const symbol of symbols) {
+    if (mappedCount >= MAX_SYMBOLS) break;
+    const mapped = mapSymbol(symbol);
+    if (mapped) result.push(mapped);
+  }
+  return result;
 }
 
 export function mapLspSignatureHelp(result) {
