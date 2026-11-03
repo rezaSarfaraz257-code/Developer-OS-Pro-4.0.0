@@ -119,22 +119,26 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  
  const c=ed.onDidChangeModelContent(()=>{if(typeof change.current==="function")change.current(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceIdRef.current)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
  const p=ed.onDidChangeCursorPosition(e=>{if(typeof cursor.current==="function")cursor.current({line:e.position.lineNumber,column:e.position.column,path:pathRef.current});});
- const formatRequest=async(pathName,content)=>{
-   if(!workspaceIdRef.current)return null;
+ const formatRequest=async(pathName,content,requestWorkspaceId=workspaceIdRef.current)=>{
+   if(!requestWorkspaceId||workspaceIdRef.current!==requestWorkspaceId)return null;
    const token=getAccessToken();
    try{
-    const response=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/format/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({path:pathName,content})});
-    if(!response.ok)return null;
-    return response.json().catch(()=>null);
+    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/format/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({path:pathName,content})});
+    if(!response.ok||workspaceIdRef.current!==requestWorkspaceId)return null;
+    const data=await response.json().catch(()=>null);
+    return workspaceIdRef.current===requestWorkspaceId?data:null;
    }catch{return null}
  };
  const codeActionsRequest=async(model,range)=>{
-   if(!workspaceIdRef.current)return [];
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   if(!requestWorkspaceId)return [];
    const token=getAccessToken();
    try{
-    const response=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"code_actions",path:pathRef.current,line:range.startLineNumber})});
-    if(!response.ok)return [];
+    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"code_actions",path:requestPath,line:range.startLineNumber})});
+    if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
     const data=await response.json().catch(()=>({}));
+    if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
     return Array.isArray(data.actions)?data.actions:[];
    }catch{return []}
  };
@@ -145,12 +149,18 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    }
  }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
-   const r=await formatRequest(pathRef.current,model.getValue());
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   const r=await formatRequest(requestPath,model.getValue(),requestWorkspaceId);
+   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
    return r?.changed?[{range:model.getFullModelRange(),text:r.content}]:[];
  }});
  ["javascript","typescript","json","css","scss","html"].forEach(language=>{
    p1Providers.push(monaco.languages.registerDocumentFormattingEditProvider(language,{provideDocumentFormattingEdits:async(model)=>{
-     const r=await formatRequest(pathRef.current,model.getValue());
+     const requestWorkspaceId=workspaceIdRef.current;
+     const requestPath=pathRef.current;
+     const r=await formatRequest(requestPath,model.getValue(),requestWorkspaceId);
+     if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
      return r?.changed?[{range:model.getFullModelRange(),text:r.content}]:[];
    }}));
  });
