@@ -1067,8 +1067,8 @@ test("Monaco registers LSP document highlights for supported languages", () => {
 test("Monaco registers cancellable LSP inlay hints for supported languages", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /registerInlayHintsProvider/);
-  assert.match(editor, /textDocument\\/inlayHint/);
-  assert.match(editor, /token\\?\\.isCancellationRequested/);
+  assert.ok(editor.includes('"textDocument/inlayHint"'));
+  assert.ok(editor.includes("token?.isCancellationRequested"));
   assert.match(editor, /mapLspInlayHints/);
 });
 test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
