@@ -1001,7 +1001,7 @@ test("Monaco language-provider fallbacks stay bound to the originating file", ()
   assert.match(registration, /const requestWorkspaceId=workspaceIdRef\.current;const requestPath=pathRef\.current/);
   assert.match(registration, /path:requestPath/);
   assert.match(registration, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath/);
-  assert.match(registration, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath\?data:\{\}/);
+  assert.match(registration, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath&&\(!originModel\|\|ed\.getModel\(\)===originModel\)\?data:\{\}/);
   assert.match(registration, /catch\{return \{\}\}/);
 });
 
