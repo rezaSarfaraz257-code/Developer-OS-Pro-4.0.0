@@ -1026,9 +1026,9 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   assert.equal(lspBlocks.length, 2);
   for (const block of lspBlocks) {
     assert.match(block, /const requestPath=pathRef\.current/);
-    assert.match(block, /originModel&&ed\.getModel\(\)!==originModel/);
-    assert.match(block, /pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==originModel/);
-    assert.match(block, /pathRef\.current===requestPath&&ed\.getModel\(\)===originModel/);
+    assert.match(block, /originModel&&(?:ed\.getModel\(\)!==originModel|editor\.current\?\.getModel\(\)!==originModel)/);
+    assert.match(block, /pathRef\.current!==requestPath\|\|(ed\.getModel\(\)!==originModel|editor\.current\?\.getModel\(\)!==originModel)/);
+    assert.match(block, /pathRef\.current===requestPath&&(ed\.getModel\(\)===originModel|editor\.current\?\.getModel\(\)===originModel)/);
   }
   const registrationStart = editor.indexOf("const registerP1=()=>{");
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
