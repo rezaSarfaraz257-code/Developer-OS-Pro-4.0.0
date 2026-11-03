@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -301,4 +301,33 @@ test("LSP inlay hint mapper safely handles missing or unsupported payloads", () 
   assert.deepEqual(mapLspInlayHints(null, monaco), []);
   assert.deepEqual(mapLspInlayHints({}, monaco), []);
   assert.deepEqual(mapLspInlayHints([{ position: {}, label: "x" }], monaco), []);
+});
+
+
+test("LSP signature help maps overloads, parameter labels and active selections", () => {
+  const mapped = mapLspSignatureHelp({
+    activeSignature: 1,
+    activeParameter: 8,
+    signatures: [
+      { label: "open(path)", documentation: "Open a file", parameters: [{ label: "path", documentation: { value: "File path" } }] },
+      { label: "open(path, mode)", parameters: [{ label: [5, 9] }, { label: "mode" }] },
+    ],
+  });
+  assert.equal(mapped.value.signatures.length, 2);
+  assert.equal(mapped.value.signatures[0].documentation, "Open a file");
+  assert.equal(mapped.value.signatures[0].parameters[0].documentation, "File path");
+  assert.deepEqual(mapped.value.signatures[1].parameters[0].label, [5, 9]);
+  assert.equal(mapped.value.activeSignature, 1);
+  assert.equal(mapped.value.activeParameter, 1);
+});
+
+test("LSP signature help rejects malformed payloads and safely bounds active indexes", () => {
+  assert.equal(mapLspSignatureHelp(null), null);
+  assert.equal(mapLspSignatureHelp({ signatures: [{ label: "" }] }), null);
+  const mapped = mapLspSignatureHelp({ activeSignature: 99, activeParameter: -4, signatures: [
+    { label: "f(a)", parameters: [{ label: [2, 99] }, { label: "a" }] },
+  ] });
+  assert.equal(mapped.value.activeSignature, 0);
+  assert.equal(mapped.value.activeParameter, 0);
+  assert.deepEqual(mapped.value.signatures[0].parameters.map(item => item.label), ["a"]);
 });
