@@ -51,10 +51,15 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const request=async(action,body={})=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath)return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath?data:{}}catch{return {}}};
  useEffect(()=>{if(!host.current)return;const ed=monaco.editor.create(host.current,{model:null,theme:"developer-os-dark",automaticLayout:true,minimap:{enabled:true,side:"right",showSlider:"mouseover",renderCharacters:false},fontFamily:"JetBrains Mono, Consolas, monospace",fontSize:13,lineHeight:21,tabSize:2,insertSpaces:true,wordWrap:"off",smoothScrolling:true,cursorBlinking:"smooth",cursorSmoothCaretAnimation:"on",bracketPairColorization:{enabled:true},guides:{indentation:true,bracketPairs:true,highlightActiveBracketPair:true},folding:true,foldingStrategy:"auto",stickyScroll:{enabled:true},renderWhitespace:"selection",scrollBeyondLastLine:false,padding:{top:10,bottom:18},quickSuggestions:{other:true,comments:false,strings:true},suggestOnTriggerCharacters:true,parameterHints:{enabled:true},formatOnPaste:true,formatOnType:true,contextmenu:true,multiCursorModifier:"ctrlCmd",mouseWheelZoom:false,overviewRulerBorder:false,scrollbar:{verticalScrollbarSize:10,horizontalScrollbarSize:10,useShadows:false},find:{addExtraSpaceOnTop:true,autoFindInSelection:"never"},occurrencesHighlight:"singleFile",selectionHighlight:true,renderLineHighlight:"line",fixedOverflowWidgets:true,linkedEditing:true,suggest:{showMethods:true,showFunctions:true,showConstructors:true},hover:{enabled:true},inlayHints:{enabled:"on"},codeLens:true});editor.current=ed;setEditorReady(true);
  const p1Providers=[];
+ let pendingLspChange=null;
+ let lspFlushPromise=null;
+ let applyLspDiagnostics=()=>{};
  const lspRequest=async(method,params={},languageOverride=null,originModel=null)=>{
   const requestWorkspaceId=workspaceIdRef.current;
   const requestPath=pathRef.current;
   if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return null;
+  if(method!=="textDocument/didChange"&&!(await flushPendingLspChange()))return null;
+  if(workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
   const token=getAccessToken();
   const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString();
   try{
@@ -63,6 +68,32 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    const data=await response.json().catch(()=>null);
    return workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&ed.getModel()===originModel))?data:null;
   }catch{return null}
+ };
+ const flushPendingLspChange=async()=>{
+  if(lspFlushPromise){await lspFlushPromise;return flushPendingLspChange();}
+  const pending=pendingLspChange;
+  if(!pending)return true;
+  pendingLspChange=null;
+  clearTimeout(lspTimerRef.current);lspTimerRef.current=null;
+  lspFlushPromise=(async()=>{
+   if(workspaceIdRef.current!==pending.workspaceId||pathRef.current!==pending.path||ed.getModel()!==pending.model||!ed.__dosLspOpened?.has(pending.uri))return true;
+   if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();
+   const version=nextLspDocumentVersion(ed.__dosLspVersions,pending.uri);
+   const data=await lspRequest("textDocument/didChange",{
+    textDocument:{uri:pending.uri,version},
+    contentChanges:[{text:pending.model.getValue()}],
+   },pending.language,pending.model);
+   if(!data){
+    if(workspaceIdRef.current===pending.workspaceId&&pathRef.current===pending.path&&ed.getModel()===pending.model&&ed.__dosLspOpened?.has(pending.uri))pendingLspChange=pending;
+    return pendingLspChange!==pending;
+   }
+   applyLspDiagnostics(data);
+   return true;
+  })();
+  const result=await lspFlushPromise;
+  lspFlushPromise=null;
+  if(pendingLspChange)return flushPendingLspChange();
+  return result;
  };
  const registerP1=()=>{
   const request=async(action,body={},originModel=null)=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||(originModel&&ed.getModel()!==originModel))return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath&&(!originModel||ed.getModel()===originModel)?data:{}}catch{return {}}};
@@ -122,7 +153,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  };
  registerP1();
  const p1Diagnostics=ed.createDecorationsCollection([]);
- const applyLspDiagnostics=(payload)=>{
+ applyLspDiagnostics=(payload)=>{
    const notes=payload?.notifications||[];
    for(const n of notes){
      if(n?.method!=="textDocument/publishDiagnostics")continue;
@@ -168,16 +199,8 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    clearTimeout(lspTimerRef.current);lspTimerRef.current=null;
    if(!changedModel||!changedWorkspaceId||!["python","javascript","typescript"].includes(lang(changedPath)))return;
    const changedUri=changedModel.uri.toString();
-   lspTimerRef.current=setTimeout(()=>{
-     if(workspaceIdRef.current!==changedWorkspaceId||pathRef.current!==changedPath
-       ||ed.getModel()!==changedModel||!ed.__dosLspOpened?.has(changedUri))return;
-     if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();
-     const version=nextLspDocumentVersion(ed.__dosLspVersions,changedUri);
-     void lspRequestWithDiagnostics("textDocument/didChange",{
-       textDocument:{uri:changedUri,version},
-       contentChanges:[{text:changedModel.getValue()}],
-     },lang(changedPath),changedModel);
-   },300);
+   pendingLspChange={model:changedModel,path:changedPath,workspaceId:changedWorkspaceId,uri:changedUri,language:lang(changedPath)};
+   lspTimerRef.current=setTimeout(()=>{void flushPendingLspChange();},300);
  });
  const p=ed.onDidChangeCursorPosition(e=>{if(typeof cursor.current==="function")cursor.current({line:e.position.lineNumber,column:e.position.column,path:pathRef.current});});
  const formatRequest=async(pathName,content,requestWorkspaceId=workspaceIdRef.current)=>{
@@ -239,7 +262,7 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
  const references=ed.addAction({id:"developer-os.find-references",label:"Developer OS: Find References",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{e.getAction("editor.action.referenceSearch.trigger")?.run();}});
  const openImport=ed.addAction({id:"developer-os.open-import",label:"Developer OS: Open Workspace Import",run:e=>{const m=e.getModel(),p=e.getPosition();if(!m||!p)return;const line=m.getLineContent(p.lineNumber),before=line.slice(0,p.column-1);let hit=null;for(const match of before.matchAll(importPathRegex)){hit=match}if(!hit)return;const target=resolveWorkspaceImport(pathRef.current,hit[2]);if(target)window.dispatchEvent(new CustomEvent("developer-os:open-file",{detail:{path:target}}));e.focus();}});
  const workspaceSymbolsAction=ed.addAction({id:"developer-os.workspace-symbols",label:"Developer OS: Workspace Symbols",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO],run:async e=>{const m=e.getModel();if(!m)return;let remote=[];try{const d=await request("symbols",{query:""},m);remote=Array.isArray(d?.symbols)?d.symbols:[]}catch(error){void error}if(ed.getModel()!==m)return;const local=workspaceSymbols(m.getValue()).map((s,index)=>({name:s.name,line:m.getPositionAt(s.offset).lineNumber,column:m.getPositionAt(s.offset).column,index,path:pathRef.current,kind:"local"}));const merged=(remote.length?remote:local).slice(0,500);if(typeof onWorkspaceSymbols==="function")onWorkspaceSymbols(merged.map((s,index)=>({name:s.name,line:Number(s.line||1),column:Number(s.column||1),index,path:s.path||pathRef.current,kind:s.kind||"symbol"})));window.dispatchEvent(new CustomEvent("developer-os:workspace-symbols",{detail:{path:pathRef.current,symbols:merged}}));e.focus();}});
-  return()=>{clearTimeout(lspTimerRef.current);lspTimerRef.current=null;ed.__dosRefreshP1Diagnostics=null;ed.__dosLspVersions?.clear();ed.__dosLspVersions=null;if(workspaceIdRef.current&&ed.__dosLspOpened)for(const uri of ed.__dosLspOpened)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());codeActionProviders.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
+  return()=>{clearTimeout(lspTimerRef.current);lspTimerRef.current=null;pendingLspChange=null;ed.__dosRefreshP1Diagnostics=null;ed.__dosLspVersions?.clear();ed.__dosLspVersions=null;if(workspaceIdRef.current&&ed.__dosLspOpened)for(const uri of ed.__dosLspOpened)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());codeActionProviders.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
  useEffect(()=>{const ed=editor.current;if(!ed||!editorSettings)return;const fontSize=Number(editorSettings.fontSize);ed.updateOptions({fontSize:Number.isFinite(fontSize)?Math.min(24,Math.max(11,Math.round(fontSize))):13,tabSize:editorSettings.tabSize===4?4:2,wordWrap:editorSettings.wordWrap===true?"on":"off",minimap:{enabled:editorSettings.minimap!==false,side:"right",showSlider:"mouseover",renderCharacters:false},lineNumbers:editorSettings.lineNumbers===false?"off":"on",stickyScroll:{enabled:editorSettings.stickyScroll!==false},formatOnType:editorSettings.formatOnType!==false,fontLigatures:editorSettings.fontLigatures===true, cursorSmoothCaretAnimation:editorSettings.smoothCaret!==false?"on":"off",renderWhitespace:["none","selection","all"].includes(editorSettings.renderWhitespace)?editorSettings.renderWhitespace:"selection",codeLens:editorSettings.codeLens!==false,smoothScrolling:editorSettings.smoothScrolling!==false,mouseWheelZoom:editorSettings.mouseWheelZoom===true,guides:{indentation:true,bracketPairs:editorSettings.bracketPairGuides!==false,highlightActiveBracketPair:editorSettings.bracketPairGuides!==false},renderLineHighlight:["none","gutter","line","all"].includes(editorSettings.renderLineHighlight)?editorSettings.renderLineHighlight:"line"});if(["developer-os-dark","vs-dark","vs","hc-black"].includes(editorSettings.theme))monaco.editor.setTheme(editorSettings.theme);ed.layout();},[editorSettings,editorReady]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;const workspaceChanged=modelWorkspaceRef.current!==workspaceId;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}if(workspaceChanged){const oldWorkspace=modelWorkspaceRef.current;if(oldWorkspace&&ed.__dosLspOpened){for(const uri of ed.__dosLspOpened){const token=getAccessToken();void fetch(API_URL+"/ide/workspaces/"+oldWorkspace+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:lang(normalized),method:"textDocument/didClose",uri,params:{textDocument:{uri}}})}).catch(()=>{});}}ed.__dosLspOpened=new Set();ed.__dosLspVersions=new Map();modelWorkspaceRef.current=workspaceId;}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&(!ed.hasTextFocus()||workspaceChanged))next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;
   if(workspaceIdRef.current&&["python","javascript","typescript"].includes(lang(normalized))){
