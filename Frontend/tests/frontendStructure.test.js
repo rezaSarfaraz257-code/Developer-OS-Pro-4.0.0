@@ -854,7 +854,7 @@ test("Monaco language services follow workspace switches without stale workspace
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /workspaceIdRef=useRef\(workspaceId\)/);
   assert.match(editor, /workspaceIdRef\.current=workspaceId/);
-  assert.ok(editor.includes('API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/lsp/"'));
+  assert.ok(editor.includes('API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/"'));
   assert.match(editor, /modelWorkspaceRef\.current!==workspaceId/);
   assert.match(editor, /\(!ed\.hasTextFocus\(\)\|\|workspaceChanged\)/);
   assert.match(editor, /\},\[path,workspaceId\]\)/);
