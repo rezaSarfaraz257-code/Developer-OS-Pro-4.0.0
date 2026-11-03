@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="118" y1="90" x2="914" y2="936" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101D3B"/>
+      <stop offset=".52" stop-color="#080F22"/>
+      <stop offset="1" stop-color="#050916"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="250" y1="180" x2="790" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4FFFF"/>
+      <stop offset=".22" stop-color="#77F7FF"/>
+      <stop offset=".55" stop-color="#28B8FF"/>
+      <stop offset=".82" stop-color="#786BFF"/>
+      <stop offset="1" stop-color="#C18CFF"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="280" y1="250" x2="760" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6BFFFF"/>
+      <stop offset=".5" stop-color="#19C8FF"/>
+      <stop offset="1" stop-color="#716BFF"/>
+    </linearGradient>
+    <linearGradient id="core" x1="350" y1="300" x2="680" y2="710" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172B50"/>
+      <stop offset="1" stop-color="#0A132B"/>
+    </linearGradient>
+    <filter id="glow" x="70" y="70" width="884" height="884" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <filter id="soft" x="150" y="150" width="724" height="724" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <clipPath id="clip"><rect x="64" y="64" width="896" height="896" rx="230"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect x="64" y="64" width="896" height="896" rx="230" fill="url(#bg)"/>
+    <circle cx="512" cy="505" r="340" fill="#1ABEFF" opacity=".10" filter="url(#glow)"/>
+    <path d="M64 720C245 620 365 815 540 750C715 685 803 600 960 656V960H64V720Z" fill="#13234B" opacity=".28"/>
+    <path d="M64 240C250 320 320 130 520 170C720 210 810 320 960 240" stroke="#54EFFF" stroke-opacity=".12" stroke-width="2"/>
+    <path d="M120 512H904M512 120V904" stroke="#7CEEFF" stroke-opacity=".07" stroke-width="2" stroke-dasharray="8 18"/>
+    <!-- luminous outer hexagonal chassis -->
+    <path d="M512 132L824 312V672L512 852L200 672V312L512 132Z" stroke="#1CCBFF" stroke-width="30" opacity=".22" filter="url(#soft)"/>
+    <path d="M512 132L824 312V672L512 852L200 672V312L512 132Z" stroke="url(#metal)" stroke-width="13" stroke-linejoin="round"/>
+    <path d="M512 166L794 329V655L512 818L230 655V329L512 166Z" stroke="#9CEFFF" stroke-opacity=".25" stroke-width="2"/>
+    <!-- corner circuit traces -->
+    <g stroke="url(#cyan)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M200 382H264L300 418"/>
+      <path d="M824 382H760L724 418"/>
+      <path d="M200 602H264L300 566"/>
+      <path d="M824 602H760L724 566"/>
+    </g>
+    <g fill="#B9FFFF">
+      <circle cx="200" cy="382" r="9"/><circle cx="824" cy="382" r="9"/>
+      <circle cx="200" cy="602" r="9"/><circle cx="824" cy="602" r="9"/>
+    </g>
+    <!-- central shield / processor -->
+    <path d="M512 246L718 365V603L512 722L306 603V365L512 246Z" fill="url(#core)" stroke="url(#metal)" stroke-width="8"/>
+    <path d="M512 277L690 380V588L512 691L334 588V380L512 277Z" stroke="#4AEAFF" stroke-opacity=".35" stroke-width="2"/>
+    <!-- D monogram, custom geometric form -->
+    <path d="M405 378H520C619 378 682 438 682 511C682 584 619 644 520 644H405V378Z" stroke="url(#metal)" stroke-width="38" stroke-linejoin="round"/>
+    <path d="M453 426H518C588 426 632 460 632 511C632 562 588 596 518 596H453V426Z" fill="#0A1731"/>
+    <!-- code chevrons -->
+    <path d="M385 466L342 511L385 556" stroke="#69F7FF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M639 466L682 511L639 556" stroke="#A78BFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M548 451L493 571" stroke="#45DFFF" stroke-width="15" stroke-linecap="round"/>
+    <!-- processor pins -->
+    <g stroke="#5CEBFF" stroke-width="8" stroke-linecap="round" opacity=".9">
+      <path d="M512 216V180M512 748V784"/>
+      <path d="M278 512H242M746 512H782"/>
+      <path d="M346 322L320 296M678 322L704 296"/>
+      <path d="M346 702L320 728M678 702L704 728"/>
+    </g>
+    <g fill="#D8FFFF">
+      <circle cx="512" cy="180" r="8"/><circle cx="512" cy="784" r="8"/>
+      <circle cx="242" cy="512" r="8"/><circle cx="782" cy="512" r="8"/>
+    </g>
+    <!-- subtle star nodes -->
+    <g fill="#A6F9FF">
+      <circle cx="292" cy="250" r="4"/><circle cx="732" cy="250" r="4"/>
+      <circle cx="292" cy="774" r="4"/><circle cx="732" cy="774" r="4"/>
+    </g>
+  </g>
+</svg>
