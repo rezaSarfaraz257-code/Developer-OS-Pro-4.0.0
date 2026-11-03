@@ -62,7 +62,13 @@ class LSPSession:
 
     def _send(self,payload):
         raw=json.dumps(payload,separators=(",",":")).encode()
-        self.proc.stdin.write(f"Content-Length: {len(raw)}\r\n\r\n".encode()+raw)
+        frame=f"Content-Length: {len(raw)}\r\n\r\n".encode()+raw
+        view=memoryview(frame)
+        while view:
+            written=self.proc.stdin.write(view)
+            if not written:
+                raise LSPError("LSP process closed stdin while sending a message")
+            view=view[written:]
         self.proc.stdin.flush()
 
     def request(self,method,params,timeout=8):
