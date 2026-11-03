@@ -1145,3 +1145,10 @@ test("Monaco reports unsupported LSP resource operations and refuses partial ren
   assert.match(ide, /onWorkspaceEditUnsupported=\{operations=>setStatus\(/);
   assert.match(ide, /apply them through Explorer after review/);
 });
+
+test("LSP change flush does not recursively retry a failed request", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const flush = editor.slice(editor.indexOf("const flushPendingLspChange=async()=>"), editor.indexOf("const registerP1=()=>"));
+  assert.match(flush, /if\(result&&pendingLspChange\)return flushPendingLspChange\(\)/);
+  assert.doesNotMatch(flush, /if\(pendingLspChange\)return flushPendingLspChange\(\)/);
+});
