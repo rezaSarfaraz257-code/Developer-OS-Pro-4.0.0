@@ -1039,3 +1039,16 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   assert.match(registration, /request\("symbols",\{query:""\},m\)/);
   assert.match(registration, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
 });
+
+
+test("Monaco custom actions do not shadow native VS Code rename and references shortcuts", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const customRename = editor.slice(editor.indexOf("const p1Actions="), editor.indexOf("const p1Refs="));
+  const customReferences = editor.slice(editor.indexOf("const p1Refs="), editor.indexOf("let lspVersion"));
+  const nativeRename = editor.slice(editor.indexOf("const renameSelection="), editor.indexOf("const references="));
+  const nativeReferences = editor.slice(editor.indexOf("const references="), editor.indexOf("const openImport="));
+  assert.doesNotMatch(customRename, /keybindings/);
+  assert.doesNotMatch(customReferences, /keybindings/);
+  assert.match(nativeRename, /keybindings:\[monaco\.KeyCode\.F2\]/);
+  assert.match(nativeReferences, /keybindings:\[monaco\.KeyMod\.Shift\|monaco\.KeyCode\.F12\]/);
+});
