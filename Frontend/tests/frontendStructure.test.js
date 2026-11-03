@@ -1066,6 +1066,7 @@ test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", (
   assert.match(editor, /const unsupported=getUnsupportedLspResourceOperations\(ld\?\.result\);if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /const safeActions=\[\]/);
   assert.match(editor, /return \{actions:safeActions\}/);
+});
 
 test("Monaco rejects stale versioned LSP diagnostics after newer document changes", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
