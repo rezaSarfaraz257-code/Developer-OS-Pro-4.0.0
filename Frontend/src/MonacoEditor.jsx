@@ -37,14 +37,14 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const lspRequest=async(method,params={},languageOverride=null,originModel=null)=>{
   const requestWorkspaceId=workspaceIdRef.current;
   const requestPath=pathRef.current;
-  if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return null;
+  if(!requestWorkspaceId||(originModel&&editor.current?.getModel()!==originModel))return null;
   const token=getAccessToken();
-  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString();
+  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(requestPath)).toString();
   try{
    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(requestPath),method,uri:requestUri,params})});
-   if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
+   if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||editor.current?.getModel()!==originModel)))return null;
    const data=await response.json().catch(()=>null);
-   return workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&ed.getModel()===originModel))?data:null;
+   return workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&editor.current?.getModel()===originModel))?data:null;
   }catch{return null}
  };
  const request=async(action,body={})=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath)return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath?data:{}}catch{return {}}};
