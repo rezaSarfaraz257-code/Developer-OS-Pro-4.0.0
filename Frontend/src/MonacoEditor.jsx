@@ -222,10 +222,16 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    }catch{return []}
  };
  const codeActionProviders=["python","javascript","typescript"].map(language=>monaco.languages.registerCodeActionProvider(language,{
-   provideCodeActions:async(model,range)=>{
-     const actions=await codeActionsRequest(model,range);
-     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?(getUnsupportedLspResourceOperations(a.edit).length?(workspaceEditUnsupported.current?.(getUnsupportedLspResourceOperations(a.edit)),undefined):mapLspWorkspaceEdit(a.edit,monaco)):undefined,command:a.command}))};
-   }
+  provideCodeActions:async(model,range)=>{
+    const actions=await codeActionsRequest(model,range);
+    const safeActions=[];
+    actions.forEach((action,index)=>{
+      const unsupported=getUnsupportedLspResourceOperations(action?.edit);
+      if(unsupported.length){workspaceEditUnsupported.current?.(unsupported);return;}
+      safeActions.push({title:action.title||action.description||("Code Action "+(index+1)),kind:action.kind||"quickfix",diagnostics:[],edit:action.edit?mapLspWorkspaceEdit(action.edit,monaco):undefined,command:action.command});
+    });
+    return {actions:safeActions};
+  }
  }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
    const requestWorkspaceId=workspaceIdRef.current;
