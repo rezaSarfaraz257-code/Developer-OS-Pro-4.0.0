@@ -1042,7 +1042,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   const registrationStart = editor.indexOf("const registerP1=()=>{");
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
-  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 8);
+  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 9);
   assert.ok(editor.includes('if(method!=="textDocument/didChange"&&!(await flushPendingLspChange()))return null;'));
   assert.ok(editor.includes("const changedModel=ed.getModel()"));
   assert.ok(editor.includes("ed.getModel()!==pending.model"));
@@ -1062,7 +1062,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 
 test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, mapLspDocumentSymbols, nextLspDocumentVersion, getUnsupportedLspResourceOperations \} from "\.\/ide\/monacoCompletion\.js"/);
   assert.match(editor, /const unsupported=getUnsupportedLspResourceOperations\(ld\?\.result\);if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /const safeActions=\[\]/);
   assert.match(editor, /return \{actions:safeActions\}/);
