@@ -1036,8 +1036,8 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 5);
   assert.match(editor, /lspRequestWithDiagnostics\("textDocument\/didChange"[\s\S]*?\},null,m\)/);
   assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
-  assert.match(registration, /request\("symbols",\{query:""\},m\)/);
-  assert.match(registration, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
+  assert.match(editor, /request\("symbols",\{query:""\},m\)/);
+  assert.match(editor, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
 });
 
 
