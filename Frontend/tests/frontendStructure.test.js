@@ -885,6 +885,16 @@ test("Web IDE shell grid maps workbench regions to their actual direct DOM child
 });
 
 
+test("Web IDE editor tabs expose accessible tab semantics and keyboard navigation", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  assert.match(ide, /className="dos-tab-list" role="tablist" aria-label="Open editor files"/);
+  assert.match(ide, /role="tab" aria-selected=\{p===active\} aria-label=\{`Open \$\{p\}`\} tabIndex=\{p===active\?0:-1\}/);
+  assert.match(ide, /e\.key==="ArrowRight"\|\|e\.key==="ArrowLeft"\|\|e\.key==="Home"\|\|e\.key==="End"/);
+  assert.match(ide, /aria-label=\{`Close \$\{p\}`\}/);
+  assert.ok(workbench.includes(".dos-ide-pro .dos-tab-list {"));
+});
+
 test("Web IDE terminal toggle keeps dock and terminal visibility synchronized", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /const toggleTerminal=useCallback\(\(\)=>\{const next=!dockOpen;setDockTab\("terminal"\);setDockOpen\(next\);setShowTerminal\(next\);if\(next\)setPanel\(null\)\},\[dockOpen\]\)/);
