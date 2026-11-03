@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, mapLspDocumentSymbols, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -16,6 +16,7 @@ const monaco = {
     CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
     DocumentHighlightKind: { Text: 0, Read: 1, Write: 2 },
     InlayHintKind: { Type: 1, Parameter: 2 },
+    SymbolKind: Object.fromEntries(["File","Module","Namespace","Package","Class","Method","Property","Field","Constructor","Enum","Interface","Function","Variable","Constant","String","Number","Boolean","Array","Object","Key","Null","EnumMember","Struct","Event","Operator","TypeParameter"].map((name,index)=>[name,index])),
   },
 };
 const model = {
@@ -361,4 +362,55 @@ test("LSP resource operations are detected explicitly instead of being silently 
   assert.deepEqual(operations.map(item => item?.kind || "malformed"), ["create", "rename", "delete", "unknown", "malformed", "malformed"]);
   assert.deepEqual(getUnsupportedLspResourceOperations(null), []);
   assert.deepEqual(getUnsupportedLspResourceOperations({ documentChanges: [] }), []);
+});
+
+
+test("LSP document symbols map hierarchical ranges, kinds and deprecated tags", () => {
+  const symbols = mapLspDocumentSymbols([{
+    name: "Example",
+    kind: 5,
+    detail: "class Example",
+    range: { start: { line: 0, character: 0 }, end: { line: 8, character: 1 } },
+    selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 13 } },
+    children: [{
+      name: "run",
+      kind: 6,
+      tags: [1],
+      range: { start: { line: 2, character: 2 }, end: { line: 4, character: 3 } },
+      selectionRange: { start: { line: 2, character: 7 }, end: { line: 2, character: 10 } },
+    }],
+  }], monaco);
+
+  assert.equal(symbols.length, 1);
+  assert.equal(symbols[0].name, "Example");
+  assert.equal(symbols[0].kind, monaco.languages.SymbolKind.Class);
+  assert.deepEqual(symbols[0].range, { startLineNumber: 1, startColumn: 1, endLineNumber: 9, endColumn: 2 });
+  assert.deepEqual(symbols[0].selectionRange, { startLineNumber: 1, startColumn: 7, endLineNumber: 1, endColumn: 14 });
+  assert.equal(symbols[0].children[0].kind, monaco.languages.SymbolKind.Method);
+  assert.deepEqual(symbols[0].children[0].tags, [1]);
+});
+
+test("LSP document symbols accept flat SymbolInformation and reject malformed entries", () => {
+  const symbols = mapLspDocumentSymbols([
+    {
+      name: "helper",
+      kind: 12,
+      containerName: "module",
+      location: { uri: "inmemory://developer-os/app.js", range: {
+        start: { line: 1, character: 0 }, end: { line: 1, character: 6 },
+      } },
+    },
+    { name: "broken", kind: 12, range: { start: { line: -1, character: 0 }, end: { line: 0, character: 1 } } },
+    { name: "", kind: 12, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } },
+  ], monaco);
+
+  assert.equal(symbols.length, 1);
+  assert.equal(symbols[0].name, "helper");
+  assert.equal(symbols[0].containerName, "module");
+  assert.equal(symbols[0].kind, monaco.languages.SymbolKind.Function);
+});
+
+test("LSP document symbols fail closed when the server result is not an array", () => {
+  assert.deepEqual(mapLspDocumentSymbols(null, monaco), []);
+  assert.deepEqual(mapLspDocumentSymbols([], null), []);
 });
