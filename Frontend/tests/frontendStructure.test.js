@@ -1132,3 +1132,13 @@ test("Monaco registers guarded LSP signature help with VS Code-style triggers", 
   assert.ok(editor.includes("context?.isRetrigger===true"));
   assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
 });
+
+test("Monaco reports unsupported LSP resource operations and refuses partial rename edits", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(editor, /getUnsupportedLspResourceOperations\(ld\?\.result\)/);
+  assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}/);
+  assert.match(editor, /workspaceEditUnsupported\.current\?\.\(getUnsupportedLspResourceOperations\(a\.edit\)\)/);
+  assert.match(ide, /onWorkspaceEditUnsupported=\{operations=>setStatus\(/);
+  assert.match(ide, /apply them through Explorer after review/);
+});
