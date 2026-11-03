@@ -864,7 +864,7 @@ test("Monaco language services follow workspace switches without stale workspace
   assert.ok(registration.includes("registerDefinitionProvider"));
   assert.doesNotMatch(registration, /if\(!workspaceIdRef\.current\)return;/);
   assert.match(registration, /const token=getAccessToken\(\)/);
-  assert.match(registration, /const requestWorkspaceId=workspaceIdRef\.current;const requestPath=pathRef\.current;if\(!requestWorkspaceId\)return \{\}/);
+  assert.match(registration, /const requestWorkspaceId=workspaceIdRef\.current;const requestPath=pathRef\.current;if\(!requestWorkspaceId\|\|\(originModel&&ed\.getModel\(\)!==originModel\)\)return \{\}/);
 });
 
 test("Monaco workers use package-export-compatible paths", () => {
