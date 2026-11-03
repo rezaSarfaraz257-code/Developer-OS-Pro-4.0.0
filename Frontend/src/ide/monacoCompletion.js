@@ -85,9 +85,13 @@ export function mapLspCompletionItem(item, monaco, model, position) {
 }
 export function getUnsupportedLspResourceOperations(workspaceEdit) {
   if (!Array.isArray(workspaceEdit?.documentChanges)) return [];
-  return workspaceEdit.documentChanges.filter(change =>
-    change?.kind === "create" || change?.kind === "rename" || change?.kind === "delete"
-  );
+  // LSP documentChanges is a union of TextDocumentEdit and resource operations.
+  // Reject malformed/unknown entries too: silently dropping one would partially apply an edit.
+  return workspaceEdit.documentChanges.filter(change => {
+    if (change?.kind === "create" || change?.kind === "rename" || change?.kind === "delete") return true;
+    return !(change?.textDocument && typeof change.textDocument.uri === "string"
+      && change.textDocument.uri.length > 0 && Array.isArray(change.edits));
+  });
 }
 
 export function mapLspWorkspaceEdit(workspaceEdit, monaco) {
