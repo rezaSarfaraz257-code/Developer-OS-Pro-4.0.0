@@ -166,6 +166,20 @@
   overflow-y: hidden;
   scrollbar-width: thin;
 }
+.dos-ide-pro .dos-tab-list {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dos-ide-pro .dos-tab[role="tab"]:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline-offset: -3px;
+}
 .dos-ide-pro .dos-tab {
   flex: 0 0 auto;
   min-width: 126px;
