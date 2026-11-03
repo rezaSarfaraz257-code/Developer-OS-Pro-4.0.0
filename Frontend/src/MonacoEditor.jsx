@@ -146,7 +146,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const codeActionProviders=["python","javascript","typescript"].map(language=>monaco.languages.registerCodeActionProvider(language,{
    provideCodeActions:async(model,range)=>{
      const actions=await codeActionsRequest(model,range);
-     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?.changes?{edits:Object.entries(a.edit.changes).flatMap(([uri,items])=>(items||[]).map(x=>({resource:monaco.Uri.parse(uri),textEdit:{range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1},text:x.newText}})))}:undefined,command:a.command}))};
+     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?mapLspWorkspaceEdit(a.edit,monaco):undefined,command:a.command}))};
    }
  }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
