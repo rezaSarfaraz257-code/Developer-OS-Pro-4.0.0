@@ -1041,6 +1041,13 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 });
 
 
+test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
+  assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
+});
+
 test("Monaco custom actions do not shadow native VS Code rename and references shortcuts", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   const customRename = editor.slice(editor.indexOf("const p1Actions="), editor.indexOf("const p1Refs="));
