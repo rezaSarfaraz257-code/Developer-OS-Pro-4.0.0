@@ -209,6 +209,40 @@ export function mapLspInlayHints(hints, monaco) {
   });
 }
 
+
+const LSP_SYMBOL_KIND_NAMES = [
+  "File", "Module", "Namespace", "Package", "Class", "Method", "Property",
+  "Field", "Constructor", "Enum", "Interface", "Function", "Variable",
+  "Constant", "String", "Number", "Boolean", "Array", "Object", "Key",
+  "Null", "EnumMember", "Struct", "Event", "Operator", "TypeParameter",
+];
+
+export function mapLspDocumentSymbols(symbols, monaco) {
+  if (!Array.isArray(symbols) || !monaco?.languages?.SymbolKind) return [];
+  const mapSymbol = symbol => {
+    const sourceRange = symbol?.range || symbol?.location?.range;
+    const range = toMonacoRange(sourceRange);
+    if (!range || typeof symbol?.name !== "string" || !symbol.name) return null;
+    const selectionRange = toMonacoRange(symbol.selectionRange) || range;
+    const kindName = LSP_SYMBOL_KIND_NAMES[Number(symbol.kind) - 1];
+    const mapped = {
+      name: symbol.name,
+      kind: kindName && monaco.languages.SymbolKind[kindName] !== undefined
+        ? monaco.languages.SymbolKind[kindName]
+        : monaco.languages.SymbolKind.Variable,
+      range,
+      selectionRange,
+    };
+    if (typeof symbol.detail === "string" && symbol.detail) mapped.detail = symbol.detail;
+    if (typeof symbol.containerName === "string" && symbol.containerName) mapped.containerName = symbol.containerName;
+    if (Array.isArray(symbol.tags) && symbol.tags.includes(1)) mapped.tags = [1];
+    if (symbol.deprecated === true) mapped.tags = [1];
+    if (Array.isArray(symbol.children)) mapped.children = symbol.children.map(mapSymbol).filter(Boolean);
+    return mapped;
+  };
+  return symbols.map(mapSymbol).filter(Boolean);
+}
+
 export function mapLspSignatureHelp(result) {
   const signatures = result?.signatures;
   if (!Array.isArray(signatures)) return null;
