@@ -968,3 +968,25 @@ test("Monaco formatting and code actions reject stale workspace or model respons
   assert.match(editor, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model/);
   assert.match(editor, /if\(workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model\)return \[\]/);
 });
+
+
+test("Monaco symbol requests reject stale workspace and file responses", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const requestStart = editor.indexOf("const request=async(action,body={})=>{");
+  const requestEnd = editor.indexOf(";", requestStart);
+  const request = editor.slice(requestStart, editor.indexOf("};", requestStart) + 2);
+  assert.ok(request.includes("const requestWorkspaceId=workspaceIdRef.current"));
+  assert.ok(request.includes("const requestPath=pathRef.current"));
+  assert.ok(request.includes('API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/"'));
+  assert.ok(request.includes("path:requestPath"));
+  assert.match(request, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath/);
+  assert.match(request, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath\?data:\{\}/);
+});
+
+test("Monaco symbol diagnostics use an isolated marker owner", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /setModelMarkers\(targetModel,"developer-os-symbols",markers\)/);
+  assert.match(editor, /setModelMarkers\(targetModel,"developer-os-symbols",\[\]\)/);
+  assert.match(editor, /ed\.getModel\(\)!==targetModel/);
+  assert.match(editor, /setModelMarkers\(m,"developer-os",markers\)/);
+});
