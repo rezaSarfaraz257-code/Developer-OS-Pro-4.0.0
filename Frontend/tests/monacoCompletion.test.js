@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -15,6 +15,7 @@ const monaco = {
     CompletionItemKind: Object.fromEntries(kindNames.map((name, index) => [name, index + 1])),
     CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
     DocumentHighlightKind: { Text: 0, Read: 1, Write: 2 },
+    InlayHintKind: { Type: 1, Parameter: 2 },
   },
 };
 const model = {
@@ -276,4 +277,28 @@ test("LSP document highlight mapper safely handles missing results", () => {
   assert.deepEqual(mapLspDocumentHighlights(null, monaco), []);
   assert.deepEqual(mapLspDocumentHighlights({}, monaco), []);
   assert.deepEqual(mapLspDocumentHighlights([{ range: {} }], monaco), []);
+});
+
+test("LSP inlay hints map positions, label parts, kinds and safe optional metadata", () => {
+  const hints = mapLspInlayHints([
+    { position: { line: 0, character: 4 }, label: "string", kind: 1, paddingRight: true, tooltip: "Inferred type" },
+    { position: { line: 2, character: 1 }, label: [{ value: "count" }, { value: ": " }, { value: "number" }], kind: 2, paddingLeft: true },
+    { position: { line: -1, character: 0 }, label: "invalid" },
+    { position: { line: 0, character: 0 }, label: "" },
+    null,
+  ], monaco);
+  assert.equal(hints.length, 2);
+  assert.deepEqual(hints[0], {
+    position: { lineNumber: 1, column: 5 }, label: "string",
+    paddingLeft: false, paddingRight: true,
+    kind: monaco.languages.InlayHintKind.Type, tooltip: "Inferred type",
+  });
+  assert.equal(hints[1].label, "count: number");
+  assert.equal(hints[1].kind, monaco.languages.InlayHintKind.Parameter);
+  assert.equal(hints[1].paddingLeft, true);
+});
+test("LSP inlay hint mapper safely handles missing or unsupported payloads", () => {
+  assert.deepEqual(mapLspInlayHints(null, monaco), []);
+  assert.deepEqual(mapLspInlayHints({}, monaco), []);
+  assert.deepEqual(mapLspInlayHints([{ position: {}, label: "x" }], monaco), []);
 });
