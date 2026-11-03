@@ -40,6 +40,14 @@ class LSPMessageFramingTests(unittest.TestCase):
             with self.subTest(frame=frame), self.assertRaisesRegex(LSPError, "Content-Length"):
                 session._read_message()
 
+    def test_non_ascii_headers_are_rejected_as_protocol_errors(self):
+        session = LSPSession(".", [])
+        session.proc = SimpleNamespace(stdout=io.BytesIO(
+            b"X-Invalid: \xff\r\nContent-Length: 2\r\n\r\n{}"
+        ))
+        with self.assertRaisesRegex(LSPError, "headers must be ASCII"):
+            session._read_message()
+
     def test_partial_header_is_not_treated_as_clean_eof(self):
         session = LSPSession(".", [])
         session.proc = SimpleNamespace(stdout=io.BytesIO(b"Content-Length: 2\r\n"))
