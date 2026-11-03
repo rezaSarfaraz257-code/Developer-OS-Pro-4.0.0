@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -9,6 +9,7 @@ const kindNames = [
   "File", "Reference", "Folder", "TypeParameter",
 ];
 const monaco = {
+  MarkerSeverity: { Error: 8, Warning: 4, Info: 2, Hint: 1 },
   Uri: { parse: value => ({ toString: () => value }) },
   languages: {
     CompletionItemKind: Object.fromEntries(kindNames.map((name, index) => [name, index + 1])),
@@ -208,4 +209,42 @@ test("LSP location mapper handles empty and malformed responses without throwing
   assert.deepEqual(mapLspLocations({ uri: "file:///a.py" }, monaco), []);
   assert.deepEqual(mapLspLocations({ uri: "file:///a.py", range: {} }, monaco), []);
   assert.deepEqual(mapLspLocations([{ uri: "file:///a.py", range: {} }], monaco), []);
+});
+
+test("LSP diagnostics map severity and source while rejecting malformed ranges", () => {
+  const markers = mapLspDiagnostics([
+    {
+      severity: 1,
+      message: "Unexpected token",
+      source: "Pyright",
+      code: "reportSyntaxError",
+      range: { start: { line: 1, character: 2 }, end: { line: 1, character: 5 } },
+    },
+    {
+      severity: 2,
+      message: "Potential issue",
+      range: { start: { line: 3, character: 0 }, end: { line: 3, character: 1 } },
+    },
+    { severity: 1, message: "Broken range", range: {} },
+    { severity: 1, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } },
+    null,
+  ], monaco);
+
+  assert.equal(markers.length, 2);
+  assert.equal(markers[0].severity, monaco.MarkerSeverity.Error);
+  assert.equal(markers[0].source, "Pyright");
+  assert.equal(markers[0].code, "reportSyntaxError");
+  assert.deepEqual(markers[0], {
+    startLineNumber: 2, startColumn: 3, endLineNumber: 2, endColumn: 6,
+    severity: monaco.MarkerSeverity.Error, message: "Unexpected token",
+    source: "Pyright", code: "reportSyntaxError",
+  });
+  assert.equal(markers[1].severity, monaco.MarkerSeverity.Warning);
+  assert.equal(markers[1].source, "LSP");
+});
+
+test("LSP diagnostics mapper handles missing payloads safely", () => {
+  assert.deepEqual(mapLspDiagnostics(null, monaco), []);
+  assert.deepEqual(mapLspDiagnostics({}, monaco), []);
+  assert.deepEqual(mapLspDiagnostics([{ message: "x" }], monaco), []);
 });
