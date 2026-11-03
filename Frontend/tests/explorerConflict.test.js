@@ -11,7 +11,7 @@ test("Explorer rename retry requires an unchanged source and a free destination"
   const files = { "src/a.js": "original" };
   assert.equal(canRetryExplorerMutation({ action: "rename", path: "src/a.js", to: "src/b.js" }, files, "original"), true);
   assert.equal(canRetryExplorerMutation({ action: "rename", path: "src/a.js", to: "src/b.js" }, { ...files, "src/b.js": "other" }, "original"), false);
-  assert.equal(canRetryExplorerMutation({ action: "rename", path: "src/a.js", to: "src/b.js" }, { "src/a.js": "changed" }, "original"), true);
+  assert.equal(canRetryExplorerMutation({ action: "rename", path: "src/a.js", to: "src/b.js" }, { "src/a.js": "changed" }, "original"), false);
   assert.equal(canRetryExplorerMutation({ action: "copy", path: "src/a.js", to: "src/b.js" }, files, "original"), false);
 });
 
