@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -330,4 +330,18 @@ test("LSP signature help rejects malformed payloads and safely bounds active ind
   assert.equal(mapped.value.activeSignature, 0);
   assert.equal(mapped.value.activeParameter, 0);
   assert.deepEqual(mapped.value.signatures[0].parameters.map(item => item.label), ["a"]);
+});
+
+
+test("LSP document versions advance independently for each open document", () => {
+  const versions = new Map([
+    ["file:///workspace/a.py", 1],
+    ["file:///workspace/b.py", 1],
+  ]);
+  assert.equal(nextLspDocumentVersion(versions, "file:///workspace/a.py"), 2);
+  assert.equal(nextLspDocumentVersion(versions, "file:///workspace/b.py"), 2);
+  assert.equal(nextLspDocumentVersion(versions, "file:///workspace/a.py"), 3);
+  assert.equal(versions.get("file:///workspace/a.py"), 3);
+  assert.equal(nextLspDocumentVersion(null, "file:///workspace/a.py"), 2);
+  assert.equal(nextLspDocumentVersion(versions, ""), 2);
 });
