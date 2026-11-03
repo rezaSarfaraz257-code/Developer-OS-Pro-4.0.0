@@ -1053,7 +1053,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
   assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 9);
-  assert.ok(editor.includes('if(method!=="textDocument/didChange"&&!(await flushPendingLspChange()))return null;'));
+  assert.ok(editor.includes('if(method!=="textDocument/didChange"&&method!=="textDocument/didOpen"&&!(await flushPendingLspChange()))return null;'));
   assert.ok(editor.includes("const changedModel=ed.getModel()"));
   assert.ok(editor.includes("ed.getModel()!==pending.model"));
   assert.ok(editor.includes("ed.__dosLspOpened?.has(pending.uri)"));
