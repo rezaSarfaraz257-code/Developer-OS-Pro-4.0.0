@@ -954,9 +954,9 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
   assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
-  assert.equal((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length, 4);
+  assert.equal((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length, 7);
   assert.equal((editor.match(/const requestUri=params\?\.textDocument\?\.uri\|\|monaco\.Uri\.parse/g)||[]).length, 2);
-  assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 2);
+  assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 3);
 });
 
 test("Monaco formatting and code actions reject stale workspace or model responses", () => {
