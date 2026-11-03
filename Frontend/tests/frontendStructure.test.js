@@ -947,7 +947,7 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
 
   assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "diagnostics handlers should exist");
   assert.match(diagnostics, /const requestWorkspaceId=workspaceIdRef\.current/);
-  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)applyLspDiagnostics\(data\)/);
+  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)\)applyLspDiagnostics\(data\)/);
   assert.match(diagnostics, /const requestPath=pathRef\.current/);
   assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
   assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
