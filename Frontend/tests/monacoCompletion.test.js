@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -173,4 +173,39 @@ test("LSP WorkspaceEdit safely skips malformed edits and unsupported resource op
   assert.equal(workspaceEdit.edits.length, 1);
   assert.equal(workspaceEdit.edits[0].textEdit.text, "good");
   assert.deepEqual(mapLspWorkspaceEdit(null, monaco), { edits: [] });
+});
+
+test("LSP Location and LocationLink results map to safe Monaco navigation targets", () => {
+  const locations = mapLspLocations([
+    {
+      uri: "file:///workspace/a.py",
+      range: { start: { line: 0, character: 2 }, end: { line: 0, character: 8 } },
+    },
+    {
+      targetUri: "file:///workspace/b.py",
+      targetRange: { start: { line: 4, character: 0 }, end: { line: 7, character: 0 } },
+      targetSelectionRange: { start: { line: 5, character: 3 }, end: { line: 5, character: 9 } },
+    },
+    {
+      targetUri: "file:///workspace/invalid.py",
+      targetRange: { start: { line: -1, character: 0 }, end: { line: 0, character: 1 } },
+    },
+    { uri: "not-a-valid-range" },
+  ], monaco);
+
+  assert.equal(locations.length, 2);
+  assert.deepEqual(locations[0].range, {
+    startLineNumber: 1, startColumn: 3, endLineNumber: 1, endColumn: 9,
+  });
+  assert.equal(locations[1].uri.toString(), "file:///workspace/b.py");
+  assert.deepEqual(locations[1].range, {
+    startLineNumber: 6, startColumn: 4, endLineNumber: 6, endColumn: 10,
+  });
+});
+
+test("LSP location mapper handles empty and malformed responses without throwing", () => {
+  assert.deepEqual(mapLspLocations(null, monaco), []);
+  assert.deepEqual(mapLspLocations({ uri: "file:///a.py" }, monaco), []);
+  assert.deepEqual(mapLspLocations({ uri: "file:///a.py", range: {} }, monaco), []);
+  assert.deepEqual(mapLspLocations([{ uri: "file:///a.py", range: {} }], monaco), []);
 });
