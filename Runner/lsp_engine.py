@@ -53,7 +53,7 @@ class LSPSession:
         self._closed=False
 
     def start(self):
-        self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False)
+        self.proc=subprocess.Popen(self.command,cwd=self.root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=False,bufsize=0)
         self.request("initialize",{"processId":os.getpid(),"rootUri":self.root.as_uri(),"capabilities":{},"workspaceFolders":[{"uri":self.root.as_uri(),"name":"workspace"}]})
         self.notify("initialized",{})
 
@@ -125,9 +125,13 @@ class LSPSession:
         if length > 32 * 1024 * 1024:
             raise LSPError("LSP message body exceeds the size limit")
 
-        body = self.proc.stdout.read(length)
-        if len(body) != length:
-            raise LSPError("LSP message body was truncated")
+        body = bytearray()
+        while len(body) < length:
+            chunk = self.proc.stdout.read(length - len(body))
+            if not chunk:
+                raise LSPError("LSP message body was truncated")
+            body.extend(chunk)
+        body = bytes(body)
         try:
             message = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
