@@ -95,7 +95,9 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    if(workspaceIdRef.current===pending.workspaceId&&pathRef.current===pending.path&&ed.getModel()===pending.model&&ed.__dosLspOpened?.has(pending.uri))pendingLspChange=pending;
   }
   lspFlushPromise=null;
-  if(pendingLspChange)return flushPendingLspChange();
+  // Do not spin-retry a failed didChange request. Keep the pending snapshot so
+  // the next editor/LSP request can retry once, without trapping the provider.
+  if(result&&pendingLspChange)return flushPendingLspChange();
   return result;
  };
  const registerP1=()=>{
