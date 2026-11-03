@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -9,6 +9,7 @@ const kindNames = [
   "File", "Reference", "Folder", "TypeParameter",
 ];
 const monaco = {
+  Uri: { parse: value => ({ toString: () => value }) },
   languages: {
     CompletionItemKind: Object.fromEntries(kindNames.map((name, index) => [name, index + 1])),
     CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
@@ -116,4 +117,60 @@ test("invalid completion inputs fail closed and missing edit ranges use the curr
   assert.deepEqual(item.range, {
     startLineNumber: 4, startColumn: 3, endLineNumber: 4, endColumn: 8,
   });
+});
+
+test("LSP WorkspaceEdit maps both changes and documentChanges into Monaco edits", () => {
+  const workspaceEdit = mapLspWorkspaceEdit({
+    changes: {
+      "file:///workspace/a.py": [{
+        range: { start: { line: 0, character: 4 }, end: { line: 0, character: 7 } },
+        newText: "total",
+      }],
+    },
+    documentChanges: [
+      {
+        textDocument: { uri: "file:///workspace/b.py", version: 3 },
+        edits: [{
+          range: { start: { line: 2, character: 0 }, end: { line: 2, character: 5 } },
+          newText: "total",
+        }],
+      },
+      {
+        textDocument: { uri: "file:///workspace/a.py", version: 4 },
+        edits: [{
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          newText: "ignored-duplicate",
+        }],
+      },
+    ],
+  }, monaco);
+
+  assert.equal(workspaceEdit.edits.length, 2);
+  assert.deepEqual(workspaceEdit.edits.map(edit => edit.resource.toString()), [
+    "file:///workspace/a.py",
+    "file:///workspace/b.py",
+  ]);
+  assert.equal(workspaceEdit.edits[0].textEdit.text, "total");
+  assert.deepEqual(workspaceEdit.edits[1].textEdit.range, {
+    startLineNumber: 3, startColumn: 1, endLineNumber: 3, endColumn: 6,
+  });
+});
+
+test("LSP WorkspaceEdit safely skips malformed edits and unsupported resource operations", () => {
+  const workspaceEdit = mapLspWorkspaceEdit({
+    documentChanges: [
+      { kind: "rename", oldUri: "file:///old.py", newUri: "file:///new.py" },
+      {
+        textDocument: { uri: "file:///workspace/a.py", version: null },
+        edits: [
+          { range: { start: { line: -1, character: 0 }, end: { line: 0, character: 1 } }, newText: "bad" },
+          { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, newText: "good" },
+        ],
+      },
+    ],
+  }, monaco);
+
+  assert.equal(workspaceEdit.edits.length, 1);
+  assert.equal(workspaceEdit.edits[0].textEdit.text, "good");
+  assert.deepEqual(mapLspWorkspaceEdit(null, monaco), { edits: [] });
 });
