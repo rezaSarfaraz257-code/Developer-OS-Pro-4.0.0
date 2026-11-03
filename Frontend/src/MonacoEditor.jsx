@@ -167,14 +167,6 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
      monaco.editor.setModelMarkers(current,"lsp",marks);
    }
  };
- const lspRequestWithDiagnostics=async(method,params={},languageOverride=null,originModel=null)=>{
-   const requestWorkspaceId=workspaceIdRef.current;
-   const requestPath=pathRef.current;
-   if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return null;
-   const data=await lspRequest(method,params,languageOverride,originModel);
-   if(workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&ed.getModel()===originModel)))applyLspDiagnostics(data);
-   return data;
- };
  const refreshP1Diagnostics=async()=>{
    const requestWorkspaceId=workspaceIdRef.current;
    const requestPath=pathRef.current;
