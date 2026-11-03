@@ -1,6 +1,6 @@
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
-export function canRetryExplorerMutation(payload, files) {
+export function canRetryExplorerMutation(payload, files, expectedSourceContent) {
   if (!payload || !files || typeof files !== "object" || Array.isArray(files)) return false;
   if (payload.action === "create") {
     return typeof payload.path === "string" && payload.path.length > 0 && !hasOwn(files, payload.path);
@@ -8,7 +8,8 @@ export function canRetryExplorerMutation(payload, files) {
   if (payload.action === "rename") {
     return typeof payload.path === "string" && payload.path.length > 0
       && typeof payload.to === "string" && payload.to.length > 0
-      && hasOwn(files, payload.path) && !hasOwn(files, payload.to);
+      && typeof expectedSourceContent === "string" && hasOwn(files, payload.path)
+      && files[payload.path] === expectedSourceContent && !hasOwn(files, payload.to);
   }
   return false;
 }
