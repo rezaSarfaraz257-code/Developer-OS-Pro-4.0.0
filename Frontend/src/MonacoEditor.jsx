@@ -116,8 +116,8 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));
  };
  ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics;
- const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",keybindings:[monaco.KeyCode.F2],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
- const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
+ const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
+ const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
  let lspVersion=1,lspTimer=null;
  
  const c=ed.onDidChangeModelContent(()=>{if(typeof change.current==="function")change.current(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceIdRef.current)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]},null,m);},300);});
