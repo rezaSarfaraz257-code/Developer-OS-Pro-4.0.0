@@ -951,4 +951,7 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
   assert.match(diagnostics, /const requestPath=pathRef\.current/);
   assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
   assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
+  assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
+  assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
+  assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
 });
