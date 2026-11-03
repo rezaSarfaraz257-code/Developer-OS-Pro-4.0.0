@@ -94,40 +94,64 @@ class LSPSession:
         return out
 
     def _read_message(self):
-        headers=b""
-        while b"\r\n\r\n" not in headers:
-            chunk=self.proc.stdout.read(1)
-            if not chunk: return None
-            headers+=chunk
-        length=0
-        for line in headers.decode(errors="replace").split("\r\n"):
-            if line.lower().startswith("content-length:"):
-                length=int(line.split(":",1)[1].strip())
-        body=self.proc.stdout.read(length)
+        headers = bytearray()
+        while not headers.endswith(b"\r\n\r\n"):
+            chunk = self.proc.stdout.read(1)
+            if not chunk:
+                if not headers:
+                    return None
+                raise LSPError("LSP message headers were truncated")
+            headers.extend(chunk)
+            if len(headers) > 65536:
+                raise LSPError("LSP message headers exceed the size limit")
+
+        content_lengths = []
+        for line in bytes(headers[:-4]).decode("ascii", errors="strict").split("\r\n"):
+            if not line:
+                continue
+            name, separator, value = line.partition(":")
+            if not separator:
+                raise LSPError("Malformed LSP message header")
+            if name.strip().lower() == "content-length":
+                content_lengths.append(value.strip())
+
+        if len(content_lengths) != 1 or not content_lengths[0].isdigit():
+            raise LSPError("LSP message must contain one valid Content-Length header")
+        length = int(content_lengths[0])
+        if length > 32 * 1024 * 1024:
+            raise LSPError("LSP message body exceeds the size limit")
+
+        body = self.proc.stdout.read(length)
         if len(body) != length:
             raise LSPError("LSP message body was truncated")
-        return json.loads(body.decode("utf-8"))
+        try:
+            message = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise LSPError("LSP message body is not valid UTF-8 JSON") from exc
+        if not isinstance(message, dict):
+            raise LSPError("LSP message must be a JSON object")
+        return message
 
-    def _read_response(self,ident,timeout):
-        import select,time
-        end=time.time()+timeout
-        while time.time()<end:
-            if self.proc.poll() is not None: raise LSPError("LSP process exited")
-            ready,_,_=select.select([self.proc.stdout],[],[],min(.25,max(.01,end-time.time())))
-            if not ready: continue
-            headers=b""
-            while b"\r\n\r\n" not in headers:
-                chunk=self.proc.stdout.read(1)
-                if not chunk: raise LSPError("LSP closed stdout")
-                headers+=chunk
-            length=0
-            for line in headers.decode(errors="replace").split("\r\n"):
-                if line.lower().startswith("content-length:"): length=int(line.split(":",1)[1].strip())
-            body=self.proc.stdout.read(length)
-            msg=json.loads(body.decode("utf-8"))
-            if msg.get("id")==ident: return msg
-            if msg.get("method") and msg.get("id") is None: self.notifications.append(msg)
-            elif msg.get("id") is not None: self.notifications.append(msg)
+    def _read_response(self, ident, timeout):
+        import select, time
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.proc.poll() is not None:
+                raise LSPError("LSP process exited")
+            ready, _, _ = select.select(
+                [self.proc.stdout], [], [], min(.25, max(.01, end - time.time()))
+            )
+            if not ready:
+                continue
+            msg = self._read_message()
+            if msg is None:
+                raise LSPError("LSP closed stdout")
+            if msg.get("id") == ident:
+                return msg
+            if msg.get("method") and msg.get("id") is None:
+                self.notifications.append(msg)
+            elif msg.get("id") is not None:
+                self.notifications.append(msg)
         raise LSPError("LSP request timeout")
 
     def stop(self):
