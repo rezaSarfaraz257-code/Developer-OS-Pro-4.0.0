@@ -216,6 +216,14 @@ test("offline queue parsing retains identifiable legacy edits and ignores malfor
   assert.deepEqual(parseOfflineQueue("not-json"), []);
 });
 
+test("Monaco serializes LSP document lifecycle notifications per workspace and URI", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /createLspDocumentQueue/);
+  assert.match(editor, /lspNotifications\.enqueue\(queueKey,send\)/);
+  assert.match(editor, /await lspNotifications\.flush\(queueKey\)/);
+  assert.match(editor, /lspNotifications\.enqueue\(oldWorkspace\+":"\+uri/);
+});
+
 test("Web IDE routes tab switching through the save guard and refuses false save success", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /onClick=\{\(\)=>\{void open\(p\);setRecent/);
