@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -82,6 +82,22 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
       return mapLspDocumentHighlights(response?.result,monaco);
     }
   }));
+  if(monaco.languages.registerInlayHintsProvider){
+    p1Providers.push(monaco.languages.registerInlayHintsProvider(language,{
+      provideInlayHints:async(model,range,token)=>{
+        const response=await lspRequest("textDocument/inlayHint",{
+          textDocument:{uri:model.uri.toString()},
+          range:{
+            start:{line:range.startLineNumber-1,character:range.startColumn-1},
+            end:{line:range.endLineNumber-1,character:range.endColumn-1},
+          },
+        },language,model);
+        if(token?.isCancellationRequested||ed.getModel()!==model)return {hints:[]};
+        return {hints:mapLspInlayHints(response?.result,monaco)};
+      },
+      resolveInlayHint:async hint=>hint,
+    }));
+  }
   p1Providers.push(monaco.languages.registerRenameProvider(language,{provideRenameEdits:async(model,pos,newName)=>{
     const ld=await lspRequest("textDocument/rename",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},newName},language,model);
     return mapLspWorkspaceEdit(ld?.result,monaco);
