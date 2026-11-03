@@ -144,3 +144,20 @@ export function mapLspDiagnostics(diagnostics, monaco) {
     return [marker];
   });
 }
+export function mapLspDocumentHighlights(highlights, monaco) {
+  if (!Array.isArray(highlights) || !monaco?.languages?.DocumentHighlightKind) return [];
+  const kinds = monaco.languages.DocumentHighlightKind;
+  const kindMap = {
+    1: kinds.Text,
+    2: kinds.Read,
+    3: kinds.Write,
+  };
+  return highlights.flatMap(highlight => {
+    const range = toMonacoRange(highlight?.range);
+    if (!range) return [];
+    return [{
+      range,
+      kind: kindMap[highlight.kind] ?? kinds.Text,
+    }];
+  });
+}
