@@ -885,6 +885,14 @@ test("Web IDE shell grid maps workbench regions to their actual direct DOM child
 });
 
 
+test("Web IDE terminal toggle keeps dock and terminal visibility synchronized", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /const toggleTerminal=useCallback\(\(\)=>\{setDockTab\("terminal"\);setDockOpen\(current=>\{const next=!current;setShowTerminal\(next\);if\(next\)setPanel\(null\);return next\}\)\},\[\]\)/);
+  assert.match(ide, /\["Toggle terminal","Ctrl `",toggleTerminal\]/);
+  assert.match(ide, /key==="j"\)\{e\.preventDefault\(\);toggleTerminal\(\)\}/);
+  assert.match(ide, /onClick=\{toggleTerminal\} title="Toggle terminal \(Ctrl\+J\)"/);
+});
+
 test("Web IDE dock expansion has an active grid layout and terminal positioning context", () => {
   const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
