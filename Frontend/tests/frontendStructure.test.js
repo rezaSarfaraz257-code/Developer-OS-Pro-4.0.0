@@ -958,3 +958,13 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
   assert.equal((editor.match(/const requestUri=params\?\.textDocument\?\.uri\|\|monaco\.Uri\.parse/g)||[]).length, 2);
   assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 2);
 });
+
+test("Monaco formatting and code actions reject stale workspace or model responses", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /const formatRequest=async\(pathName,content,requestWorkspaceId=workspaceIdRef\.current\)/);
+  assert.match(editor, /API_URL\+"\/ide\/workspaces\/\"\+requestWorkspaceId\+\"\/format\//);
+  assert.match(editor, /formatRequest\(requestPath,model\.getValue\(\),requestWorkspaceId\)/);
+  assert.match(editor, /const requestPath=pathRef\.current/);
+  assert.match(editor, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model/);
+  assert.match(editor, /if\(workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model\)return \[\]/);
+});
