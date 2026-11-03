@@ -1043,7 +1043,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 
 test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints \} from "\.\/ide\/monacoCompletion\.js"/);
   assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
 });
@@ -1064,6 +1064,13 @@ test("Monaco registers LSP document highlights for supported languages", () => {
   assert.match(editor, /mapLspDocumentHighlights\(response\?\.result,monaco\)/);
 });
 
+test("Monaco registers cancellable LSP inlay hints for supported languages", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerInlayHintsProvider/);
+  assert.match(editor, /textDocument\\/inlayHint/);
+  assert.match(editor, /token\\?\\.isCancellationRequested/);
+  assert.match(editor, /mapLspInlayHints/);
+});
 test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /const marks=mapLspDiagnostics\(n\.params\?\.diagnostics,monaco\)/);
