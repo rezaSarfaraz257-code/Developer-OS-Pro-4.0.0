@@ -95,15 +95,17 @@ class LSPSession:
 
     def _read_message(self):
         headers=b""
-        while b"\\r\\n\\r\\n" not in headers:
+        while b"\r\n\r\n" not in headers:
             chunk=self.proc.stdout.read(1)
             if not chunk: return None
             headers+=chunk
         length=0
-        for line in headers.decode(errors="replace").split("\\r\\n"):
+        for line in headers.decode(errors="replace").split("\r\n"):
             if line.lower().startswith("content-length:"):
                 length=int(line.split(":",1)[1].strip())
         body=self.proc.stdout.read(length)
+        if len(body) != length:
+            raise LSPError("LSP message body was truncated")
         return json.loads(body.decode("utf-8"))
 
     def _read_response(self,ident,timeout):
