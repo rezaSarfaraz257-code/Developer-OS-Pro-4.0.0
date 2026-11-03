@@ -889,9 +889,9 @@ test("Web IDE editor tabs expose accessible tab semantics and keyboard navigatio
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
   assert.match(ide, /className="dos-tab-list" role="tablist" aria-label="Open editor files"/);
-  assert.match(ide, /<button type="button" role="tab" aria-selected=\\{p===active\\}/);
+  assert.ok(ide.includes('<button type="button" role="tab" aria-selected={p===active}'));
   assert.match(ide, /className="dos-tab-item"><button type="button" role="tab"/);
-  assert.match(ide, /className="dos-tab-close" aria-label=\\{\`Close \\$\\{p\\}\`\\}/);
+  assert.ok(ide.includes('className="dos-tab-close" aria-label={`Close ${p}`}'));
   assert.ok(workbench.includes(".dos-ide-pro .dos-tab-item > .dos-tab-close"));
   assert.match(ide, /e\.key==="ArrowRight"\|\|e\.key==="ArrowLeft"\|\|e\.key==="Home"\|\|e\.key==="End"/);
   assert.match(ide, /aria-label=\{`Close \$\{p\}`\}/);
