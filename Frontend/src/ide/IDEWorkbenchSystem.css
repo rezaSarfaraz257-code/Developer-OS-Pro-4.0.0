@@ -512,3 +512,23 @@
 .dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] {
   grid-template-rows: 38px 26px;
 }
+
+
+/* Dock expansion requires an actual two-track grid, not only grid-template-rows. */
+.dos-ide-pro .dos-editor-shell { position: relative; }
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px 26px;
+  min-height: 38px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] {
+  grid-template-rows: 38px 0;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] .dos-dock-meta {
+  visibility: hidden;
+  pointer-events: none;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] .dos-dock-meta {
+  visibility: visible;
+}
