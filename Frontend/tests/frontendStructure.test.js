@@ -1153,3 +1153,14 @@ test("LSP change flush does not recursively retry a failed request", () => {
   assert.doesNotMatch(flush, /if\(pendingLspChange\)return flushPendingLspChange\(\)/);
   assert.match(flush, /if\(lspFlushPromise\)\{const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange\?flushPendingLspChange\(\):flushed;\}/);
 });
+
+
+test("Monaco exposes language-server document symbols to the native outline", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const mapper = fs.readFileSync(path.join(srcDir, "ide/monacoCompletion.js"), "utf8");
+  assert.match(editor, /registerDocumentSymbolProvider/);
+  assert.match(editor, /textDocument\/documentSymbol/);
+  assert.match(editor, /mapLspDocumentSymbols\(response\?\.result,monaco\)/);
+  assert.match(mapper, /export function mapLspDocumentSymbols/);
+  assert.match(mapper, /selectionRange/);
+});
