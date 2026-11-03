@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
+import { mapLspCompletionItem } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -80,7 +81,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
     for(const [uri,items] of Object.entries(changes)) for(const x of (items||[])) edits.push({resource:monaco.Uri.parse(uri),textEdit:{range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1},text:x.newText}});
     return {edits};
   }}));
-  p1Providers.push(monaco.languages.registerCompletionItemProvider(language,{triggerCharacters:[".","_"],provideCompletionItems:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/completion",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const live=ld?.result?.items||(Array.isArray(ld?.result)?ld.result:[]);if(live.length)return {suggestions:live.slice(0,200).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail||"",insertText:x.insertText||x.label}))};const word=model.getWordUntilPosition(pos);const d=await request("completion",{query:word.word,line:pos.lineNumber},model);return {suggestions:(d.completions||[]).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail,insertText:x.label,range:{startLineNumber:pos.lineNumber,startColumn:word.startColumn,endLineNumber:pos.lineNumber,endColumn:word.endColumn}}))};}}));
+  p1Providers.push(monaco.languages.registerCompletionItemProvider(language,{triggerCharacters:[".","_"],provideCompletionItems:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/completion",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const live=ld?.result?.items||(Array.isArray(ld?.result)?ld.result:[]);if(live.length)return {suggestions:live.slice(0,200).map(x=>mapLspCompletionItem(x,monaco,model,pos)).filter(Boolean)};const word=model.getWordUntilPosition(pos);const d=await request("completion",{query:word.word,line:pos.lineNumber},model);return {suggestions:(d.completions||[]).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail,insertText:x.label,range:{startLineNumber:pos.lineNumber,startColumn:word.startColumn,endLineNumber:pos.lineNumber,endColumn:word.endColumn}}))};}}));
   });
  };
  registerP1();
