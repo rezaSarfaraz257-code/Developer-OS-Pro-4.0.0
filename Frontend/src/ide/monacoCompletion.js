@@ -83,6 +83,13 @@ export function mapLspCompletionItem(item, monaco, model, position) {
   }
   return completion;
 }
+export function getUnsupportedLspResourceOperations(workspaceEdit) {
+  if (!Array.isArray(workspaceEdit?.documentChanges)) return [];
+  return workspaceEdit.documentChanges.filter(change =>
+    change?.kind === "create" || change?.kind === "rename" || change?.kind === "delete"
+  );
+}
+
 export function mapLspWorkspaceEdit(workspaceEdit, monaco) {
   if (!workspaceEdit || !monaco?.Uri?.parse) return { edits: [] };
   const edits = [];
