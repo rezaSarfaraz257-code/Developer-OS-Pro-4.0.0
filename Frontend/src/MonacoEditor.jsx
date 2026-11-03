@@ -90,7 +90,10 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    applyLspDiagnostics(data);
    return true;
   })();
-  const result=await lspFlushPromise;
+  let result=false;
+  try{result=await lspFlushPromise;}catch{
+   if(workspaceIdRef.current===pending.workspaceId&&pathRef.current===pending.path&&ed.getModel()===pending.model&&ed.__dosLspOpened?.has(pending.uri))pendingLspChange=pending;
+  }
   lspFlushPromise=null;
   if(pendingLspChange)return flushPendingLspChange();
   return result;
@@ -154,7 +157,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  registerP1();
  const p1Diagnostics=ed.createDecorationsCollection([]);
  applyLspDiagnostics=(payload)=>{
-   const notes=payload?.notifications||[];
+   const notes=Array.isArray(payload?.notifications)?payload.notifications:[];
    for(const n of notes){
      if(n?.method!=="textDocument/publishDiagnostics")continue;
      const uri=n.params?.uri||"";
