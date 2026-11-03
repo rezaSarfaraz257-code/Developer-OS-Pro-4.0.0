@@ -5,6 +5,17 @@ const COMPLETION_KIND_NAMES = [
   "File", "Reference", "Folder", "TypeParameter",
 ];
 
+export function nextLspDocumentVersion(versions, uri) {
+  if (!versions || typeof versions.get !== "function" || typeof versions.set !== "function"
+    || typeof uri !== "string" || !uri) return 2;
+  const current = versions.get(uri);
+  const next = Number.isSafeInteger(current) && current >= 1 && current < Number.MAX_SAFE_INTEGER
+    ? current + 1
+    : 2;
+  versions.set(uri, next);
+  return next;
+}
+
 function toMonacoRange(range) {
   if (!range?.start || !range?.end) return null;
   const coordinates = [
