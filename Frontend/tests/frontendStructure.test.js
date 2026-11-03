@@ -1012,9 +1012,9 @@ test("Monaco provider fallbacks are discarded when their originating model is no
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
   assert.match(registration, /originModel&&ed\.getModel\(\)!==originModel/);
-  assert.match(registration, /originModel&&ed\.getModel\(\)!==originModel\)\?data:\{\}/);
+  assert.match(registration, /\(!originModel\|\|ed\.getModel\(\)===originModel\)\?data:\{\}/);
   for (const action of ["definitions", "hover", "completion"]) {
     assert.ok(registration.includes('request("' + action + '",'));
   }
-  assert.equal((registration.match(/},model\\)/g) || []).length, 3);
+  assert.equal((registration.match(/},model\)/g) || []).length, 3);
 });
