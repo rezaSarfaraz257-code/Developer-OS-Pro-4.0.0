@@ -1043,7 +1043,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 
 test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /import \{ mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights \} from "\.\/ide\/monacoCompletion\.js"/);
   assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
 });
@@ -1055,6 +1055,13 @@ test("Monaco rejects stale versioned LSP diagnostics after newer document change
   assert.match(editor, /ed\.__dosLspVersions\.set\(m\.uri\.toString\(\),version\)/);
   assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
   assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
+});
+
+test("Monaco registers LSP document highlights for supported languages", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerDocumentHighlightProvider\(language/);
+  assert.match(editor, /textDocument\/documentHighlight/);
+  assert.match(editor, /mapLspDocumentHighlights\(response\?\.result,monaco\)/);
 });
 
 test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
