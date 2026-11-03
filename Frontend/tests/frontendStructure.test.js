@@ -947,16 +947,16 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
 
   assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "diagnostics handlers should exist");
   assert.match(diagnostics, /const requestWorkspaceId=workspaceIdRef\.current/);
-  assert.match(diagnostics, /if\(workspaceIdRef\.current===requestWorkspaceId\)applyLspDiagnostics\(data\)/);
+  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)\)applyLspDiagnostics\(data\)/);
   assert.match(diagnostics, /const requestPath=pathRef\.current/);
   assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
   assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
   assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
-  assert.equal((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length, 7);
+  assert.equal((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length, 9);
   assert.equal((editor.match(/const requestUri=params\?\.textDocument\?\.uri\|\|monaco\.Uri\.parse/g)||[]).length, 2);
-  assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 3);
+  assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 1);
 });
 
 test("Monaco formatting and code actions reject stale workspace or model responses", () => {
@@ -1017,4 +1017,25 @@ test("Monaco provider fallbacks are discarded when their originating model is no
     assert.ok(registration.includes('request("' + action + '",'));
   }
   assert.equal((registration.match(/},model\)/g) || []).length, 3);
+});
+
+
+test("Monaco LSP responses are discarded when the active model or file changes", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const lspBlocks = editor.match(/const lspRequest=async\(method,params=\{\},languageOverride=null,originModel=null\)=>\{[\s\S]*?\n \};/g) || [];
+  assert.equal(lspBlocks.length, 2);
+  for (const block of lspBlocks) {
+    assert.match(block, /const requestPath=pathRef\.current/);
+    assert.match(block, /originModel&&ed\.getModel\(\)!==originModel/);
+    assert.match(block, /pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==originModel/);
+    assert.match(block, /pathRef\.current===requestPath&&ed\.getModel\(\)===originModel/);
+  }
+  const registrationStart = editor.indexOf("const registerP1=()=>{");
+  const registrationEnd = editor.indexOf("registerP1();", registrationStart);
+  const registration = editor.slice(registrationStart, registrationEnd);
+  assert.equal((registration.match(/}},(?:l|language),model\)/g) || []).length, 5);
+  assert.match(editor, /lspRequestWithDiagnostics\("textDocument\/didChange"[\s\S]*?\},null,m\)/);
+  assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
+  assert.match(registration, /request\("symbols",\{query:""\},m\)/);
+  assert.match(registration, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
 });
