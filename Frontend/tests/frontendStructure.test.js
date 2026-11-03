@@ -1138,7 +1138,9 @@ test("Monaco reports unsupported LSP resource operations and refuses partial ren
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(editor, /getUnsupportedLspResourceOperations\(ld\?\.result\)/);
   assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}/);
-  assert.match(editor, /const safeActions=\[\]/);\n  assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return;\}/);\n  assert.match(editor, /return \{actions:safeActions\}/);
+  assert.match(editor, /const safeActions=\[\]/);
+  assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return;\}/);
+  assert.match(editor, /return \{actions:safeActions\}/);
   assert.match(ide, /onWorkspaceEditUnsupported=\{operations=>setStatus\(/);
   assert.match(ide, /apply them through Explorer after review/);
 });
