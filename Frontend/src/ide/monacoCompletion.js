@@ -106,3 +106,18 @@ export function mapLspWorkspaceEdit(workspaceEdit, monaco) {
   }
   return { edits };
 }
+export function mapLspLocations(result, monaco) {
+  if (!monaco?.Uri?.parse) return [];
+  const locations = Array.isArray(result) ? result : result ? [result] : [];
+  return locations.flatMap(location => {
+    const uri = location?.uri || location?.targetUri;
+    const range = location?.range || location?.targetSelectionRange || location?.targetRange;
+    const mappedRange = toMonacoRange(range);
+    if (typeof uri !== "string" || !mappedRange) return [];
+    try {
+      return [{ uri: monaco.Uri.parse(uri), range: mappedRange }];
+    } catch {
+      return [];
+    }
+  });
+}
