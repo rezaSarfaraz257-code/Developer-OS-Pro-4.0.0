@@ -818,6 +818,29 @@ test("cached static Nginx locations retain the full frontend security policy", (
   }
 });
 
+
+test("Web IDE stylesheet order gives the final workbench contract ownership of layout", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const imports = [...ide.matchAll(/import\s+["'](\.[^"']+\.css)["']/g)].map((match) => match[1]);
+  const studio = imports.indexOf("./ide/IDEStudio2026.css");
+  const layout = imports.indexOf("./ProIDELayout.css");
+  const system = imports.indexOf("./ide/IDEWorkbenchSystem.css");
+
+  assert.ok(studio >= 0 && layout > studio && system > layout, "IDE styles must load in legacy → studio → layout → final-system order");
+  assert.equal(fs.existsSync(path.join(srcDir, "ide/IDEWorkbenchSystem.css")), true);
+});
+
+test("Web IDE workbench system preserves editor sizing and responsive Explorer access", () => {
+  const system = fs.readFileSync(path.join(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+
+  assert.match(system, /\.dos-ide-pro \.dos-body\s*\{[\s\S]*grid-template-columns:\s*46px minmax\(205px, 252px\) minmax\(0, 1fr\) minmax\(190px, 224px\)/);
+  assert.match(system, /\.dos-ide-pro \.dos-editors\s*\{[\s\S]*min-height:\s*180px/);
+  assert.match(system, /\.dos-ide-pro \.dos-body:not\(\.dos-explorer-collapsed\) > \.dos-explorer/);
+  assert.match(system, /@media \(max-width: 680px\)/);
+  assert.match(system, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(system, /@media \(forced-colors: active\)/);
+});
+
 test("Monaco TypeScript defaults use the supported top-level API", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
 
