@@ -161,3 +161,28 @@ export function mapLspDocumentHighlights(highlights, monaco) {
     }];
   });
 }
+export function mapLspInlayHints(hints, monaco) {
+  if (!Array.isArray(hints) || !monaco?.languages?.InlayHintKind) return [];
+  const kinds = monaco.languages.InlayHintKind;
+  const kindMap = { 1: kinds.Type, 2: kinds.Parameter };
+  return hints.flatMap(hint => {
+    const line = Number(hint?.position?.line);
+    const character = Number(hint?.position?.character);
+    const label = typeof hint?.label === "string"
+      ? hint.label
+      : Array.isArray(hint?.label)
+        ? hint.label.map(part => typeof part?.value === "string" ? part.value : "").join("")
+        : "";
+    if (!Number.isInteger(line) || line < 0 || !Number.isInteger(character) || character < 0 || !label) return [];
+    const mapped = {
+      position: { lineNumber: line + 1, column: character + 1 },
+      label,
+      paddingLeft: hint.paddingLeft === true,
+      paddingRight: hint.paddingRight === true,
+    };
+    if (kindMap[hint.kind] !== undefined) mapped.kind = kindMap[hint.kind];
+    if (typeof hint.tooltip === "string") mapped.tooltip = hint.tooltip;
+    else if (typeof hint.tooltip?.value === "string") mapped.tooltip = hint.tooltip.value;
+    return [mapped];
+  });
+}
