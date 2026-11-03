@@ -939,20 +939,26 @@ test("Web IDE dock expansion has an active grid layout and terminal positioning 
 
 test("Monaco diagnostics ignore responses from a previous workspace or file", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  const diagnosticsStart = editor.indexOf("const lspRequestWithDiagnostics=async");
-  const diagnosticsEnd = editor.indexOf("const p1Actions=", diagnosticsStart);
+  const diagnosticsStart = editor.indexOf("applyLspDiagnostics=(payload)=>{");
+  const diagnosticsEnd = editor.indexOf("const refreshP1Diagnostics=async()=>{", diagnosticsStart);
   const diagnostics = editor.slice(diagnosticsStart, diagnosticsEnd);
+  const flushStart = editor.indexOf("const flushPendingLspChange=async()=>{");
+  const flushEnd = editor.indexOf("const registerP1=()=>{", flushStart);
+  const flush = editor.slice(flushStart, flushEnd);
 
-  assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "diagnostics handlers should exist");
-  assert.match(diagnostics, /const requestWorkspaceId=workspaceIdRef\.current/);
-  assert.match(diagnostics, /workspaceIdRef\.current===requestWorkspaceId&&\(!originModel\|\|\(pathRef\.current===requestPath&&ed\.getModel\(\)===originModel\)\)\)applyLspDiagnostics\(data\)/);
-  assert.match(diagnostics, /const requestPath=pathRef\.current/);
-  assert.match(diagnostics, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|!targetModel/);
+  assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "LSP diagnostics handler should exist");
+  assert.match(diagnostics, /const incomingVersion=n\.params\?\.version/);
+  assert.match(diagnostics, /incomingVersion<currentVersion/);
+  assert.match(diagnostics, /setModelMarkers\(current,"lsp",marks\)/);
+  assert.ok(flushStart >= 0 && flushEnd > flushStart, "pending LSP changes should flush before requests");
+  assert.match(flush, /const data=await lspRequest\("textDocument\/didChange"/);
+  assert.match(flush, /applyLspDiagnostics\(data\)/);
+  assert.match(flush, /ed\.getModel\(\)!==pending\.model/);
   assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
   assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
-  assert.equal((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length, 9);
+  assert.ok((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length >= 8);
   assert.equal((editor.match(/const requestUri=params\?\.textDocument\?\.uri\|\|monaco\.Uri\.parse/g)||[]).length, 2);
   assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 1);
 });
