@@ -949,10 +949,12 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
   assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "LSP diagnostics handler should exist");
   assert.match(diagnostics, /const incomingVersion=n\.params\?\.version/);
   assert.match(diagnostics, /incomingVersion<currentVersion/);
+  assert.match(diagnostics, /Array\.isArray\(payload\?\.notifications\)\?payload\.notifications:\[\]/);
   assert.match(diagnostics, /setModelMarkers\(current,"lsp",marks\)/);
   assert.ok(flushStart >= 0 && flushEnd > flushStart, "pending LSP changes should flush before requests");
   assert.match(flush, /const data=await lspRequest\("textDocument\/didChange"/);
   assert.match(flush, /applyLspDiagnostics\(data\)/);
+  assert.match(flush, /try\{result=await lspFlushPromise;\}catch/);
   assert.match(flush, /ed\.getModel\(\)!==pending\.model/);
   const refreshStart = editor.indexOf("const refreshP1Diagnostics=async()=>{");
   const refreshEnd = editor.indexOf("ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics", refreshStart);
