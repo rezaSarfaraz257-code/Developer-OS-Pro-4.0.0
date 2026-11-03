@@ -46,7 +46,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    return workspaceIdRef.current===requestWorkspaceId?data:null;
   }catch{return null}
  };
- const request=async(action,body={})=>{if(!workspaceIdRef.current)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:pathRef.current,...body})});if(!r.ok)return {};return r.json().catch(()=>({}))}catch{return {}}};
+ const request=async(action,body={})=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath)return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath?data:{}}catch{return {}}};
  useEffect(()=>{if(!host.current)return;const ed=monaco.editor.create(host.current,{model:null,theme:"developer-os-dark",automaticLayout:true,minimap:{enabled:true,side:"right",showSlider:"mouseover",renderCharacters:false},fontFamily:"JetBrains Mono, Consolas, monospace",fontSize:13,lineHeight:21,tabSize:2,insertSpaces:true,wordWrap:"off",smoothScrolling:true,cursorBlinking:"smooth",cursorSmoothCaretAnimation:"on",bracketPairColorization:{enabled:true},guides:{indentation:true,bracketPairs:true,highlightActiveBracketPair:true},folding:true,foldingStrategy:"auto",stickyScroll:{enabled:true},renderWhitespace:"selection",scrollBeyondLastLine:false,padding:{top:10,bottom:18},quickSuggestions:{other:true,comments:false,strings:true},suggestOnTriggerCharacters:true,parameterHints:{enabled:true},formatOnPaste:true,formatOnType:true,contextmenu:true,multiCursorModifier:"ctrlCmd",mouseWheelZoom:false,overviewRulerBorder:false,scrollbar:{verticalScrollbarSize:10,horizontalScrollbarSize:10,useShadows:false},find:{addExtraSpaceOnTop:true,autoFindInSelection:"never"},occurrencesHighlight:"singleFile",selectionHighlight:true,renderLineHighlight:"line",fixedOverflowWidgets:true,linkedEditing:true,suggest:{showMethods:true,showFunctions:true,showConstructors:true},hover:{enabled:true},inlayHints:{enabled:"on"},codeLens:true});editor.current=ed;setEditorReady(true);
  const p1Providers=[];
  const lspRequest=async(method,params={},languageOverride=null)=>{
@@ -104,12 +104,12 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const refreshP1Diagnostics=async()=>{
    const requestWorkspaceId=workspaceIdRef.current;
    const requestPath=pathRef.current;
-   if(!requestWorkspaceId)return;
-   const d=await request("diagnostics",{});
    const targetModel=ed.getModel();
-   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||!targetModel)return;
+   if(!requestWorkspaceId){if(targetModel)monaco.editor.setModelMarkers(targetModel,"developer-os-symbols",[]);return;}
+   const d=await request("diagnostics",{});
+   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||!targetModel||ed.getModel()!==targetModel)return;
    const markers=(d.diagnostics||[]).filter(x=>x.path===requestPath).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));
-   monaco.editor.setModelMarkers(targetModel,"developer-os",markers);
+   monaco.editor.setModelMarkers(targetModel,"developer-os-symbols",markers);
    p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));
  };
  ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics;
