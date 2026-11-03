@@ -889,7 +889,8 @@ test("Web IDE terminal toggle keeps dock and terminal visibility synchronized", 
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /const toggleTerminal=useCallback\(\(\)=>\{const next=!dockOpen;setDockTab\("terminal"\);setDockOpen\(next\);setShowTerminal\(next\);if\(next\)setPanel\(null\)\},\[dockOpen\]\)/);
   assert.match(ide, /\["Toggle terminal","Ctrl `",toggleTerminal\]/);
-  assert.match(ide, /key==="j"\)\{e\.preventDefault\(\);toggleTerminal\(\)\}/);\n  assert.match(ide, /\},\[save,zen,focusMode,active,toggleTerminal\]\)/);
+  assert.match(ide, /key==="j"\)\{e\.preventDefault\(\);toggleTerminal\(\)\}/);
+  assert.match(ide, /\},\[save,zen,focusMode,active,toggleTerminal\]\)/);
   assert.match(ide, /onClick=\{toggleTerminal\} title="Toggle terminal \(Ctrl\+J\)"/);
 });
 
