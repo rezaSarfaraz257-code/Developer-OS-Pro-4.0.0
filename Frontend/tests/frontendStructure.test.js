@@ -1046,7 +1046,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 
 
 test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
-  assert.match(editor, /import \\{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion \\} from "\\.\\/ide\\/monacoCompletion\\.js"/);
+  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion \} from "\.\/ide\/monacoCompletion\.js"/);
   assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
 });
@@ -1055,7 +1055,7 @@ test("Monaco rejects stale versioned LSP diagnostics after newer document change
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /const incomingVersion=n\.params\?\.version/);
   assert.match(editor, /incomingVersion<currentVersion/);
-  assert.match(editor, /nextLspDocumentVersion\\(ed\\.__dosLspVersions,changedUri\\)/);
+  assert.match(editor, /nextLspDocumentVersion\(ed\.__dosLspVersions,changedUri\)/);
   assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
   assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
 });
