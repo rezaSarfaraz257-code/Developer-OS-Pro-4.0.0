@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -158,9 +158,27 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics;
  const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
  const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
- let lspVersion=1,lspTimer=null;
- 
- const c=ed.onDidChangeModelContent(()=>{if(typeof change.current==="function")change.current(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceIdRef.current){const version=++lspVersion;if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();ed.__dosLspVersions.set(m.uri.toString(),version);void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version},contentChanges:[{text:m.getValue()}]},null,m);}},300);});
+ let lspTimer=null;
+
+ const c=ed.onDidChangeModelContent(()=>{
+   const changedModel=ed.getModel();
+   const changedPath=pathRef.current;
+   const changedWorkspaceId=workspaceIdRef.current;
+   if(typeof change.current==="function")change.current(ed.getValue());
+   clearTimeout(lspTimer);
+   if(!changedModel||!changedWorkspaceId||!["python","javascript","typescript"].includes(lang(changedPath)))return;
+   const changedUri=changedModel.uri.toString();
+   lspTimer=setTimeout(()=>{
+     if(workspaceIdRef.current!==changedWorkspaceId||pathRef.current!==changedPath
+       ||ed.getModel()!==changedModel||!ed.__dosLspOpened?.has(changedUri))return;
+     if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();
+     const version=nextLspDocumentVersion(ed.__dosLspVersions,changedUri);
+     void lspRequestWithDiagnostics("textDocument/didChange",{
+       textDocument:{uri:changedUri,version},
+       contentChanges:[{text:changedModel.getValue()}],
+     },lang(changedPath),changedModel);
+   },300);
+ });
  const p=ed.onDidChangeCursorPosition(e=>{if(typeof cursor.current==="function")cursor.current({line:e.position.lineNumber,column:e.position.column,path:pathRef.current});});
  const formatRequest=async(pathName,content,requestWorkspaceId=workspaceIdRef.current)=>{
    if(!requestWorkspaceId||workspaceIdRef.current!==requestWorkspaceId)return null;
@@ -235,7 +253,7 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
     }
   }
   void ed.__dosRefreshP1Diagnostics?.();
-  const saved=viewStates.current.get(normalized);if(saved&&!workspaceChanged)ed.restoreViewState(saved);ed.focus();return()=>{if(model.current===next)model.current=null}},[path,workspaceId]);
+  const saved=viewStates.current.get(normalized);if(saved&&!workspaceChanged)ed.restoreViewState(saved);ed.focus();return()=>{clearTimeout(lspTimer);if(model.current===next)model.current=null}},[path,workspaceId]);
  useEffect(()=>{const m=model.current;if(m&&m.getValue()!==(value||"")&&!editor.current?.hasTextFocus())m.setValue(value||"")},[value]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const reveal=e=>{const line=Math.max(1,Number(e.detail?.line||1));const column=Math.max(1,Number(e.detail?.column||1));ed.revealPositionInCenter({lineNumber:line,column});ed.setPosition({lineNumber:line,column});ed.focus()};const focusEditor=()=>{if(ed.getModel()){ed.focus();ed.revealPositionInCenter(ed.getPosition()||{lineNumber:1,column:1})}};window.addEventListener("developer-os:reveal-line",reveal);window.addEventListener("developer-os:focus-editor",focusEditor);return()=>{window.removeEventListener("developer-os:reveal-line",reveal);window.removeEventListener("developer-os:focus-editor",focusEditor)}},[path]);
  useEffect(()=>{const m=model.current;if(!m)return;const markers=(diagnostics||[]).filter(x=>!x.path||x.path===path).map(x=>({startLineNumber:Math.max(1,x.line||1),endLineNumber:Math.max(1,x.end_line||x.line||1),startColumn:Math.max(1,x.column||1),endColumn:Math.max(2,x.end_column||((x.column||1)+1)),message:x.message||"Diagnostic",severity:x.severity==="warning"?monaco.MarkerSeverity.Warning:x.severity==="info"?monaco.MarkerSeverity.Info:monaco.MarkerSeverity.Error}));monaco.editor.setModelMarkers(m,"developer-os",markers);return()=>monaco.editor.setModelMarkers(m,"developer-os",[])},[diagnostics,path]);
