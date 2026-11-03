@@ -1093,3 +1093,13 @@ test("Monaco custom actions do not shadow native VS Code rename and references s
   assert.match(nativeRename, /keybindings:\[monaco\.KeyCode\.F2\]/);
   assert.match(nativeReferences, /keybindings:\[monaco\.KeyMod\.Shift\|monaco\.KeyCode\.F12\]/);
 });
+
+
+test("Monaco registers guarded LSP signature help with VS Code-style triggers", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerSignatureHelpProvider\(language/);
+  assert.ok(editor.includes('"textDocument/signatureHelp"'));
+  assert.ok(editor.includes('signatureHelpTriggerCharacters:["(",","]'));
+  assert.ok(editor.includes("token?.isCancellationRequested||ed.getModel()!==model"));
+  assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
+});
