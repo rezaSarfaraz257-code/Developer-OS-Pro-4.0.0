@@ -970,11 +970,12 @@ test("Monaco formatting and code actions reject stale workspace or model respons
 });
 
 
+
 test("Monaco symbol requests reject stale workspace and file responses", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   const requestStart = editor.indexOf("const request=async(action,body={})=>{");
-  const requestEnd = editor.indexOf(";", requestStart);
-  const request = editor.slice(requestStart, editor.indexOf("};", requestStart) + 2);
+  const requestEnd = editor.indexOf(" useEffect", requestStart);
+  const request = editor.slice(requestStart, requestEnd);
   assert.ok(request.includes("const requestWorkspaceId=workspaceIdRef.current"));
   assert.ok(request.includes("const requestPath=pathRef.current"));
   assert.ok(request.includes('API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/"'));
