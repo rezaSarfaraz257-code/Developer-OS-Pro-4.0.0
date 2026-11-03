@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -89,7 +89,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
      const uri=n.params?.uri||"";
      const current=ed.getModel();
      if(!current||current.uri.toString()!==uri)continue;
-     const marks=(n.params?.diagnostics||[]).map(x=>({severity:x.severity===1?monaco.MarkerSeverity.Error:x.severity===2?monaco.MarkerSeverity.Warning:x.severity===3?monaco.MarkerSeverity.Info:monaco.MarkerSeverity.Hint,message:x.message||"Diagnostic",startLineNumber:x.range.start.line+1,startColumn:x.range.start.character+1,endLineNumber:x.range.end.line+1,endColumn:x.range.end.character+1,source:x.source||"LSP",code:x.code||""}));
+     const marks=mapLspDiagnostics(n.params?.diagnostics,monaco);
      monaco.editor.setModelMarkers(current,"lsp",marks);
    }
  };
