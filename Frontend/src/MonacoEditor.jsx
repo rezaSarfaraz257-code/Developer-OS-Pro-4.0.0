@@ -79,9 +79,23 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
    }
  };
  const lspRequestWithDiagnostics=async(method,params={},languageOverride=null)=>{
-   const data=await lspRequest(method,params,languageOverride); applyLspDiagnostics(data); return data;
+   const requestWorkspaceId=workspaceIdRef.current;
+   if(!requestWorkspaceId)return null;
+   const data=await lspRequest(method,params,languageOverride);
+   if(workspaceIdRef.current===requestWorkspaceId)applyLspDiagnostics(data);
+   return data;
  };
- const refreshP1Diagnostics=async()=>{if(!workspaceIdRef.current)return;const d=await request("diagnostics",{});const markers=(d.diagnostics||[]).filter(x=>x.path===pathRef.current).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));monaco.editor.setModelMarkers(ed.getModel(),"developer-os",markers);p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));};
+ const refreshP1Diagnostics=async()=>{
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   if(!requestWorkspaceId)return;
+   const d=await request("diagnostics",{});
+   const targetModel=ed.getModel();
+   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||!targetModel)return;
+   const markers=(d.diagnostics||[]).filter(x=>x.path===requestPath).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));
+   monaco.editor.setModelMarkers(targetModel,"developer-os",markers);
+   p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));
+ };
  refreshP1Diagnostics();
  const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",keybindings:[monaco.KeyCode.F2],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
  const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
