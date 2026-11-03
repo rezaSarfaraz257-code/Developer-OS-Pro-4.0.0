@@ -34,16 +34,32 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),workspaceIdRef=useRef(workspaceId),modelWorkspaceRef=useRef(workspaceId),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map());
  useEffect(()=>{workspaceIdRef.current=workspaceId},[workspaceId]);
  useEffect(()=>{change.current=typeof onChange==="function"?onChange:null;cursor.current=typeof onCursorChange==="function"?onCursorChange:null},[onChange,onCursorChange]);
- const lspRequest=async(method,params={},languageOverride=null)=>{if(!workspaceIdRef.current)return null;const token=getAccessToken();try{const response=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString(),params})});if(!response.ok)return null;return response.json().catch(()=>null)}catch{return null}};
+ const lspRequest=async(method,params={},languageOverride=null)=>{
+  const requestWorkspaceId=workspaceIdRef.current;
+  if(!requestWorkspaceId)return null;
+  const token=getAccessToken();
+  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString();
+  try{
+   const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:requestUri,params})});
+   if(!response.ok||workspaceIdRef.current!==requestWorkspaceId)return null;
+   const data=await response.json().catch(()=>null);
+   return workspaceIdRef.current===requestWorkspaceId?data:null;
+  }catch{return null}
+ };
  const request=async(action,body={})=>{if(!workspaceIdRef.current)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:pathRef.current,...body})});if(!r.ok)return {};return r.json().catch(()=>({}))}catch{return {}}};
  useEffect(()=>{if(!host.current)return;const ed=monaco.editor.create(host.current,{model:null,theme:"developer-os-dark",automaticLayout:true,minimap:{enabled:true,side:"right",showSlider:"mouseover",renderCharacters:false},fontFamily:"JetBrains Mono, Consolas, monospace",fontSize:13,lineHeight:21,tabSize:2,insertSpaces:true,wordWrap:"off",smoothScrolling:true,cursorBlinking:"smooth",cursorSmoothCaretAnimation:"on",bracketPairColorization:{enabled:true},guides:{indentation:true,bracketPairs:true,highlightActiveBracketPair:true},folding:true,foldingStrategy:"auto",stickyScroll:{enabled:true},renderWhitespace:"selection",scrollBeyondLastLine:false,padding:{top:10,bottom:18},quickSuggestions:{other:true,comments:false,strings:true},suggestOnTriggerCharacters:true,parameterHints:{enabled:true},formatOnPaste:true,formatOnType:true,contextmenu:true,multiCursorModifier:"ctrlCmd",mouseWheelZoom:false,overviewRulerBorder:false,scrollbar:{verticalScrollbarSize:10,horizontalScrollbarSize:10,useShadows:false},find:{addExtraSpaceOnTop:true,autoFindInSelection:"never"},occurrencesHighlight:"singleFile",selectionHighlight:true,renderLineHighlight:"line",fixedOverflowWidgets:true,linkedEditing:true,suggest:{showMethods:true,showFunctions:true,showConstructors:true},hover:{enabled:true},inlayHints:{enabled:"on"},codeLens:true});editor.current=ed;setEditorReady(true);
  const p1Providers=[];
  const lspRequest=async(method,params={},languageOverride=null)=>{
-  if(!workspaceIdRef.current)return null;
+  const requestWorkspaceId=workspaceIdRef.current;
+  if(!requestWorkspaceId)return null;
   const token=getAccessToken();
-  const response=await fetch(API_URL+"/ide/workspaces/"+workspaceIdRef.current+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString(),params})});
-  if(!response.ok)return null;
-  return response.json().catch(()=>null);
+  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString();
+  try{
+   const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:requestUri,params})});
+   if(!response.ok||workspaceIdRef.current!==requestWorkspaceId)return null;
+   const data=await response.json().catch(()=>null);
+   return workspaceIdRef.current===requestWorkspaceId?data:null;
+  }catch{return null}
  };
  const registerP1=()=>{
   const request=async(action,body={})=>{const currentWorkspaceId=workspaceIdRef.current;if(!currentWorkspaceId)return {};const token=getAccessToken();const r=await fetch(API_URL+"/ide/workspaces/"+currentWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:pathRef.current,...body})});if(!r.ok)return {};return r.json().catch(()=>({}));};
