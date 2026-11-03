@@ -1151,4 +1151,5 @@ test("LSP change flush does not recursively retry a failed request", () => {
   const flush = editor.slice(editor.indexOf("const flushPendingLspChange=async()=>"), editor.indexOf("const registerP1=()=>"));
   assert.match(flush, /if\(result&&pendingLspChange\)return flushPendingLspChange\(\)/);
   assert.doesNotMatch(flush, /if\(pendingLspChange\)return flushPendingLspChange\(\)/);
+  assert.match(flush, /if\(lspFlushPromise\)\{const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange\?flushPendingLspChange\(\):flushed;\}/);
 });
