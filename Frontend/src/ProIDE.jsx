@@ -8,8 +8,9 @@ import { DEFAULT_EDITOR_PREFERENCES, normalizeEditorPreferences } from "./ide/ed
 import { GlobalSearch, ProblemsPanel, RunCenter, DebuggerPanel, PreviewPanel, SourceControlPanel } from "./ide/IDEUtilities";
 import "./ProIDE.css";
 import "./NavigationPolish.css";
-import "./ProIDELayout.css";
 import "./ide/IDEStudio2026.css";
+import "./ProIDELayout.css";
+import "./ide/IDEWorkbenchSystem.css";
 import { OFFLINE_QUEUE_KEY, parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches } from "./ide/offlineQueue.js";
 import { appendBoundedText } from "./ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "./ide/collaborationState.js";
