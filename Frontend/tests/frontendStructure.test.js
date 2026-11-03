@@ -1071,7 +1071,7 @@ test("Monaco rejects stale versioned LSP diagnostics after newer document change
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /const incomingVersion=n\.params\?\.version/);
   assert.match(editor, /incomingVersion<currentVersion/);
-  assert.match(editor, /nextLspDocumentVersion\(ed\.__dosLspVersions,changedUri\)/);
+  assert.match(editor, /nextLspDocumentVersion\(ed\.__dosLspVersions,pending\.uri\)/);
   assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
   assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
 });
