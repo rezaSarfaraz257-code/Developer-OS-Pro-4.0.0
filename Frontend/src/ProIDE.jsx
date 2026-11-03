@@ -15,6 +15,7 @@ import { OFFLINE_QUEUE_KEY, parseOfflineQueue, queueWorkspacePatch, getWorkspace
 import { appendBoundedText } from "./ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "./ide/collaborationState.js";
 import { commandForFile } from "./ide/commandForFile.js";
+import { canRetryExplorerMutation, canRetryExplorerDelete } from "./ide/explorerConflict.js";
 const lang=p=>({js:"JavaScript",jsx:"React JSX",ts:"TypeScript",tsx:"React TSX",py:"Python",html:"HTML",css:"CSS",json:"JSON",md:"Markdown",yml:"YAML",yaml:"YAML",sql:"SQL",sh:"Shell",go:"Go",rs:"Rust",java:"Java",php:"PHP"}[p?.split(".").pop()?.toLowerCase()]||"Plain Text");
 const fileKind=p=>{const ext=String(p||"").split(".").pop()?.toLowerCase();if(/^(jsx|tsx)$/.test(ext))return {glyph:"⚛",kind:"react"};if(/^(js|mjs|cjs|ts)$/.test(ext))return {glyph:"JS",kind:"script"};if(ext==="py")return {glyph:"Py",kind:"python"};if(ext==="css"||ext==="scss")return {glyph:"#",kind:"style"};if(/^(html|htm)$/.test(ext))return {glyph:"⌘",kind:"markup"};if(ext==="json")return {glyph:"{}",kind:"data"};if(/^(md|mdx|txt)$/.test(ext))return {glyph:"≡",kind:"text"};if(/^(yml|yaml|toml|ini)$/.test(ext))return {glyph:"⚙",kind:"config"};if(/^(sh|bash|zsh)$/.test(ext))return {glyph:">_",kind:"terminal"};if(/^(png|jpg|jpeg|svg|webp|gif)$/.test(ext))return {glyph:"▧",kind:"image"};return {glyph:"·",kind:"file"};};
 const icon=p=>fileKind(p).glyph;
@@ -174,6 +175,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const w=refs.ws.current;
    if(!w) throw Error("No workspace selected.");
    if(expectedWorkspaceId==null||String(w.id)!==String(expectedWorkspaceId))throw Error("Workspace changed before the Explorer operation could start. Retry in the current workspace.");
+   const expectedSourceContent=payload.action==="rename"?refs.files.current[payload.path]:undefined;
    let r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:w.revision})});
    let d=await r.json().catch(()=>({}));
    if(!r.ok&&r.status===409&&retry){
@@ -183,6 +185,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
      if(!refresh.ok)throw Error(latest.error||latest.detail||`Workspace refresh failed while resolving Explorer conflict (HTTP ${refresh.status})`);
      if(!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error("Workspace refresh returned an invalid file map while resolving Explorer conflict.");
      if(latest.revision==null)throw Error("Workspace refresh did not include a revision; the Explorer operation was not retried.");
+     if(!canRetryExplorerMutation(payload,latest.files,expectedSourceContent))throw Error("Workspace files changed during the conflict. The operation was not retried; review Explorer state and retry manually.");
      if(String(refs.ws.current?.id)!==String(expectedWorkspaceId))throw Error("Workspace changed while resolving the Explorer conflict. Retry in the current workspace.");
      r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"POST",body:JSON.stringify({...payload,revision:latest.revision})});
      d=await r.json().catch(()=>({}));
@@ -197,6 +200,8 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
    const w=refs.ws.current;
    if(!w)throw Error("No workspace selected.");
    if(expectedWorkspaceId==null||String(w.id)!==String(expectedWorkspaceId))throw Error("Workspace changed before the delete could start. Retry in the current workspace.");
+   const expectedContent=refs.files.current[path];
+   if(typeof expectedContent!=="string")throw Error("File is no longer present in the current Explorer state.");
    let r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"DELETE",body:JSON.stringify({path,revision:w.revision})});
    let d=await r.json().catch(()=>({}));
    if(!r.ok&&r.status===409&&retry){
@@ -206,6 +211,7 @@ return()=>{intentionalClose=true;try{socket?.close()}catch{}if(collabRetry.curre
      if(!refresh.ok)throw Error(latest.error||latest.detail||`Workspace refresh failed while resolving delete conflict (HTTP ${refresh.status})`);
      if(!latest.files||typeof latest.files!=="object"||Array.isArray(latest.files))throw Error("Workspace refresh returned an invalid file map while resolving delete conflict.");
      if(latest.revision==null)throw Error("Workspace refresh did not include a revision; the delete was not retried.");
+     if(!canRetryExplorerDelete(path,expectedContent,latest.files))throw Error("The file changed during the conflict. Delete was not retried; review the current file before deleting.");
      if(String(refs.ws.current?.id)!==String(expectedWorkspaceId))throw Error("Workspace changed while resolving the delete conflict. Retry in the current workspace.");
      r=await apiFetch(`/ide/workspaces/${expectedWorkspaceId}/files/`,{method:"DELETE",body:JSON.stringify({path,revision:latest.revision})});
      d=await r.json().catch(()=>({}));
