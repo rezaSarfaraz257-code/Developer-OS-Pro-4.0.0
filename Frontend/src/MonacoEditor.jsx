@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -73,6 +73,15 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
     const ld=await lspRequest("textDocument/references",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},context:{includeDeclaration:!!context.includeDeclaration}},language,model);
     return mapLspLocations(ld?.result,monaco);
   }}));
+  p1Providers.push(monaco.languages.registerDocumentHighlightProvider(language,{
+    provideDocumentHighlights:async(model,pos)=>{
+      const response=await lspRequest("textDocument/documentHighlight",{
+        textDocument:{uri:model.uri.toString()},
+        position:{line:pos.lineNumber-1,character:pos.column-1},
+      },language,model);
+      return mapLspDocumentHighlights(response?.result,monaco);
+    }
+  }));
   p1Providers.push(monaco.languages.registerRenameProvider(language,{provideRenameEdits:async(model,pos,newName)=>{
     const ld=await lspRequest("textDocument/rename",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},newName},language,model);
     return mapLspWorkspaceEdit(ld?.result,monaco);
