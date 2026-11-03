@@ -503,3 +503,12 @@
     height: 24px;
   }
 }
+
+
+/* Dock collapse must release its metadata track, not leave a dead 28px row. */
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] {
+  grid-template-rows: 38px 0;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] {
+  grid-template-rows: 38px 26px;
+}
