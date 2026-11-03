@@ -70,7 +70,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
   }catch{return null}
  };
  const flushPendingLspChange=async()=>{
-  if(lspFlushPromise){await lspFlushPromise;return flushPendingLspChange();}
+  if(lspFlushPromise){const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange?flushPendingLspChange():flushed;}
   const pending=pendingLspChange;
   if(!pending)return true;
   pendingLspChange=null;
