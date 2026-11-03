@@ -186,3 +186,45 @@ export function mapLspInlayHints(hints, monaco) {
     return [mapped];
   });
 }
+
+export function mapLspSignatureHelp(result) {
+  const signatures = result?.signatures;
+  if (!Array.isArray(signatures)) return null;
+  const mapped = signatures.flatMap(signature => {
+    if (typeof signature?.label !== "string" || !signature.label) return [];
+    const parameters = Array.isArray(signature.parameters)
+      ? signature.parameters.flatMap(parameter => {
+          if (typeof parameter?.label === "string") {
+            const item = { label: parameter.label };
+            if (typeof parameter.documentation === "string") item.documentation = parameter.documentation;
+            else if (typeof parameter.documentation?.value === "string") item.documentation = parameter.documentation.value;
+            return [item];
+          }
+          const label = parameter?.label;
+          if (Array.isArray(label) && label.length === 2 && label.every(Number.isInteger)
+            && label[0] >= 0 && label[1] > label[0] && label[1] <= signature.label.length) {
+            const item = { label };
+            if (typeof parameter.documentation === "string") item.documentation = parameter.documentation;
+            else if (typeof parameter.documentation?.value === "string") item.documentation = parameter.documentation.value;
+            return [item];
+          }
+          return [];
+        })
+      : [];
+    const item = { label: signature.label, parameters };
+    if (typeof signature.documentation === "string") item.documentation = signature.documentation;
+    else if (typeof signature.documentation?.value === "string") item.documentation = signature.documentation.value;
+    return [item];
+  });
+  if (!mapped.length) return null;
+  const activeSignature = Number.isInteger(result.activeSignature)
+    ? Math.min(mapped.length - 1, Math.max(0, result.activeSignature)) : 0;
+  const activeParameters = mapped[activeSignature].parameters;
+  const requestedParameter = Number.isInteger(result.activeParameter) ? result.activeParameter : 0;
+  return { value: {
+    signatures: mapped,
+    activeSignature,
+    activeParameter: activeParameters.length
+      ? Math.min(activeParameters.length - 1, Math.max(0, requestedParameter)) : 0,
+  } };
+}
