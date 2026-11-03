@@ -897,6 +897,9 @@ test("Web IDE editor tabs expose accessible tab semantics and keyboard navigatio
   assert.ok(ide.includes("items[target]?.focus();items[target]?.click()"));
   assert.match(ide, /aria-label=\{`Close \$\{p\}`\}/);
   assert.ok(workbench.includes(".dos-ide-pro .dos-tab-list {"));
+  assert.match(ide, /aria-label=\{`Open \$\{path\}`\} aria-current=\{path===active\?"page":undefined\}/);
+  assert.match(ide, /aria-label=\{`\$\{isOpen\?"Collapse":"Expand"\} folder \$\{path\}`\} aria-expanded=\{isOpen\}/);
+  assert.ok(workbench.includes(".dos-ide-pro .dos-explorer .dos-file:focus-visible"));
 });
 
 test("Web IDE terminal toggle keeps dock and terminal visibility synchronized", () => {
