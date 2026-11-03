@@ -954,7 +954,10 @@ test("Monaco diagnostics ignore responses from a previous workspace or file", ()
   assert.match(flush, /const data=await lspRequest\("textDocument\/didChange"/);
   assert.match(flush, /applyLspDiagnostics\(data\)/);
   assert.match(flush, /ed\.getModel\(\)!==pending\.model/);
-  assert.match(diagnostics, /filter\(x=>x\.path===requestPath\)/);
+  const refreshStart = editor.indexOf("const refreshP1Diagnostics=async()=>{");
+  const refreshEnd = editor.indexOf("ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics", refreshStart);
+  const refresh = editor.slice(refreshStart, refreshEnd);
+  assert.match(refresh, /filter\(x=>x\.path===requestPath\)/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
   assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
   assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
