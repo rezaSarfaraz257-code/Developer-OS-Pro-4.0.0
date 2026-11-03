@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -30,11 +30,11 @@ const lang=p=>({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript
 const importPathRegex=/((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
 function workspaceSymbols(source){const symbols=[];const re=/\b(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g;let match;while((match=re.exec(source))&&symbols.length<500)symbols.push({name:match[1],offset:match.index});return symbols;}
 function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
-export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols,workspaceId,editorSettings={}}){
+export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols,onWorkspaceEditUnsupported,workspaceId,editorSettings={}}){
  const [editorReady,setEditorReady]=useState(false);
- const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),workspaceIdRef=useRef(workspaceId),modelWorkspaceRef=useRef(workspaceId),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map()),lspTimerRef=useRef(null);
+ const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),workspaceEditUnsupported=useRef(onWorkspaceEditUnsupported),pathRef=useRef(path),workspaceIdRef=useRef(workspaceId),modelWorkspaceRef=useRef(workspaceId),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map()),lspTimerRef=useRef(null);
  useEffect(()=>{workspaceIdRef.current=workspaceId},[workspaceId]);
- useEffect(()=>{change.current=typeof onChange==="function"?onChange:null;cursor.current=typeof onCursorChange==="function"?onCursorChange:null},[onChange,onCursorChange]);
+ useEffect(()=>{change.current=typeof onChange==="function"?onChange:null;cursor.current=typeof onCursorChange==="function"?onCursorChange:null;workspaceEditUnsupported.current=typeof onWorkspaceEditUnsupported==="function"?onWorkspaceEditUnsupported:null},[onChange,onCursorChange,onWorkspaceEditUnsupported]);
  const lspRequest=async(method,params={},languageOverride=null,originModel=null)=>{
   const requestWorkspaceId=workspaceIdRef.current;
   const requestPath=pathRef.current;
@@ -149,7 +149,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
   }
   p1Providers.push(monaco.languages.registerRenameProvider(language,{provideRenameEdits:async(model,pos,newName)=>{
     const ld=await lspRequest("textDocument/rename",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},newName},language,model);
-    return mapLspWorkspaceEdit(ld?.result,monaco);
+    const unsupported=getUnsupportedLspResourceOperations(ld?.result);if(unsupported.length){workspaceEditUnsupported.current?.(unsupported);return null;}return mapLspWorkspaceEdit(ld?.result,monaco);
   }}));
   p1Providers.push(monaco.languages.registerCompletionItemProvider(language,{triggerCharacters:[".","_"],provideCompletionItems:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/completion",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const live=ld?.result?.items||(Array.isArray(ld?.result)?ld.result:[]);if(live.length)return {suggestions:live.slice(0,200).map(x=>mapLspCompletionItem(x,monaco,model,pos)).filter(Boolean)};const word=model.getWordUntilPosition(pos);const d=await request("completion",{query:word.word,line:pos.lineNumber},model);return {suggestions:(d.completions||[]).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail,insertText:x.label,range:{startLineNumber:pos.lineNumber,startColumn:word.startColumn,endLineNumber:pos.lineNumber,endColumn:word.endColumn}}))};}}));
   });
@@ -224,7 +224,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
  const codeActionProviders=["python","javascript","typescript"].map(language=>monaco.languages.registerCodeActionProvider(language,{
    provideCodeActions:async(model,range)=>{
      const actions=await codeActionsRequest(model,range);
-     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?mapLspWorkspaceEdit(a.edit,monaco):undefined,command:a.command}))};
+     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?(getUnsupportedLspResourceOperations(a.edit).length?(workspaceEditUnsupported.current?.(getUnsupportedLspResourceOperations(a.edit)),undefined):mapLspWorkspaceEdit(a.edit,monaco)):undefined,command:a.command}))};
    }
  }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
