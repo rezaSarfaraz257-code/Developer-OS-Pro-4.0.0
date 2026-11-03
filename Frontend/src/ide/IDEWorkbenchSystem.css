@@ -608,3 +608,14 @@
   outline: 2px solid var(--wb-accent, #55dcff);
   outline-offset: -2px;
 }
+
+
+/* Explorer controls keep a visible focus indicator in dense file trees. */
+.dos-ide-pro .dos-explorer .dos-file:focus-visible,
+.dos-ide-pro .dos-explorer .dos-folder:focus-visible,
+.dos-ide-pro .dos-tree-search input:focus-visible {
+  outline: 2px solid var(--wb-accent, #55dcff);
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
