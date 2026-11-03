@@ -59,7 +59,7 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
   const requestWorkspaceId=workspaceIdRef.current;
   const requestPath=pathRef.current;
   if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return null;
-  if(method!=="textDocument/didChange"&&!(await flushPendingLspChange()))return null;
+  if(method!=="textDocument/didChange"&&method!=="textDocument/didOpen"&&!(await flushPendingLspChange()))return null;
   if(workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
   const token=getAccessToken();
   const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(requestPath)).toString();
