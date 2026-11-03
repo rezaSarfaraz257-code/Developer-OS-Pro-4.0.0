@@ -106,7 +106,11 @@ class LSPSession:
                 raise LSPError("LSP message headers exceed the size limit")
 
         content_lengths = []
-        for line in bytes(headers[:-4]).decode("ascii", errors="strict").split("\r\n"):
+        try:
+            header_lines = bytes(headers[:-4]).decode("ascii", errors="strict").split("\r\n")
+        except UnicodeDecodeError as exc:
+            raise LSPError("LSP message headers must be ASCII") from exc
+        for line in header_lines:
             if not line:
                 continue
             name, separator, value = line.partition(":")
