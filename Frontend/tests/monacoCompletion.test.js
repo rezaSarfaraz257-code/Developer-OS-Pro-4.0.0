@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion } from "../src/ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "../src/ide/monacoCompletion.js";
 
 const kindNames = [
   "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
@@ -344,4 +344,19 @@ test("LSP document versions advance independently for each open document", () =>
   assert.equal(versions.get("file:///workspace/a.py"), 3);
   assert.equal(nextLspDocumentVersion(null, "file:///workspace/a.py"), 2);
   assert.equal(nextLspDocumentVersion(versions, ""), 2);
+});
+
+test("LSP resource operations are detected explicitly instead of being silently applied as text edits", () => {
+  const operations = getUnsupportedLspResourceOperations({
+    documentChanges: [
+      { kind: "create", uri: "file:///workspace/new.py" },
+      { kind: "rename", oldUri: "file:///workspace/old.py", newUri: "file:///workspace/new.py" },
+      { kind: "delete", uri: "file:///workspace/remove.py" },
+      { textDocument: { uri: "file:///workspace/main.py" }, edits: [] },
+      { kind: "unknown", uri: "file:///workspace/unknown" },
+    ],
+  });
+  assert.deepEqual(operations.map(item => item.kind), ["create", "rename", "delete"]);
+  assert.deepEqual(getUnsupportedLspResourceOperations(null), []);
+  assert.deepEqual(getUnsupportedLspResourceOperations({ documentChanges: [] }), []);
 });
