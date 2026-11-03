@@ -1,0 +1,68 @@
+const COMPLETION_KIND_NAMES = [
+  "Text", "Method", "Function", "Constructor", "Field", "Variable", "Class",
+  "Struct", "Interface", "Module", "Property", "Event", "Operator", "Unit",
+  "Value", "Constant", "Enum", "EnumMember", "Keyword", "Snippet", "Color",
+  "File", "Reference", "Folder", "TypeParameter",
+];
+
+function toMonacoRange(range) {
+  if (!range?.start || !range?.end) return null;
+  return {
+    startLineNumber: Number(range.start.line) + 1,
+    startColumn: Number(range.start.character) + 1,
+    endLineNumber: Number(range.end.line) + 1,
+    endColumn: Number(range.end.character) + 1,
+  };
+}
+
+export function mapLspCompletionItem(item, monaco, model, position) {
+  if (!item || !monaco?.languages?.CompletionItemKind || !model || !position) return null;
+
+  const word = model.getWordUntilPosition(position);
+  const textEdit = item.textEdit;
+  const lspRange = textEdit?.replace || textEdit?.range || textEdit?.insert;
+  const range = toMonacoRange(lspRange) || {
+    startLineNumber: position.lineNumber,
+    startColumn: word.startColumn,
+    endLineNumber: position.lineNumber,
+    endColumn: word.endColumn,
+  };
+  const completion = {
+    label: typeof item.label === "string" ? item.label : String(item.label ?? ""),
+    kind: COMPLETION_KIND_NAMES[item.kind - 1]
+      ? monaco.languages.CompletionItemKind[COMPLETION_KIND_NAMES[item.kind - 1]]
+      : monaco.languages.CompletionItemKind.Text,
+    detail: item.detail || "",
+    insertText: textEdit?.newText ?? item.insertText ?? String(item.label ?? ""),
+    range,
+  };
+
+  if (item.filterText) completion.filterText = item.filterText;
+  if (item.sortText) completion.sortText = item.sortText;
+  if (item.preselect === true) completion.preselect = true;
+  if (Array.isArray(item.commitCharacters)) completion.commitCharacters = item.commitCharacters;
+  if (item.insertTextFormat === 2) {
+    completion.insertTextRules = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+  }
+  if (item.documentation) {
+    completion.documentation = typeof item.documentation === "string"
+      ? item.documentation
+      : item.documentation.value || "";
+  }
+  if (Array.isArray(item.additionalTextEdits)) {
+    completion.additionalTextEdits = item.additionalTextEdits
+      .map(edit => {
+        const editRange = toMonacoRange(edit.range);
+        return editRange ? { range: editRange, text: edit.newText || "" } : null;
+      })
+      .filter(Boolean);
+  }
+  if (item.command?.command) {
+    completion.command = {
+      id: item.command.command,
+      title: item.command.title || item.command.command,
+      arguments: item.command.arguments,
+    };
+  }
+  return completion;
+}
