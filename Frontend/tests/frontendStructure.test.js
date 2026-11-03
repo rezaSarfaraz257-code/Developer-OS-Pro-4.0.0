@@ -1033,7 +1033,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   const registrationStart = editor.indexOf("const registerP1=()=>{");
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
-  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 6);
+  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 8);
   assert.match(editor, /lspRequestWithDiagnostics\("textDocument\/didChange"[\s\S]*?\},null,m\)/);
   assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
   assert.match(editor, /request\("symbols",\{query:""\},m\)/);
@@ -1070,6 +1070,14 @@ test("Monaco registers cancellable LSP inlay hints for supported languages", () 
   assert.ok(editor.includes('"textDocument/inlayHint"'));
   assert.ok(editor.includes("token?.isCancellationRequested"));
   assert.match(editor, /mapLspInlayHints/);
+});
+test("Monaco registers cancellable LSP signature help with parameter triggers", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerSignatureHelpProvider/);
+  assert.ok(editor.includes('"textDocument/signatureHelp"'));
+  assert.match(editor, /signatureHelpTriggerCharacters:\[.*\(.*,/);
+  assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
+  assert.match(editor, /token\?\.isCancellationRequested\|\|ed\.getModel\(\)!==model/);
 });
 test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
