@@ -1040,7 +1040,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   assert.ok(editor.includes("ed.__dosLspOpened?.has(changedUri)"));
   assert.ok(editor.includes("nextLspDocumentVersion(ed.__dosLspVersions,changedUri)"));
   assert.ok(editor.includes("},lang(changedPath),changedModel);"));
-  assert.ok(editor.includes("clearTimeout(lspTimer);if(model.current===next)"));
+  assert.ok(editor.includes("clearTimeout(lspTimerRef.current);lspTimerRef.current=null;if(model.current===next)"));
   assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
   assert.match(editor, /request\("symbols",\{query:""\},m\)/);
   assert.match(editor, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
