@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
-import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "./ide/monacoCompletion.js";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, mapLspDocumentSymbols, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "./ide/monacoCompletion.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -104,6 +104,18 @@ export default function MonacoEditor({path,value,onChange,onCursorChange,diagnos
   const request=async(action,body={},originModel=null)=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||(originModel&&ed.getModel()!==originModel))return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath&&(!originModel||ed.getModel()===originModel)?data:{}}catch{return {}}};
   ["javascript","typescript","python"].forEach(language=>{
    p1Providers.push(monaco.languages.registerDefinitionProvider(language,{provideDefinition:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/definition",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const lr=ld?.result; if(lr)return mapLspLocations(lr,monaco); const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("definitions",{name:word.word,line:pos.lineNumber},model);return (d.definitions||[]).map(x=>({uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(x.path)),range:{startLineNumber:x.line,endLineNumber:x.line,startColumn:x.column||1,endColumn:(x.column||1)+word.word.length}}));}}));
+   if(monaco.languages.registerDocumentSymbolProvider){
+    p1Providers.push(monaco.languages.registerDocumentSymbolProvider(language,{
+      displayName:"Developer OS Language Server",
+      provideDocumentSymbols:async(model,token)=>{
+        const response=await lspRequest("textDocument/documentSymbol",{
+          textDocument:{uri:model.uri.toString()},
+        },language,model);
+        if(token?.isCancellationRequested||ed.getModel()!==model)return [];
+        return mapLspDocumentSymbols(response?.result,monaco);
+      },
+    }));
+   }
    p1Providers.push(monaco.languages.registerHoverProvider(language,{provideHover:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/hover",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);if(ld?.result){const contents=Array.isArray(ld.result.contents)?ld.result.contents: [ld.result.contents];return {contents:contents.map(x=>({value:typeof x==="string"?x:(x?.value||"")}))};} const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("hover",{name:word.word,line:pos.lineNumber},model);return d.hover?{contents:[{value:d.hover.markdown||d.hover.signature||word.word}]}:null;}}));
    p1Providers.push(monaco.languages.registerReferenceProvider(language,{provideReferences:async(model,pos,context)=>{
     const ld=await lspRequest("textDocument/references",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},context:{includeDeclaration:!!context.includeDeclaration}},language,model);
