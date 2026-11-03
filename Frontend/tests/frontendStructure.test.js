@@ -1032,12 +1032,16 @@ test("Monaco LSP responses are discarded when the active model or file changes",
   const registrationEnd = editor.indexOf("registerP1();", registrationStart);
   const registration = editor.slice(registrationStart, registrationEnd);
   assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 8);
-  assert.ok(editor.includes('lspRequestWithDiagnostics("textDocument/didChange"'));
+  assert.ok(editor.includes('if(method!=="textDocument/didChange"&&!(await flushPendingLspChange()))return null;'));
   assert.ok(editor.includes("const changedModel=ed.getModel()"));
-  assert.ok(editor.includes("ed.getModel()!==changedModel"));
-  assert.ok(editor.includes("ed.__dosLspOpened?.has(changedUri)"));
-  assert.ok(editor.includes("nextLspDocumentVersion(ed.__dosLspVersions,changedUri)"));
-  assert.ok(editor.includes("},lang(changedPath),changedModel);"));
+  assert.ok(editor.includes("ed.getModel()!==pending.model"));
+  assert.ok(editor.includes("ed.__dosLspOpened?.has(pending.uri)"));
+  assert.ok(editor.includes("nextLspDocumentVersion(ed.__dosLspVersions,pending.uri)"));
+  assert.ok(editor.includes('pendingLspChange={model:changedModel,path:changedPath,workspaceId:changedWorkspaceId,uri:changedUri,language:lang(changedPath)};'));
+  assert.ok(editor.includes("lspTimerRef.current=setTimeout(()=>{void flushPendingLspChange();},300)"));
+  assert.ok(editor.includes("if(lspFlushPromise){await lspFlushPromise;return flushPendingLspChange();}"));
+  assert.ok(editor.includes('const data=await lspRequest("textDocument/didChange"'));
+  assert.ok(editor.includes("applyLspDiagnostics(data)"));
   assert.ok(editor.includes("clearTimeout(lspTimerRef.current);lspTimerRef.current=null;if(model.current===next)"));
   assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
   assert.match(editor, /request\("symbols",\{query:""\},m\)/);
@@ -1045,7 +1049,7 @@ test("Monaco LSP responses are discarded when the active model or file changes",
 });
 
 
-test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {\n  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, nextLspDocumentVersion \} from "\.\/ide\/monacoCompletion\.js"/);
   assert.match(editor, /return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
   assert.match(editor, /edit:a\.edit\?mapLspWorkspaceEdit\(a\.edit,monaco\):undefined/);
