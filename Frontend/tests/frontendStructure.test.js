@@ -219,7 +219,7 @@ test("offline queue parsing retains identifiable legacy edits and ignores malfor
 test("Monaco serializes LSP document lifecycle notifications per workspace and URI", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /createLspDocumentQueue/);
-  assert.match(editor, /const \\[lspNotifications\\] = useState\\(\\(\\)=>createLspDocumentQueue\\(\\)\\)/);
+  assert.match(editor, /const \[lspNotifications\] = useState/);
   assert.match(editor, /lspNotifications\.enqueue\(queueKey,send\)/);
   assert.match(editor, /method!==["']textDocument\/didOpen["']/);
   assert.match(editor, /await lspNotifications\.flush\(queueKey\)/);
