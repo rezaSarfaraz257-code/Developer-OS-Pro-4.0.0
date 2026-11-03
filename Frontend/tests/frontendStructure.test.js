@@ -850,6 +850,18 @@ test("Monaco TypeScript defaults use the supported top-level API", () => {
   assert.doesNotMatch(editor, /monaco\.languages\.typescript/);
 });
 
+test("Monaco language services follow workspace switches without stale workspace IDs", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /workspaceIdRef=useRef\(workspaceId\)/);
+  assert.match(editor, /workspaceIdRef\.current=workspaceId/);
+  assert.match(editor, /API_URL\+"\/ide\/workspaces\/"+workspaceIdRef\.current\+"\/lsp\//);
+  assert.match(editor, /modelWorkspaceRef\.current!==workspaceId/);
+  assert.match(editor, /\(!ed\.hasTextFocus\(\)\|\|workspaceChanged\)/);
+  assert.match(editor, /\},\[path,workspaceId\]\)/);
+  assert.match(editor, /method:"textDocument\/didClose"/);
+  assert.doesNotMatch(editor, /syncOpen\(\);/);
+});
+
 test("Monaco workers use package-export-compatible paths", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   for (const worker of [
