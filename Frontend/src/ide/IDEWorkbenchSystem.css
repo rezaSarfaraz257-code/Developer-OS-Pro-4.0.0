@@ -546,3 +546,60 @@
 .dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] .dos-dock-meta {
   visibility: visible;
 }
+
+
+/* Keep each editor tab and its close action as separate keyboard targets.
+   ARIA tabs must not contain nested interactive controls. */
+.dos-ide-pro .dos-tab-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  min-width: 126px;
+  max-width: 250px;
+  min-height: 39px;
+  border-right: 1px solid rgba(126, 183, 214, .1);
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"] {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  min-height: 39px;
+  padding: 0 7px 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"].active {
+  background: transparent;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab-close {
+  flex: 0 0 26px;
+  align-self: center;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  margin: 0 4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #71879b;
+  cursor: pointer;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab-close:hover {
+  background: rgba(145, 175, 200, .14);
+  color: #e2f8ff;
+}
+.dos-ide-pro .dos-tab-item:focus-within {
+  position: relative;
+  z-index: 1;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"]:focus-visible,
+.dos-ide-pro .dos-tab-item > .dos-tab-close:focus-visible {
+  outline: 2px solid var(--wb-accent, #55dcff);
+  outline-offset: -2px;
+}
