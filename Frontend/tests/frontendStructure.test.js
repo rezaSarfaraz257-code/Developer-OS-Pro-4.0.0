@@ -220,6 +220,7 @@ test("Monaco serializes LSP document lifecycle notifications per workspace and U
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
   assert.match(editor, /createLspDocumentQueue/);
   assert.match(editor, /lspNotifications\.enqueue\(queueKey,send\)/);
+  assert.match(editor, /method!=="textDocument\\/didOpen"/);
   assert.match(editor, /await lspNotifications\.flush\(queueKey\)/);
   assert.match(editor, /lspNotifications\.enqueue\(oldWorkspace\+":"\+uri/);
 });
