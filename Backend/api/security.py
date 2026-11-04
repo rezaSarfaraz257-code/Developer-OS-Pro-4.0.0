@@ -133,7 +133,30 @@ def api_exception_handler(exc, context):
         if isinstance(data, dict) and "detail" in data and len(data) == 1:
             message = str(data["detail"])
         elif isinstance(data, dict):
-            message = "Validation failed."
+            # Keep serializer validation useful to clients. In particular, login
+            # failures are represented by non_field_errors; replacing them with a
+            # generic message hides invalid credentials, email verification, MFA,
+            # and lockout states from the sign-in form.
+            non_field_errors = data.get("non_field_errors")
+            if non_field_errors:
+                values = non_field_errors if isinstance(non_field_errors, (list, tuple)) else [non_field_errors]
+                message = " ".join(str(value) for value in values if value)
+            else:
+                field_messages = []
+                for field, errors in data.items():
+                    if field == "detail":
+                        continue
+                    if isinstance(errors, (list, tuple)):
+                        rendered = " ".join(str(value) for value in errors if value)
+                    elif isinstance(errors, dict):
+                        rendered = "; ".join(
+                            f"{name}: {value}" for name, value in errors.items() if value
+                        )
+                    else:
+                        rendered = str(errors) if errors else ""
+                    if rendered:
+                        field_messages.append(f"{field}: {rendered}")
+                message = "; ".join(field_messages) or "Validation failed."
         else:
             message = str(data)
         response.data = {
