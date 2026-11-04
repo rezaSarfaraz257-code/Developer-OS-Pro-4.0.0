@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>DEVELOPER OS — NOVA Identity</title>
+  <desc>Original geometric symbol representing a connected system, a central build core, and forward momentum.</desc>
+  <defs>
+    <linearGradient id="shell" x1="170" y1="160" x2="850" y2="870" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7FBFF"/>
+      <stop offset=".42" stop-color="#A9C9FF"/>
+      <stop offset="1" stop-color="#547DFF"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="330" y1="710" x2="730" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#45E5D0"/>
+      <stop offset=".52" stop-color="#54B8FF"/>
+      <stop offset="1" stop-color="#9C8BFF"/>
+    </linearGradient>
+    <linearGradient id="core" x1="390" y1="390" x2="635" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#A9C8FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="90" y="90" width="844" height="844" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent background; every element remains editable. -->
+  <g id="symbol">
+    <!-- Outer system frame: intentionally open at the upper-right to imply expansion. -->
+    <path id="outer-frame"
+      d="M675 174H400C275 174 174 275 174 400V624C174 749 275 850 400 850H624C749 850 850 749 850 624V486"
+      fill="none" stroke="#0A1830" stroke-opacity=".12" stroke-width="78" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)"/>
+    <path id="outer-frame-main"
+      d="M675 174H400C275 174 174 275 174 400V624C174 749 275 850 400 850H624C749 850 850 749 850 624V486"
+      fill="none" stroke="url(#shell)" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Three converging pathways: modular tools becoming one system. -->
+    <g id="pathways" fill="none" stroke="url(#signal)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M330 338L458 466"/>
+      <path d="M694 338L566 466"/>
+      <path d="M330 686L458 558"/>
+    </g>
+
+    <!-- Forward signal, the system's output. -->
+    <path id="forward-signal" d="M590 566L760 396L760 510L852 418"
+      fill="none" stroke="url(#signal)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="signal-tip" d="M760 396H852V488"
+      fill="none" stroke="#8DDCFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Central build core. -->
+    <path id="core-diamond" d="M512 392L632 512L512 632L392 512Z"
+      fill="#10223E" fill-opacity=".92" stroke="url(#core)" stroke-width="12" stroke-linejoin="round"/>
+    <path id="core-inner" d="M512 447L577 512L512 577L447 512Z"
+      fill="url(#signal)" stroke="#EAF6FF" stroke-width="8" stroke-linejoin="round"/>
+    <circle id="core-point" cx="512" cy="512" r="17" fill="#FFFFFF"/>
+
+    <!-- Small anchor nodes: system modules. -->
+    <g id="nodes" fill="#EAF4FF" stroke="#4D8FFF" stroke-width="12">
+      <circle cx="330" cy="338" r="23"/>
+      <circle cx="694" cy="338" r="23"/>
+      <circle cx="330" cy="686" r="23"/>
+    </g>
+  </g>
+</svg>
