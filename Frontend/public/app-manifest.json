@@ -9,6 +9,11 @@
   "theme_color": "#05070c",
   "color_scheme": "dark",
   "icons": [
-    {"src": "/favicon.svg?v=20261104", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+    {
+      "src": "/favicon.svg?v=20261104-brand",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }

@@ -820,3 +820,10 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 @media(max-width:520px){.team-price-estimate>strong{font-size:1.15rem}}
 
 .plan-period-note{display:block;margin-top:-8px;margin-bottom:8px;font-size:.75rem;line-height:1.4;color:var(--muted,#94a3b8)}
+
+
+/* DEVELOPER OS unified brand identity */
+.topbar-brand-icon{width:20px;height:20px;object-fit:contain;flex:none;margin-right:8px;filter:drop-shadow(0 0 8px rgba(84,184,255,.22))}
+.crumb{display:flex;align-items:center;min-width:0}
+.auth-brand-icon{width:44px;height:44px;object-fit:contain;flex:none;filter:drop-shadow(0 0 12px rgba(84,184,255,.2))}
+@media(max-width:720px){.crumb{display:flex;flex:none}.crumb>span,.crumb>b,.crumb>strong{display:none}.topbar-brand-icon{width:24px;height:24px;margin-right:2px}.global-search{width:min(30vw,120px)}}
