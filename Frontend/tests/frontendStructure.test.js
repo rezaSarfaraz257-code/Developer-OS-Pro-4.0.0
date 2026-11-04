@@ -840,3 +840,23 @@ test("Monaco workers use package-export-compatible paths", () => {
   }
   assert.doesNotMatch(editor, /monaco-editor\/esm\/vs\//);
 });
+
+
+test("Developer OS brand icon is used by browser, mobile install, app shell, and authentication", () => {
+  const rootHtml = fs.readFileSync(path.resolve(srcDir, "../index.html"), "utf8");
+  const ideHtml = fs.readFileSync(path.resolve(srcDir, "../ide/index.html"), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(srcDir, "../public/app-manifest.json"), "utf8"));
+  const app = fs.readFileSync(path.join(srcDir, "App.jsx"), "utf8");
+  const styles = fs.readFileSync(path.join(srcDir, "App.css"), "utf8");
+  const iconPath = path.resolve(srcDir, "../public/favicon.svg");
+
+  assert.equal(fs.existsSync(iconPath), true, "uploaded Developer OS SVG icon must ship in the public build");
+  assert.match(rootHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
+  assert.match(rootHtml, /rel="apple-touch-icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
+  assert.match(ideHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
+  assert.ok(manifest.icons.some(icon => icon.src === "/favicon.svg?v=20261104-brand"));
+  assert.match(app, /topbar-brand-icon/);
+  assert.match(app, /auth-brand-icon/);
+  assert.match(styles, /\.auth-brand-icon/);
+  assert.match(styles, /@media\(max-width:720px\)[\s\S]*\.topbar-brand-icon/);
+});
