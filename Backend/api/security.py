@@ -132,6 +132,11 @@ def api_exception_handler(exc, context):
         data = response.data
         if isinstance(data, dict) and "detail" in data and len(data) == 1:
             message = str(data["detail"])
+        elif isinstance(data, (list, tuple)):
+            # DRF represents ValidationError("message") as a list of
+            # ErrorDetail values. Render those values as user-facing text
+            # instead of leaking the Python container representation.
+            message = " ".join(str(value) for value in data if value) or "Validation failed."
         elif isinstance(data, dict):
             # Keep serializer validation useful to clients. In particular, login
             # failures are represented by non_field_errors; replacing them with a
