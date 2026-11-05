@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMultiAlternatives
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 STALE_AFTER = timedelta(minutes=10)
+
 
 def recover_stale_jobs():
     now = timezone.now()
@@ -55,6 +57,7 @@ def recover_stale_jobs():
                     pk=locked.payload.get("export_id"),
                     user_id=locked.payload.get("user_id"),
                 ).exclude(status__in=["ready", "expired"]).update(status="failed")
+
 
 def refresh_job_lease(job_id, worker):
     """Extend a running job's lease only while this worker still owns it."""
@@ -93,7 +96,6 @@ def _heartbeat_loop(worker, stop_event):
             )
         except Exception:
             # A transient DB error must not permanently kill this daemon thread.
-            # Readiness still fails closed when the persisted lease becomes stale.
             logger.exception("Background worker heartbeat update failed")
         finally:
             close_old_connections()
@@ -142,15 +144,25 @@ def _is_deployed_runtime() -> bool:
 
 
 def _require_real_email_transport() -> None:
-    """Require authenticated, encrypted SMTP for email jobs in deployed runtimes."""
+    """Require a configured HTTPS provider or authenticated encrypted SMTP in deployed runtimes."""
     if not _is_deployed_runtime():
         return
 
     backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").strip()
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+
+    if backend == "api.email_backends.resend.EmailBackend":
+        api_key = str(getattr(settings, "RESEND_API_KEY", "") or "").strip()
+        endpoint = urlparse("https://api.resend.com/emails")
+        if not api_key or not sender or endpoint.scheme != "https":
+            raise RuntimeError(
+                "Email delivery is not configured: Resend HTTPS API credentials and sender are required."
+            )
+        return
+
     host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
     username = str(getattr(settings, "EMAIL_HOST_USER", "") or "").strip()
     password = str(getattr(settings, "EMAIL_HOST_PASSWORD", "") or "")
-    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
     port = getattr(settings, "EMAIL_PORT", 0)
     use_tls = bool(getattr(settings, "EMAIL_USE_TLS", False))
     use_ssl = bool(getattr(settings, "EMAIL_USE_SSL", False))
@@ -166,7 +178,7 @@ def _require_real_email_transport() -> None:
         or use_tls == use_ssl
     ):
         raise RuntimeError(
-            "Email delivery is not configured: authenticated encrypted SMTP is required."
+            "Email delivery is not configured: authenticated encrypted SMTP or Resend HTTPS API is required."
         )
 
 
@@ -210,7 +222,7 @@ class Command(BaseCommand):
         heartbeat_stop = threading.Event()
         if not options["once"]:
             # A separate heartbeat keeps readiness accurate even during a
-            # long-running export or SMTP request.
+            # long-running export or HTTPS email request.
             threading.Thread(
                 target=_heartbeat_loop,
                 args=(worker, heartbeat_stop),
