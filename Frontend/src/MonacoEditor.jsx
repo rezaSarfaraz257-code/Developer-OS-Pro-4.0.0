@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, getAccessToken } from "./services/api";
 import * as monaco from "monaco-editor";
+import { mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, mapLspDocumentSymbols, nextLspDocumentVersion, getUnsupportedLspResourceOperations } from "./ide/monacoCompletion.js";
+import { createLspDocumentQueue } from "./ide/lspDocumentQueue.js";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/language/css/css.worker?worker";
@@ -29,100 +31,248 @@ const lang=p=>({js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript
 const importPathRegex=/((?:from\s+|import\s*\(\s*|require\s*\(\s*)["'])([^"']+)(["'])/g;
 function workspaceSymbols(source){const symbols=[];const re=/\b(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g;let match;while((match=re.exec(source))&&symbols.length<500)symbols.push({name:match[1],offset:match.index});return symbols;}
 function resolveWorkspaceImport(currentPath,spec){if(!spec||!spec.startsWith("."))return null;const parts=currentPath.split("/");parts.pop();const base=parts.concat(spec.split("/"));const out=[];for(const p of base){if(!p||p===".")continue;if(p==="..")out.pop();else out.push(p)}return out.join("/");}
-export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols,workspaceId,editorSettings={}}){
+export default function MonacoEditor({path,value,onChange,onCursorChange,diagnostics=[],remoteCursors=[],onWorkspaceSymbols,onWorkspaceEditUnsupported,workspaceId,editorSettings={}}){
  const [editorReady,setEditorReady]=useState(false);
- const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),pathRef=useRef(path),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map());
- useEffect(()=>{change.current=typeof onChange==="function"?onChange:null;cursor.current=typeof onCursorChange==="function"?onCursorChange:null},[onChange,onCursorChange]);
- const lspRequest=async(method,params={},languageOverride=null)=>{if(!workspaceId)return null;const token=getAccessToken();try{const response=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString(),params})});if(!response.ok)return null;return response.json().catch(()=>null)}catch{return null}};
- const request=async(action,body={})=>{if(!workspaceId)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:pathRef.current,...body})});if(!r.ok)return {};return r.json().catch(()=>({}))}catch{return {}}};
+ const [lspNotifications] = useState(()=>createLspDocumentQueue());
+ const host=useRef(null),editor=useRef(null),model=useRef(null),change=useRef(onChange),cursor=useRef(onCursorChange),workspaceEditUnsupported=useRef(onWorkspaceEditUnsupported),pathRef=useRef(path),workspaceIdRef=useRef(workspaceId),modelWorkspaceRef=useRef(workspaceId),remoteDecorations=useRef([]),models=useRef(new Map()),viewStates=useRef(new Map()),lspTimerRef=useRef(null);
+ useEffect(()=>{workspaceIdRef.current=workspaceId},[workspaceId]);
+ useEffect(()=>{change.current=typeof onChange==="function"?onChange:null;cursor.current=typeof onCursorChange==="function"?onCursorChange:null;workspaceEditUnsupported.current=typeof onWorkspaceEditUnsupported==="function"?onWorkspaceEditUnsupported:null},[onChange,onCursorChange,onWorkspaceEditUnsupported]);
+ const lspRequest=async(method,params={},languageOverride=null,originModel=null)=>{
+  const requestWorkspaceId=workspaceIdRef.current;
+  const requestPath=pathRef.current;
+  if(!requestWorkspaceId||(originModel&&editor.current?.getModel()!==originModel))return null;
+  const token=getAccessToken();
+  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(requestPath)).toString();
+  try{
+   const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(requestPath),method,uri:requestUri,params})});
+   if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||editor.current?.getModel()!==originModel)))return null;
+   const data=await response.json().catch(()=>null);
+   return workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&editor.current?.getModel()===originModel))?data:null;
+  }catch{return null}
+ };
+ const request=async(action,body={})=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId)return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath)return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath?data:{}}catch{return {}}};
  useEffect(()=>{if(!host.current)return;const ed=monaco.editor.create(host.current,{model:null,theme:"developer-os-dark",automaticLayout:true,minimap:{enabled:true,side:"right",showSlider:"mouseover",renderCharacters:false},fontFamily:"JetBrains Mono, Consolas, monospace",fontSize:13,lineHeight:21,tabSize:2,insertSpaces:true,wordWrap:"off",smoothScrolling:true,cursorBlinking:"smooth",cursorSmoothCaretAnimation:"on",bracketPairColorization:{enabled:true},guides:{indentation:true,bracketPairs:true,highlightActiveBracketPair:true},folding:true,foldingStrategy:"auto",stickyScroll:{enabled:true},renderWhitespace:"selection",scrollBeyondLastLine:false,padding:{top:10,bottom:18},quickSuggestions:{other:true,comments:false,strings:true},suggestOnTriggerCharacters:true,parameterHints:{enabled:true},formatOnPaste:true,formatOnType:true,contextmenu:true,multiCursorModifier:"ctrlCmd",mouseWheelZoom:false,overviewRulerBorder:false,scrollbar:{verticalScrollbarSize:10,horizontalScrollbarSize:10,useShadows:false},find:{addExtraSpaceOnTop:true,autoFindInSelection:"never"},occurrencesHighlight:"singleFile",selectionHighlight:true,renderLineHighlight:"line",fixedOverflowWidgets:true,linkedEditing:true,suggest:{showMethods:true,showFunctions:true,showConstructors:true},hover:{enabled:true},inlayHints:{enabled:"on"},codeLens:true});editor.current=ed;setEditorReady(true);
  const p1Providers=[];
- const lspRequest=async(method,params={},languageOverride=null)=>{
-  if(!workspaceId)return null;
+ let pendingLspChange=null;
+ let lspFlushPromise=null;
+ let applyLspDiagnostics=()=>{};
+ const lspRequest=async(method,params={},languageOverride=null,originModel=null)=>{
+  const requestWorkspaceId=workspaceIdRef.current;
+  const requestPath=pathRef.current;
+  if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return null;
+  if(method!=="textDocument/didChange"&&method!=="textDocument/didOpen"&&!(await flushPendingLspChange()))return null;
+  if(workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
   const token=getAccessToken();
-  const response=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(pathRef.current),method,uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(pathRef.current)).toString(),params})});
-  if(!response.ok)return null;
-  return response.json().catch(()=>null);
+  const requestUri=params?.textDocument?.uri||monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(requestPath)).toString();
+  const queueKey=requestWorkspaceId+":"+requestUri;
+  const send=async()=>{
+   try{
+    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:languageOverride||lang(requestPath),method,uri:requestUri,params})});
+    if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
+    const data=await response.json().catch(()=>null);
+    return workspaceIdRef.current===requestWorkspaceId&&(!originModel||(pathRef.current===requestPath&&ed.getModel()===originModel))?data:null;
+   }catch{return null}
+  };
+  // Lifecycle notifications must reach the Runner in document order. HTTP
+  // requests can otherwise race (didChange arriving before didOpen).
+  if(["textDocument/didOpen","textDocument/didChange","textDocument/didClose"].includes(method)){
+   return lspNotifications.enqueue(queueKey,send);
+  }
+  await lspNotifications.flush(queueKey);
+  if(workspaceIdRef.current!==requestWorkspaceId||(originModel&&(pathRef.current!==requestPath||ed.getModel()!==originModel)))return null;
+  return send();
+ };
+ const flushPendingLspChange=async()=>{
+  if(lspFlushPromise){const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange?flushPendingLspChange():flushed;}
+  const pending=pendingLspChange;
+  if(!pending)return true;
+  pendingLspChange=null;
+  clearTimeout(lspTimerRef.current);lspTimerRef.current=null;
+  lspFlushPromise=(async()=>{
+   if(workspaceIdRef.current!==pending.workspaceId||pathRef.current!==pending.path||ed.getModel()!==pending.model||!ed.__dosLspOpened?.has(pending.uri))return true;
+   if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();
+   const version=nextLspDocumentVersion(ed.__dosLspVersions,pending.uri);
+   const data=await lspRequest("textDocument/didChange",{
+    textDocument:{uri:pending.uri,version},
+    contentChanges:[{text:pending.model.getValue()}],
+   },pending.language,pending.model);
+   if(!data){
+    if(workspaceIdRef.current===pending.workspaceId&&pathRef.current===pending.path&&ed.getModel()===pending.model&&ed.__dosLspOpened?.has(pending.uri))pendingLspChange=pending;
+    return pendingLspChange!==pending;
+   }
+   applyLspDiagnostics(data);
+   return true;
+  })();
+  let result=false;
+  try{result=await lspFlushPromise;}catch{
+   if(workspaceIdRef.current===pending.workspaceId&&pathRef.current===pending.path&&ed.getModel()===pending.model&&ed.__dosLspOpened?.has(pending.uri))pendingLspChange=pending;
+  }
+  lspFlushPromise=null;
+  // Do not spin-retry a failed didChange request. Keep the pending snapshot so
+  // the next editor/LSP request can retry once, without trapping the provider.
+  if(result&&pendingLspChange)return flushPendingLspChange();
+  return result;
  };
  const registerP1=()=>{
-  if(!workspaceId)return;
-  const token=getAccessToken();
-  const request=async(action,body={})=>{const r=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json","Authorization":token?"Bearer "+token:""},body:JSON.stringify({action,path:pathRef.current,...body})});if(!r.ok)return {};return r.json().catch(()=>({}));};
+  const request=async(action,body={},originModel=null)=>{const requestWorkspaceId=workspaceIdRef.current;const requestPath=pathRef.current;if(!requestWorkspaceId||(originModel&&ed.getModel()!==originModel))return {};const token=getAccessToken();try{const r=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action,path:requestPath,...body})});if(!r.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||(originModel&&ed.getModel()!==originModel))return {};const data=await r.json().catch(()=>({}));return workspaceIdRef.current===requestWorkspaceId&&pathRef.current===requestPath&&(!originModel||ed.getModel()===originModel)?data:{}}catch{return {}}};
   ["javascript","typescript","python"].forEach(language=>{
-   p1Providers.push(monaco.languages.registerDefinitionProvider(language,{provideDefinition:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/definition",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l);const lr=ld?.result; if(lr){const items=Array.isArray(lr)?lr:(lr.uri?[lr]:[]);return items.map(x=>({uri:monaco.Uri.parse(x.uri||x.targetUri),range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1}}));} const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("definitions",{name:word.word,line:pos.lineNumber});return (d.definitions||[]).map(x=>({uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(x.path)),range:{startLineNumber:x.line,endLineNumber:x.line,startColumn:x.column||1,endColumn:(x.column||1)+word.word.length}}));}}));
-   p1Providers.push(monaco.languages.registerHoverProvider(language,{provideHover:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/hover",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l);if(ld?.result){const contents=Array.isArray(ld.result.contents)?ld.result.contents: [ld.result.contents];return {contents:contents.map(x=>({value:typeof x==="string"?x:(x?.value||"")}))};} const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("hover",{name:word.word,line:pos.lineNumber});return d.hover?{contents:[{value:d.hover.markdown||d.hover.signature||word.word}]}:null;}}));
+   p1Providers.push(monaco.languages.registerDefinitionProvider(language,{provideDefinition:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/definition",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const lr=ld?.result; if(lr)return mapLspLocations(lr,monaco); const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("definitions",{name:word.word,line:pos.lineNumber},model);return (d.definitions||[]).map(x=>({uri:monaco.Uri.parse("inmemory://developer-os/"+encodeURIComponent(x.path)),range:{startLineNumber:x.line,endLineNumber:x.line,startColumn:x.column||1,endColumn:(x.column||1)+word.word.length}}));}}));
+   if(monaco.languages.registerDocumentSymbolProvider){
+    p1Providers.push(monaco.languages.registerDocumentSymbolProvider(language,{
+      displayName:"Developer OS Language Server",
+      provideDocumentSymbols:async(model,token)=>{
+        const response=await lspRequest("textDocument/documentSymbol",{
+          textDocument:{uri:model.uri.toString()},
+        },language,model);
+        if(token?.isCancellationRequested||ed.getModel()!==model)return [];
+        return mapLspDocumentSymbols(response?.result,monaco);
+      },
+    }));
+   }
+   p1Providers.push(monaco.languages.registerHoverProvider(language,{provideHover:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/hover",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);if(ld?.result){const contents=Array.isArray(ld.result.contents)?ld.result.contents: [ld.result.contents];return {contents:contents.map(x=>({value:typeof x==="string"?x:(x?.value||"")}))};} const word=model.getWordAtPosition(pos);if(!word)return null;const d=await request("hover",{name:word.word,line:pos.lineNumber},model);return d.hover?{contents:[{value:d.hover.markdown||d.hover.signature||word.word}]}:null;}}));
    p1Providers.push(monaco.languages.registerReferenceProvider(language,{provideReferences:async(model,pos,context)=>{
-    const ld=await lspRequest("textDocument/references",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},context:{includeDeclaration:!!context.includeDeclaration}},language);
-    const refs=Array.isArray(ld?.result)?ld.result:[];
-    return refs.map(x=>({uri:monaco.Uri.parse(x.uri),range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1}}));
+    const ld=await lspRequest("textDocument/references",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},context:{includeDeclaration:!!context.includeDeclaration}},language,model);
+    return mapLspLocations(ld?.result,monaco);
   }}));
+  p1Providers.push(monaco.languages.registerDocumentHighlightProvider(language,{
+    provideDocumentHighlights:async(model,pos)=>{
+      const response=await lspRequest("textDocument/documentHighlight",{
+        textDocument:{uri:model.uri.toString()},
+        position:{line:pos.lineNumber-1,character:pos.column-1},
+      },language,model);
+      return mapLspDocumentHighlights(response?.result,monaco);
+    }
+  }));
+  if(monaco.languages.registerInlayHintsProvider){
+    p1Providers.push(monaco.languages.registerInlayHintsProvider(language,{
+      provideInlayHints:async(model,range,token)=>{
+        const response=await lspRequest("textDocument/inlayHint",{
+          textDocument:{uri:model.uri.toString()},
+          range:{
+            start:{line:range.startLineNumber-1,character:range.startColumn-1},
+            end:{line:range.endLineNumber-1,character:range.endColumn-1},
+          },
+        },language,model);
+        if(token?.isCancellationRequested||ed.getModel()!==model)return {hints:[]};
+        return {hints:mapLspInlayHints(response?.result,monaco)};
+      },
+      resolveInlayHint:async hint=>hint,
+    }));
+  }
+  if(monaco.languages.registerSignatureHelpProvider){
+    p1Providers.push(monaco.languages.registerSignatureHelpProvider(language,{
+      signatureHelpTriggerCharacters:["(",","],
+      signatureHelpRetriggerCharacters:[")"],
+      provideSignatureHelp:async(model,pos,token,context)=>{
+        const response=await lspRequest("textDocument/signatureHelp",{
+          textDocument:{uri:model.uri.toString()},
+          position:{line:pos.lineNumber-1,character:pos.column-1},
+          context:{triggerKind:context?.triggerKind??1,isRetrigger:context?.isRetrigger===true,...(context?.triggerCharacter?{triggerCharacter:context.triggerCharacter}:{})},
+        },language,model);
+        if(token?.isCancellationRequested||ed.getModel()!==model)return null;
+        return mapLspSignatureHelp(response?.result);
+      },
+    }));
+  }
   p1Providers.push(monaco.languages.registerRenameProvider(language,{provideRenameEdits:async(model,pos,newName)=>{
-    const ld=await lspRequest("textDocument/rename",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},newName},language);
-    const changes=ld?.result?.changes||{};
-    const edits=[];
-    for(const [uri,items] of Object.entries(changes)) for(const x of (items||[])) edits.push({resource:monaco.Uri.parse(uri),textEdit:{range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1},text:x.newText}});
-    return {edits};
+    const ld=await lspRequest("textDocument/rename",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1},newName},language,model);
+    const unsupported=getUnsupportedLspResourceOperations(ld?.result);if(unsupported.length){workspaceEditUnsupported.current?.(unsupported);return null;}return mapLspWorkspaceEdit(ld?.result,monaco);
   }}));
-  p1Providers.push(monaco.languages.registerCompletionItemProvider(language,{triggerCharacters:[".","_"],provideCompletionItems:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/completion",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l);const live=ld?.result?.items||(Array.isArray(ld?.result)?ld.result:[]);if(live.length)return {suggestions:live.slice(0,200).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail||"",insertText:x.insertText||x.label}))};const word=model.getWordUntilPosition(pos);const d=await request("completion",{query:word.word,line:pos.lineNumber});return {suggestions:(d.completions||[]).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail,insertText:x.label,range:{startLineNumber:pos.lineNumber,startColumn:word.startColumn,endLineNumber:pos.lineNumber,endColumn:word.endColumn}}))};}}));
+  p1Providers.push(monaco.languages.registerCompletionItemProvider(language,{triggerCharacters:[".","_"],provideCompletionItems:async(model,pos)=>{const l=lang(pathRef.current);const ld=await lspRequest("textDocument/completion",{textDocument:{uri:model.uri.toString()},position:{line:pos.lineNumber-1,character:pos.column-1}},l,model);const live=ld?.result?.items||(Array.isArray(ld?.result)?ld.result:[]);if(live.length)return {suggestions:live.slice(0,200).map(x=>mapLspCompletionItem(x,monaco,model,pos)).filter(Boolean)};const word=model.getWordUntilPosition(pos);const d=await request("completion",{query:word.word,line:pos.lineNumber},model);return {suggestions:(d.completions||[]).map(x=>({label:x.label,kind:monaco.languages.CompletionItemKind.Text,detail:x.detail,insertText:x.label,range:{startLineNumber:pos.lineNumber,startColumn:word.startColumn,endLineNumber:pos.lineNumber,endColumn:word.endColumn}}))};}}));
   });
  };
  registerP1();
  const p1Diagnostics=ed.createDecorationsCollection([]);
- const applyLspDiagnostics=(payload)=>{
-   const notes=payload?.notifications||[];
+ applyLspDiagnostics=(payload)=>{
+   const notes=Array.isArray(payload?.notifications)?payload.notifications:[];
    for(const n of notes){
      if(n?.method!=="textDocument/publishDiagnostics")continue;
      const uri=n.params?.uri||"";
      const current=ed.getModel();
      if(!current||current.uri.toString()!==uri)continue;
-     const marks=(n.params?.diagnostics||[]).map(x=>({severity:x.severity===1?monaco.MarkerSeverity.Error:x.severity===2?monaco.MarkerSeverity.Warning:x.severity===3?monaco.MarkerSeverity.Info:monaco.MarkerSeverity.Hint,message:x.message||"Diagnostic",startLineNumber:x.range.start.line+1,startColumn:x.range.start.character+1,endLineNumber:x.range.end.line+1,endColumn:x.range.end.character+1,source:x.source||"LSP",code:x.code||""}));
+     const incomingVersion=n.params?.version;
+     const currentVersion=ed.__dosLspVersions?.get(uri);
+     if(Number.isInteger(incomingVersion)&&Number.isInteger(currentVersion)&&incomingVersion<currentVersion)continue;
+     const marks=mapLspDiagnostics(n.params?.diagnostics,monaco);
      monaco.editor.setModelMarkers(current,"lsp",marks);
    }
  };
- const lspRequestWithDiagnostics=async(method,params={},languageOverride=null)=>{
-   const data=await lspRequest(method,params,languageOverride); applyLspDiagnostics(data); return data;
+ const refreshP1Diagnostics=async()=>{
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   const targetModel=ed.getModel();
+   if(!requestWorkspaceId){if(targetModel)monaco.editor.setModelMarkers(targetModel,"developer-os-symbols",[]);return;}
+   const d=await request("diagnostics",{});
+   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||!targetModel||ed.getModel()!==targetModel)return;
+   const markers=(d.diagnostics||[]).filter(x=>x.path===requestPath).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));
+   monaco.editor.setModelMarkers(targetModel,"developer-os-symbols",markers);
+   p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));
  };
- const refreshP1Diagnostics=async()=>{if(!workspaceId)return;const d=await request("diagnostics",{});const markers=(d.diagnostics||[]).filter(x=>x.path===pathRef.current).map(x=>({severity:x.severity==="error"?monaco.MarkerSeverity.Error:x.severity==="warning"?monaco.MarkerSeverity.Warning:monaco.MarkerSeverity.Info,message:x.message||"",startLineNumber:x.line||1,startColumn:x.column||1,endLineNumber:x.line||1,endColumn:(x.column||1)+1,source:x.source||"Developer OS",code:x.code||""}));monaco.editor.setModelMarkers(ed.getModel(),"developer-os",markers);p1Diagnostics.set(markers.map(x=>({range:{startLineNumber:x.startLineNumber,startColumn:x.startColumn,endLineNumber:x.endLineNumber,endColumn:x.endColumn},options:{inlineClassName:"developer-os-diagnostic"}})));};
- refreshP1Diagnostics();
- const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",keybindings:[monaco.KeyCode.F2],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
- const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
- let lspVersion=1,lspTimer=null;
- const syncOpen=()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequest("textDocument/didOpen",{textDocument:{uri:m.uri.toString(),languageId:lang(pathRef.current),version:lspVersion,text:m.getValue()}});};
- syncOpen();
- const c=ed.onDidChangeModelContent(()=>{if(typeof change.current==="function")change.current(ed.getValue());clearTimeout(lspTimer);lspTimer=setTimeout(()=>{const m=ed.getModel();if(m&&workspaceId)void lspRequestWithDiagnostics("textDocument/didChange",{textDocument:{uri:m.uri.toString(),version:++lspVersion},contentChanges:[{text:m.getValue()}]});},300);});
+ ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics;
+ const p1Actions=ed.addAction({id:"developer-os.rename-preview",label:"Developer OS: Rename with Diff Preview",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:rename-preview",{detail:{old:word.word,path:pathRef.current}}));}});
+ const p1Refs=ed.addAction({id:"developer-os.references-panel",label:"Developer OS: Find References (Developer OS)",run:e=>{const m=e.getModel(),pos=e.getPosition();const word=m?.getWordAtPosition(pos);if(word)window.dispatchEvent(new CustomEvent("developer-os:find-references",{detail:{name:word.word,path:pathRef.current}}));}});
+
+
+ const c=ed.onDidChangeModelContent(()=>{
+   const changedModel=ed.getModel();
+   const changedPath=pathRef.current;
+   const changedWorkspaceId=workspaceIdRef.current;
+   if(typeof change.current==="function")change.current(ed.getValue());
+   clearTimeout(lspTimerRef.current);lspTimerRef.current=null;
+   if(!changedModel||!changedWorkspaceId||!["python","javascript","typescript"].includes(lang(changedPath)))return;
+   const changedUri=changedModel.uri.toString();
+   pendingLspChange={model:changedModel,path:changedPath,workspaceId:changedWorkspaceId,uri:changedUri,language:lang(changedPath)};
+   lspTimerRef.current=setTimeout(()=>{void flushPendingLspChange();},300);
+ });
  const p=ed.onDidChangeCursorPosition(e=>{if(typeof cursor.current==="function")cursor.current({line:e.position.lineNumber,column:e.position.column,path:pathRef.current});});
- const formatRequest=async(pathName,content)=>{
-   if(!workspaceId)return null;
+ const formatRequest=async(pathName,content,requestWorkspaceId=workspaceIdRef.current)=>{
+   if(!requestWorkspaceId||workspaceIdRef.current!==requestWorkspaceId)return null;
    const token=getAccessToken();
    try{
-    const response=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/format/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({path:pathName,content})});
-    if(!response.ok)return null;
-    return response.json().catch(()=>null);
+    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/format/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({path:pathName,content})});
+    if(!response.ok||workspaceIdRef.current!==requestWorkspaceId)return null;
+    const data=await response.json().catch(()=>null);
+    return workspaceIdRef.current===requestWorkspaceId?data:null;
    }catch{return null}
  };
  const codeActionsRequest=async(model,range)=>{
-   if(!workspaceId)return [];
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   if(!requestWorkspaceId)return [];
    const token=getAccessToken();
    try{
-    const response=await fetch(API_URL+"/ide/workspaces/"+workspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"code_actions",path:pathRef.current,line:range.startLineNumber})});
-    if(!response.ok)return [];
+    const response=await fetch(API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"code_actions",path:requestPath,line:range.startLineNumber})});
+    if(!response.ok||workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
     const data=await response.json().catch(()=>({}));
+    if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
     return Array.isArray(data.actions)?data.actions:[];
    }catch{return []}
  };
  const codeActionProviders=["python","javascript","typescript"].map(language=>monaco.languages.registerCodeActionProvider(language,{
-   provideCodeActions:async(model,range)=>{
-     const actions=await codeActionsRequest(model,range);
-     return {actions:actions.map((a,index)=>({title:a.title||a.description||("Code Action "+(index+1)),kind:a.kind||"quickfix",diagnostics:[],edit:a.edit?.changes?{edits:Object.entries(a.edit.changes).flatMap(([uri,items])=>(items||[]).map(x=>({resource:monaco.Uri.parse(uri),textEdit:{range:{startLineNumber:x.range.start.line+1,endLineNumber:x.range.end.line+1,startColumn:x.range.start.character+1,endColumn:x.range.end.character+1},text:x.newText}})))}:undefined,command:a.command}))};
-   }
+  provideCodeActions:async(model,range)=>{
+    const actions=await codeActionsRequest(model,range);
+    const safeActions=[];
+    actions.forEach((action,index)=>{
+      const unsupported=getUnsupportedLspResourceOperations(action?.edit);
+      if(unsupported.length){workspaceEditUnsupported.current?.(unsupported);return;}
+      safeActions.push({title:action.title||action.description||("Code Action "+(index+1)),kind:action.kind||"quickfix",diagnostics:[],edit:action.edit?mapLspWorkspaceEdit(action.edit,monaco):undefined,command:action.command});
+    });
+    return {actions:safeActions};
+  }
  }));
  const formatProvider=monaco.languages.registerDocumentFormattingEditProvider("python",{provideDocumentFormattingEdits:async(model)=>{
-   const r=await formatRequest(pathRef.current,model.getValue());
+   const requestWorkspaceId=workspaceIdRef.current;
+   const requestPath=pathRef.current;
+   const r=await formatRequest(requestPath,model.getValue(),requestWorkspaceId);
+   if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
    return r?.changed?[{range:model.getFullModelRange(),text:r.content}]:[];
  }});
  ["javascript","typescript","json","css","scss","html"].forEach(language=>{
    p1Providers.push(monaco.languages.registerDocumentFormattingEditProvider(language,{provideDocumentFormattingEdits:async(model)=>{
-     const r=await formatRequest(pathRef.current,model.getValue());
+     const requestWorkspaceId=workspaceIdRef.current;
+     const requestPath=pathRef.current;
+     const r=await formatRequest(requestPath,model.getValue(),requestWorkspaceId);
+     if(workspaceIdRef.current!==requestWorkspaceId||pathRef.current!==requestPath||ed.getModel()!==model)return [];
      return r?.changed?[{range:model.getFullModelRange(),text:r.content}]:[];
    }}));
  });
@@ -139,18 +289,22 @@ const symbolOutline=ed.addAction({id:"developer-os.symbol-outline",label:"Develo
  const renameSelection=ed.addAction({id:"developer-os.rename-symbol",label:"Developer OS: Rename Symbol",keybindings:[monaco.KeyCode.F2],run:e=>{e.getAction("editor.action.rename")?.run();}});
  const references=ed.addAction({id:"developer-os.find-references",label:"Developer OS: Find References",keybindings:[monaco.KeyMod.Shift|monaco.KeyCode.F12],run:e=>{e.getAction("editor.action.referenceSearch.trigger")?.run();}});
  const openImport=ed.addAction({id:"developer-os.open-import",label:"Developer OS: Open Workspace Import",run:e=>{const m=e.getModel(),p=e.getPosition();if(!m||!p)return;const line=m.getLineContent(p.lineNumber),before=line.slice(0,p.column-1);let hit=null;for(const match of before.matchAll(importPathRegex)){hit=match}if(!hit)return;const target=resolveWorkspaceImport(pathRef.current,hit[2]);if(target)window.dispatchEvent(new CustomEvent("developer-os:open-file",{detail:{path:target}}));e.focus();}});
- const workspaceSymbolsAction=ed.addAction({id:"developer-os.workspace-symbols",label:"Developer OS: Workspace Symbols",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO],run:async e=>{const m=e.getModel();if(!m)return;let remote=[];try{const d=await request("symbols",{query:""});remote=Array.isArray(d?.symbols)?d.symbols:[]}catch(error){void error}const local=workspaceSymbols(m.getValue()).map((s,index)=>({name:s.name,line:m.getPositionAt(s.offset).lineNumber,column:m.getPositionAt(s.offset).column,index,path:pathRef.current,kind:"local"}));const merged=(remote.length?remote:local).slice(0,500);if(typeof onWorkspaceSymbols==="function")onWorkspaceSymbols(merged.map((s,index)=>({name:s.name,line:Number(s.line||1),column:Number(s.column||1),index,path:s.path||pathRef.current,kind:s.kind||"symbol"})));window.dispatchEvent(new CustomEvent("developer-os:workspace-symbols",{detail:{path:pathRef.current,symbols:merged}}));e.focus();}});
-  return()=>{clearTimeout(lspTimer);if(workspaceId&&ed.__dosLspOpened)for(const uri of ed.__dosLspOpened)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());codeActionProviders.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
+ const workspaceSymbolsAction=ed.addAction({id:"developer-os.workspace-symbols",label:"Developer OS: Workspace Symbols",keybindings:[monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO],run:async e=>{const m=e.getModel();if(!m)return;let remote=[];try{const d=await request("symbols",{query:""},m);remote=Array.isArray(d?.symbols)?d.symbols:[]}catch(error){void error}if(ed.getModel()!==m)return;const local=workspaceSymbols(m.getValue()).map((s,index)=>({name:s.name,line:m.getPositionAt(s.offset).lineNumber,column:m.getPositionAt(s.offset).column,index,path:pathRef.current,kind:"local"}));const merged=(remote.length?remote:local).slice(0,500);if(typeof onWorkspaceSymbols==="function")onWorkspaceSymbols(merged.map((s,index)=>({name:s.name,line:Number(s.line||1),column:Number(s.column||1),index,path:s.path||pathRef.current,kind:s.kind||"symbol"})));window.dispatchEvent(new CustomEvent("developer-os:workspace-symbols",{detail:{path:pathRef.current,symbols:merged}}));e.focus();}});
+  return()=>{clearTimeout(lspTimerRef.current);lspTimerRef.current=null;pendingLspChange=null;ed.__dosRefreshP1Diagnostics=null;ed.__dosLspVersions?.clear();ed.__dosLspVersions=null;if(workspaceIdRef.current&&ed.__dosLspOpened)for(const uri of ed.__dosLspOpened)void lspRequest("textDocument/didClose",{textDocument:{uri}});p1Providers.forEach(x=>x.dispose());codeActionProviders.forEach(x=>x.dispose());formatProvider.dispose();p1Actions.dispose();p1Refs.dispose();p1Diagnostics.clear();c.dispose();p.dispose();format.dispose();duplicate.dispose();explain.dispose();fix.dispose();completionAction.dispose();gotoLine.dispose();foldAll.dispose();unfoldAll.dispose();symbolOutline.dispose();focusBreadcrumb.dispose();renameSelection.dispose();references.dispose();openImport.dispose();workspaceSymbolsAction.dispose();for(const m of models.current.values())if(!m.isDisposed())m.dispose();models.current.clear();viewStates.current.clear();ed.dispose();editor.current=null;model.current=null}},[]);
  useEffect(()=>{const ed=editor.current;if(!ed||!editorSettings)return;const fontSize=Number(editorSettings.fontSize);ed.updateOptions({fontSize:Number.isFinite(fontSize)?Math.min(24,Math.max(11,Math.round(fontSize))):13,tabSize:editorSettings.tabSize===4?4:2,wordWrap:editorSettings.wordWrap===true?"on":"off",minimap:{enabled:editorSettings.minimap!==false,side:"right",showSlider:"mouseover",renderCharacters:false},lineNumbers:editorSettings.lineNumbers===false?"off":"on",stickyScroll:{enabled:editorSettings.stickyScroll!==false},formatOnType:editorSettings.formatOnType!==false,fontLigatures:editorSettings.fontLigatures===true, cursorSmoothCaretAnimation:editorSettings.smoothCaret!==false?"on":"off",renderWhitespace:["none","selection","all"].includes(editorSettings.renderWhitespace)?editorSettings.renderWhitespace:"selection",codeLens:editorSettings.codeLens!==false,smoothScrolling:editorSettings.smoothScrolling!==false,mouseWheelZoom:editorSettings.mouseWheelZoom===true,guides:{indentation:true,bracketPairs:editorSettings.bracketPairGuides!==false,highlightActiveBracketPair:editorSettings.bracketPairGuides!==false},renderLineHighlight:["none","gutter","line","all"].includes(editorSettings.renderLineHighlight)?editorSettings.renderLineHighlight:"line"});if(["developer-os-dark","vs-dark","vs","hc-black"].includes(editorSettings.theme))monaco.editor.setTheme(editorSettings.theme);ed.layout();},[editorSettings,editorReady]);
- useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&!ed.hasTextFocus())next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;
-  if(workspaceId&&["python","javascript","typescript"].includes(lang(normalized))){
+ useEffect(()=>{const ed=editor.current;if(!ed)return;const normalized=path||"untitled";const previous=pathRef.current;const workspaceChanged=modelWorkspaceRef.current!==workspaceId;if(previous&&ed.getModel()===model.current){viewStates.current.set(previous,ed.saveViewState());}if(workspaceChanged){const oldWorkspace=modelWorkspaceRef.current;if(oldWorkspace&&ed.__dosLspOpened){for(const uri of ed.__dosLspOpened){const token=getAccessToken();void lspNotifications.enqueue(oldWorkspace+":"+uri,()=>fetch(API_URL+"/ide/workspaces/"+oldWorkspace+"/lsp/",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({language:lang(normalized),method:"textDocument/didClose",uri,params:{textDocument:{uri}}})}).catch(()=>null));}}ed.__dosLspOpened=new Set();ed.__dosLspVersions=new Map();modelWorkspaceRef.current=workspaceId;}pathRef.current=normalized;const uri=monaco.Uri.parse(`inmemory://developer-os/${encodeURIComponent(normalized)}`);let next=models.current.get(normalized);if(!next||next.isDisposed()){next=monaco.editor.getModel(uri)||monaco.editor.createModel(value||"",lang(normalized),uri);models.current.set(normalized,next);}else{monaco.editor.setModelLanguage(next,lang(normalized));}if(next.getValue()!==(value||"")&&(!ed.hasTextFocus()||workspaceChanged))next.setValue(value||"");if(ed.getModel()!==next)ed.setModel(next);model.current=next;
+  if(workspaceIdRef.current&&["python","javascript","typescript"].includes(lang(normalized))){
     const uriString=next.uri.toString();
     if(!ed.__dosLspOpened)ed.__dosLspOpened=new Set();
     if(!ed.__dosLspOpened.has(uriString)){
       ed.__dosLspOpened.add(uriString);
-      void lspRequest("textDocument/didOpen",{textDocument:{uri:uriString,languageId:lang(normalized),version:1,text:next.getValue()}},lang(normalized));
+      if(!ed.__dosLspVersions)ed.__dosLspVersions=new Map();
+      ed.__dosLspVersions.set(uriString,1);
+      void lspRequest("textDocument/didOpen",{textDocument:{uri:uriString,languageId:lang(normalized),version:1,text:next.getValue()}},lang(normalized),next);
     }
-  }const saved=viewStates.current.get(normalized);if(saved)ed.restoreViewState(saved);ed.focus();return()=>{if(model.current===next)model.current=null}},[path]);
+  }
+  void ed.__dosRefreshP1Diagnostics?.();
+  const saved=viewStates.current.get(normalized);if(saved&&!workspaceChanged)ed.restoreViewState(saved);ed.focus();return()=>{clearTimeout(lspTimerRef.current);lspTimerRef.current=null;if(model.current===next)model.current=null}},[path,workspaceId]);
  useEffect(()=>{const m=model.current;if(m&&m.getValue()!==(value||"")&&!editor.current?.hasTextFocus())m.setValue(value||"")},[value]);
  useEffect(()=>{const ed=editor.current;if(!ed)return;const reveal=e=>{const line=Math.max(1,Number(e.detail?.line||1));const column=Math.max(1,Number(e.detail?.column||1));ed.revealPositionInCenter({lineNumber:line,column});ed.setPosition({lineNumber:line,column});ed.focus()};const focusEditor=()=>{if(ed.getModel()){ed.focus();ed.revealPositionInCenter(ed.getPosition()||{lineNumber:1,column:1})}};window.addEventListener("developer-os:reveal-line",reveal);window.addEventListener("developer-os:focus-editor",focusEditor);return()=>{window.removeEventListener("developer-os:reveal-line",reveal);window.removeEventListener("developer-os:focus-editor",focusEditor)}},[path]);
  useEffect(()=>{const m=model.current;if(!m)return;const markers=(diagnostics||[]).filter(x=>!x.path||x.path===path).map(x=>({startLineNumber:Math.max(1,x.line||1),endLineNumber:Math.max(1,x.end_line||x.line||1),startColumn:Math.max(1,x.column||1),endColumn:Math.max(2,x.end_column||((x.column||1)+1)),message:x.message||"Diagnostic",severity:x.severity==="warning"?monaco.MarkerSeverity.Warning:x.severity==="info"?monaco.MarkerSeverity.Info:monaco.MarkerSeverity.Error}));monaco.editor.setModelMarkers(m,"developer-os",markers);return()=>monaco.editor.setModelMarkers(m,"developer-os",[])},[diagnostics,path]);
