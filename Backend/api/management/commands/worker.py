@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import timedelta
 from pathlib import Path
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMultiAlternatives
 from django.db import close_old_connections, transaction
@@ -132,10 +133,36 @@ def export_user(user, export):
     return str(path)
 
 
+def _is_deployed_runtime() -> bool:
+    return bool(
+        getattr(settings, "IS_PRODUCTION", False)
+        or os.getenv("RENDER_SERVICE_ID", "").strip()
+        or os.getenv("RENDER_GIT_COMMIT", "").strip()
+    )
+
+
+def _require_real_email_transport() -> None:
+    """Never let a deployed console backend masquerade as delivered email."""
+    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
+    if _is_deployed_runtime() and (
+        not host or backend.endswith("console.EmailBackend")
+    ):
+        raise RuntimeError(
+            "Email delivery is not configured: a real email transport is required."
+        )
+
+
 def execute(job):
     if job.kind == "email":
+        _require_real_email_transport()
         payload = job.payload
-        message = EmailMultiAlternatives(payload["subject"], payload["text"], os.getenv("DEFAULT_FROM_EMAIL", "Developer OS <no-reply@localhost>"), [payload["to"]])
+        message = EmailMultiAlternatives(
+            payload["subject"],
+            payload["text"],
+            getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@developer-os.local"),
+            [payload["to"]],
+        )
         if payload.get("html"):
             message.attach_alternative(payload["html"], "text/html")
         message.send(fail_silently=False)
@@ -210,6 +237,15 @@ class Command(BaseCommand):
                 job.error = ""
             except Exception as exc:
                 now = timezone.now()
+                # Keep diagnostics useful without logging message bodies,
+                # recipients, verification URLs, or provider credentials.
+                logger.error(
+                    "Background job execution failed job_id=%s kind=%s attempt=%s error_type=%s",
+                    job.pk,
+                    job.kind,
+                    job.attempts,
+                    type(exc).__name__,
+                )
                 job.error = str(exc)[:10000]
                 job.last_error_at = now
                 if job.attempts < job.max_attempts:
