@@ -30,7 +30,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
     )
     def test_deployed_console_backend_fails_closed_without_printing_email(self):
         with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
-            with self.assertRaisesMessage(RuntimeError, "email is required"):
+            with self.assertRaisesMessage(RuntimeError, "not configured"):
                 execute(self.email_job())
         mail.assert_not_called()
 
@@ -47,7 +47,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
     )
     def test_deployed_non_smtp_backend_is_rejected_even_with_host(self):
         with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
-            with self.assertRaisesMessage(RuntimeError, "email is required"):
+            with self.assertRaisesMessage(RuntimeError, "not configured"):
                 execute(self.email_job())
         mail.assert_not_called()
 
@@ -64,7 +64,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
     )
     def test_deployed_smtp_without_password_is_rejected(self):
         with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
-            with self.assertRaisesMessage(RuntimeError, "email is required"):
+            with self.assertRaisesMessage(RuntimeError, "not configured"):
                 execute(self.email_job())
         mail.assert_not_called()
 
@@ -121,7 +121,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             {"RENDER_SERVICE_ID": "srv-test", "RENDER_GIT_COMMIT": ""},
         ):
             with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
-                with self.assertRaisesMessage(RuntimeError, "email is required"):
+                with self.assertRaisesMessage(RuntimeError, "not configured"):
                     execute(self.email_job())
         mail.assert_not_called()
 
