@@ -124,7 +124,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
         ):
             with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
                 with self.assertRaisesMessage(
-                    RuntimeError, "a real email transport is required"
+                    RuntimeError, "authenticated encrypted SMTP is required"
                 ):
                     execute(self.email_job())
         mail.assert_not_called()
