@@ -1,0 +1,621 @@
+/* Developer OS Web IDE — single final workbench contract.
+   Legacy visual layers stay intact; this file owns only predictable layout,
+   responsive behavior, shared control rhythm, and editor overflow. */
+.dos-ide-pro {
+  --wb-bg: #070c13;
+  --wb-surface: #0b1420;
+  --wb-surface-raised: #101d2b;
+  --wb-surface-soft: #0d1824;
+  --wb-border: rgba(145, 177, 202, .15);
+  --wb-border-strong: rgba(91, 205, 235, .34);
+  --wb-text: #e4edf6;
+  --wb-muted: #8ca1b4;
+  --wb-accent: #68d9f2;
+  --wb-radius-sm: 7px;
+  --wb-radius-md: 10px;
+  --wb-control-height: 34px;
+  min-width: 0;
+  min-height: 0;
+  color: var(--wb-text);
+  background: var(--wb-bg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color-scheme: dark;
+}
+.dos-ide-pro,
+.dos-ide-pro *,
+.dos-ide-pro *::before,
+.dos-ide-pro *::after { box-sizing: border-box; }
+.dos-ide-pro :where(button, input, select, textarea) { font: inherit; }
+.dos-ide-pro :where(button) { min-width: 0; touch-action: manipulation; }
+.dos-ide-pro :where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
+}
+.dos-ide-pro :where(button:disabled) { opacity: .48; cursor: not-allowed; }
+.dos-ide-pro .dos-topbar {
+  min-width: 0;
+  gap: 9px;
+  padding: 9px 12px;
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-home-button,
+.dos-ide-pro .dos-workspace-select > button,
+.dos-ide-pro .dos-top-actions > button,
+.dos-ide-pro .dos-editor-toolbar button,
+.dos-ide-pro .dos-explorer-actions button,
+.dos-ide-pro .dos-dock-tabs button {
+  min-height: var(--wb-control-height);
+  border-radius: var(--wb-radius-sm);
+}
+.dos-ide-pro .dos-brand { min-width: 138px; }
+.dos-ide-pro .dos-workspace-select { min-width: 150px; }
+.dos-ide-pro .dos-workspace-select select {
+  min-width: 0;
+  min-height: var(--wb-control-height);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+}
+.dos-ide-pro .dos-top-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 5px;
+}
+.dos-ide-pro .dos-top-actions button { white-space: nowrap; }
+.dos-ide-pro .dos-commandbar {
+  min-width: 0;
+  min-height: 34px;
+  gap: 9px;
+  padding-inline: 12px;
+  background: #08111a;
+  border-bottom: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-commandbar > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dos-ide-pro .dos-body {
+  grid-template-columns: 46px minmax(205px, 252px) minmax(0, 1fr) minmax(190px, 224px);
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  background: var(--wb-bg);
+}
+.dos-ide-pro .dos-activity,
+.dos-ide-pro .dos-explorer,
+.dos-ide-pro .dos-editor-shell,
+.dos-ide-pro .dos-inspector {
+  min-width: 0;
+  min-height: 0;
+}
+.dos-ide-pro .dos-activity {
+  gap: 6px;
+  padding: 9px 5px;
+  background: #08111b;
+  border-right: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-activity button {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+.dos-ide-pro .dos-explorer {
+  overflow: hidden;
+  background: var(--wb-surface);
+  border-right: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-pane-title,
+.dos-ide-pro .dos-inspector-title {
+  min-height: 40px;
+  padding: 7px 11px;
+  letter-spacing: .08em;
+}
+.dos-ide-pro .dos-file-list,
+.dos-ide-pro .dos-inspector,
+.dos-ide-pro .dos-symbol-list,
+.dos-ide-pro .dos-dock-content {
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.dos-ide-pro .dos-file-list { flex: 1 1 auto; }
+.dos-ide-pro .dos-file,
+.dos-ide-pro .dos-folder {
+  min-height: 30px;
+  border-radius: 6px;
+  line-height: 1.35;
+}
+.dos-ide-pro .dos-editor-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #070c13;
+}
+.dos-ide-pro .dos-workbench-strip,
+.dos-ide-pro .dos-tabs,
+.dos-ide-pro .dos-editor-toolbar,
+.dos-ide-pro .dos-statusbar,
+.dos-ide-pro .dos-dock-tabs,
+.dos-ide-pro .dos-dock-meta {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.dos-ide-pro .dos-workbench-strip {
+  min-height: 38px;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--wb-surface-soft);
+  border-bottom: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-workbench-title { min-width: 0; }
+.dos-ide-pro .dos-workbench-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dos-ide-pro .dos-workbench-actions { flex: 0 0 auto; }
+.dos-ide-pro .dos-tabs {
+  min-height: 39px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dos-ide-pro .dos-tab-list {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dos-ide-pro .dos-tab[role="tab"]:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline-offset: -3px;
+}
+.dos-ide-pro .dos-tab {
+  flex: 0 0 auto;
+  min-width: 126px;
+  max-width: 220px;
+  min-height: 39px;
+}
+.dos-ide-pro .dos-editor-toolbar {
+  min-height: 38px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dos-ide-pro .dos-editors {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 180px;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-editor-pane,
+.dos-ide-pro .dos-editor-pane > .monaco-host,
+.dos-ide-pro .dos-editor-pane .monaco-host,
+.dos-ide-pro .dos-editor-pane .monaco-editor,
+.dos-ide-pro .dos-editor-pane .dos-editor-fallback {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.dos-ide-pro .dos-editor-pane { overflow: hidden; }
+.dos-ide-pro .dos-secondary { min-width: 0; }
+.dos-ide-pro .dos-statusbar {
+  min-height: 26px;
+  gap: 12px;
+  padding-inline: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.dos-ide-pro .dos-inspector {
+  overflow: auto;
+  background: var(--wb-surface);
+  border-left: 1px solid var(--wb-border);
+}
+.dos-ide-pro .dos-card {
+  margin: 9px;
+  padding: 11px;
+  gap: 8px;
+  border-color: var(--wb-border);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-surface-raised);
+}
+.dos-ide-pro .dos-card :where(input, select) {
+  min-height: var(--wb-control-height);
+  border-radius: var(--wb-radius-sm);
+}
+.dos-ide-pro .dos-ide-dock {
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--wb-border);
+  background: var(--wb-surface);
+}
+.dos-ide-pro .dos-dock-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dos-ide-pro .dos-dock-tabs button { flex: 0 0 auto; }
+.dos-ide-pro .dos-dock-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-dock-meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dos-ide-pro .dos-terminal {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-height: min(34dvh, 340px);
+}
+.dos-ide-pro .dos-terminal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.dos-ide-pro .dos-terminal pre {
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.dos-ide-pro :where(.dos-search-panel, .dos-run-center, .dos-preview, .dos-problems, .dos-ai-panel, .dos-editor-settings-panel) {
+  max-width: calc(100% - 20px);
+}
+.dos-ide-pro .dos-welcome {
+  width: min(100%, 520px);
+  margin-inline: auto;
+}
+.dos-ide-pro .dos-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.dos-ide-pro.dos-focus-mode .dos-body {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-explorer,
+.dos-ide-pro.dos-focus-mode .dos-body > .dos-inspector { display: none; }
+
+@media (max-width: 1240px) {
+  .dos-ide-pro .dos-body { grid-template-columns: 44px minmax(190px, 230px) minmax(0, 1fr); }
+  .dos-ide-pro .dos-inspector { display: none; }
+}
+@media (max-width: 900px) {
+  .dos-ide-pro .dos-topbar { flex-wrap: wrap; }
+  .dos-ide-pro .dos-brand { min-width: 0; }
+  .dos-ide-pro .dos-workspace-select { flex: 1 1 220px; }
+  .dos-ide-pro .dos-top-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 2px 1px;
+    scrollbar-width: thin;
+  }
+  .dos-ide-pro .dos-body { grid-template-columns: 42px minmax(180px, 215px) minmax(0, 1fr); }
+  .dos-ide-pro .dos-workbench-actions .dos-return-workbench { display: none; }
+}
+@media (max-width: 680px) {
+  .dos-ide-pro { border-radius: 0; }
+  .dos-ide-pro .dos-topbar { gap: 6px; padding: 7px; }
+  .dos-ide-pro .dos-home-button { max-width: 42px; overflow: hidden; }
+  .dos-ide-pro .dos-home-label { display: none; }
+  .dos-ide-pro .dos-brand strong { font-size: 10px; }
+  .dos-ide-pro .dos-brand span { font-size: 7px; }
+  .dos-ide-pro .dos-workspace-select { flex: 1 1 100%; }
+  .dos-ide-pro .dos-top-actions { justify-content: flex-start; }
+  .dos-ide-pro .dos-commandbar { gap: 6px; padding-inline: 7px; }
+  .dos-ide-pro .dos-commandbar > span:nth-of-type(n+3) { display: none; }
+  .dos-ide-pro .dos-body { grid-template-columns: 42px minmax(0, 1fr); }
+  .dos-ide-pro .dos-body:not(.dos-explorer-collapsed) > .dos-explorer {
+    position: absolute;
+    z-index: 45;
+    inset-block: 0;
+    left: 42px;
+    width: min(270px, calc(100% - 54px));
+    max-width: calc(100% - 54px);
+    box-shadow: 18px 0 48px rgba(0, 0, 0, .42);
+  }
+  .dos-ide-pro .dos-body.dos-explorer-collapsed > .dos-explorer { display: none; }
+  .dos-ide-pro .dos-activity { padding-inline: 3px; }
+  .dos-ide-pro .dos-activity button { width: 36px; height: 36px; }
+  .dos-ide-pro .dos-workbench-strip { flex-wrap: wrap; }
+  .dos-ide-pro .dos-workbench-actions { max-width: 100%; overflow-x: auto; }
+  .dos-ide-pro .dos-editor-toolbar { gap: 4px; }
+  .dos-ide-pro .dos-editor-toolbar button { min-height: 32px; }
+  .dos-ide-pro .dos-editors { min-height: 160px; }
+  .dos-ide-pro .dos-editors.split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, .7fr); }
+  .dos-ide-pro .dos-statusbar { gap: 7px; font-size: 8px; }
+  .dos-ide-pro .dos-statusbar > span:nth-of-type(n+4) { display: none; }
+  .dos-ide-pro .dos-dock-meta > span:nth-of-type(n+2) { display: none; }
+  .dos-ide-pro .dos-terminal { max-height: 38dvh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dos-ide-pro *,
+  .dos-ide-pro *::before,
+  .dos-ide-pro *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  .dos-ide-pro :where(button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+  .dos-ide-pro .dos-file.active { outline: 1px solid Highlight; }
+}
+
+
+/* DOM-aligned shell grid.
+   ProIDE renders the workbench strip, tabs, toolbar, editor, dock and status
+   as six direct children of .dos-editor-shell. Earlier legacy rules assigned
+   the dock/status to rows that collided with the tabs/editor. Keep this final
+   grid contract aligned with that real DOM; no feature markup is removed. */
+.dos-ide-pro {
+  min-height: 0;
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
+}
+.dos-ide-pro .dos-body {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+.dos-ide-pro .dos-body > .dos-editor-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(38px, auto) 39px 38px minmax(0, 1fr) auto 26px;
+  align-content: stretch;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  width: auto;
+  margin: 6px 0 6px 8px;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-editor-shell > .dos-workbench-strip { grid-row: 1; }
+.dos-ide-pro .dos-editor-shell > .dos-tabs {
+  grid-row: 2;
+  min-height: 0;
+  height: 39px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-editor-toolbar {
+  grid-row: 3;
+  min-height: 0;
+  height: 38px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-editors {
+  grid-row: 4;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock {
+  grid-row: 5;
+  align-self: stretch;
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  min-width: 0;
+  min-height: 38px;
+  height: auto;
+  max-height: 96px;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock .dos-dock-tabs {
+  min-height: 38px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock .dos-dock-meta {
+  min-height: 26px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-statusbar {
+  grid-row: 6;
+  min-width: 0;
+  min-height: 26px;
+  height: 26px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-terminal {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 60;
+  grid-row: auto;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(54%, 420px);
+  min-height: 145px;
+  margin: 0;
+}
+.dos-ide-pro .dos-editors {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.dos-ide-pro .dos-editors.split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+.dos-ide-pro .dos-editors > .dos-editor-pane {
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.dos-ide-pro .dos-editors > .dos-editor-pane.dos-secondary {
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.dos-ide-pro .dos-editor-pane .monaco-host,
+.dos-ide-pro .dos-editor-pane .dos-editor-fallback {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+@media (max-width: 820px) {
+  .dos-ide-pro {
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+    min-height: 0;
+  }
+  .dos-ide-pro .dos-body > .dos-editor-shell {
+    margin: 5px 0 5px 5px;
+    grid-template-rows: minmax(36px, auto) 38px 36px minmax(0, 1fr) auto 25px;
+  }
+  .dos-ide-pro .dos-editor-shell > .dos-tabs { height: 38px; }
+  .dos-ide-pro .dos-editor-shell > .dos-editor-toolbar { height: 36px; }
+  .dos-ide-pro .dos-editor-shell > .dos-statusbar {
+    min-height: 25px;
+    height: 25px;
+  }
+  .dos-ide-pro .dos-editors.split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, .72fr);
+  }
+  .dos-ide-pro .dos-editors.split > .dos-editor-pane.dos-secondary {
+    grid-column: 1;
+    grid-row: 2;
+    border-top: 1px solid var(--wb-border);
+    border-left: 0;
+  }
+}
+@media (max-width: 520px) {
+  .dos-ide-pro .dos-body > .dos-editor-shell {
+    margin: 4px 0 4px 4px;
+    grid-template-rows: minmax(34px, auto) 36px 36px minmax(0, 1fr) auto 24px;
+  }
+  .dos-ide-pro .dos-editor-shell > .dos-tabs { height: 36px; }
+  .dos-ide-pro .dos-editor-shell > .dos-editor-toolbar { height: 36px; }
+  .dos-ide-pro .dos-editor-shell > .dos-statusbar {
+    min-height: 24px;
+    height: 24px;
+  }
+}
+
+
+/* Dock collapse must release its metadata track, not leave a dead 28px row. */
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] {
+  grid-template-rows: 38px 0;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] {
+  grid-template-rows: 38px 26px;
+}
+
+
+/* Dock expansion requires an actual two-track grid, not only grid-template-rows. */
+.dos-ide-pro .dos-editor-shell { position: relative; }
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px 26px;
+  min-height: 38px;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] {
+  grid-template-rows: 38px 0;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="false"] .dos-dock-meta {
+  visibility: hidden;
+  pointer-events: none;
+}
+.dos-ide-pro .dos-editor-shell > .dos-ide-dock[data-expanded="true"] .dos-dock-meta {
+  visibility: visible;
+}
+
+
+/* Keep each editor tab and its close action as separate keyboard targets.
+   ARIA tabs must not contain nested interactive controls. */
+.dos-ide-pro .dos-tab-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  min-width: 126px;
+  max-width: 250px;
+  min-height: 39px;
+  border-right: 1px solid rgba(126, 183, 214, .1);
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"] {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  min-height: 39px;
+  padding: 0 7px 0 9px;
+  border: 0;
+  border-top: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"].active {
+  border-top-color: var(--accent, #55dcff);
+  background: linear-gradient(180deg, rgba(17, 31, 46, .98), rgba(10, 19, 29, .98));
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"].pinned:not(.active) {
+  border-top-color: #55dcff;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab-close {
+  flex: 0 0 26px;
+  align-self: center;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  margin: 0 4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #71879b;
+  cursor: pointer;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab-close:hover {
+  background: rgba(145, 175, 200, .14);
+  color: #e2f8ff;
+}
+.dos-ide-pro .dos-tab-item:focus-within {
+  position: relative;
+  z-index: 1;
+}
+.dos-ide-pro .dos-tab-item > .dos-tab[role="tab"]:focus-visible,
+.dos-ide-pro .dos-tab-item > .dos-tab-close:focus-visible {
+  outline: 2px solid var(--wb-accent, #55dcff);
+  outline-offset: -2px;
+}
+
+
+/* Explorer controls keep a visible focus indicator in dense file trees. */
+.dos-ide-pro .dos-explorer .dos-file:focus-visible,
+.dos-ide-pro .dos-explorer .dos-folder:focus-visible,
+.dos-ide-pro .dos-tree-search input:focus-visible {
+  outline: 2px solid var(--wb-accent, #55dcff);
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}

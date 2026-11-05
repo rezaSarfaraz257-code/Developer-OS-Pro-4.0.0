@@ -216,6 +216,16 @@ test("offline queue parsing retains identifiable legacy edits and ignores malfor
   assert.deepEqual(parseOfflineQueue("not-json"), []);
 });
 
+test("Monaco serializes LSP document lifecycle notifications per workspace and URI", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /createLspDocumentQueue/);
+  assert.match(editor, /const \[lspNotifications\] = useState/);
+  assert.match(editor, /lspNotifications\.enqueue\(queueKey,send\)/);
+  assert.match(editor, /method!==["']textDocument\/didOpen["']/);
+  assert.match(editor, /await lspNotifications\.flush\(queueKey\)/);
+  assert.match(editor, /lspNotifications\.enqueue\(oldWorkspace\+":"\+uri/);
+});
+
 test("Web IDE routes tab switching through the save guard and refuses false save success", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /onClick=\{\(\)=>\{void open\(p\);setRecent/);
@@ -348,7 +358,6 @@ test("execution output is bounded and stale run responses cannot update the IDE"
   assert.match(ide, /async function install\(\).*const saved=await save\(true\);if\(!saved\)return/s);
   assert.match(ide, /setTerminal\(appendBoundedText\("",d\.output\|\|"Install completed\\n"\)\)/);
 });
-
 test("IDE WebSocket handlers ignore stale connections and bound terminal status output", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /if\(terminalSocket\.current!==socket\)return;/);
@@ -697,8 +706,7 @@ test("IDE context-menu Delete saves pending edits before destructive Explorer mu
 test("IDE command palette exposes an accessible modal and named controls", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.match(ide, /className="dos-palette" role="dialog" aria-modal="true" aria-labelledby="dos-command-palette-title"/);
-  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);
-  assert.match(ide, /aria-label="Close command palette"/);
+  assert.match(ide, /className="dos-palette-title" id="dos-command-palette-title">COMMAND PALETTE/);  assert.match(ide, /aria-label="Close command palette"/);
   assert.match(ide, /input aria-label="Filter commands" autoFocus/);
 });
 
@@ -818,6 +826,29 @@ test("cached static Nginx locations retain the full frontend security policy", (
   }
 });
 
+
+test("Web IDE stylesheet order gives the final workbench contract ownership of layout", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const imports = [...ide.matchAll(/import\s+["'](\.[^"']+\.css)["']/g)].map((match) => match[1]);
+  const studio = imports.indexOf("./ide/IDEStudio2026.css");
+  const layout = imports.indexOf("./ProIDELayout.css");
+  const system = imports.indexOf("./ide/IDEWorkbenchSystem.css");
+
+  assert.ok(studio >= 0 && layout > studio && system > layout, "IDE styles must load in legacy → studio → layout → final-system order");
+  assert.equal(fs.existsSync(path.join(srcDir, "ide/IDEWorkbenchSystem.css")), true);
+});
+
+test("Web IDE workbench system preserves editor sizing and responsive Explorer access", () => {
+  const system = fs.readFileSync(path.join(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+
+  assert.match(system, /\.dos-ide-pro \.dos-body\s*\{[\s\S]*grid-template-columns:\s*46px minmax\(205px, 252px\) minmax\(0, 1fr\) minmax\(190px, 224px\)/);
+  assert.match(system, /\.dos-ide-pro \.dos-editors\s*\{[\s\S]*min-height:\s*180px/);
+  assert.match(system, /\.dos-ide-pro \.dos-body:not\(\.dos-explorer-collapsed\) > \.dos-explorer/);
+  assert.match(system, /@media \(max-width: 680px\)/);
+  assert.match(system, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(system, /@media \(forced-colors: active\)/);
+});
+
 test("Monaco TypeScript defaults use the supported top-level API", () => {
   const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
 
@@ -825,6 +856,23 @@ test("Monaco TypeScript defaults use the supported top-level API", () => {
   assert.match(editor, /if \(monaco\.typescript\?\.javascriptDefaults && monaco\.typescript\?\.typescriptDefaults\)/);
   assert.match(editor, /monaco\.typescript\.typescriptDefaults/);
   assert.doesNotMatch(editor, /monaco\.languages\.typescript/);
+});
+
+test("Monaco language services follow workspace switches without stale workspace IDs", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /workspaceIdRef=useRef\(workspaceId\)/);
+  assert.match(editor, /workspaceIdRef\.current=workspaceId/);
+  assert.ok(editor.includes('API_URL+"/ide/workspaces/"+requestWorkspaceId+"/lsp/"'));
+  assert.match(editor, /modelWorkspaceRef\.current!==workspaceId/);
+  assert.match(editor, /\(!ed\.hasTextFocus\(\)\|\|workspaceChanged\)/);
+  assert.match(editor, /\},\[path,workspaceId\]\)/);
+  assert.match(editor, /method:"textDocument\/didClose"/);
+  assert.doesNotMatch(editor, /syncOpen\(\);/);
+  const registration = editor.slice(editor.indexOf("const registerP1=()=>{"), editor.indexOf("registerP1();"));
+  assert.ok(registration.includes("registerDefinitionProvider"));
+  assert.doesNotMatch(registration, /if\(!workspaceIdRef\.current\)return;/);
+  assert.match(registration, /const token=getAccessToken\(\)/);
+  assert.match(registration, /const requestWorkspaceId=workspaceIdRef\.current;const requestPath=pathRef\.current;if\(!requestWorkspaceId\|\|\(originModel&&ed\.getModel\(\)!==originModel\)\)return \{\}/);
 });
 
 test("Monaco workers use package-export-compatible paths", () => {
@@ -841,6 +889,291 @@ test("Monaco workers use package-export-compatible paths", () => {
   assert.doesNotMatch(editor, /monaco-editor\/esm\/vs\//);
 });
 
+
+test("Web IDE shell grid maps workbench regions to their actual direct DOM children", () => {
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes('<main className={`dos-editor-shell'));
+  assert.ok(ide.includes('<div className="dos-workbench-strip"'));
+  assert.ok(ide.includes('<div className="dos-tabs"'));
+  assert.ok(ide.includes('<div className="dos-editor-toolbar"'));
+  assert.ok(ide.includes('<div className={`dos-editors'));
+  assert.ok(ide.includes('<div className="dos-ide-dock"'));
+  assert.ok(ide.includes('<div className="dos-statusbar"'));
+  assert.ok(workbench.includes(".dos-editor-shell > .dos-workbench-strip { grid-row: 1; }"));
+  assert.match(workbench, /\.dos-editor-shell > \.dos-tabs[\s\S]*grid-row: 2/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-editor-toolbar[\s\S]*grid-row: 3/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-editors[\s\S]*grid-row: 4/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-ide-dock[\s\S]*grid-row: 5/);
+  assert.match(workbench, /\.dos-editor-shell > \.dos-statusbar[\s\S]*grid-row: 6/);
+  assert.match(workbench, /\.dos-editors\.split[\s\S]*grid-template-rows: minmax\(0, 1fr\) minmax\(0, \.72fr\)/);
+});
+
+
+test("Web IDE editor tabs expose accessible tab semantics and keyboard navigation", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  assert.match(ide, /className="dos-tab-list" role="tablist" aria-label="Open editor files"/);
+  assert.ok(ide.includes('<button type="button" role="tab" aria-selected={p===active}'));
+  assert.match(ide, /className="dos-tab-item"><button type="button" role="tab"/);
+  assert.ok(ide.includes('className="dos-tab-close" aria-label={`Close ${p}`}'));
+  assert.ok(workbench.includes(".dos-ide-pro .dos-tab-item > .dos-tab-close"));
+  assert.match(ide, /e\.key==="ArrowRight"\|\|e\.key==="ArrowLeft"\|\|e\.key==="Home"\|\|e\.key==="End"/);
+  assert.ok(ide.includes("items[target]?.focus();items[target]?.click()"));
+  assert.match(ide, /aria-label=\{`Close \$\{p\}`\}/);
+  assert.ok(workbench.includes(".dos-ide-pro .dos-tab-list {"));
+  assert.match(ide, /aria-label=\{`Open \$\{path\}`\} aria-current=\{path===active\?"page":undefined\}/);
+  assert.match(ide, /aria-label=\{`\$\{isOpen\?"Collapse":"Expand"\} folder \$\{path\}`\} aria-expanded=\{isOpen\}/);
+  assert.ok(workbench.includes(".dos-ide-pro .dos-explorer .dos-file:focus-visible"));
+});
+
+test("Web IDE terminal toggle keeps dock and terminal visibility synchronized", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /const toggleTerminal=useCallback\(\(\)=>\{const next=!dockOpen;setDockTab\("terminal"\);setDockOpen\(next\);setShowTerminal\(next\);if\(next\)setPanel\(null\)\},\[dockOpen\]\)/);
+  assert.match(ide, /\["Toggle terminal","Ctrl `",toggleTerminal\]/);
+  assert.match(ide, /key==="j"\)\{e\.preventDefault\(\);toggleTerminal\(\)\}/);
+  assert.match(ide, /\},\[save,zen,focusMode,active,toggleTerminal\]\)/);
+  assert.match(ide, /onClick=\{toggleTerminal\} title="Toggle terminal \(Ctrl\+J\)"/);
+});
+
+test("Web IDE dock expansion has an active grid layout and terminal positioning context", () => {
+  const workbench = fs.readFileSync(path.resolve(srcDir, "ide/IDEWorkbenchSystem.css"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes('className="dos-ide-dock" data-expanded={dockOpen}'));
+  assert.ok(workbench.includes(".dos-editor-shell { position: relative; }"));
+  assert.ok(workbench.includes(".dos-editor-shell > .dos-ide-dock {\n  display: grid;"));
+  assert.ok(workbench.includes('grid-template-rows: 38px 0;'));
+  assert.ok(workbench.includes('visibility: hidden;'));
+  assert.ok(workbench.includes('.dos-editor-shell > .dos-terminal {\n  position: absolute;'));
+});
+
+test("Monaco diagnostics ignore responses from a previous workspace or file", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const diagnosticsStart = editor.indexOf("applyLspDiagnostics=(payload)=>{");
+  const diagnosticsEnd = editor.indexOf("const refreshP1Diagnostics=async()=>{", diagnosticsStart);
+  const diagnostics = editor.slice(diagnosticsStart, diagnosticsEnd);
+  const flushStart = editor.indexOf("const flushPendingLspChange=async()=>{");
+  const flushEnd = editor.indexOf("const registerP1=()=>{", flushStart);
+  const flush = editor.slice(flushStart, flushEnd);
+
+  assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart, "LSP diagnostics handler should exist");
+  assert.match(diagnostics, /const incomingVersion=n\.params\?\.version/);
+  assert.match(diagnostics, /incomingVersion<currentVersion/);
+  assert.match(diagnostics, /Array\.isArray\(payload\?\.notifications\)\?payload\.notifications:\[\]/);
+  assert.match(diagnostics, /setModelMarkers\(current,"lsp",marks\)/);
+  assert.ok(flushStart >= 0 && flushEnd > flushStart, "pending LSP changes should flush before requests");
+  assert.match(flush, /const data=await lspRequest\("textDocument\/didChange"/);
+  assert.match(flush, /applyLspDiagnostics\(data\)/);
+  assert.match(flush, /try\{result=await lspFlushPromise;\}catch/);
+  assert.match(flush, /ed\.getModel\(\)!==pending\.model/);
+  const refreshStart = editor.indexOf("const refreshP1Diagnostics=async()=>{");
+  const refreshEnd = editor.indexOf("ed.__dosRefreshP1Diagnostics=refreshP1Diagnostics", refreshStart);
+  const refresh = editor.slice(refreshStart, refreshEnd);
+  assert.match(refresh, /filter\(x=>x\.path===requestPath\)/);
+  assert.match(editor, /ed\.__dosRefreshP1Diagnostics=refreshP1Diagnostics/);
+  assert.match(editor, /ed\.__dosRefreshP1Diagnostics=null/);
+  assert.match(editor, /void ed\.__dosRefreshP1Diagnostics\?\.\(\)/);
+  assert.ok((editor.match(/const requestWorkspaceId=workspaceIdRef\.current/g)||[]).length >= 8);
+  assert.equal((editor.match(/const requestUri=params\?\.textDocument\?\.uri\|\|monaco\.Uri\.parse/g)||[]).length, 2);
+  assert.equal((editor.match(/workspaceIdRef\.current===requestWorkspaceId\?data:null/g)||[]).length, 1);
+});
+
+test("Monaco formatting and code actions reject stale workspace or model responses", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /const formatRequest=async\(pathName,content,requestWorkspaceId=workspaceIdRef\.current\)/);
+  assert.match(editor, /API_URL\+"\/ide\/workspaces\/"\+requestWorkspaceId\+"\/format\//);
+  assert.match(editor, /formatRequest\(requestPath,model\.getValue\(\),requestWorkspaceId\)/);
+  assert.match(editor, /const requestPath=pathRef\.current/);
+  assert.match(editor, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model/);
+  assert.match(editor, /if\(workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath\|\|ed\.getModel\(\)!==model\)return \[\]/);
+});
+
+
+
+test("Monaco symbol requests reject stale workspace and file responses", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const requestStart = editor.indexOf("const request=async(action,body={})=>{");
+  const requestEnd = editor.indexOf(" useEffect", requestStart);
+  const request = editor.slice(requestStart, requestEnd);
+  assert.ok(request.includes("const requestWorkspaceId=workspaceIdRef.current"));
+  assert.ok(request.includes("const requestPath=pathRef.current"));
+  assert.ok(request.includes('API_URL+"/ide/workspaces/"+requestWorkspaceId+"/symbols/"'));
+  assert.ok(request.includes("path:requestPath"));
+  assert.match(request, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath/);
+  assert.match(request, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath\?data:\{\}/);
+});
+
+test("Monaco symbol diagnostics use an isolated marker owner", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /setModelMarkers\(targetModel,"developer-os-symbols",markers\)/);
+  assert.match(editor, /setModelMarkers\(targetModel,"developer-os-symbols",\[\]\)/);
+  assert.match(editor, /ed\.getModel\(\)!==targetModel/);
+  assert.match(editor, /setModelMarkers\(m,"developer-os",markers\)/);
+});
+
+
+test("Monaco language-provider fallbacks stay bound to the originating file", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const registrationStart = editor.indexOf("const registerP1=()=>{");
+  const registrationEnd = editor.indexOf("registerP1();", registrationStart);
+  const registration = editor.slice(registrationStart, registrationEnd);
+  assert.match(registration, /const requestWorkspaceId=workspaceIdRef\.current;const requestPath=pathRef\.current/);
+  assert.match(registration, /path:requestPath/);
+  assert.match(registration, /workspaceIdRef\.current!==requestWorkspaceId\|\|pathRef\.current!==requestPath/);
+  assert.match(registration, /workspaceIdRef\.current===requestWorkspaceId&&pathRef\.current===requestPath&&\(!originModel\|\|ed\.getModel\(\)===originModel\)\?data:\{\}/);
+  assert.match(registration, /catch\{return \{\}\}/);
+});
+
+
+test("Monaco provider fallbacks are discarded when their originating model is no longer active", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const registrationStart = editor.indexOf("const registerP1=()=>{");
+  const registrationEnd = editor.indexOf("registerP1();", registrationStart);
+  const registration = editor.slice(registrationStart, registrationEnd);
+  assert.match(registration, /originModel&&ed\.getModel\(\)!==originModel/);
+  assert.match(registration, /\(!originModel\|\|ed\.getModel\(\)===originModel\)\?data:\{\}/);
+  for (const action of ["definitions", "hover", "completion"]) {
+    assert.ok(registration.includes('request("' + action + '",'));
+  }
+  assert.equal((registration.match(/},model\)/g) || []).length, 3);
+});
+
+
+test("Monaco LSP responses are discarded when the active model or file changes", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const lspBlocks = editor.match(/const lspRequest=async\(method,params=\{\},languageOverride=null,originModel=null\)=>\{[\s\S]*?\n \};/g) || [];
+  assert.equal(lspBlocks.length, 2);
+  for (const block of lspBlocks) {
+    assert.match(block, /const requestPath=pathRef\.current/);
+    assert.match(block, /originModel&&(?:ed\.getModel\(\)!==originModel|editor\.current\?\.getModel\(\)!==originModel)/);
+    assert.match(block, /pathRef\.current!==requestPath\|\|(ed\.getModel\(\)!==originModel|editor\.current\?\.getModel\(\)!==originModel)/);
+    assert.match(block, /pathRef\.current===requestPath&&(ed\.getModel\(\)===originModel|editor\.current\?\.getModel\(\)===originModel)/);
+  }
+  const registrationStart = editor.indexOf("const registerP1=()=>{");
+  const registrationEnd = editor.indexOf("registerP1();", registrationStart);
+  const registration = editor.slice(registrationStart, registrationEnd);
+  assert.equal((registration.match(/,(?:l|language),model\)/g) || []).length, 9);
+  assert.ok(editor.includes('if(method!=="textDocument/didChange"&&method!=="textDocument/didOpen"&&!(await flushPendingLspChange()))return null;'));
+  assert.ok(editor.includes("const changedModel=ed.getModel()"));
+  assert.ok(editor.includes("ed.getModel()!==pending.model"));
+  assert.ok(editor.includes("ed.__dosLspOpened?.has(pending.uri)"));
+  assert.ok(editor.includes("nextLspDocumentVersion(ed.__dosLspVersions,pending.uri)"));
+  assert.ok(editor.includes('pendingLspChange={model:changedModel,path:changedPath,workspaceId:changedWorkspaceId,uri:changedUri,language:lang(changedPath)};'));
+  assert.ok(editor.includes("lspTimerRef.current=setTimeout(()=>{void flushPendingLspChange();},300)"));
+  assert.ok(editor.includes("if(lspFlushPromise){const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange?flushPendingLspChange():flushed;}"));
+  assert.ok(editor.includes('const data=await lspRequest("textDocument/didChange"'));
+  assert.ok(editor.includes("applyLspDiagnostics(data)"));
+  assert.ok(editor.includes("clearTimeout(lspTimerRef.current);lspTimerRef.current=null;if(model.current===next)"));
+  assert.match(editor, /lspRequest\("textDocument\/didOpen"[\s\S]*?lang\(normalized\),next\)/);
+  assert.match(editor, /request\("symbols",\{query:""\},m\)/);
+  assert.match(editor, /if\(ed\.getModel\(\)!==m\)return;const local=workspaceSymbols\(m\.getValue\(\)\)/);
+});
+
+
+test("Monaco rename and code actions share the safe LSP WorkspaceEdit mapper", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /import \{[^}]*mapLspCompletionItem, mapLspWorkspaceEdit, mapLspLocations, mapLspDiagnostics, mapLspDocumentHighlights, mapLspInlayHints, mapLspSignatureHelp, mapLspDocumentSymbols, nextLspDocumentVersion, getUnsupportedLspResourceOperations \} from "\.\/ide\/monacoCompletion\.js"/);
+  assert.match(editor, /const unsupported=getUnsupportedLspResourceOperations\(ld\?\.result\);if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}return mapLspWorkspaceEdit\(ld\?\.result,monaco\)/);
+  assert.match(editor, /const safeActions=\[\]/);
+  assert.match(editor, /return \{actions:safeActions\}/);
+});
+
+test("Monaco rejects stale versioned LSP diagnostics after newer document changes", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /const incomingVersion=n\.params\?\.version/);
+  assert.match(editor, /incomingVersion<currentVersion/);
+  assert.match(editor, /nextLspDocumentVersion\(ed\.__dosLspVersions,pending\.uri\)/);
+  assert.match(editor, /ed\.__dosLspVersions\.set\(uriString,1\)/);
+  assert.match(editor, /ed\.__dosLspVersions=new Map\(\)/);
+});
+
+test("Monaco registers LSP document highlights for supported languages", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerDocumentHighlightProvider\(language/);
+  assert.match(editor, /textDocument\/documentHighlight/);
+  assert.match(editor, /mapLspDocumentHighlights\(response\?\.result,monaco\)/);
+});
+
+test("Monaco registers cancellable LSP inlay hints for supported languages", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerInlayHintsProvider/);
+  assert.ok(editor.includes('"textDocument/inlayHint"'));
+  assert.ok(editor.includes("token?.isCancellationRequested"));
+  assert.match(editor, /mapLspInlayHints/);
+});
+test("Monaco registers cancellable LSP signature help with parameter triggers", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerSignatureHelpProvider/);
+  assert.ok(editor.includes('"textDocument/signatureHelp"'));
+  assert.match(editor, /signatureHelpTriggerCharacters:\[.*\(.*,/);
+  assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
+  assert.match(editor, /token\?\.isCancellationRequested\|\|ed\.getModel\(\)!==model/);
+});
+test("Monaco diagnostics are mapped through the validated LSP diagnostic adapter", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /const marks=mapLspDiagnostics\(n\.params\?\.diagnostics,monaco\)/);
+});
+
+test("Monaco definition and reference providers support LSP LocationLink results", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /return mapLspLocations\(lr,monaco\)/);
+  assert.match(editor, /return mapLspLocations\(ld\?\.result,monaco\)/);
+});
+
+test("Monaco custom actions do not shadow native VS Code rename and references shortcuts", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const customRename = editor.slice(editor.indexOf("const p1Actions="), editor.indexOf("const p1Refs="));
+  const customReferences = editor.slice(editor.indexOf("const p1Refs="), editor.indexOf("const c=ed.onDidChangeModelContent"));
+  const nativeRename = editor.slice(editor.indexOf("const renameSelection="), editor.indexOf("const references="));
+  const nativeReferences = editor.slice(editor.indexOf("const references="), editor.indexOf("const openImport="));
+  assert.doesNotMatch(customRename, /keybindings/);
+  assert.doesNotMatch(customReferences, /keybindings/);
+  assert.match(nativeRename, /keybindings:\[monaco\.KeyCode\.F2\]/);
+  assert.match(nativeReferences, /keybindings:\[monaco\.KeyMod\.Shift\|monaco\.KeyCode\.F12\]/);
+});
+
+
+test("Monaco registers guarded LSP signature help with VS Code-style triggers", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  assert.match(editor, /registerSignatureHelpProvider\(language/);
+  assert.ok(editor.includes('"textDocument/signatureHelp"'));
+  assert.ok(editor.includes('signatureHelpTriggerCharacters:["(",","]'));
+  assert.ok(editor.includes("token?.isCancellationRequested||ed.getModel()!==model"));
+  assert.ok(editor.includes("context?.triggerKind??1"));
+  assert.ok(editor.includes("context?.isRetrigger===true"));
+  assert.match(editor, /mapLspSignatureHelp\(response\?\.result\)/);
+});
+
+test("Monaco reports unsupported LSP resource operations and refuses partial rename edits", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(editor, /getUnsupportedLspResourceOperations\(ld\?\.result\)/);
+  assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return null;\}/);
+  assert.match(editor, /const safeActions=\[\]/);
+  assert.match(editor, /if\(unsupported\.length\)\{workspaceEditUnsupported\.current\?\.\(unsupported\);return;\}/);
+  assert.match(editor, /return \{actions:safeActions\}/);
+  assert.match(ide, /onWorkspaceEditUnsupported=\{operations=>setStatus\(/);
+  assert.match(ide, /apply them through Explorer after review/);
+});
+
+test("LSP change flush does not recursively retry a failed request", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const flush = editor.slice(editor.indexOf("const flushPendingLspChange=async()=>"), editor.indexOf("const registerP1=()=>"));
+  assert.match(flush, /if\(result&&pendingLspChange\)return flushPendingLspChange\(\)/);
+  assert.doesNotMatch(flush, /if\(pendingLspChange\)return flushPendingLspChange\(\)/);
+  assert.match(flush, /if\(lspFlushPromise\)\{const inFlight=lspFlushPromise;const flushed=await inFlight;return flushed&&pendingLspChange\?flushPendingLspChange\(\):flushed;\}/);
+});
+
+
+test("Monaco exposes language-server document symbols to the native outline", () => {
+  const editor = fs.readFileSync(path.join(srcDir, "MonacoEditor.jsx"), "utf8");
+  const mapper = fs.readFileSync(path.join(srcDir, "ide/monacoCompletion.js"), "utf8");
+  assert.match(editor, /registerDocumentSymbolProvider/);
+  assert.match(editor, /textDocument\/documentSymbol/);
+  assert.match(editor, /mapLspDocumentSymbols\(response\?\.result,monaco\)/);
+  assert.match(mapper, /export function mapLspDocumentSymbols/);
+  assert.match(mapper, /selectionRange/);
+});
 
 test("Developer OS brand icon is used by browser, mobile install, app shell, and authentication", () => {
   const rootHtml = fs.readFileSync(path.resolve(srcDir, "../index.html"), "utf8");
