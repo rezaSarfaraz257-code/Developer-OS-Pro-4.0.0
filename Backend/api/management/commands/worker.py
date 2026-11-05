@@ -6,7 +6,6 @@ import threading
 import time
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlparse
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMultiAlternatives
@@ -96,6 +95,7 @@ def _heartbeat_loop(worker, stop_event):
             )
         except Exception:
             # A transient DB error must not permanently kill this daemon thread.
+            # Readiness still fails closed when the persisted lease becomes stale.
             logger.exception("Background worker heartbeat update failed")
         finally:
             close_old_connections()
@@ -153,8 +153,7 @@ def _require_real_email_transport() -> None:
 
     if backend == "api.email_backends.resend.EmailBackend":
         api_key = str(getattr(settings, "RESEND_API_KEY", "") or "").strip()
-        endpoint = urlparse("https://api.resend.com/emails")
-        if not api_key or not sender or endpoint.scheme != "https":
+        if not api_key or not sender:
             raise RuntimeError(
                 "Email delivery is not configured: Resend HTTPS API credentials and sender are required."
             )
