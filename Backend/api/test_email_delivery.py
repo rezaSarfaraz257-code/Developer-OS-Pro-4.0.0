@@ -27,7 +27,26 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
     def test_deployed_console_backend_fails_closed_without_printing_email(self):
         with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
             with self.assertRaisesMessage(
-                RuntimeError, "a real email transport is required"
+                RuntimeError, "authenticated encrypted SMTP is required"
+            ):
+                execute(self.email_job())
+        mail.assert_not_called()
+
+    @override_settings(
+        IS_PRODUCTION=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        EMAIL_HOST="smtp.example.test",
+        EMAIL_HOST_USER="user",
+        EMAIL_HOST_PASSWORD="secret",
+        DEFAULT_FROM_EMAIL="no-reply@example.test",
+        EMAIL_PORT=587,
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
+    )
+    def test_deployed_non_smtp_backend_is_rejected_even_with_host(self):
+        with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
+            with self.assertRaisesMessage(
+                RuntimeError, "authenticated encrypted SMTP is required"
             ):
                 execute(self.email_job())
         mail.assert_not_called()
@@ -36,6 +55,30 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
         IS_PRODUCTION=True,
         EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_HOST="smtp.example.test",
+        EMAIL_HOST_USER="user",
+        EMAIL_HOST_PASSWORD="",
+        DEFAULT_FROM_EMAIL="no-reply@example.test",
+        EMAIL_PORT=587,
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
+    )
+    def test_deployed_smtp_without_password_is_rejected(self):
+        with patch("api.management.commands.worker.EmailMultiAlternatives") as mail:
+            with self.assertRaisesMessage(
+                RuntimeError, "authenticated encrypted SMTP is required"
+            ):
+                execute(self.email_job())
+        mail.assert_not_called()
+
+    @override_settings(
+        IS_PRODUCTION=True,
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.test",
+        EMAIL_HOST_USER="user@example.test",
+        EMAIL_HOST_PASSWORD="test-app-password",
+        EMAIL_PORT=587,
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
         DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.test>",
     )
     def test_configured_smtp_backend_sends_using_configured_sender(self):
