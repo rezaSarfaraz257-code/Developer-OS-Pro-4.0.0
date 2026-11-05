@@ -220,3 +220,7 @@ if CACHE_URL:
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [CACHE_URL]}}}
 else:
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+REST_FRAMEWORK = {"EXCEPTION_HANDLER": "api.security.api_exception_handler", "DEFAULT_AUTHENTICATION_CLASSES": ("api.authentication.APIKeyAuthentication", "rest_framework_simplejwt.authentication.JWTAuthentication"), "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",), "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"), "DEFAULT_THROTTLE_RATES": {"anon": "60/hour", "user": "2000/day", "auth": "10/hour", "email_verification": "5/hour", "password_reset": "5/hour", "assistant": "30/hour", "referral": "12/hour", "runner": "20/minute"}}
+SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), "REFRESH_TOKEN_LIFETIME": timedelta(days=1), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True, "AUTH_HEADER_TYPES": ("Bearer",), "UPDATE_LAST_LOGIN": False, "LEEWAY": 5}
+LOGGING = {"version": 1, "disable_existing_loggers": False, "formatters": {"json": {"()": "api.logging.JsonLogFormatter"}}, "handlers": {"console_json": {"class": "logging.StreamHandler", "formatter": "json"}}, "loggers": {"developer_os": {"handlers": ["console_json"], "level": os.getenv("LOG_LEVEL", "INFO"), "propagate": False}}}
