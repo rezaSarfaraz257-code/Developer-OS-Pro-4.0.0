@@ -142,14 +142,31 @@ def _is_deployed_runtime() -> bool:
 
 
 def _require_real_email_transport() -> None:
-    """Never let a deployed console backend masquerade as delivered email."""
-    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    """Require authenticated, encrypted SMTP for email jobs in deployed runtimes."""
+    if not _is_deployed_runtime():
+        return
+
+    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").strip()
     host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
-    if _is_deployed_runtime() and (
-        not host or backend.endswith("console.EmailBackend")
+    username = str(getattr(settings, "EMAIL_HOST_USER", "") or "").strip()
+    password = str(getattr(settings, "EMAIL_HOST_PASSWORD", "") or "")
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    port = getattr(settings, "EMAIL_PORT", 0)
+    use_tls = bool(getattr(settings, "EMAIL_USE_TLS", False))
+    use_ssl = bool(getattr(settings, "EMAIL_USE_SSL", False))
+
+    valid_port = isinstance(port, int) and 1 <= port <= 65535
+    if (
+        backend != "django.core.mail.backends.smtp.EmailBackend"
+        or not host
+        or not username
+        or not password
+        or not sender
+        or not valid_port
+        or use_tls == use_ssl
     ):
         raise RuntimeError(
-            "Email delivery is not configured: a real email transport is required."
+            "Email delivery is not configured: authenticated encrypted SMTP is required."
         )
 
 
@@ -246,7 +263,13 @@ class Command(BaseCommand):
                     job.attempts,
                     type(exc).__name__,
                 )
-                job.error = str(exc)[:10000]
+                # SMTP/provider exceptions may contain server diagnostics or
+                # addresses. Persist only a safe classification for email jobs.
+                job.error = (
+                    f"{type(exc).__name__}: email delivery failed"
+                    if job.kind == "email"
+                    else str(exc)[:10000]
+                )
                 job.last_error_at = now
                 if job.attempts < job.max_attempts:
                     job.status = "queued"
