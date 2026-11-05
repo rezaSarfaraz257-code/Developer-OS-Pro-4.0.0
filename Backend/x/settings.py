@@ -184,6 +184,7 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+    SECURE_CROSS_ORIGIN_RESOURCE_POLICY = "same-origin"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", ",".join([FRONTEND_URL, "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]))
