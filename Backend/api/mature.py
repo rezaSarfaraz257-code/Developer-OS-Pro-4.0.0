@@ -253,7 +253,12 @@ class MatureTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Invalid credentials.")
         user = authenticated
 
-        if getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True) and user.email and not getattr(getattr(user, "profile", None), "email_verified", False):
+        if (
+            getattr(settings, "EMAIL_VERIFICATION_REQUIRED", True)
+            and user.email
+            and not user.is_superuser
+            and not getattr(getattr(user, "profile", None), "email_verified", False)
+        ):
             if request:
                 record_login(request, identifier, user=user, success=False, reason="email_unverified")
             raise serializers.ValidationError("Verify your email before signing in.")
@@ -308,7 +313,9 @@ def resend_verification_api(request):
     email = str(request.data.get("email") or "").strip().lower()
     user = User.objects.filter(email__iexact=email).first()
     # Always return the same response to prevent account enumeration.
-    if user and user.email:
+    # Superusers are exempt from email verification and must never be blocked
+    # by the verification-email delivery pipeline.
+    if user and user.email and not user.is_superuser:
         with transaction.atomic():
             profile, _ = UserProfile.objects.get_or_create(user=user)
             if not profile.email_verified:
