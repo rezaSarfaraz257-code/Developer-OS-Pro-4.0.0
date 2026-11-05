@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import timedelta
 from pathlib import Path
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.core.mail import EmailMultiAlternatives
 from django.db import close_old_connections, transaction
@@ -132,10 +133,53 @@ def export_user(user, export):
     return str(path)
 
 
+def _is_deployed_runtime() -> bool:
+    return bool(
+        getattr(settings, "IS_PRODUCTION", False)
+        or os.getenv("RENDER_SERVICE_ID", "").strip()
+        or os.getenv("RENDER_GIT_COMMIT", "").strip()
+    )
+
+
+def _require_real_email_transport() -> None:
+    """Require authenticated, encrypted SMTP for email jobs in deployed runtimes."""
+    if not _is_deployed_runtime():
+        return
+
+    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").strip()
+    host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
+    username = str(getattr(settings, "EMAIL_HOST_USER", "") or "").strip()
+    password = str(getattr(settings, "EMAIL_HOST_PASSWORD", "") or "")
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    port = getattr(settings, "EMAIL_PORT", 0)
+    use_tls = bool(getattr(settings, "EMAIL_USE_TLS", False))
+    use_ssl = bool(getattr(settings, "EMAIL_USE_SSL", False))
+
+    valid_port = isinstance(port, int) and 1 <= port <= 65535
+    if (
+        backend != "django.core.mail.backends.smtp.EmailBackend"
+        or not host
+        or not username
+        or not password
+        or not sender
+        or not valid_port
+        or use_tls == use_ssl
+    ):
+        raise RuntimeError(
+            "Email delivery is not configured: authenticated encrypted SMTP is required."
+        )
+
+
 def execute(job):
     if job.kind == "email":
+        _require_real_email_transport()
         payload = job.payload
-        message = EmailMultiAlternatives(payload["subject"], payload["text"], os.getenv("DEFAULT_FROM_EMAIL", "Developer OS <no-reply@localhost>"), [payload["to"]])
+        message = EmailMultiAlternatives(
+            payload["subject"],
+            payload["text"],
+            getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@developer-os.local"),
+            [payload["to"]],
+        )
         if payload.get("html"):
             message.attach_alternative(payload["html"], "text/html")
         message.send(fail_silently=False)
@@ -210,7 +254,22 @@ class Command(BaseCommand):
                 job.error = ""
             except Exception as exc:
                 now = timezone.now()
-                job.error = str(exc)[:10000]
+                # Keep diagnostics useful without logging message bodies,
+                # recipients, verification URLs, or provider credentials.
+                logger.error(
+                    "Background job execution failed job_id=%s kind=%s attempt=%s error_type=%s",
+                    job.pk,
+                    job.kind,
+                    job.attempts,
+                    type(exc).__name__,
+                )
+                # SMTP/provider exceptions may contain server diagnostics or
+                # addresses. Persist only a safe classification for email jobs.
+                job.error = (
+                    f"{type(exc).__name__}: email delivery failed"
+                    if job.kind == "email"
+                    else str(exc)[:10000]
+                )
                 job.last_error_at = now
                 if job.attempts < job.max_attempts:
                     job.status = "queued"
