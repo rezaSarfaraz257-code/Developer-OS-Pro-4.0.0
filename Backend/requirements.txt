@@ -1,4 +1,4 @@
-asgiref==3.12.1
+asgiref==3.13.0
 Django==5.2.17
 django-cors-headers==4.9.0
 djangorestframework==3.18.3
@@ -6,7 +6,7 @@ djangorestframework_simplejwt==5.5.1
 PyJWT==2.15.1
 sqlparse==0.6.0
 typing_extensions==4.16.0
-tzdata==2026.5
+tzdata==2026.6
 requests==2.34.2
 cryptography==50.0.2
 Pillow==13.0.0
@@ -15,7 +15,7 @@ psycopg[binary,pool]==3.3.6
 whitenoise==6.12.0
 channels>=4.3.2,<5
 redis>=6.0,<7
-boto3>=1.43.119,<2
+boto3>=1.43.122,<2
 python-json-logger==3.3.0
 
 uvicorn[standard]==0.54.0
