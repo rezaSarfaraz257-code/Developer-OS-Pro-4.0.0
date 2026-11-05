@@ -59,7 +59,15 @@ if _frontend_parts.scheme not in {"http", "https"} or not _frontend_parts.netloc
     raise ImproperlyConfigured("FRONTEND_URL must be an absolute http(s) URL.")
 EMAIL_VERIFICATION_REQUIRED = env_bool("EMAIL_VERIFICATION_REQUIRED", not DEBUG)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Developer OS <no-reply@localhost>")
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend" if os.getenv("EMAIL_HOST") else "django.core.mail.backends.console.EmailBackend")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+DEFAULT_EMAIL_BACKEND = (
+    "api.email_backends.resend.EmailBackend"
+    if RESEND_API_KEY
+    else "django.core.mail.backends.smtp.EmailBackend"
+    if os.getenv("EMAIL_HOST")
+    else "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", DEFAULT_EMAIL_BACKEND)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
