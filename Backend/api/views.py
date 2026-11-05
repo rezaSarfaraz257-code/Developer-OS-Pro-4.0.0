@@ -528,7 +528,7 @@ def profile_api(request):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "email": user.email,
-            "email_verified": profile.email_verified,
+            "email_verified": bool(profile.email_verified or user.is_superuser),
             "full_name": full_name,
             "avatar_url": avatar_url,
             "has_uploaded_avatar": bool(avatar_url),
