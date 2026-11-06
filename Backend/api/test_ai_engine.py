@@ -2,10 +2,12 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .ai_engine import _agent_parse_patch, _provider_config
+from .models import CodeWorkspace
 
 
 class AIEngineUnitTests(TestCase):
@@ -135,3 +137,73 @@ class AIAgentApprovalTests(TestCase):
         self.client.force_authenticate(self.user)
         response = self.client.post("/api/ai/agent/apply/", {"approval_token": "tampered"}, format="json")
         self.assertEqual(response.status_code, 400)
+
+    @patch("api.ai_engine._runner_request", return_value=({"synced": True}, None))
+    @patch("api.ai_engine._agent_runner_evidence", return_value={"status": "ok"})
+    @patch("api.ai_engine._agent_diagnostics_evidence", return_value={"status": "clean"})
+    def test_agent_apply_is_revision_locked_and_approval_cannot_be_replayed(
+        self, _diagnostics, _runner_evidence, _runner_request
+    ):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Agent approval test",
+            files={"main.py": "print('before')\\n"},
+        )
+        proposal = {
+            "type": "patch_proposal",
+            "changes": [{
+                "path": "main.py",
+                "operation": "modify",
+                "reason": "test approved patch",
+                "content": "print('after')\\n",
+            }],
+        }
+        token = signing.dumps({
+            "user_id": self.user.id,
+            "workspace_id": workspace.id,
+            "workspace_revision": workspace.revision,
+            "proposal": proposal,
+        })
+
+        response = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files["main.py"], "print('after')\\n")
+        self.assertEqual(response.data["status"], "applied")
+
+        replay = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": token},
+            format="json",
+        )
+        self.assertEqual(replay.status_code, 409)
+        self.assertEqual(workspace.revision, response.data["workspace"]["revision"])
+
+    def test_agent_apply_token_cannot_be_used_by_another_user(self):
+        other = User.objects.create_user(username="agent-other", password="StrongPassword123!")
+        self.client.force_authenticate(other)
+        token = signing.dumps({
+            "user_id": self.user.id,
+            "workspace_id": 999,
+            "workspace_revision": 1,
+            "proposal": {
+                "type": "patch_proposal",
+                "changes": [{
+                    "path": "main.py",
+                    "operation": "create",
+                    "reason": "test",
+                    "content": "print('safe')",
+                }],
+            },
+        })
+        response = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
