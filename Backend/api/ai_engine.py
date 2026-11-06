@@ -881,7 +881,10 @@ def ai_agent_api(request):
         if conversation and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
             return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
 
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
+    # Reserve the billable unit before contacting the provider. The usage
+    # ledger is row-locked and atomic, so concurrent requests cannot both pass
+    # a free-capacity check and then exceed the monthly allowance.
+    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
     if not allowed:
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
@@ -911,10 +914,6 @@ def ai_agent_api(request):
             "verification": evidence,
             "evidence_status": "provider_unavailable",
         }, ensure_ascii=False)
-
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
-    if not allowed:
-        return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
     message_payload = {"id": None, "role": "assistant", "content": answer, "context": context}
     conversation_payload = {"id": None, "title": "Developer OS Intelligence"}
