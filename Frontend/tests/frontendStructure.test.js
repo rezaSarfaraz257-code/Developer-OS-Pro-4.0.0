@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches, preserveInterruptedWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
-import { canAcknowledgeWorkspaceEdit, isExpectedWorkspacePatchAck, getMonotonicWorkspaceRevision } from "../src/ide/collaborationState.js";
+import { canAcknowledgeWorkspaceEdit, isExpectedWorkspacePatchAck, getMonotonicWorkspaceRevision, isNewerWorkspaceRevision } from "../src/ide/collaborationState.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -1286,4 +1286,17 @@ test("out-of-order collaboration acknowledgements never regress the observed wor
   assert.equal(getMonotonicWorkspaceRevision("invalid", 42), 42);
   assert.equal(getMonotonicWorkspaceRevision(43, "invalid"), 43);
   assert.equal(getMonotonicWorkspaceRevision(Number.MAX_SAFE_INTEGER + 1, 42), 42);
+});
+
+
+test("remote collaboration events cannot overwrite files with stale or duplicate revisions", () => {
+  assert.equal(isNewerWorkspaceRevision(43, 42), false);
+  assert.equal(isNewerWorkspaceRevision(43, 43), false);
+  assert.equal(isNewerWorkspaceRevision(42, 43), true);
+  assert.equal(isNewerWorkspaceRevision(null, 0), true);
+  assert.equal(isNewerWorkspaceRevision("invalid", 2), true);
+  assert.equal(isNewerWorkspaceRevision(2, "invalid"), false);
+  assert.equal(isNewerWorkspaceRevision(2, Number.MAX_SAFE_INTEGER + 1), false);
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.equal((ide.match(/if\(!isNewerWorkspaceRevision\(refs\.ws\.current\?\.revision,d\.revision\)\)return;/g) || []).length, 2);
 });
