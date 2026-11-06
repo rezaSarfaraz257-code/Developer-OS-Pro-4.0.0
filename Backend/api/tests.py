@@ -1115,11 +1115,14 @@ class IDECollaborationRegressionTests(APITestCase):
         consumer.workspace = ws
         consumer.user = self.user
         consumer.client_id = "client-a"
+        initial_revision = ws.revision
         result = consumer._apply_patch({
-            "path": "main.py", "content": "print(2)", "base_revision": ws.revision, "client_id": "client-a"
+            "path": "main.py", "content": "print(2)", "base_revision": initial_revision, "client_id": "client-a"
         })
         self.assertEqual(result["type"], "patch-ack")
+        self.assertEqual(result["revision"], initial_revision + 1)
         ws.refresh_from_db()
+        self.assertEqual(ws.revision, initial_revision + 1)
         stale = consumer._apply_patch({
             "path": "main.py", "content": "print(3)", "base_revision": ws.revision - 1, "client_id": "client-b"
         })
@@ -1127,6 +1130,80 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(stale["reason"], "stale_revision")
         ws.refresh_from_db()
         self.assertEqual(ws.files["main.py"], "print(2)")
+
+    def test_patch_rejects_fractional_and_boolean_revisions_without_mutation(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-revision"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        for invalid_revision in (1.5, True, "1.5", "1e2"):
+            result = consumer._apply_patch({
+                "path": "main.py", "content": "must-not-save",
+                "base_revision": invalid_revision, "client_id": consumer.client_id,
+            })
+            self.assertEqual(result["type"], "conflict")
+            self.assertEqual(result["reason"], "invalid_patch")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
+
+    def test_crdt_rejects_fractional_and_boolean_counters_without_mutation(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-crdt"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        for field in ("lamport", "position", "delete_count"):
+            for invalid_value in (1.5, True, "1.5", "1e2"):
+                payload = {
+                    "path": "main.py", "operation_id": f"invalid-{field}-{str(invalid_value)}",
+                    "kind": "insert", "position": 0, "delete_count": 0,
+                    "text": "unsafe", "lamport": 1,
+                }
+                payload[field] = invalid_value
+                result = consumer._apply_crdt_operation(payload)
+                self.assertEqual(result["type"], "crdt-reject")
+                self.assertEqual(result["reason"], "invalid_operation")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
+
+    def test_crdt_rejects_coerced_path_operation_id_and_kind_types(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-types"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        base = {
+            "path": "main.py", "operation_id": "valid-id", "kind": "insert",
+            "position": 0, "delete_count": 0, "text": "unsafe", "lamport": 1,
+        }
+        invalid_payloads = []
+        for field, value in (
+            ("path", 123),
+            ("path", {"path": "main.py"}),
+            ("operation_id", 123),
+            ("operation_id", ["valid-id"]),
+            ("operation_id", " padded-id "),
+            ("kind", 1),
+            ("kind", {"insert": True}),
+        ):
+            payload = {**base, field: value}
+            invalid_payloads.append(payload)
+        for payload in invalid_payloads:
+            result = consumer._apply_crdt_operation(payload)
+            self.assertEqual(result["type"], "crdt-reject")
+            self.assertEqual(result["reason"], "invalid_operation" if payload.get("path") == "main.py" else "invalid_path")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
 
     def test_crdt_operation_is_idempotent(self):
         from .ide_collaboration import IDECollaborationConsumer
@@ -1139,13 +1216,35 @@ class IDECollaborationRegressionTests(APITestCase):
             "path": "main.py", "operation_id": "op-unique-1", "kind": "insert",
             "position": 7, "delete_count": 0, "text": " # ok", "lamport": 1, "actor_id": "client-crdt"
         }
+        initial_revision = ws.revision
         first = consumer._apply_crdt_operation(payload)
         second = consumer._apply_crdt_operation(payload)
+        first_revision = first["revision"]
+        self.assertEqual(first_revision, initial_revision + 1)
         self.assertEqual(first["type"], "crdt-ack")
         self.assertFalse(first.get("duplicate", False))
+        self.assertEqual(first["event"]["type"], "crdt-op")
+        self.assertEqual(first["event"]["workspace_id"], ws.id)
+        self.assertEqual(first["event"]["revision"], first["revision"])
+        self.assertEqual(first["event"]["content"], "print(1) # ok")
         self.assertTrue(second.get("duplicate", False))
         ws.refresh_from_db()
+        self.assertEqual(ws.revision, first_revision)
         self.assertEqual(ws.files["main.py"], "print(1) # ok")
+
+        other_workspace = __import__("api.models", fromlist=["CodeWorkspace"]).CodeWorkspace.objects.create(
+            owner=self.user, name="Other collaboration workspace", files={"main.py": "print(9)"}
+        )
+        other_consumer = IDECollaborationConsumer()
+        other_consumer.workspace = other_workspace
+        other_consumer.user = self.user
+        other_consumer.client_id = "client-other"
+        collision = other_consumer._apply_crdt_operation(payload)
+        self.assertEqual(collision["type"], "crdt-reject")
+        self.assertEqual(collision["reason"], "operation_id_conflict")
+        other_workspace.refresh_from_db()
+        self.assertEqual(other_workspace.revision, 1)
+        self.assertEqual(other_workspace.files["main.py"], "print(9)")
 
 class SaaSMaturityTests(APITestCase):
     def test_free_workspace_limit_is_enforced_server_side(self):
