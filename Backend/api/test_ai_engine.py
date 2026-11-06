@@ -164,6 +164,19 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual([item["role"] for item in history], ["user", "assistant"])
         self.assertEqual(history[0]["content"], "Inspect my project")
         self.assertEqual(AIMessage.objects.filter(conversation_id=conversation_id).count(), 4)
+        self.assertEqual(_usage.call_count, 2)
+
+    @patch("api.views._consume_usage", return_value=(False, 0, 0, "free"))
+    @patch("api.ai_engine._call_provider")
+    def test_agent_does_not_call_provider_when_usage_reservation_fails(self, provider, _usage):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            "/api/ai/agent/",
+            {"message": "Run a costly agent analysis"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 429)
+        provider.assert_not_called()
 
     def test_agent_conversation_is_private_to_its_owner(self):
         from .models import AIConversation
