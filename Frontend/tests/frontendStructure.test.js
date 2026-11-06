@@ -1244,4 +1244,9 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("BASE VERSION"));
   assert.ok(ide.includes("[Original version was not captured]"));
   assert.ok(ide.includes('if(typeof serverContent!=="string"||serverContent!==content)'));
+  assert.ok(ide.includes('else if(d.type==="conflict")'));
+  assert.ok(ide.includes('const conflictPath=String(rejected?.path||d.path||"")'));
+  assert.ok(ide.includes("Conflict loaded — compare Base, Local and Remote before choosing."));
+  assert.ok(ide.includes("const saved=await saveFile(false,c.path)"));
+  assert.ok(ide.includes('pendingCollabPatchesRef.current.delete(c.workspaceId+":"+c.path)'));
 });
