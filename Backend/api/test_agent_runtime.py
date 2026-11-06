@@ -219,6 +219,40 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn("keys/private.pem", sent_context["workspace"]["file_samples"])
         self.assertTrue(sent_context["workspace"]["secrets_excluded"])
 
+    @patch("api.ai_engine._call_provider")
+    def test_duplicate_delivery_does_not_call_provider_while_run_is_planning(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not duplicate provider work",
+            status="planning",
+            idempotency_key="duplicate-plan-delivery-01",
+            workspace_revision=self.workspace.revision,
+        )
+
+        result = build_agent_plan(run.id)
+
+        self.assertEqual(result["status"], "planning")
+        provider.assert_not_called()
+        run.refresh_from_db()
+        self.assertEqual(run.status, "planning")
+
+    @patch("api.ai_engine._call_provider")
+    def test_failed_run_is_terminal_for_duplicate_delivery(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not revive failed run",
+            status="failed",
+            idempotency_key="failed-plan-delivery-01",
+            workspace_revision=self.workspace.revision,
+        )
+
+        result = build_agent_plan(run.id)
+
+        self.assertEqual(result["status"], "failed")
+        provider.assert_not_called()
+
     @patch("api.views._workspace_write_allowed", return_value=False)
     @patch("api.ai_engine._call_provider")
     def test_worker_rechecks_workspace_permission_before_provider_call(self, provider, _permission):
