@@ -1153,6 +1153,20 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(ws.revision, first_revision)
         self.assertEqual(ws.files["main.py"], "print(1) # ok")
 
+        other_workspace = __import__("api.models", fromlist=["CodeWorkspace"]).CodeWorkspace.objects.create(
+            owner=self.user, name="Other collaboration workspace", files={"main.py": "print(9)"}
+        )
+        other_consumer = IDECollaborationConsumer()
+        other_consumer.workspace = other_workspace
+        other_consumer.user = self.user
+        other_consumer.client_id = "client-other"
+        collision = other_consumer._apply_crdt_operation(payload)
+        self.assertEqual(collision["type"], "crdt-reject")
+        self.assertEqual(collision["reason"], "operation_id_conflict")
+        other_workspace.refresh_from_db()
+        self.assertEqual(other_workspace.revision, 1)
+        self.assertEqual(other_workspace.files["main.py"], "print(9)")
+
 class SaaSMaturityTests(APITestCase):
     def test_free_workspace_limit_is_enforced_server_side(self):
         user = User.objects.create_user(username="workspace-quota-user", password="long-test-password-123")
