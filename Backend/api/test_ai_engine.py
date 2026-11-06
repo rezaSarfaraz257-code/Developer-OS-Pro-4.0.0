@@ -234,6 +234,43 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual(replay.status_code, 409)
         self.assertEqual(workspace.revision, response.data["workspace"]["revision"])
 
+    def test_agent_rollback_rejects_unsafe_paths(self):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Rollback path test",
+            files={"main.py": "print('safe')\\n"},
+        )
+        for path in ("../secret.txt", ".git/config", "node_modules/pkg.js", "src\\\\main.py"):
+            with self.subTest(path=path):
+                response = self.client.post(
+                    "/api/ai/agent/rollback/",
+                    {"workspace": workspace.id, "revision": workspace.revision, "files": {path: "bad"}},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400)
+
+    @patch("api.ai_engine._workspace_write_allowed", return_value=False)
+    def test_agent_rollback_rejects_read_only_workspace_access(self, _write_allowed):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Rollback permission test",
+            files={"main.py": "print('current')\\n"},
+        )
+        response = self.client.post(
+            "/api/ai/agent/rollback/",
+            {
+                "workspace": workspace.id,
+                "revision": workspace.revision,
+                "files": {"main.py": "print('old')\\n"},
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files["main.py"], "print('current')\\n")
+
     def test_agent_apply_token_cannot_be_used_by_another_user(self):
         other = User.objects.create_user(username="agent-other", password="StrongPassword123!")
         self.client.force_authenticate(other)
