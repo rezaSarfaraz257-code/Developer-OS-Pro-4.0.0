@@ -26,6 +26,14 @@ from .serializers import AIConversationSerializer, AIMessageSerializer
 
 logger = logging.getLogger("developer_os.ai")
 
+ACTION_INSTRUCTIONS = {
+    "review": "Review the selected project and workspace for correctness, security, data loss, concurrency, performance, and maintainability. Prioritize findings by severity and cite concrete evidence.",
+    "tests": "Design focused automated tests for the requested change. Identify existing test conventions, critical edge cases, authorization boundaries, and verification commands. Do not claim tests were run.",
+    "explain": "Explain the selected code and its direct dependencies using only supplied workspace evidence. State assumptions and uncertainties.",
+    "plan": "Create an implementation plan with ordered, independently verifiable tasks, dependencies, risks, and acceptance criteria. Do not claim implementation has occurred.",
+    "debug": "Diagnose the reported failure using supplied code and runtime evidence. Separate confirmed facts from hypotheses and propose the smallest safe fix plus verification steps.",
+}
+
 MAX_CONTEXT_CHARS = int(os.getenv("AI_MAX_CONTEXT_CHARS", "60000"))
 MAX_HISTORY_MESSAGES = max(0, int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16")))
 MAX_HISTORY_CHARS = max(0, int(os.getenv("AI_MAX_HISTORY_CHARS", "24000")))
