@@ -103,7 +103,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def _crdt_receive(self, content):
         result=await sync_to_async(self._apply_crdt_operation)(content)
         await self.send_json(result)
-        if result.get("type")=="crdt-ack":
+        if result.get("type")=="crdt-ack" and not result.get("duplicate") and isinstance(result.get("event"),dict):
             await self.channel_layer.group_send(self.group_name,{"type":"crdt_event","payload":result["event"]})
 
     def crdt_event(self,event):
