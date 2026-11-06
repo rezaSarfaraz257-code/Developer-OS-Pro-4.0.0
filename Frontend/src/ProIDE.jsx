@@ -54,7 +54,7 @@ export default function ProIDE({projectId,message,go}){
          return false;
        }
        const serverContent=latestFiles[p];
-       if(typeof serverContent==="string"&&serverContent!==content){
+       if(typeof serverContent!=="string"||serverContent!==content){
          refs.ws.current={...refs.ws.current,revision};
          setWs(x=>x?({...x,revision}):x);
          setConflictDialog({workspaceId:String(w.id),path:p,base:dirtyBaseContentRef.current.get(p)??null,local:typeof latestLocalContent==="string"?latestLocalContent:content,remote:serverContent,revision:Number(revision)});setStatus("Save conflict: choose which version to keep.");
