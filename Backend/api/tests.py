@@ -1158,15 +1158,17 @@ class IDECollaborationRegressionTests(APITestCase):
         consumer.client_id = "client-invalid-crdt"
         original_files = dict(self.workspace.files)
         original_revision = self.workspace.revision
-        for invalid_value in (1.5, True, "1.5", "1e2"):
-            payload = {
-                "path": "main.py", "operation_id": f"invalid-{str(invalid_value)}",
-                "kind": "insert", "position": 0, "delete_count": 0,
-                "text": "unsafe", "lamport": invalid_value,
-            }
-            result = consumer._apply_crdt_operation(payload)
-            self.assertEqual(result["type"], "crdt-reject")
-            self.assertEqual(result["reason"], "invalid_operation")
+        for field in ("lamport", "position", "delete_count"):
+            for invalid_value in (1.5, True, "1.5", "1e2"):
+                payload = {
+                    "path": "main.py", "operation_id": f"invalid-{field}-{str(invalid_value)}",
+                    "kind": "insert", "position": 0, "delete_count": 0,
+                    "text": "unsafe", "lamport": 1,
+                }
+                payload[field] = invalid_value
+                result = consumer._apply_crdt_operation(payload)
+                self.assertEqual(result["type"], "crdt-reject")
+                self.assertEqual(result["reason"], "invalid_operation")
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, original_files)
         self.assertEqual(self.workspace.revision, original_revision)
