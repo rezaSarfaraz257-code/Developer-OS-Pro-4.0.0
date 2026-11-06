@@ -145,7 +145,7 @@ def build_agent_plan(run_id):
         revision = run.workspace_revision
 
     from .models import CodeWorkspace
-    workspace = CodeWorkspace.objects.get(pk=workspace_id, owner_id=owner_id) if not CodeWorkspace.objects.filter(pk=workspace_id, owner_id=owner_id).exists() else CodeWorkspace.objects.get(pk=workspace_id)
+    workspace = CodeWorkspace.objects.get(pk=workspace_id)
     if workspace.revision != revision:
         raise RuntimeError("Workspace changed before agent planning began. Create a new run from the latest revision.")
 
@@ -384,5 +384,4 @@ def agent_run_approve_api(request, pk):
         run.status = "approved"
         run.approved_at = timezone.now()
         run.save(update_fields=["status", "approved_at", "updated_at"])
-        run.tasks.filter(status="ready").update(status="awaiting_approval")
     return Response(_run_payload(run))
