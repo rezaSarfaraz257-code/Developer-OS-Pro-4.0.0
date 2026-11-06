@@ -1200,6 +1200,7 @@ test("Web IDE exposes durable autonomous agent planning, approval, cancellation,
   const styles = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
   assert.match(ide, /apiFetch\("\/ai\/agent\/runs\/"/);
   assert.match(ide, /Idempotency-Key/);
+  assert.match(ide, /setAiConversation\(\{id:data\.conversation\}\)/);
   assert.match(ide, /\/ai\/agent\/runs\/\$\{agentRun\.id\}\//);
   assert.match(ide, /updateAgentRun\("approve"\)/);
   assert.match(ide, /updateAgentRun\("cancel"\)/);
