@@ -1223,6 +1223,9 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /completedPatch&&completedPatch\.workspace_id!=null&&ack\.workspace_id!=null&&String\(completedPatch\.workspace_id\)===String\(ack\.workspace_id\)&&completedPatch\.path===ackPath&&completedPatch\.content===ack\.content\)\{patchInFlightRef\.current=null;\}/);
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(conflictWorkspaceId\)/);
+  assert.ok(ide.includes('const conflictWorkspaceId=String(refs.ws.current?.id??"")'));
+  assert.ok(ide.includes("setConflictDialog({workspaceId:conflictWorkspaceId,path:conflictPath"));
+  assert.ok(ide.includes("patchQueueBlockedRef.current.add(conflictWorkspaceId)"));
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
   assert.ok(ide.includes("preserveInterruptedWorkspacePatches(parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY)),id,interrupted,pending)"));
   assert.ok(ide.includes("preserveInterruptedWorkspacePatches("));
