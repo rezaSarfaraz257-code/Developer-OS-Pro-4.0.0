@@ -148,7 +148,10 @@ def build_agent_plan(run_id):
         revision = run.workspace_revision
 
     from .models import CodeWorkspace
+    from .views import _workspace_write_allowed
     workspace = CodeWorkspace.objects.get(pk=workspace_id)
+    if not _workspace_write_allowed(workspace, run.owner):
+        raise RuntimeError("Workspace access was revoked before agent planning began.")
     if workspace.revision != revision:
         raise RuntimeError("Workspace changed before agent planning began. Create a new run from the latest revision.")
 
@@ -232,10 +235,13 @@ def build_agent_plan(run_id):
         raise RuntimeError(f"AI planner returned an invalid task graph: {str(exc)[:300]}") from exc
 
     with transaction.atomic():
-        run = AgentRun.objects.select_for_update().select_related("conversation").get(pk=run_id)
+        run = AgentRun.objects.select_for_update().select_related("conversation", "owner").get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
-        if run.workspace.revision != revision:
+        workspace = CodeWorkspace.objects.select_for_update().get(pk=run.workspace_id)
+        if not _workspace_write_allowed(workspace, run.owner):
+            raise RuntimeError("Workspace access was revoked while the plan was being generated.")
+        if workspace.revision != revision:
             raise RuntimeError("Workspace changed while the plan was being generated; review a fresh plan.")
         run.tasks.all().delete()
         task_objects = {}
