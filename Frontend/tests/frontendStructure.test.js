@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches, preserveInterruptedWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
-import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
+import { canAcknowledgeWorkspaceEdit, isExpectedWorkspacePatchAck } from "../src/ide/collaborationState.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -1254,4 +1254,25 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes('pendingCollabPatchesRef.current.delete(c.workspaceId+":"+c.path)'));
   assert.ok(ide.includes('queued.filter(item=>!(String(item?.workspace_id)===c.workspaceId&&item?.path===c.path))'));
   assert.ok(ide.includes("Cannot safely remove the stale offline patch; conflict remains blocked."));
+});
+
+test("collaboration patch acknowledgements must match the in-flight revision and payload", () => {
+  const base = {
+    activeWorkspaceId: 7, inFlightWorkspaceId: "7", ackWorkspaceId: 7,
+    inFlightPath: "src/app.js", ackPath: "src/app.js",
+    inFlightContent: "saved content", ackContent: "saved content",
+    baseRevision: 41, ackRevision: 42,
+  };
+  assert.equal(isExpectedWorkspacePatchAck(base), true);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: 41 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: 43 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: "invalid" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackWorkspaceId: 8 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackPath: "src/other.js" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackContent: "older duplicate" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, baseRevision: Number.MAX_SAFE_INTEGER }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: Number.MAX_SAFE_INTEGER + 1 }), false);
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /isExpectedWorkspacePatchAck\\(/);
+  assert.match(ide, /Ignored stale or mismatched collaboration acknowledgement/);
 });
