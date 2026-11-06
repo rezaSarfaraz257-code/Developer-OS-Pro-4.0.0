@@ -1300,3 +1300,11 @@ test("remote collaboration events cannot overwrite files with stale or duplicate
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.equal((ide.match(/if\(!isNewerWorkspaceRevision\(refs\.ws\.current\?\.revision,d\.revision\)\)return;/g) || []).length, 2);
 });
+
+test("Web IDE does not request unused CRDT history that its client cannot apply", () => {
+  const ide = fs.readFileSync(path.resolve(srcDir, "ProIDE.jsx"), "utf8");
+  assert.doesNotMatch(
+    ide,
+    /socket\.send\(JSON\.stringify\(\{\s*type:\s*["']crdt-sync["']/
+  );
+});
