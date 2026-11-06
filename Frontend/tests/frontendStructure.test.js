@@ -1239,4 +1239,8 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("Use remote version"));
   assert.ok(ide.includes("Keep my version and retry"));
   assert.ok(ide.includes("No content is overwritten automatically."));
+  assert.ok(ide.includes("dirtyBaseContentRef=useRef(new Map())"));
+  assert.ok(ide.includes('base:dirtyBaseContentRef.current.get(p)??null'));
+  assert.ok(ide.includes("BASE VERSION"));
+  assert.ok(ide.includes("[Original version was not captured]"));
 });
