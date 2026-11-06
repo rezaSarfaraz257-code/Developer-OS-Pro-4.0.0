@@ -1099,8 +1099,8 @@ def ai_agent_apply_api(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agent_rollback_api(request):
-    """Atomically restore the workspace snapshot captured before an AI patch."""
-    from .views import _workspace_for_user
+    """Restore a workspace snapshot only for an authorized writer at the expected revision."""
+    from .views import _workspace_for_user, _workspace_write_allowed
     workspace_id = request.data.get("workspace")
     expected_revision = request.data.get("revision")
     files = request.data.get("files")
@@ -1111,34 +1111,37 @@ def ai_agent_rollback_api(request):
     except (TypeError, ValueError):
         return Response({"error": "Invalid workspace revision."}, status=400)
 
+    safe_files = {}
+    seen_paths = set()
+    total_bytes = 0
+    for path, value in files.items():
+        if not _agent_safe_patch_path(path):
+            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
+        normalized_path = path.casefold()
+        if normalized_path in seen_paths:
+            return Response({"error": f"Duplicate workspace path: {path}"}, status=400)
+        seen_paths.add(normalized_path)
+        if not isinstance(value, str):
+            return Response({"error": f"Invalid file content: {path}"}, status=400)
+        content_bytes = len(value.encode("utf-8"))
+        if content_bytes > 2_000_000:
+            return Response({"error": f"File is too large: {path}"}, status=400)
+        total_bytes += content_bytes
+        safe_files[path] = value
+
+    if len(safe_files) > 2000 or total_bytes > 25_000_000:
+        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+
     with transaction.atomic():
         workspace = _workspace_for_user(workspace_id, request.user, for_update=True)
+        if not _workspace_write_allowed(workspace, request.user):
+            return Response({"error": "You do not have permission to restore this workspace."}, status=403)
         if workspace.revision != expected_revision:
             return Response({
                 "error": "Workspace changed after the AI apply. Reload before undoing.",
                 "code": "stale_workspace",
                 "revision": workspace.revision,
             }, status=409)
-
-        safe_files = {}
-        total_bytes = 0
-        for raw_path, value in files.items():
-            path = str(raw_path or "").replace("\\", "/").strip().lstrip("/")
-            if (
-                not path or len(path) > 500 or
-                any(part in {"", ".", ".."} for part in path.split("/")) or
-                path == ".git" or path.startswith(".git/")
-            ):
-                return Response({"error": f"Unsafe workspace path: {raw_path}"}, status=400)
-            if not isinstance(value, str):
-                return Response({"error": f"Invalid file content: {path}"}, status=400)
-            total_bytes += len(value.encode("utf-8"))
-            if len(value) > 2_000_000:
-                return Response({"error": f"File is too large: {path}"}, status=400)
-            safe_files[path] = value
-
-        if len(safe_files) > 2000 or total_bytes > 25_000_000:
-            return Response({"error": "Workspace limits would be exceeded."}, status=400)
 
         active_file = workspace.active_file if workspace.active_file in safe_files else next(iter(safe_files), "")
         workspace.files = safe_files
@@ -1147,22 +1150,13 @@ def ai_agent_rollback_api(request):
 
     return Response({
         "status": "rolled_back",
-        "workspace": {"id": workspace.id, "revision": workspace.revision},
-        "files": workspace.files,
-        "active_file": workspace.active_file,
+        "workspace": {
+            "id": workspace.id,
+            "revision": workspace.revision,
+            "files": workspace.files,
+            "active_file": workspace.active_file,
+        },
     })
-
-
-ACTION_INSTRUCTIONS = {
-    "review": "Perform a senior-level code review. Group findings by severity and give exact fixes.",
-    "tests": "Design focused automated tests for the supplied code and context. Include edge cases and expected assertions.",
-    "debug": "Debug the supplied issue. Separate observed evidence from hypotheses and give the smallest safe fix plus verification.",
-    "plan": "Create an implementation plan with dependencies, files likely affected, risks, and a verification checklist.",
-    "explain": "Explain the supplied code or architecture from high level to implementation detail, using the actual context.",
-    "project": "Act as a senior project manager for this workspace. Analyze project scope, tasks, deadlines, priorities, blockers and delivery signals. Return: current state, top risks, priority order, next milestone, task candidates with rationale, dependencies, and a verification checklist. Do not invent missing project facts.",
-    "sprint": "Design the next practical sprint from the real workspace context. Prioritize the smallest high-impact deliverables, identify dependencies and blockers, define acceptance criteria, and separate observed facts from recommendations.",
-    "risk": "Perform a delivery-risk review of the workspace. Identify schedule, technical, security, dependency and quality risks from available evidence, assign qualitative severity only when supported, and give concrete mitigations and owners/next actions.",
-}
 
 
 @api_view(["POST"])
