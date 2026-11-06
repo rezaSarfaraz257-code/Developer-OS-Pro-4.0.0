@@ -1115,11 +1115,14 @@ class IDECollaborationRegressionTests(APITestCase):
         consumer.workspace = ws
         consumer.user = self.user
         consumer.client_id = "client-a"
+        initial_revision = ws.revision
         result = consumer._apply_patch({
-            "path": "main.py", "content": "print(2)", "base_revision": ws.revision, "client_id": "client-a"
+            "path": "main.py", "content": "print(2)", "base_revision": initial_revision, "client_id": "client-a"
         })
         self.assertEqual(result["type"], "patch-ack")
+        self.assertEqual(result["revision"], initial_revision + 1)
         ws.refresh_from_db()
+        self.assertEqual(ws.revision, initial_revision + 1)
         stale = consumer._apply_patch({
             "path": "main.py", "content": "print(3)", "base_revision": ws.revision - 1, "client_id": "client-b"
         })
@@ -1139,9 +1142,11 @@ class IDECollaborationRegressionTests(APITestCase):
             "path": "main.py", "operation_id": "op-unique-1", "kind": "insert",
             "position": 7, "delete_count": 0, "text": " # ok", "lamport": 1, "actor_id": "client-crdt"
         }
+        initial_revision = ws.revision
         first = consumer._apply_crdt_operation(payload)
         second = consumer._apply_crdt_operation(payload)
         first_revision = first["revision"]
+        self.assertEqual(first_revision, initial_revision + 1)
         self.assertEqual(first["type"], "crdt-ack")
         self.assertFalse(first.get("duplicate", False))
         self.assertEqual(first["event"]["type"], "crdt-op")
