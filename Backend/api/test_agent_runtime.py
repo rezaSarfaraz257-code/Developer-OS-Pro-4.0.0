@@ -28,6 +28,14 @@ class AgentPlanValidationTests(TestCase):
                 ]
             })
 
+    def test_rejects_unsupported_specialist_role(self):
+        with self.assertRaisesRegex(ValueError, "unsupported specialist"):
+            _validate_plan({
+                "tasks": [
+                    {"id": "first", "title": "Run arbitrary tool", "agent_role": "shell_root", "depends_on": []},
+                ]
+            })
+
     def test_rejects_unknown_dependencies(self):
         with self.assertRaisesRegex(ValueError, "unknown"):
             _validate_plan({
@@ -189,6 +197,7 @@ class AgentRunLifecycleTests(TestCase):
             action="agent_run.plan_ready",
             target_id=str(run.id),
         ).exists())
+        self.assertEqual(run.tasks.get(key="inspect").agent_role, "architect")
         self.assertEqual(run.tasks.get(key="inspect").status, "ready")
         self.assertEqual(run.tasks.get(key="tests").status, "blocked")
         self.assertEqual(
