@@ -1224,10 +1224,10 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
-  assert.ok(ide.includes("preserveInterruptedWorkspacePatches(parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY)),interruptedWorkspace,interrupted,pendingPatches)"));
+  assert.ok(ide.includes("preserveInterruptedWorkspacePatches(parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY)),id,interrupted,pending)"));
   assert.ok(ide.includes("preserveInterruptedWorkspacePatches("));
   assert.ok(ide.includes("localStorage.setItem(OFFLINE_QUEUE_KEY,JSON.stringify(queue))"));
-  assert.ok(ide.includes("Connection lost — local edits preserved for revision-checked recovery."));
+  assert.ok(ide.includes("Connection lost — latest local edits preserved for revision-checked recovery."));
   assert.ok(ide.includes("persistInterruptedCollabWorkspace=(workspaceId,interrupted)=>"));
   assert.ok(ide.includes("persistInterruptedCollabWorkspace(interruptedWorkspace,interrupted);if(patchInFlightRef.current===interrupted)patchInFlightRef.current=null"));
   assert.ok(ide.includes("patchQueueBlockedRef.current.delete(String(ws.id))"));
