@@ -391,6 +391,7 @@ def agent_run_cancel_api(request, pk):
         run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
         if run.status in {"succeeded", "failed", "canceled"}:
             return Response(_run_payload(run), status=409)
+        previous_status = run.status
         run.status = "canceled"
         run.finished_at = timezone.now()
         run.error = ""
@@ -401,7 +402,7 @@ def agent_run_cancel_api(request, pk):
             action="agent_run.canceled",
             target_type="AgentRun",
             target_id=str(run.id),
-            metadata={"previous_status": run.status},
+            metadata={"previous_status": previous_status},
         )
         BackgroundJob.objects.filter(
             kind="ai_agent_plan",
