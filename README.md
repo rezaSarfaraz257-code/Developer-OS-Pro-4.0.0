@@ -165,6 +165,10 @@ npm ci
 npm run dev
 ```
 
+## Product direction
+
+The long-term direction is **Developer OS — Autonomous Software Universe**: a human-directed, AI-agent-enabled environment for the complete software lifecycle. This is a staged target, not a claim that every capability is already implemented. See [the product roadmap](docs/AUTONOMOUS_SOFTWARE_UNIVERSE_ROADMAP.md) for phases, safety rules, dependencies, and acceptance gates.
+
 ## Product principle
 
 Developer OS is designed as a durable product foundation. New releases should add capabilities or integrations; they should not require rewriting the core workspace, identity, authorization or deployment architecture.
