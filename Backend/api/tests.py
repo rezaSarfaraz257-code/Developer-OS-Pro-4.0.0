@@ -1131,6 +1131,46 @@ class IDECollaborationRegressionTests(APITestCase):
         ws.refresh_from_db()
         self.assertEqual(ws.files["main.py"], "print(2)")
 
+    def test_patch_rejects_fractional_and_boolean_revisions_without_mutation(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-revision"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        for invalid_revision in (1.5, True, "1.5", "1e2"):
+            result = consumer._apply_patch({
+                "path": "main.py", "content": "must-not-save",
+                "base_revision": invalid_revision, "client_id": consumer.client_id,
+            })
+            self.assertEqual(result["type"], "conflict")
+            self.assertEqual(result["reason"], "invalid_patch")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
+
+    def test_crdt_rejects_fractional_and_boolean_counters_without_mutation(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-crdt"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        for invalid_value in (1.5, True, "1.5", "1e2"):
+            payload = {
+                "path": "main.py", "operation_id": f"invalid-{str(invalid_value)}",
+                "kind": "insert", "position": 0, "delete_count": 0,
+                "text": "unsafe", "lamport": invalid_value,
+            }
+            result = consumer._apply_crdt_operation(payload)
+            self.assertEqual(result["type"], "crdt-reject")
+            self.assertEqual(result["reason"], "invalid_operation")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
+
     def test_crdt_operation_is_idempotent(self):
         from .ide_collaboration import IDECollaborationConsumer
         ws = self.workspace
