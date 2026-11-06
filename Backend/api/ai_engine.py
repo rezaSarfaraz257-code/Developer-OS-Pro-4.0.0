@@ -268,7 +268,7 @@ def _agent_safe_patch_path(path: Any) -> bool:
     if not isinstance(path, str) or not path or len(path) > 500 or "\\" in path:
         return False
     parts = path.split("/")
-    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     reserved_runtime_roots = {
         ".git", "node_modules", ".venv", ".home", ".tmp",
         ".cache", ".npm-cache", ".pip-cache",
