@@ -1205,5 +1205,6 @@ test("Web IDE exposes durable autonomous agent planning, approval, cancellation,
   assert.match(ide, /updateAgentRun\("approve"\)/);
   assert.match(ide, /updateAgentRun\("cancel"\)/);
   assert.match(ide, /Plan approved\. No code has been changed/);
+  assert.match(ide, /task\.agent_role\|\|"architect"/);
   assert.match(styles, /\.dos-ai-task/);
 });
