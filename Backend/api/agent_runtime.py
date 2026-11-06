@@ -46,6 +46,7 @@ def _run_payload(run):
         "workspace_revision": run.workspace_revision,
         "conversation": run.conversation_id,
         "plan": run.plan,
+        "execution_state": "plan_only_no_workspace_mutations",
         "error": run.error,
         "approved_at": run.approved_at,
         "started_at": run.started_at,
@@ -98,11 +99,14 @@ def _validate_plan(raw):
         })
         keys.add(key)
 
+    positions = {item["key"]: item["sequence"] for item in normalized}
     for item in normalized:
         if len(item["depends_on"]) != len(set(item["depends_on"])):
             raise ValueError("Agent task contains duplicate dependencies.")
         if any(dep not in keys or dep == item["key"] for dep in item["depends_on"]):
             raise ValueError("Agent task references an unknown or invalid dependency.")
+        if any(positions[dep] >= item["sequence"] for dep in item["depends_on"]):
+            raise ValueError("Agent plan tasks must be ordered before their dependents.")
 
     # Kahn's algorithm rejects cycles before any task graph is persisted.
     pending = {item["key"]: set(item["depends_on"]) for item in normalized}
@@ -152,11 +156,18 @@ def build_agent_plan(run_id):
     safe_files = {}
     total_chars = 0
     for path, value in list(files.items())[:120]:
-        name = str(path).replace("\\", "/").split("/")[-1].lower()
-        if name == ".env" or name.startswith(".env.") or name in {
-            "id_rsa", "id_ed25519", "credentials", "secrets.json",
-            "service-account.json", "private.key",
-        }:
+        normalized_path = str(path).replace("\\", "/").lower()
+        parts = normalized_path.split("/")
+        name = parts[-1] if parts else ""
+        sensitive_name = (
+            name == ".env"
+            or name.startswith(".env.")
+            or name in {".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials", "secrets.json", "service-account.json"}
+            or name.startswith(("credentials.", "secret.", "secrets."))
+            or any(part in {".aws", ".ssh", "secrets", "credentials"} for part in parts[:-1])
+            or name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"))
+        )
+        if sensitive_name:
             continue
         if not isinstance(value, str):
             continue
