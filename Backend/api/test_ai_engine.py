@@ -217,7 +217,7 @@ class AIAgentApprovalTests(TestCase):
         response = self.client.post("/api/ai/agent/apply/", {"approval_token": "tampered"}, format="json")
         self.assertEqual(response.status_code, 400)
 
-    @patch("api.ai_engine._runner_request", return_value=({"synced": True}, None))
+    @patch("api.views._runner_request", return_value=({"synced": True}, None))
     @patch("api.ai_engine._agent_runner_evidence", return_value={"status": "ok"})
     @patch("api.ai_engine._agent_diagnostics_evidence", return_value={"status": "clean"})
     def test_agent_apply_is_revision_locked_and_approval_cannot_be_replayed(
