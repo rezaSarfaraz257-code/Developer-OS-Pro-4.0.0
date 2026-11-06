@@ -1231,5 +1231,6 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("persistInterruptedCollabWorkspace=(workspaceId,interrupted)=>"));
   assert.ok(ide.includes("persistInterruptedCollabWorkspace(interruptedWorkspace,interrupted);if(patchInFlightRef.current===interrupted)patchInFlightRef.current=null"));
   assert.ok(ide.includes("patchQueueBlockedRef.current.delete(String(ws.id))"));
+  assert.ok(ide.includes("const recovered=persistInterruptedCollabWorkspace(blockedId,null)"));
   assert.ok(ide.includes("!pendingCollabPatchesRef.current.has(prefix+interrupted.path)"));
 });
