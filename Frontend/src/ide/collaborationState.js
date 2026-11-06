@@ -44,3 +44,16 @@ export function isExpectedWorkspacePatchAck({
     base !== null && acknowledged !== null &&
     acknowledged === base + 1;
 }
+
+
+/**
+ * Collaboration events can arrive out of order. Accept a valid older ack
+ * without allowing it to roll the workspace's already-observed revision back.
+ */
+export function getMonotonicWorkspaceRevision(currentRevision, incomingRevision) {
+  const current = parseAckRevision(currentRevision);
+  const incoming = parseAckRevision(incomingRevision);
+  if (current === null) return incoming;
+  if (incoming === null) return current;
+  return Math.max(current, incoming);
+}
