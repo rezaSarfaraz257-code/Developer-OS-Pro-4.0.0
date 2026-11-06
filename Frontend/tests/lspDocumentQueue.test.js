@@ -83,22 +83,24 @@ test("LSP queue recovers after a synchronous exception and preserves later FIFO 
   assert.deepEqual(order, ["throws", "recovered"]);
 });
 
-test("flush does not wait for work added later after its snapshot has settled", async () => {
+test("flush waits for its captured queue tail, not later enqueues", async () => {
   const queue = createLspDocumentQueue();
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  const first = queue.enqueue("doc", () => gate);
-  let flushed = false;
-  const waiting = queue.flush("doc").then(() => { flushed = true; });
-
-  release();
-  await Promise.all([first, waiting]);
-  assert.equal(flushed, true);
-
+  let releaseFirst;
   let releaseLater;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
   const laterGate = new Promise(resolve => { releaseLater = resolve; });
-  const later = queue.enqueue("doc", () => laterGate);
-  await queue.flush("doc");
+  const first = queue.enqueue("doc", () => firstGate);
+  let flushed = false;
+  const snapshot = queue.flush("doc").then(() => { flushed = true; });
+  let laterFinished = false;
+  const later = queue.enqueue("doc", () => laterGate).then(() => { laterFinished = true; });
+
+  releaseFirst();
+  await Promise.all([first, snapshot]);
+  assert.equal(flushed, true);
+  assert.equal(laterFinished, false, "a later enqueue must not extend an earlier flush snapshot");
+
   releaseLater();
   await later;
+  assert.equal(laterFinished, true);
 });
