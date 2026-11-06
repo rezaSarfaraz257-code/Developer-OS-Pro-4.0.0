@@ -1249,4 +1249,6 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("Conflict loaded — compare Base, Local and Remote before choosing."));
   assert.ok(ide.includes("const saved=await saveFile(false,c.path)"));
   assert.ok(ide.includes('pendingCollabPatchesRef.current.delete(c.workspaceId+":"+c.path)'));
+  assert.ok(ide.includes('queued.filter(item=>!(String(item?.workspace_id)===c.workspaceId&&item?.path===c.path))'));
+  assert.ok(ide.includes("Cannot safely remove the stale offline patch; conflict remains blocked."));
 });
