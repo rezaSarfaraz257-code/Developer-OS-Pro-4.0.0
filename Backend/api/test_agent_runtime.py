@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .agent_runtime import _validate_plan, build_agent_plan
-from .models import AgentRun, AIConversation, BackgroundJob, CodeWorkspace
+from .models import AgentRun, AIConversation, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class AgentPlanValidationTests(TestCase):
@@ -90,6 +90,11 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(second.data["id"], run_id)
         self.assertEqual(AgentRun.objects.filter(owner=self.user).count(), 1)
         self.assertEqual(usage.call_count, 1)
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.user,
+            action="agent_run.created",
+            target_id=str(run_id),
+        ).exists())
 
     def test_other_user_cannot_read_or_cancel_agent_run(self):
         run = AgentRun.objects.create(
@@ -179,6 +184,11 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(result["status"], "awaiting_approval")
         self.assertEqual(run.status, "awaiting_approval")
         self.assertEqual(run.tasks.count(), 2)
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.user,
+            action="agent_run.plan_ready",
+            target_id=str(run.id),
+        ).exists())
         self.assertEqual(run.tasks.get(key="inspect").status, "ready")
         self.assertEqual(run.tasks.get(key="tests").status, "blocked")
         self.assertEqual(
