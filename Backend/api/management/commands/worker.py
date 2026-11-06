@@ -171,6 +171,9 @@ def _require_real_email_transport() -> None:
 
 
 def execute(job):
+    if job.kind == "ai_agent_plan":
+        from api.agent_runtime import build_agent_plan
+        return build_agent_plan(job.payload["run_id"])
     if job.kind == "email":
         _require_real_email_transport()
         payload = job.payload
@@ -271,6 +274,16 @@ class Command(BaseCommand):
                     else str(exc)[:10000]
                 )
                 job.last_error_at = now
+                if job.kind == "ai_agent_plan" and job.attempts >= job.max_attempts:
+                    from api.models import AgentRun
+                    AgentRun.objects.filter(
+                        pk=job.payload.get("run_id"),
+                        status__in=["queued", "planning"],
+                    ).update(
+                        status="failed",
+                        error=f"{type(exc).__name__}: planning failed"[:500],
+                        finished_at=now,
+                    )
                 if job.attempts < job.max_attempts:
                     job.status = "queued"
                     job.available_at = now + timedelta(seconds=min(300, 2 ** max(1, job.attempts)))
