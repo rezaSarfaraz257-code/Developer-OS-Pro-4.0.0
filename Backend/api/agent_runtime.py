@@ -171,7 +171,12 @@ def build_agent_plan(run_id):
         ).get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
-        if run.status in {"awaiting_approval", "approved", "running", "succeeded"}:
+        # A second delivery must not start a duplicate provider request while
+        # the first worker still owns the planning transition. Stale-lease
+        # recovery explicitly resets abandoned runs to queued before retry.
+        if run.status == "planning":
+            return {"run_id": run.id, "status": "planning"}
+        if run.status in {"awaiting_approval", "approved", "running", "succeeded", "failed"}:
             return {"run_id": run.id, "status": run.status}
         run.status = "planning"
         run.started_at = run.started_at or timezone.now()
