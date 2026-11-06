@@ -155,7 +155,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             ws.files=files; ws.revision=(ws.revision or 0)+1; ws.save(update_fields={"files","revision"})
             blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
             WorkspaceCRDTOperation.objects.create(workspace=ws,path=path,operation_id=opid,actor_id=self.client_id,lamport=lamport,kind=kind,position=pos,delete_count=count,text=inserted,update_blob=blob,author=self.user)
-            return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":inserted,"content":next_content,"client_id":self.client_id}}
+            return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","workspace_id":ws.id,"revision":ws.revision,"path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":inserted,"content":next_content,"client_id":self.client_id}}
 
     def _presence_snapshot(self):
         now=timezone.now()
