@@ -1205,5 +1205,5 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
-  assert.match(ide, /if\(patchInFlightRef\.current\)\{const interrupted=patchInFlightRef\.current;pendingCollabPatchesRef\.current\.set/);
+  assert.match(ide, /if\(patchInFlightRef\.current\)\{const interrupted=patchInFlightRef\.current;const interruptedWorkspace=String\(interrupted\.workspace_id\|\|refs\.ws\.current\?\.id\);pendingCollabPatchesRef\.current\.set/);\n  assert.match(ide, /patchQueueBlockedRef\.current\.add\(interruptedWorkspace\)/);\n  assert.match(ide, /Connection lost during save — local patch retained; explicit conflict recovery required/);
 });
