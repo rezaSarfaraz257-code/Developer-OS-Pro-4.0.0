@@ -21,7 +21,7 @@ export function canAcknowledgeWorkspaceEdit({
 }
 
 function parseAckRevision(value) {
-  if (typeof value !== "number" && !(typeof value === "string" && /^\\d+$/.test(value.trim()))) return null;
+  if (typeof value !== "number" && !(typeof value === "string" && /^\d+$/.test(value.trim()))) return null;
   const revision = Number(value);
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
 }
