@@ -21,6 +21,51 @@ class AIEngineUnitTests(TestCase):
         }
         self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
 
+    def test_patch_contract_rejects_reserved_and_ambiguous_paths(self):
+        invalid_paths = [
+            ".git/config",
+            "node_modules/pkg/index.js",
+            "src//main.py",
+            "src/./main.py",
+            "src/../main.py",
+            "C:/workspace/main.py",
+            "src\\\\main.py",
+            "/etc/passwd",
+        ]
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                proposal = {
+                    "type": "patch_proposal",
+                    "changes": [{
+                        "path": path,
+                        "operation": "create",
+                        "reason": "test",
+                        "content": "safe = True\\n",
+                    }],
+                }
+                self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
+
+    def test_patch_contract_rejects_duplicate_case_insensitive_paths(self):
+        proposal = {
+            "type": "patch_proposal",
+            "changes": [
+                {"path": "src/Main.py", "operation": "create", "content": "one"},
+                {"path": "src/main.py", "operation": "create", "content": "two"},
+            ],
+        }
+        self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
+
+    def test_patch_contract_rejects_oversized_single_file(self):
+        proposal = {
+            "type": "patch_proposal",
+            "changes": [{
+                "path": "main.py",
+                "operation": "create",
+                "content": "x" * 1_000_001,
+            }],
+        }
+        self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
+
     def test_patch_contract_accepts_complete_safe_change(self):
         proposal = {
             "type": "patch_proposal",
