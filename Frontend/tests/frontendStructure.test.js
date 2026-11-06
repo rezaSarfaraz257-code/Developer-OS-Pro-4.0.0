@@ -1220,7 +1220,7 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("patchQueueBlockedRef.current.has(String(w?.id))||patchInFlightRef.current"));
   assert.match(ide, /base_revision:Number\(w\.revision\?\?pending\.base_revision\?\?0\)/);
   assert.match(ide, /pendingCollabPatchesRef\.current\.set\(key,\{\.\.\.msg,workspace_id:String\(w\.id\)\}\);sendNextCollabPatch\(\)/);
-  assert.match(ide, /completedPatch&&completedPatch\.path===ackPath&&completedPatch\.content===ack\.content\)\{patchInFlightRef\.current=null;\}/);
+  assert.match(ide, /completedPatch&&completedPatch\.workspace_id!=null&&ack\.workspace_id!=null&&String\(completedPatch\.workspace_id\)===String\(ack\.workspace_id\)&&completedPatch\.path===ackPath&&completedPatch\.content===ack\.content\)\{patchInFlightRef\.current=null;\}/);
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
