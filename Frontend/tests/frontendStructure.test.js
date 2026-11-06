@@ -1243,4 +1243,5 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes('base:dirtyBaseContentRef.current.get(p)??null'));
   assert.ok(ide.includes("BASE VERSION"));
   assert.ok(ide.includes("[Original version was not captured]"));
+  assert.ok(ide.includes('if(typeof serverContent!=="string"||serverContent!==content)'));
 });
