@@ -128,14 +128,24 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             return self.send_json(event["payload"])
 
     def _apply_crdt_operation(self, content):
-        path=str(content.get("path") or "").strip()
-        opid=str(content.get("operation_id") or "")
-        kind=str(content.get("kind") or "")
+        raw_path = content.get("path")
+        opid = content.get("operation_id")
+        kind = content.get("kind")
+        if not isinstance(raw_path, str):
+            return {"type":"crdt-reject","reason":"invalid_path"}
         try:
-            path = validate_workspace_path(path)
+            path = validate_workspace_path(raw_path.strip())
         except ValueError:
             return {"type":"crdt-reject","reason":"invalid_path"}
-        if not opid or len(opid) > 128 or kind not in {"insert","delete"}:
+        if (
+            not isinstance(opid, str)
+            or not opid
+            or opid != opid.strip()
+            or len(opid) > 128
+            or any(ord(char) < 32 or ord(char) == 127 for char in opid)
+            or not isinstance(kind, str)
+            or kind not in {"insert","delete"}
+        ):
             return {"type":"crdt-reject","reason":"invalid_operation"}
 
         def duplicate_result(existing):
