@@ -4125,3 +4125,10 @@ body:has(.dos-ide-pro) .dos-ide-pro .dos-inspector {
 .dos-workspace-load-error button:hover{background:rgba(255,180,191,.16)}
 .dos-workspace-load-error button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 @media(max-width:760px){.dos-workspace-load-error{max-width:100%;flex-wrap:wrap}}
+
+/* Autonomous engineering plan graph */
+.dos-ide-pro .dos-ai-task{display:flex;flex-direction:column;gap:3px;margin:7px 0;padding:8px 10px;border:1px solid rgba(91,190,230,.2);border-radius:7px;background:rgba(12,28,43,.55);min-width:0}
+.dos-ide-pro .dos-ai-task b{font-size:12px;overflow-wrap:anywhere}
+.dos-ide-pro .dos-ai-task small{font-size:10px;color:var(--dos-muted,#8ea6b8);overflow-wrap:anywhere}
+.dos-ide-pro .dos-ai-result>button{margin:7px 6px 0 0;border:1px solid rgba(91,190,230,.35);border-radius:6px;background:rgba(24,80,110,.35);color:inherit;padding:6px 10px;font:inherit;font-size:11px;cursor:pointer}
+.dos-ide-pro .dos-ai-result>button:disabled{opacity:.5;cursor:not-allowed}
