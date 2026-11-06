@@ -15,6 +15,23 @@ from .models import CodeWorkspace, WorkspaceCollaborationSession, WorkspaceFileR
 from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
 from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object, validate_client_id, validate_websocket_message, MAX_CRDT_INSERT_BYTES)
 
+def _parse_protocol_integer(value, default=None):
+    """Accept only exact integers or signed ASCII decimal strings from the wire."""
+    if value is None or value == "":
+        if default is not None:
+            return default
+        raise ValueError("integer_required")
+    if isinstance(value, bool):
+        raise ValueError("boolean_is_not_integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        digits = value[1:] if value.startswith("-") else value
+        if digits and digits.isascii() and digits.isdigit():
+            return int(value)
+    raise ValueError("invalid_integer")
+
+
 class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         protocols = self.scope.get("subprotocols") or []
@@ -139,9 +156,9 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
                     return duplicate_result(existing)
                 last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
                 try:
-                    requested_lamport = int(content.get("lamport") or 0)
-                    pos = int(content.get("position") or 0)
-                    count = int(content.get("delete_count") or 0)
+                    requested_lamport = _parse_protocol_integer(content.get("lamport"), default=0)
+                    pos = _parse_protocol_integer(content.get("position"), default=0)
+                    count = _parse_protocol_integer(content.get("delete_count"), default=0)
                 except (TypeError, ValueError, OverflowError):
                     return {"type":"crdt-reject","reason":"invalid_operation"}
                 if requested_lamport < 0 or requested_lamport > 9_223_372_036_854_775_806 or pos < 0 or count < 0:
@@ -206,7 +223,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         try:
             path = validate_workspace_path(content.get("path"))
             next_content = validate_workspace_text(content.get("content") if content.get("content") is not None else "")
-            client_revision = int(content.get("base_revision"))
+            client_revision = _parse_protocol_integer(content.get("base_revision"))
         except (ValueError, TypeError, OverflowError):
             return {"type":"conflict","reason":"invalid_patch"}
         if client_revision < 0 or client_revision > 9_223_372_036_854_775_807:
