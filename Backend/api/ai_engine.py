@@ -863,17 +863,41 @@ def ai_agent_api(request):
         return Response({"error": "message is required"}, status=400)
     if len(message) > 12000:
         return Response({"error": "message too long"}, status=400)
-    from .views import _consume_usage
+
+    from .views import _consume_usage, _workspace_for_user
+    project_id = request.data.get("project")
+    conversation_id = request.data.get("conversation")
+    try:
+        conversation = _conversation(request, project_id, conversation_id)
+    except DatabaseError:
+        logger.exception("AI agent conversation persistence unavailable; continuing in stateless mode")
+        conversation = None
+    if conversation is None and conversation_id:
+        return Response({"error": "Conversation not found or unavailable."}, status=404)
+
+    workspace_id = request.data.get("workspace")
+    if workspace_id:
+        workspace = _workspace_for_user(workspace_id, request.user)
+        if conversation and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
+            return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
+
     allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
     if not allowed:
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
-    evidence = _agent_evidence(request)
-    evidence = _compact_context(evidence)
+    evidence = _compact_context(_agent_evidence(request))
+    context = {"agent_evidence": evidence}
+    history = []
+    if conversation is not None:
+        history = list(
+            conversation.messages.order_by("-created_at")
+            .values("role", "content")[:MAX_HISTORY_MESSAGES]
+        )[::-1]
+
     answer, provider_error = _call_provider(
         message,
-        {"agent_evidence": evidence},
-        [],
+        context,
+        history,
         "agentic developer intelligence",
     )
     if not answer:
@@ -887,14 +911,40 @@ def ai_agent_api(request):
             "verification": evidence,
             "evidence_status": "provider_unavailable",
         }, ensure_ascii=False)
+
     allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
     if not allowed:
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
+
+    message_payload = {"id": None, "role": "assistant", "content": answer, "context": context}
+    conversation_payload = {"id": None, "title": "Developer OS Intelligence"}
+    persistence = "degraded"
+    if conversation is not None:
+        try:
+            with transaction.atomic():
+                AIMessage.objects.create(conversation=conversation, role="user", content=message, context=context)
+                assistant_message = AIMessage.objects.create(
+                    conversation=conversation,
+                    role="assistant",
+                    content=answer,
+                    context=context,
+                )
+                conversation.save(update_fields={"updated_at"})
+            message_payload = AIMessageSerializer(assistant_message).data
+            conversation_payload = AIConversationSerializer(conversation).data
+            persistence = "saved"
+        except DatabaseError:
+            logger.exception("AI agent conversation message persistence failed")
+
+    approval_token = _issue_patch_approval_token(request, answer)
     return Response({
         "mode": "agent" if provider_error is None else "agent-fallback",
         "answer": answer,
+        "message": message_payload,
+        "conversation": conversation_payload,
+        "persistence": persistence,
         "evidence": evidence,
-        "approval_token": _issue_patch_approval_token(request, answer),
+        "approval_token": approval_token,
         "usage": {"used": used, "limit": limit, "plan": plan},
         "provider_status": provider_error,
     })
