@@ -121,18 +121,22 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         if not opid or len(opid) > 128 or kind not in {"insert","delete"}:
             return {"type":"crdt-reject","reason":"invalid_operation"}
 
-        def duplicate_ack():
+        def duplicate_result(existing):
+            if existing.workspace_id != self.workspace.id:
+                return {"type":"crdt-reject","reason":"operation_id_conflict"}
             return {"type":"crdt-ack","duplicate":True,"event":{"type":"crdt-op","operation_id":opid,"client_id":self.client_id}}
 
-        if WorkspaceCRDTOperation.objects.filter(operation_id=opid).exists():
-            return duplicate_ack()
+        existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+        if existing:
+            return duplicate_result(existing)
 
         try:
             with transaction.atomic():
                 ws=CodeWorkspace.objects.select_for_update().get(pk=self.workspace.id)
                 # Recheck after acquiring the workspace lock to close the same-workspace race.
-                if WorkspaceCRDTOperation.objects.filter(operation_id=opid).exists():
-                    return duplicate_ack()
+                existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+                if existing:
+                    return duplicate_result(existing)
                 last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
                 try:
                     requested_lamport = int(content.get("lamport") or 0)
@@ -168,8 +172,9 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         except IntegrityError:
             # A globally unique operation_id may race across different workspace locks.
             # The outer transaction rolls back the file and revision update on collision.
-            if WorkspaceCRDTOperation.objects.filter(operation_id=opid).exists():
-                return duplicate_ack()
+            existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+            if existing:
+                return duplicate_result(existing)
             raise
 
     def _presence_snapshot(self):
