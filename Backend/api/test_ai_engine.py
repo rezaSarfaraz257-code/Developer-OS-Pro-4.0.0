@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .ai_engine import _agent_parse_patch, _provider_config
-from .models import CodeWorkspace
+from .models import AIConversation, AIMessage, CodeWorkspace
 
 
 class AIEngineUnitTests(TestCase):
@@ -127,6 +127,56 @@ class AIAgentApprovalTests(TestCase):
     def test_agent_requires_authentication(self):
         response = self.client.post("/api/ai/agent/", {"message": "inspect", "workspace": 1}, format="json")
         self.assertEqual(response.status_code, 401)
+
+    @patch("api.views._consume_usage", return_value=(True, 1, 100, "free"))
+    @patch("api.ai_engine._call_provider")
+    @patch("api.ai_engine._agent_evidence", return_value={"workspace": None, "repository": {"connected": False}})
+    def test_agent_persists_conversation_and_reuses_bounded_history(
+        self, _evidence, provider, _usage
+    ):
+        self.client.force_authenticate(self.user)
+        provider.side_effect = [("First agent response", None), ("Second agent response", None)]
+
+        first = self.client.post(
+            "/api/ai/agent/",
+            {"message": "Inspect my project"},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200)
+        conversation_id = first.data["conversation"]["id"]
+        self.assertTrue(conversation_id)
+        self.assertEqual(first.data["message"]["content"], "First agent response")
+        self.assertEqual(first.data["persistence"], "saved")
+        self.assertEqual(
+            AIMessage.objects.filter(conversation_id=conversation_id).count(),
+            2,
+        )
+
+        second = self.client.post(
+            "/api/ai/agent/",
+            {"message": "Continue the analysis", "conversation": conversation_id},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["conversation"]["id"], conversation_id)
+        self.assertEqual(second.data["message"]["content"], "Second agent response")
+        history = provider.call_args_list[1].args[2]
+        self.assertEqual([item["role"] for item in history], ["user", "assistant"])
+        self.assertEqual(history[0]["content"], "Inspect my project")
+        self.assertEqual(AIMessage.objects.filter(conversation_id=conversation_id).count(), 4)
+
+    def test_agent_conversation_is_private_to_its_owner(self):
+        from .models import AIConversation
+
+        conversation = AIConversation.objects.create(owner=self.user, title="Private agent history")
+        other = User.objects.create_user(username="agent-history-other", password="StrongPassword123!")
+        self.client.force_authenticate(other)
+        response = self.client.post(
+            "/api/ai/agent/",
+            {"message": "Read this history", "conversation": conversation.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_agent_apply_rejects_missing_token(self):
         self.client.force_authenticate(self.user)
