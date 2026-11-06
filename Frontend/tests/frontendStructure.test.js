@@ -1273,6 +1273,6 @@ test("collaboration patch acknowledgements must match the in-flight revision and
   assert.equal(isExpectedWorkspacePatchAck({ ...base, baseRevision: Number.MAX_SAFE_INTEGER }), false);
   assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: Number.MAX_SAFE_INTEGER + 1 }), false);
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  assert.match(ide, /isExpectedWorkspacePatchAck\\(/);
+  assert.match(ide, /isExpectedWorkspacePatchAck\(/);
   assert.match(ide, /Ignored stale or mismatched collaboration acknowledgement/);
 });
