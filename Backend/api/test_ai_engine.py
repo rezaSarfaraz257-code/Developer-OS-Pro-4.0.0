@@ -178,6 +178,22 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual(response.status_code, 429)
         provider.assert_not_called()
 
+    def test_agent_rejects_foreign_workspace_before_creating_conversation(self):
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Private workspace",
+            files={"main.py": "print('private')\\n"},
+        )
+        other = User.objects.create_user(username="agent-workspace-other", password="StrongPassword123!")
+        self.client.force_authenticate(other)
+        response = self.client.post(
+            "/api/ai/agent/",
+            {"message": "Inspect this workspace", "workspace": workspace.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(AIConversation.objects.filter(owner=other).exists())
+
     def test_agent_conversation_is_private_to_its_owner(self):
         from .models import AIConversation
 
