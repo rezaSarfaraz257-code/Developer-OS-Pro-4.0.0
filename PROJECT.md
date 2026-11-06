@@ -136,14 +136,15 @@ This project will be considered successful when developers can:
 
 ## Strategic direction
 
-Developer OS should evolve from a simple project dashboard into a digital engineering operating system:
-- personal at first
-- collaborative later
-- intelligent over time
+Developer OS is evolving toward **Developer OS — Autonomous Software Universe**: a unified, human-directed environment for planning, building, testing, deploying, operating, and continuously improving software with manual, AI-agent, and hybrid workflows.
+
+This is a staged evolution of the existing platform, not a rewrite. Existing workspace, identity, authorization, repository, and deployment foundations should be preserved and strengthened. Autonomy must be backed by durable state, secure isolated execution, reviewable changes, human approval gates, and production evidence.
+
+The canonical phases, dependencies, security constraints, and acceptance gates are maintained in [the Autonomous Software Universe roadmap](docs/AUTONOMOUS_SOFTWARE_UNIVERSE_ROADMAP.md).
 
 ## Final vision
 
-The final product is not just an app. It is a living developer environment — a place where tools, work, context, and thinking merge into one organized digital flow.
+Developer OS should become a living engineering environment where people and trusted AI agents share one project reality and can take software from idea to reliable operation — with the human retaining visibility, authority, and control.
 
 ---
 Generated to define the long-term product direction and ecosystem vision.
