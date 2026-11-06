@@ -1205,7 +1205,8 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
-  assert.ok(ide.includes("const interruptedWorkspace=String(interrupted.workspace_id||refs.ws.current?.id)"));
-  assert.ok(ide.includes("patchQueueBlockedRef.current.add(interruptedWorkspace)"));
-  assert.ok(ide.includes("Connection lost during save — local patch retained; explicit conflict recovery required"));
+  assert.ok(ide.includes("const recoveryPatches=[...pendingCollabPatchesRef.current.entries()]"));
+  assert.ok(ide.includes("queue=queueWorkspacePatch(queue,patch)"));
+  assert.ok(ide.includes("localStorage.setItem(OFFLINE_QUEUE_KEY,JSON.stringify(queue))"));
+  assert.ok(ide.includes("Connection lost — local edits preserved for revision-checked recovery."));
 });
