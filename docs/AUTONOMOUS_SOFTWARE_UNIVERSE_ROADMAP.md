@@ -4,6 +4,10 @@
 **Applies to:** Developer OS 4.0.0  
 **Decision:** Evolve the existing platform incrementally. Do not replace its working foundations.
 
+## Baseline audit
+
+The dated, evidence-backed starting assessment is maintained in [Baseline Audit — 2026-11-07](BASELINE_AUDIT_2026-11-07.md). Re-run this audit as branches, CI, code, and deployment state change; do not treat it as permanent truth.
+
 ## 1. Product north star
 
 Developer OS is evolving into an **Autonomous Software Engineering Universe**: one connected environment in which a person or team can take software from an initial idea through planning, design, implementation, verification, deployment, operation, and continuous improvement.
