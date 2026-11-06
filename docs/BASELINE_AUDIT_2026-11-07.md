@@ -88,3 +88,37 @@ Branch and workflow state can change after this audit. Recheck GitHub before any
 - Never report a feature as complete from UI presence, documentation, or a successful build alone.
 - For every milestone, retain test results, deployment identity, operational evidence, and a rollback path.
 - Treat this audit as a dated snapshot, not a permanent source of truth.
+
+## Verified follow-up — 2026-11-07
+
+This section supersedes any branch-count or PR-state snapshot above where the two conflict. It was checked against GitHub after the original audit text was drafted.
+
+### Current PR #212 state
+
+- PR #212 remains an open draft, based on `master` at `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf`.
+- Its roadmap branch is 7 commits ahead and 0 behind `master`; it changes five documentation files only.
+- It does not add runtime orchestration, persistent agent runs, task DAGs, agent permissions, approval workflows, or new AI execution capabilities.
+
+### Web IDE collaboration work is a separate engineering stream
+
+PR #213 (`fix/webide-serialized-collab-patches-20261107`) is open and draft, 75 commits ahead and 0 behind `master` at head `aa6b8d884e9596f8ebc3eebe7e2d89904877ca7a`. It changes ten backend/frontend files and adds revision-ordered collaboration, offline recovery, explicit conflict review, and CRDT validation. Its PR description reports seven successful CI workflows, including backend/frontend/Runner validation, CodeQL, dependency checks, container security, PostgreSQL backup/restore, and Docker Compose health validation. Manual two-authenticated-browser collaboration E2E remains outstanding; PR-triggered checks do not certify live production availability. This is meaningful Phase 1 work, but it is not an AI-agent orchestrator.
+
+### Existing AI foundation — implementation boundary
+
+The current backend contains `AIConversation` and `AIMessage` persistence models, an authenticated `/api/assistant/` endpoint, and structured `ai_actions_api` actions for review, tests, explain, plan, and debug. The assistant endpoint builds deterministic project/task summary context and can call an optional OpenAI-compatible provider. The structured action endpoint enforces an AI usage allowance and project/workspace access checks; its local fallback is deliberately advisory.
+
+These are useful foundations, but source inspection does not establish an autonomous engineering system:
+- The inspected `assistant_api` returns a response but does not persist a conversation/message in the shown handler.
+- The structured actions do not create durable agent-run records, task dependency graphs, resumable execution state, or a specialist-agent registry.
+- No verified tool-execution contract, patch-application transaction, approval queue, cancellation lifecycle, or per-agent permission boundary was found in the inspected routes/handlers.
+- The current assistant must therefore be classified as **partial AI copilot**, not AI Agent Build or multi-agent orchestration.
+
+### Corrected execution order for the Autonomous Software Universe
+
+1. Complete Phase 1 workspace reliability and manual multi-client E2E evidence (including review of PR #213); do not treat PR #213 as an agent feature.
+2. Prove Phase 2 Runner isolation, quotas, cancellation, artifact boundaries, and fail-closed behavior in the deployed environment. PR #211 remains subject to human review and live verification.
+3. Build Phase 3 as a bounded, durable single-agent workflow: persisted run/task state, authorized project context, structured plan, reviewable patch proposal, test evidence, approval, apply/rollback, cancellation, and cost/time limits. Reuse existing AI models and usage accounting only after checking their constraints; avoid duplicate sources of truth.
+4. Add Phase 4 specialist agents and orchestration only after the single-agent workflow is repeatable and idempotent.
+5. Keep deploy/monitor/rollback and the Project Digital Twin behind verified runner and lifecycle evidence.
+
+**Implementation gate:** Before adding models or migrations, inspect the complete existing AI, workspace, usage, audit, job, and runner schemas and all corresponding authorization paths. Every agent-run operation must be tenant-scoped, idempotent, auditable, cancellable, resource-bounded, and unable to execute untrusted code outside the strict Runner. No agent may push, deploy, spend money, access secrets, or perform destructive data operations without explicit authorization and approval.
