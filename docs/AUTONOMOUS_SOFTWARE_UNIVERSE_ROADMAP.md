@@ -224,3 +224,12 @@ Therefore, each phase must begin with a code-and-deployment audit. A feature mus
 5. Only then expand AI task execution and orchestration.
 
 **North star:** Think. Plan. Build. Verify. Deploy. Operate. Evolve — in one universe, with humans in control.
+
+
+## 11. Implementation progress — 2026-11-07
+
+**Implemented on the isolated PR branch:** persistent `AgentRun`/`AgentTask` records, idempotent asynchronous plan submission through the existing durable `BackgroundJob` worker, owner-scoped status/cancel/approve endpoints, and validation of bounded task dependency graphs (unique IDs, known dependencies, topological order, no cycles). The planning worker rechecks workspace write access and revision before and after the provider call, excludes common secret-bearing files from provider context, and never executes user code or mutates workspace files.
+
+**Still planned:** approved task execution, specialist agent/tool registry, per-tool capability grants, task-level approval, safe patch generation/application, isolated Runner execution, verification/retry loops, resumable multi-step runs, and production deployment/monitoring automation. Plan approval currently approves the plan only; the API explicitly reports `plan_only_no_workspace_mutations`.
+
+**Deployment prerequisite:** apply migration `0035_agent_run_task_graph` before enabling the new endpoints. Confirm the backend worker is deployed and processing `ai_agent_plan` jobs. No production migration or live provider execution is claimed by this branch update.
