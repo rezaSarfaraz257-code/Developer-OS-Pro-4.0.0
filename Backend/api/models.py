@@ -820,6 +820,20 @@ class AgentRun(models.Model):
 class AgentTask(models.Model):
     """One bounded, reviewable node in an AgentRun dependency graph."""
 
+    SPECIALIST_CHOICES = [
+        ("product_manager", "Product Manager"),
+        ("architect", "Software Architect"),
+        ("frontend", "Frontend Engineer"),
+        ("backend", "Backend Engineer"),
+        ("database", "Database Engineer"),
+        ("ui_ux", "UI/UX Designer"),
+        ("testing", "Test Engineer"),
+        ("security", "Security Engineer"),
+        ("devops", "DevOps Engineer"),
+        ("debugger", "Debugger"),
+        ("code_reviewer", "Code Reviewer"),
+        ("documentation", "Technical Writer"),
+    ]
     STATUS_CHOICES = [
         ("blocked", "Blocked"),
         ("ready", "Ready"),
@@ -833,6 +847,7 @@ class AgentTask(models.Model):
     key = models.CharField(max_length=64)
     title = models.CharField(max_length=180)
     description = models.TextField(max_length=2000, blank=True, default="")
+    agent_role = models.CharField(max_length=24, choices=SPECIALIST_CHOICES, default="architect")
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="blocked")
     sequence = models.PositiveSmallIntegerField(default=0)
     depends_on = models.ManyToManyField("self", symmetrical=False, blank=True, related_name="dependents")
