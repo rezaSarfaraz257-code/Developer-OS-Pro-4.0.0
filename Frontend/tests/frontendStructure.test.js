@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches } from "../src/ide/offlineQueue.js";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches, preserveInterruptedWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
 import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
 
@@ -200,6 +200,25 @@ test("offline queue replaces only the same path in the same workspace", () => {
   assert.equal(next.find((item) => item.workspace_id === "1").content, "new A");
   assert.equal(next.find((item) => item.workspace_id === "2").content, "B");
   assert.ok(next.some((item) => item.path === "legacy.txt"));
+});
+
+test("interrupted collaboration recovery keeps the newest edit for each file", () => {
+  const original = [
+    { workspace_id: "7", path: "keep.js", content: "existing", base_revision: 3 },
+    { workspace_id: "8", path: "other.js", content: "other workspace", base_revision: 9 },
+  ];
+  const recovered = preserveInterruptedWorkspacePatches(original, "7",
+    { path: "same.js", content: "in-flight older", base_revision: 4 },
+    [
+      { path: "same.js", content: "newest local edit", base_revision: 4 },
+      { path: "next.js", content: "pending file", base_revision: 4 },
+    ],
+  );
+  assert.equal(recovered.find((item) => item.path === "same.js" && item.workspace_id === "7").content, "newest local edit");
+  assert.equal(recovered.find((item) => item.path === "same.js" && item.workspace_id === "7").base_revision, 4);
+  assert.equal(recovered.find((item) => item.path === "next.js" && item.workspace_id === "7").content, "pending file");
+  assert.equal(recovered.find((item) => item.path === "keep.js").content, "existing");
+  assert.equal(recovered.find((item) => item.workspace_id === "8").content, "other workspace");
 });
 
 test("offline queue parsing retains identifiable legacy edits and ignores malformed entries", () => {
@@ -1205,7 +1224,7 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
-  assert.ok(ide.includes("const recoveryPatches=[...pendingCollabPatchesRef.current.entries()]"));
+  assert.ok(ide.includes("preserveInterruptedWorkspacePatches(parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY)),interruptedWorkspace,interrupted,pendingPatches)"));
   assert.ok(ide.includes("queue=queueWorkspacePatch(queue,patch)"));
   assert.ok(ide.includes("localStorage.setItem(OFFLINE_QUEUE_KEY,JSON.stringify(queue))"));
   assert.ok(ide.includes("Connection lost — local edits preserved for revision-checked recovery."));
