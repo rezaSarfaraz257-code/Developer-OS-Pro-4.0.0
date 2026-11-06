@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import requests
@@ -262,6 +263,28 @@ def _agent_tool_result(name: str, args: dict[str, Any], evidence: dict[str, Any]
     return {"error": "Unknown agent tool."}
 
 
+def _agent_safe_patch_path(path: Any) -> bool:
+    """Match the IDE workspace path contract before a model patch can be approved."""
+    if not isinstance(path, str) or not path or len(path) > 500 or "\\" in path:
+        return False
+    parts = path.split("/")
+    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    reserved_runtime_roots = {
+        ".git", "node_modules", ".venv", ".home", ".tmp",
+        ".cache", ".npm-cache", ".pip-cache",
+    }
+    return bool(
+        not path.startswith("/")
+        and not re.match(r"^[A-Za-z]:", path)
+        and all(
+            part not in {"", ".", ".."}
+            and part.casefold() not in reserved_runtime_roots
+            and component_pattern.fullmatch(part)
+            for part in parts
+        )
+    )
+
+
 def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
     """Validate a model patch proposal; applying it is a separate approval action."""
     try:
@@ -271,23 +294,34 @@ def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
     if not isinstance(data, dict) or data.get("type") != "patch_proposal":
         return None
     changes = data.get("changes")
-    if not isinstance(changes, list) or len(changes) > AGENT_PATCH_MAX_FILES:
+    if not isinstance(changes, list) or not changes or len(changes) > AGENT_PATCH_MAX_FILES:
         return None
     total = 0
+    seen_paths = set()
     for change in changes:
         if not isinstance(change, dict):
             return None
-        path = str(change.get("path") or "")
-        operation = str(change.get("operation") or "")
+        path = change.get("path")
+        operation = change.get("operation")
         full_content = change.get("content")
+        if not _agent_safe_patch_path(path):
+            return None
+        if path.casefold() in seen_paths:
+            return None
+        seen_paths.add(path.casefold())
+        if not isinstance(operation, str) or operation not in {"modify", "create", "delete"}:
+            return None
         if full_content is not None and not isinstance(full_content, str):
             return None
         if operation in {"modify", "create"} and full_content is None:
             return None
-        if not path or operation not in {"modify", "create", "delete"}:
+        if operation == "delete" and full_content is not None:
             return None
-        normalized = path.replace("\\", "/")
-        if normalized.startswith("/") or ".." in normalized.split("/"):
+        try:
+            content_bytes = len((full_content or "").encode("utf-8"))
+        except UnicodeEncodeError:
+            return None
+        if content_bytes > 1_000_000:
             return None
         total += len(full_content or "")
         if total > AGENT_PATCH_MAX_CHARS:
