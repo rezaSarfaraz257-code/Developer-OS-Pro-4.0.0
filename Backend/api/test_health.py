@@ -261,7 +261,7 @@ class SecureRunnerReadinessTests(TestCase):
     @patch("api.views.RUNNER_URL", "http://runner:8080")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
     @patch("api.views.requests.get")
-    def test_accepts_only_live_bubblewrap_with_network_disabled(self, get):
+    def test_accepts_strict_isolated_runner_when_optional_bridges_are_disabled(self, get):
         get.return_value.status_code = 200
         get.return_value.json.return_value = {
             "sandbox": {
@@ -270,14 +270,14 @@ class SecureRunnerReadinessTests(TestCase):
                 "security_level": "strict",
                 "execution_available": True,
                 "trusted_shared_container": False,
-                "preview_network_bridge": True,
+                "preview_network_bridge": False,
                 "network_enforcement": "isolated",
             },
             "operations": {
                 "execute": True,
                 "process": True,
-                "install": True,
-                "preview": True,
+                "install": False,
+                "preview": False,
             },
         }
 
@@ -293,12 +293,12 @@ class SecureRunnerReadinessTests(TestCase):
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
     @patch("api.views.requests.get")
     def test_rejects_unavailable_or_compatibility_runner(self, get):
-        safe_operations = {"execute": True, "process": True, "install": True, "preview": True}
+        safe_operations = {"execute": True, "process": True, "install": False, "preview": False}
         unsafe_payloads = (
-            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": False, "trusted_shared_container": False, "preview_network_bridge": False, "network_enforcement": "isolated"}, "operations": safe_operations},
+            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": False, "trusted_shared_container": False, "network_enforcement": "isolated"}, "operations": safe_operations},
             {"sandbox": {"backend": "container", "mode": "container-native", "security_level": "compat", "execution_available": True, "trusted_shared_container": True, "network_enforcement": "container-runtime-policy"}, "operations": safe_operations},
             {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": True, "trusted_shared_container": False, "network_enforcement": "provisioning-network"}, "operations": safe_operations},
-            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": True, "trusted_shared_container": False, "network_enforcement": "isolated"}, "operations": {"execute": True, "process": True, "install": True, "preview": False}},
+            {"sandbox": {"backend": "bwrap", "mode": "bubblewrap", "security_level": "strict", "execution_available": True, "trusted_shared_container": False, "network_enforcement": "isolated"}, "operations": {"execute": True, "process": False, "install": False, "preview": False}},
         )
         for payload in unsafe_payloads:
             with self.subTest(payload=payload):
