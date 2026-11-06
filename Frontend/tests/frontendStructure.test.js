@@ -1197,13 +1197,13 @@ test("Developer OS brand icon is used by browser, mobile install, app shell, and
 
 test("Web IDE collaboration sends one file patch per acknowledged workspace revision", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  assert.match(ide, /pendingCollabPatchesRef=useRef\(new Map\(\)\),patchInFlightRef=useRef\(null\),patchQueueBlockedRef=useRef\(false\)/);
-  assert.match(ide, /if\(patchQueueBlockedRef\.current\|\|patchInFlightRef\.current\|\|socket\?\.readyState!==1\|\|!w\)return/);
+  assert.match(ide, /pendingCollabPatchesRef=useRef\(new Map\(\)\),patchInFlightRef=useRef\(null\),patchQueueBlockedRef=useRef\(new Set\(\)\)/);
+  assert.match(ide, /if\(patchQueueBlockedRef\.current\.has\(String\(w\?\.id\)\)\|\|patchInFlightRef\.current\|\|socket\?\.readyState!==1\|\|!w\)return/);
   assert.match(ide, /base_revision:Number\(w\.revision\?\?pending\.base_revision\?\?0\)/);
   assert.match(ide, /pendingCollabPatchesRef\.current\.set\(key,\{\.\.\.msg,workspace_id:String\(w\.id\)\}\);sendNextCollabPatch\(\)/);
   assert.match(ide, /completedPatch&&completedPatch\.path===ackPath&&completedPatch\.content===ack\.content\)\{patchInFlightRef\.current=null;\}/);
   assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
-  assert.match(ide, /patchQueueBlockedRef\.current=true/);
+  assert.match(ide, /patchQueueBlockedRef\.current\.add\(String\(refs\.ws\.current\?\.id\)\)/);
   assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
   assert.match(ide, /if\(patchInFlightRef\.current\)\{const interrupted=patchInFlightRef\.current;pendingCollabPatchesRef\.current\.set/);
 });
