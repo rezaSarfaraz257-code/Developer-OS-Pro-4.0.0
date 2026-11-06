@@ -179,7 +179,7 @@ class AgentRunLifecycleTests(TestCase):
                 "acceptance_criteria": ["Regression tests pass"],
                 "tasks": [
                     {"id": "inspect", "title": "Inspect existing code", "description": "Review source", "depends_on": []},
-                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "depends_on": ["inspect"]},
+                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "agent_role": "testing", "depends_on": ["inspect"]},
                 ],
             }),
             None,
@@ -198,6 +198,7 @@ class AgentRunLifecycleTests(TestCase):
             target_id=str(run.id),
         ).exists())
         self.assertEqual(run.tasks.get(key="inspect").agent_role, "architect")
+        self.assertEqual(run.tasks.get(key="tests").agent_role, "testing")
         self.assertEqual(run.tasks.get(key="inspect").status, "ready")
         self.assertEqual(run.tasks.get(key="tests").status, "blocked")
         self.assertEqual(
