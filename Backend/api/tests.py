@@ -1141,6 +1141,7 @@ class IDECollaborationRegressionTests(APITestCase):
         }
         first = consumer._apply_crdt_operation(payload)
         second = consumer._apply_crdt_operation(payload)
+        first_revision = first["revision"]
         self.assertEqual(first["type"], "crdt-ack")
         self.assertFalse(first.get("duplicate", False))
         self.assertEqual(first["event"]["type"], "crdt-op")
@@ -1149,6 +1150,7 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(first["event"]["content"], "print(1) # ok")
         self.assertTrue(second.get("duplicate", False))
         ws.refresh_from_db()
+        self.assertEqual(ws.revision, first_revision)
         self.assertEqual(ws.files["main.py"], "print(1) # ok")
 
 class SaaSMaturityTests(APITestCase):
