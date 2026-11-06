@@ -39,6 +39,22 @@ AGENT_SPECIALIST_ROLES = {
     "code_reviewer": "Code Reviewer: independently review correctness, maintainability, and regressions",
     "documentation": "Technical Writer: maintain accurate developer and user documentation",
 }
+# Server-owned, read-only capability contracts. These are metadata only; no
+# capability below is a shell, deployment, workspace-write, or arbitrary-tool grant.
+AGENT_SPECIALIST_CAPABILITIES = {
+    "product_manager": ["inspect_workspace", "draft_requirements"],
+    "architect": ["inspect_workspace", "analyze_dependencies", "draft_architecture"],
+    "frontend": ["inspect_workspace", "analyze_frontend", "review_accessibility"],
+    "backend": ["inspect_workspace", "analyze_backend", "review_api_contracts"],
+    "database": ["inspect_workspace", "analyze_schema", "review_data_integrity"],
+    "ui_ux": ["inspect_workspace", "review_accessibility", "draft_interaction_spec"],
+    "testing": ["inspect_workspace", "design_tests", "review_test_coverage"],
+    "security": ["inspect_workspace", "review_security", "identify_secret_exposure"],
+    "devops": ["inspect_workspace", "review_ci_configuration", "review_deployment_config"],
+    "debugger": ["inspect_workspace", "analyze_failures", "draft_debug_plan"],
+    "code_reviewer": ["inspect_workspace", "review_changes", "identify_regressions"],
+    "documentation": ["inspect_workspace", "draft_documentation"],
+}
 
 
 def _workspace_access(workspace_id, user):
@@ -74,6 +90,7 @@ def _run_payload(run):
                 "title": task.title,
                 "description": task.description,
                 "agent_role": task.agent_role,
+                "allowed_capabilities": AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, ["inspect_workspace"]),
                 "status": task.status,
                 "sequence": task.sequence,
                 "depends_on": list(task.depends_on.order_by("sequence").values_list("key", flat=True)),
