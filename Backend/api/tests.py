@@ -1173,6 +1173,38 @@ class IDECollaborationRegressionTests(APITestCase):
         self.assertEqual(self.workspace.files, original_files)
         self.assertEqual(self.workspace.revision, original_revision)
 
+    def test_crdt_rejects_coerced_path_operation_id_and_kind_types(self):
+        from .ide_collaboration import IDECollaborationConsumer
+        consumer = IDECollaborationConsumer()
+        consumer.workspace = self.workspace
+        consumer.user = self.user
+        consumer.client_id = "client-invalid-types"
+        original_files = dict(self.workspace.files)
+        original_revision = self.workspace.revision
+        base = {
+            "path": "main.py", "operation_id": "valid-id", "kind": "insert",
+            "position": 0, "delete_count": 0, "text": "unsafe", "lamport": 1,
+        }
+        invalid_payloads = []
+        for field, value in (
+            ("path", 123),
+            ("path", {"path": "main.py"}),
+            ("operation_id", 123),
+            ("operation_id", ["valid-id"]),
+            ("operation_id", " padded-id "),
+            ("kind", 1),
+            ("kind", {"insert": True}),
+        ):
+            payload = {**base, field: value}
+            invalid_payloads.append(payload)
+        for payload in invalid_payloads:
+            result = consumer._apply_crdt_operation(payload)
+            self.assertEqual(result["type"], "crdt-reject")
+            self.assertEqual(result["reason"], "invalid_operation" if payload.get("path") == "main.py" else "invalid_path")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.revision, original_revision)
+
     def test_crdt_operation_is_idempotent(self):
         from .ide_collaboration import IDECollaborationConsumer
         ws = self.workspace
