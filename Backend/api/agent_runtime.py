@@ -11,11 +11,10 @@ import re
 import uuid
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -210,7 +209,12 @@ def build_agent_plan(run_id):
 
     text = answer.strip()
     if text.startswith("```"):
-        text = re.sub(r"^\`\`\`(?:json)?\\s*|\\s*\`\`\`$", "", text, flags=re.IGNORECASE)
+        lines = text.splitlines()
+        if lines and lines[0].strip().lower() in {"```", "```json"}:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     try:
         plan = _validate_plan(json.loads(text))
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -267,6 +271,12 @@ def agent_run_create_api(request):
     workspace_id = request.data.get("workspace")
     if not workspace_id:
         return Response({"error": "workspace is required."}, status=400)
+    try:
+        workspace_id = int(workspace_id)
+        if workspace_id < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        return Response({"error": "workspace must be a positive integer ID."}, status=400)
 
     try:
         workspace = _workspace_access(workspace_id, request.user)
