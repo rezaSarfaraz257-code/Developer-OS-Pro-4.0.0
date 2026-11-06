@@ -19,7 +19,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import AgentRun, AgentTask, AIConversation, AIMessage, BackgroundJob
+from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob
 
 User = get_user_model()
 _AGENT_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -269,6 +269,13 @@ def build_agent_plan(run_id):
         run.error = ""
         run.finished_at = timezone.now()
         run.save(update_fields=["plan", "status", "error", "finished_at", "updated_at"])
+        AuditLog.objects.create(
+            user_id=run.owner_id,
+            action="agent_run.plan_ready",
+            target_type="AgentRun",
+            target_id=str(run.id),
+            metadata={"task_count": len(plan["tasks"]), "workspace_revision": revision},
+        )
         if run.conversation_id:
             AIMessage.objects.create(
                 conversation_id=run.conversation_id,
@@ -360,6 +367,13 @@ def agent_run_create_api(request):
             content=goal,
             context={"agent_run_id": run.id, "workspace_id": workspace.id},
         )
+        AuditLog.objects.create(
+            user=request.user,
+            action="agent_run.created",
+            target_type="AgentRun",
+            target_id=str(run.id),
+            metadata={"workspace_id": workspace.id, "workspace_revision": workspace.revision},
+        )
         return Response({**_run_payload(run), "job_id": job.id}, status=202)
 
 
@@ -382,6 +396,13 @@ def agent_run_cancel_api(request, pk):
         run.error = ""
         run.tasks.exclude(status__in=["succeeded", "failed", "canceled"]).update(status="canceled")
         run.save(update_fields=["status", "finished_at", "error", "updated_at"])
+        AuditLog.objects.create(
+            user=request.user,
+            action="agent_run.canceled",
+            target_type="AgentRun",
+            target_id=str(run.id),
+            metadata={"previous_status": run.status},
+        )
         BackgroundJob.objects.filter(
             kind="ai_agent_plan",
             payload__run_id=run.id,
@@ -411,4 +432,11 @@ def agent_run_approve_api(request, pk):
         run.status = "approved"
         run.approved_at = timezone.now()
         run.save(update_fields=["status", "approved_at", "updated_at"])
+        AuditLog.objects.create(
+            user=request.user,
+            action="agent_run.plan_approved",
+            target_type="AgentRun",
+            target_id=str(run.id),
+            metadata={"workspace_revision": run.workspace_revision},
+        )
     return Response(_run_payload(run))
