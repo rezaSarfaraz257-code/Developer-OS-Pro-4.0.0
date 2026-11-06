@@ -1221,7 +1221,7 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.match(ide, /base_revision:Number\(w\.revision\?\?pending\.base_revision\?\?0\)/);
   assert.match(ide, /pendingCollabPatchesRef\.current\.set\(key,\{\.\.\.msg,workspace_id:String\(w\.id\)\}\);sendNextCollabPatch\(\)/);
   assert.match(ide, /const expectedAck=isExpectedWorkspacePatchAck\(/);
-  assert.match(ide, /if\(!patchInFlightRef\.current\)sendNextCollabPatch\(\)/);
+  assert.ok(ide.includes('sendNextCollabPatch()}else if(d.type==="conflict")'));
   assert.match(ide, /patchQueueBlockedRef\.current\.add\(conflictWorkspaceId\)/);
   assert.ok(ide.includes('const conflictWorkspaceId=String(refs.ws.current?.id??"")'));
   assert.ok(ide.includes("setConflictDialog({workspaceId:conflictWorkspaceId,path:conflictPath"));
