@@ -263,7 +263,7 @@ class AIAgentApprovalTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 400)
 
-    @patch("api.ai_engine._workspace_write_allowed", return_value=False)
+    @patch("api.views._workspace_write_allowed", return_value=False)
     def test_agent_rollback_rejects_read_only_workspace_access(self, _write_allowed):
         self.client.force_authenticate(self.user)
         workspace = CodeWorkspace.objects.create(
