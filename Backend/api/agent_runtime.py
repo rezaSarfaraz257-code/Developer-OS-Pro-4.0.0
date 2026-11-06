@@ -25,6 +25,20 @@ User = get_user_model()
 _AGENT_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,120}$")
 _MAX_TASKS = 12
+AGENT_SPECIALIST_ROLES = {
+    "product_manager": "Product Manager: clarify scope, requirements, milestones, and acceptance criteria",
+    "architect": "Software Architect: inspect system boundaries, architecture, and integration risks",
+    "frontend": "Frontend Engineer: own accessible UI, client state, and frontend integration",
+    "backend": "Backend Engineer: own APIs, services, permissions, and backend behavior",
+    "database": "Database Engineer: own schema, migrations, query behavior, and data integrity",
+    "ui_ux": "UI/UX Designer: own interaction design, usability, and visual consistency",
+    "testing": "Test Engineer: own regression strategy, edge cases, and verification evidence",
+    "security": "Security Engineer: own threat modeling, authorization, secrets, and secure defaults",
+    "devops": "DevOps Engineer: own CI/CD, deployment configuration, observability, and rollback",
+    "debugger": "Debugger: isolate failures, reproduce defects, and propose minimal fixes",
+    "code_reviewer": "Code Reviewer: independently review correctness, maintainability, and regressions",
+    "documentation": "Technical Writer: maintain accurate developer and user documentation",
+}
 
 
 def _workspace_access(workspace_id, user):
@@ -59,6 +73,7 @@ def _run_payload(run):
                 "key": task.key,
                 "title": task.title,
                 "description": task.description,
+                "agent_role": task.agent_role,
                 "status": task.status,
                 "sequence": task.sequence,
                 "depends_on": list(task.depends_on.order_by("sequence").values_list("key", flat=True)),
@@ -83,17 +98,21 @@ def _validate_plan(raw):
         key = str(item.get("id") or "").strip().lower()
         title = str(item.get("title") or "").strip()
         description = str(item.get("description") or "").strip()
+        agent_role = str(item.get("agent_role") or "architect").strip().lower()
         dependencies = item.get("depends_on") or []
         if not _AGENT_KEY_RE.fullmatch(key) or key in keys:
             raise ValueError("Agent plan contains an invalid or duplicate task ID.")
         if not title or len(title) > 180 or len(description) > 2000:
             raise ValueError("Agent task title or description is invalid.")
+        if agent_role not in AGENT_SPECIALIST_ROLES:
+            raise ValueError("Agent task references an unsupported specialist role.")
         if not isinstance(dependencies, list) or len(dependencies) > _MAX_TASKS:
             raise ValueError("Agent task dependencies are invalid.")
         normalized.append({
             "key": key,
             "title": title,
             "description": description,
+            "agent_role": agent_role,
             "depends_on": [str(value).strip().lower() for value in dependencies],
             "sequence": index,
         })
@@ -210,8 +229,10 @@ def build_agent_plan(run_id):
     prompt = (
         "Create a safe, dependency-aware engineering implementation plan for the user's goal. "
         "Return ONLY valid JSON with keys summary, risks, acceptance_criteria, tasks. "
-        "tasks must be an array of 1 to 12 objects with id, title, description, depends_on. "
-        "Use unique lowercase snake_case IDs. depends_on is an array of task IDs. "
+        "tasks must be an array of 1 to 12 objects with id, title, description, agent_role, depends_on. "
+        "agent_role must be one of: " + ", ".join(AGENT_SPECIALIST_ROLES) + ". "
+        "Assign each task to the most relevant specialist. Use unique lowercase snake_case IDs. "
+        "depends_on is an array of task IDs. "
         "Order tasks topologically. Include inspection and verification tasks when relevant. "
         "Do not claim code was changed, commands were run, or tests passed. "
         "Do not request or expose secrets. No shell commands or deployment actions.\n\n"
@@ -251,6 +272,7 @@ def build_agent_plan(run_id):
                 key=item["key"],
                 title=item["title"],
                 description=item["description"],
+                agent_role=item["agent_role"],
                 sequence=item["sequence"],
                 status="ready" if not item["depends_on"] else "blocked",
             )
