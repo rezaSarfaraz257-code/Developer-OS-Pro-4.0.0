@@ -31,7 +31,7 @@ class AIEngineUnitTests(TestCase):
             "src/./main.py",
             "src/../main.py",
             "C:/workspace/main.py",
-            "src\\\\main.py",
+            "src\\main.py",
             "/etc/passwd",
         ]
         for path in invalid_paths:
@@ -42,7 +42,7 @@ class AIEngineUnitTests(TestCase):
                         "path": path,
                         "operation": "create",
                         "reason": "test",
-                        "content": "safe = True\\n",
+                        "content": "safe = True\n",
                     }],
                 }
                 self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
@@ -148,7 +148,7 @@ class AIAgentApprovalTests(TestCase):
         workspace = CodeWorkspace.objects.create(
             owner=self.user,
             name="Agent approval test",
-            files={"main.py": "print('before')\\n"},
+            files={"main.py": "print('before')\n"},
         )
         proposal = {
             "type": "patch_proposal",
@@ -156,7 +156,7 @@ class AIAgentApprovalTests(TestCase):
                 "path": "main.py",
                 "operation": "modify",
                 "reason": "test approved patch",
-                "content": "print('after')\\n",
+                "content": "print('after')\n",
             }],
         }
         token = signing.dumps({
@@ -173,7 +173,7 @@ class AIAgentApprovalTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         workspace.refresh_from_db()
-        self.assertEqual(workspace.files["main.py"], "print('after')\\n")
+        self.assertEqual(workspace.files["main.py"], "print('after')\n")
         self.assertEqual(response.data["status"], "applied")
 
         replay = self.client.post(
