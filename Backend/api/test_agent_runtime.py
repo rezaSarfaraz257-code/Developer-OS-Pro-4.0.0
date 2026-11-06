@@ -57,7 +57,7 @@ class AgentRunLifecycleTests(TestCase):
             owner=self.user,
             name="Agent runtime workspace",
             language="python",
-            files={"main.py": "def main():\n    return 1\n", ".env": "SECRET=must-not-leak"},
+            files={"main.py": "def main():\n    return 1\n", ".env": "SECRET=must-not-leak", ".npmrc": "//registry/token=hidden", ".aws/credentials": "aws_secret_access_key=hidden", "keys/private.pem": "PRIVATE KEY"},
         )
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -188,7 +188,24 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(self.workspace.files, original_files)
         sent_context = provider.call_args.args[1]
         self.assertNotIn(".env", sent_context["workspace"]["file_samples"])
+        self.assertNotIn(".npmrc", sent_context["workspace"]["file_samples"])
+        self.assertNotIn(".aws/credentials", sent_context["workspace"]["file_samples"])
+        self.assertNotIn("keys/private.pem", sent_context["workspace"]["file_samples"])
         self.assertTrue(sent_context["workspace"]["secrets_excluded"])
+
+    @patch("api.views._workspace_write_allowed", return_value=False)
+    @patch("api.ai_engine._call_provider")
+    def test_worker_rechecks_workspace_permission_before_provider_call(self, provider, _permission):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Inspect workspace",
+            idempotency_key="revoked-access-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        with self.assertRaisesRegex(RuntimeError, "access was revoked"):
+            build_agent_plan(run.id)
+        provider.assert_not_called()
 
     def test_approval_rejects_stale_workspace_revision(self):
         run = AgentRun.objects.create(
