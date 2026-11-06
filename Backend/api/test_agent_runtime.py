@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .agent_runtime import _validate_plan, build_agent_plan
-from .models import AgentRun, AgentTask, AIConversation, BackgroundJob, CodeWorkspace
+from .models import AgentRun, AIConversation, BackgroundJob, CodeWorkspace
 
 
 class AgentPlanValidationTests(TestCase):
@@ -16,6 +16,15 @@ class AgentPlanValidationTests(TestCase):
                 "tasks": [
                     {"id": "first", "title": "First", "depends_on": ["second"]},
                     {"id": "second", "title": "Second", "depends_on": ["first"]},
+                ]
+            })
+
+    def test_rejects_non_topological_task_order(self):
+        with self.assertRaisesRegex(ValueError, "ordered before"):
+            _validate_plan({
+                "tasks": [
+                    {"id": "dependent", "title": "Dependent task", "depends_on": ["prerequisite"]},
+                    {"id": "prerequisite", "title": "Prerequisite", "depends_on": []},
                 ]
             })
 
@@ -93,6 +102,31 @@ class AgentRunLifecycleTests(TestCase):
         self.client.force_authenticate(self.other)
         self.assertEqual(self.client.get(f"/api/ai/agent/runs/{run.id}/").status_code, 404)
         self.assertEqual(self.client.post(f"/api/ai/agent/runs/{run.id}/cancel/").status_code, 404)
+
+    def test_invalid_workspace_identifier_returns_client_error(self):
+        response = self.client.post(
+            "/api/ai/agent/runs/",
+            {"workspace": "not-an-id", "goal": "Inspect safely"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_approval_marks_plan_only_and_does_not_mutate_workspace(self):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Review this workspace",
+            status="awaiting_approval",
+            idempotency_key="approve-plan-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        original_files = dict(self.workspace.files)
+        response = self.client.post(f"/api/ai/agent/runs/{run.id}/approve/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "approved")
+        self.assertEqual(response.data["execution_state"], "plan_only_no_workspace_mutations")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
 
     def test_cancel_stops_queued_run_and_job(self):
         run = AgentRun.objects.create(
