@@ -122,3 +122,17 @@ These are useful foundations, but source inspection does not establish an autono
 5. Keep deploy/monitor/rollback and the Project Digital Twin behind verified runner and lifecycle evidence.
 
 **Implementation gate:** Before adding models or migrations, inspect the complete existing AI, workspace, usage, audit, job, and runner schemas and all corresponding authorization paths. Every agent-run operation must be tenant-scoped, idempotent, auditable, cancellable, resource-bounded, and unable to execute untrusted code outside the strict Runner. No agent may push, deploy, spend money, access secrets, or perform destructive data operations without explicit authorization and approval.
+
+
+## Implementation hardening — 2026-11-07
+
+The roadmap branch now includes a narrowly scoped hardening pass on the existing AI patch-approval path (not a new parallel agent subsystem):
+
+- AI-generated patch paths are checked against the IDE workspace contract: reject absolute and drive-prefixed paths, backslashes, empty/dot/traversal components, reserved runtime roots (`.git`, `node_modules`, virtual environments and caches), invalid path characters, duplicate case-insensitive targets, and individual file contents above 1 MB.
+- Approved patch application now locks the workspace row inside a database transaction before checking the signed approval's workspace revision. It re-checks write permission under the lock and persists the patch only against the exact revision that was approved, preventing concurrent approvals from silently overwriting one another.
+- Replaying an approval after the workspace revision changes is rejected as stale. A Runner synchronization failure is reported as `applied_sync_pending`, not mislabeled as a fully synchronized apply.
+- Regression coverage was added for reserved/ambiguous paths, duplicate case-insensitive targets, oversized files, cross-user approval-token use, and approval replay after a successful apply.
+
+**Commits:** `0c99c8c` (patch path contract), `0451d57` (serialized approval apply), `f39ba80` (regression tests), and `c1369a2` (fixture correction).
+
+**Verification status at this snapshot:** GitHub reports Operational Policy Gate, Node Compatibility, Dependency Review, and Live SaaS Smoke Monitor successful; Security is queued; Container Security and Production Validation are still in progress. No local Django test run or live AI-provider/Runner acceptance test has been performed in this session. Do not mark the Autonomous Software Universe, multi-agent orchestration, or end-to-end autonomous build as complete.
