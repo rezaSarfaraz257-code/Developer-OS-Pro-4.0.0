@@ -779,6 +779,76 @@ class BackgroundJob(models.Model):
         ]
 
 
+class AgentRun(models.Model):
+    """Durable, user-owned lifecycle for an asynchronous engineering-agent plan."""
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("planning", "Planning"),
+        ("awaiting_approval", "Awaiting approval"),
+        ("approved", "Approved"),
+        ("running", "Running"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+        ("canceled", "Canceled"),
+    ]
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="agent_runs")
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="agent_runs")
+    conversation = models.ForeignKey(AIConversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="agent_runs")
+    goal = models.TextField(max_length=12000)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="queued", db_index=True)
+    plan = models.JSONField(default=dict, blank=True)
+    error = models.CharField(max_length=500, blank=True, default="")
+    idempotency_key = models.CharField(max_length=120)
+    workspace_revision = models.PositiveBigIntegerField()
+    approved_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "idempotency_key"], name="unique_agent_run_owner_key"),
+        ]
+        indexes = [
+            models.Index(fields=["owner", "-created_at"], name="api_agent_run_owner_idx"),
+            models.Index(fields=["status", "created_at"], name="api_agent_run_status_idx"),
+        ]
+
+
+class AgentTask(models.Model):
+    """One bounded, reviewable node in an AgentRun dependency graph."""
+
+    STATUS_CHOICES = [
+        ("blocked", "Blocked"),
+        ("ready", "Ready"),
+        ("running", "Running"),
+        ("awaiting_approval", "Awaiting approval"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+        ("canceled", "Canceled"),
+    ]
+    run = models.ForeignKey(AgentRun, on_delete=models.CASCADE, related_name="tasks")
+    key = models.CharField(max_length=64)
+    title = models.CharField(max_length=180)
+    description = models.TextField(max_length=2000, blank=True, default="")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="blocked")
+    sequence = models.PositiveSmallIntegerField(default=0)
+    depends_on = models.ManyToManyField("self", symmetrical=False, blank=True, related_name="dependents")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["run", "key"], name="unique_agent_task_run_key"),
+        ]
+        indexes = [
+            models.Index(fields=["run", "sequence"], name="api_agent_task_order_idx"),
+            models.Index(fields=["run", "status"], name="api_agent_task_status_idx"),
+        ]
+
+
 class DataExportRequest(models.Model):
     STATUS_CHOICES = [("queued", "Queued"), ("running", "Running"), ("ready", "Ready"), ("failed", "Failed"), ("expired", "Expired")]
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="data_export_requests")
