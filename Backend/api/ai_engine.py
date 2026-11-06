@@ -535,7 +535,7 @@ def _run(request, message: str, action: str | None = None):
     history = []
     if conversation is not None:
         history = list(
-            conversation.messages.order_by("-created_at")
+            conversation.messages.order_by("-created_at", "-id")
             .values("role", "content")[:MAX_HISTORY_MESSAGES]
         )[::-1]
 
