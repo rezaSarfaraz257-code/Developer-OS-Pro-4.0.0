@@ -1193,3 +1193,16 @@ test("Developer OS brand icon is used by browser, mobile install, app shell, and
   assert.match(styles, /\.auth-brand-icon/);
   assert.match(styles, /@media\(max-width:720px\)[\s\S]*\.topbar-brand-icon/);
 });
+
+
+test("Web IDE exposes durable autonomous agent planning, approval, cancellation, and truthful execution state", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  const styles = fs.readFileSync(path.join(srcDir, "ProIDE.css"), "utf8");
+  assert.match(ide, /apiFetch\("\/ai\/agent\/runs\/"/);
+  assert.match(ide, /Idempotency-Key/);
+  assert.match(ide, /\/ai\/agent\/runs\/\$\{agentRun\.id\}\//);
+  assert.match(ide, /updateAgentRun\("approve"\)/);
+  assert.match(ide, /updateAgentRun\("cancel"\)/);
+  assert.match(ide, /Plan approved\. No code has been changed/);
+  assert.match(styles, /\.dos-ai-task/);
+});
