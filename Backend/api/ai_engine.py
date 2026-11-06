@@ -969,70 +969,76 @@ def ai_agent_apply_api(request):
     if payload.get("user_id") != request.user.id:
         return Response({"error": "Patch approval belongs to another user."}, status=403)
 
-    from .views import _workspace_for_user, _runner_request, _workspace_payload
-    workspace = _workspace_for_user(payload.get("workspace_id"), request.user)
-    if not workspace:
-        return Response({"error": "Workspace not found."}, status=404)
-    if workspace.revision != payload.get("workspace_revision"):
-        return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
-
     proposal = payload.get("proposal")
-    if not isinstance(proposal, dict) or _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) is None:
+    parsed_proposal = _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) if isinstance(proposal, dict) else None
+    if parsed_proposal is None:
         return Response({"error": "Patch proposal failed safety validation."}, status=400)
 
-    current = dict(workspace.files or {})
-    updated = dict(current)
+    from .views import _workspace_for_user, _workspace_write_allowed, _runner_request, _workspace_payload
     diffs = []
-    for change in proposal.get("changes", []):
-        path = str(change.get("path") or "")
-        operation = change.get("operation")
-        if not path or path.startswith("/") or "\\" in path or ".." in path.split("/"):
-            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
-        before = str(updated.get(path, ""))
-        if operation == "delete":
-            if path not in updated:
-                return Response({"error": f"Cannot delete missing file: {path}"}, status=400)
-            del updated[path]
-            after = ""
-        elif operation == "modify":
-            if path not in updated:
-                return Response({"error": f"Cannot modify missing file: {path}"}, status=400)
-            after = str(change.get("content") or "")
-            updated[path] = after
-        elif operation == "create":
-            if path in updated:
-                return Response({"error": f"Cannot create existing file: {path}"}, status=400)
-            after = str(change.get("content") or "")
-            updated[path] = after
-        else:
-            return Response({"error": "Unsupported patch operation."}, status=400)
-        diffs.append({
-            "path": path,
-            "operation": operation,
-            "diff": "".join(difflib.unified_diff(
-                before.splitlines(True), after.splitlines(True),
-                fromfile=path, tofile=path
-            )),
-        })
+    try:
+        with transaction.atomic():
+            # Lock the authoritative workspace row before checking its revision.
+            # This prevents two approvals from racing and overwriting each other.
+            workspace = _workspace_for_user(payload.get("workspace_id"), request.user, for_update=True)
+            if not _workspace_write_allowed(workspace, request.user):
+                return Response({"error": "You do not have permission to modify this workspace."}, status=403)
+            if workspace.revision != payload.get("workspace_revision"):
+                return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
 
-    total_bytes = sum(len(str(value).encode("utf-8")) for value in updated.values())
-    if len(updated) > 2000 or total_bytes > 25_000_000:
-        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+            current = dict(workspace.files or {})
+            updated = dict(current)
+            for change in parsed_proposal.get("changes", []):
+                path = change["path"]
+                operation = change["operation"]
+                before = str(updated.get(path, ""))
+                if operation == "delete":
+                    if path not in updated:
+                        return Response({"error": f"Cannot delete missing file: {path}"}, status=400)
+                    del updated[path]
+                    after = ""
+                elif operation == "modify":
+                    if path not in updated:
+                        return Response({"error": f"Cannot modify missing file: {path}"}, status=400)
+                    after = change["content"]
+                    updated[path] = after
+                elif operation == "create":
+                    if path in updated:
+                        return Response({"error": f"Cannot create existing file: {path}"}, status=400)
+                    after = change["content"]
+                    updated[path] = after
+                else:
+                    return Response({"error": "Unsupported patch operation."}, status=400)
+                diffs.append({
+                    "path": path,
+                    "operation": operation,
+                    "diff": "".join(difflib.unified_diff(
+                        before.splitlines(True), after.splitlines(True),
+                        fromfile=path, tofile=path
+                    )),
+                })
 
-    with transaction.atomic():
-        workspace.files = updated
-        workspace.save(update_fields={"files"})
+            total_bytes = sum(len(value.encode("utf-8")) for value in updated.values())
+            if len(updated) > 2000 or total_bytes > 25_000_000:
+                return Response({"error": "Workspace limits would be exceeded."}, status=400)
+
+            workspace.files = updated
+            workspace.save(update_fields={"files"})
+    except (TypeError, ValueError, KeyError):
+        logger.exception("AI patch application rejected due to invalid workspace or proposal data")
+        return Response({"error": "Patch could not be safely applied. Reload the workspace and re-analyze."}, status=400)
 
     sync_data, sync_error = _runner_request("POST", "/sync", _workspace_payload(workspace), timeout=30)
     verification = _agent_runner_evidence(workspace)
     diagnostics = _agent_diagnostics_evidence(workspace)
+    sync_ok = sync_error is None
     return Response({
-        "status": "applied",
+        "status": "applied" if sync_ok else "applied_sync_pending",
         "workspace": {"id": workspace.id, "revision": workspace.revision, "files": workspace.files, "active_file": workspace.active_file},
         "files": workspace.files,
         "changed_files": [item["path"] for item in diffs],
         "diffs": diffs,
-        "sync": {"ok": sync_error is None, "error": sync_error, "data": sync_data},
+        "sync": {"ok": sync_ok, "error": sync_error, "data": sync_data},
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
