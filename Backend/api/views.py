@@ -167,7 +167,7 @@ def health_api(request):
 
 
 def _secure_runner_ready():
-    """Require a live, strictly isolated Runner before production traffic is ready."""
+    """Require the isolated execution boundary; optional preview/install bridges have separate gates."""
     runner_url = str(globals().get("RUNNER_URL", "") or "").strip().rstrip("/")
     runner_token = str(globals().get("RUNNER_TOKEN", "") or "").strip()
     if not runner_url or not runner_token:
@@ -188,6 +188,9 @@ def _secure_runner_ready():
 
     sandbox = payload.get("sandbox") if isinstance(payload, dict) else None
     operations = payload.get("operations") if isinstance(payload, dict) else None
+    # Strict Bubblewrap deliberately reports preview/install as unavailable until
+    # dedicated network bridges exist. Those optional features must not make the
+    # core execution service permanently unready; never weaken their own 503 gates.
     return bool(
         isinstance(sandbox, dict)
         and sandbox.get("backend") == "bwrap"
@@ -195,10 +198,9 @@ def _secure_runner_ready():
         and sandbox.get("security_level") == "strict"
         and sandbox.get("execution_available") is True
         and sandbox.get("trusted_shared_container") is False
-        and sandbox.get("preview_network_bridge") is True
         and sandbox.get("network_enforcement") == "isolated"
         and isinstance(operations, dict)
-        and all(operations.get(name) is True for name in ("execute", "process", "install", "preview"))
+        and all(operations.get(name) is True for name in ("execute", "process"))
     )
 
 
