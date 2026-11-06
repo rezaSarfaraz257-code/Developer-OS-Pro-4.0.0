@@ -136,3 +136,9 @@ The roadmap branch now includes a narrowly scoped hardening pass on the existing
 **Commits:** `0c99c8c` (patch path contract), `0451d57` (serialized approval apply), `f39ba80` (regression tests), and `c1369a2` (fixture correction).
 
 **Verification status at this snapshot:** GitHub reports Operational Policy Gate, Node Compatibility, Dependency Review, and Live SaaS Smoke Monitor successful; Security is queued; Container Security and Production Validation are still in progress. No local Django test run or live AI-provider/Runner acceptance test has been performed in this session. Do not mark the Autonomous Software Universe, multi-agent orchestration, or end-to-end autonomous build as complete.
+
+### Persistent AI-agent conversation continuity
+
+The existing `/api/ai/agent/` endpoint now reuses the established `AIConversation`/`AIMessage` records rather than creating a stateless agent response only. It accepts an owner-scoped conversation ID, includes a bounded recent history in subsequent provider requests, persists user/assistant turns transactionally, and returns the same `conversation`/`message` response shape used by the existing AI chat clients. The Web IDE retains that conversation ID while the selected workspace remains unchanged and resets it when switching workspaces. Conversation history is ordered deterministically by timestamp and message ID. Regression tests cover multi-turn persistence/history and cross-user conversation denial.
+
+This closes a persistence gap in the current single-agent copilot workflow; it does **not** yet provide durable background agent runs, task DAG orchestration, specialist agents, resumable execution, or autonomous multi-step job scheduling.
