@@ -12,7 +12,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
-from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
+from api.models import AgentRun, AuditLog, BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
 from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
@@ -50,6 +50,28 @@ def recover_stale_jobs():
                 "status", "available_at", "locked_at", "locked_by",
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
             ])
+            if locked.kind == "ai_agent_plan":
+                run = AgentRun.objects.select_for_update().filter(
+                    pk=locked.payload.get("run_id")
+                ).first()
+                if run and run.status in {"queued", "planning"}:
+                    if locked.status == "queued":
+                        run.status = "queued"
+                        run.started_at = None
+                        run.error = ""
+                        run.save(update_fields=["status", "started_at", "error", "updated_at"])
+                    else:
+                        run.status = "failed"
+                        run.error = "WorkerLeaseExpired: planning could not be recovered."
+                        run.finished_at = now
+                        run.save(update_fields=["status", "error", "finished_at", "updated_at"])
+                        AuditLog.objects.create(
+                            user_id=run.owner_id,
+                            action="agent_run.failed",
+                            target_type="AgentRun",
+                            target_id=str(run.id),
+                            metadata={"reason": "worker_lease_exhausted", "attempts": locked.attempts},
+                        )
             if locked.status == "failed" and locked.kind == "data_export":
                 DataExportRequest.objects.filter(
                     pk=locked.payload.get("export_id"),
@@ -274,16 +296,6 @@ class Command(BaseCommand):
                     else str(exc)[:10000]
                 )
                 job.last_error_at = now
-                if job.kind == "ai_agent_plan" and job.attempts >= job.max_attempts:
-                    from api.models import AgentRun
-                    AgentRun.objects.filter(
-                        pk=job.payload.get("run_id"),
-                        status__in=["queued", "planning"],
-                    ).update(
-                        status="failed",
-                        error=f"{type(exc).__name__}: planning failed"[:500],
-                        finished_at=now,
-                    )
                 if job.attempts < job.max_attempts:
                     job.status = "queued"
                     job.available_at = now + timedelta(seconds=min(300, 2 ** max(1, job.attempts)))
@@ -306,6 +318,28 @@ class Command(BaseCommand):
                         "status", "result", "error", "available_at", "finished_at",
                         "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
                     ])
+                    if job.kind == "ai_agent_plan" and job.status in {"queued", "failed"}:
+                        run = AgentRun.objects.select_for_update().filter(
+                            pk=job.payload.get("run_id")
+                        ).first()
+                        if run and run.status in {"queued", "planning"}:
+                            if job.status == "queued":
+                                run.status = "queued"
+                                run.started_at = None
+                                run.error = ""
+                                run.save(update_fields=["status", "started_at", "error", "updated_at"])
+                            else:
+                                run.status = "failed"
+                                run.error = f"{type(exc).__name__}: planning failed"[:500]
+                                run.finished_at = now
+                                run.save(update_fields=["status", "error", "finished_at", "updated_at"])
+                                AuditLog.objects.create(
+                                    user_id=run.owner_id,
+                                    action="agent_run.failed",
+                                    target_type="AgentRun",
+                                    target_id=str(run.id),
+                                    metadata={"reason": "planning_failed", "attempts": job.attempts},
+                                )
                     if job.kind == "data_export" and job.status == "failed":
                         DataExportRequest.objects.filter(
                             pk=job.payload.get("export_id"),
