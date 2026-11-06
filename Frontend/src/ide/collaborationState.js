@@ -57,3 +57,11 @@ export function getMonotonicWorkspaceRevision(currentRevision, incomingRevision)
   if (incoming === null) return current;
   return Math.max(current, incoming);
 }
+
+
+/** Apply remote file events only when they advance the workspace revision. */
+export function isNewerWorkspaceRevision(currentRevision, incomingRevision) {
+  const current = parseAckRevision(currentRevision);
+  const incoming = parseAckRevision(incomingRevision);
+  return incoming !== null && (current === null || incoming > current);
+}
