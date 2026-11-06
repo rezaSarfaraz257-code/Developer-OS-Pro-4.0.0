@@ -105,10 +105,7 @@ def _validate_plan(raw):
             raise ValueError("Agent task contains duplicate dependencies.")
         if any(dep not in keys or dep == item["key"] for dep in item["depends_on"]):
             raise ValueError("Agent task references an unknown or invalid dependency.")
-        if any(positions[dep] >= item["sequence"] for dep in item["depends_on"]):
-            raise ValueError("Agent plan tasks must be ordered before their dependents.")
-
-    # Kahn's algorithm rejects cycles before any task graph is persisted.
+    # Kahn's algorithm rejects cycles before checking the provider's order.
     pending = {item["key"]: set(item["depends_on"]) for item in normalized}
     resolved = set()
     while len(resolved) < len(pending):
@@ -116,6 +113,9 @@ def _validate_plan(raw):
         if not ready:
             raise ValueError("Agent plan contains a dependency cycle.")
         resolved.update(ready)
+
+    if any(positions[dep] >= item["sequence"] for item in normalized for dep in item["depends_on"]):
+        raise ValueError("Agent plan tasks must be ordered before their dependents.")
 
     return {
         "summary": str(raw.get("summary") or "").strip()[:2000],
@@ -131,7 +131,7 @@ def build_agent_plan(run_id):
 
     with transaction.atomic():
         run = AgentRun.objects.select_for_update().select_related(
-            "owner", "workspace", "conversation"
+            "owner", "workspace"
         ).get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
@@ -235,7 +235,7 @@ def build_agent_plan(run_id):
         raise RuntimeError(f"AI planner returned an invalid task graph: {str(exc)[:300]}") from exc
 
     with transaction.atomic():
-        run = AgentRun.objects.select_for_update().select_related("conversation", "owner").get(pk=run_id)
+        run = AgentRun.objects.select_for_update().select_related("owner").get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
         workspace = CodeWorkspace.objects.select_for_update().get(pk=run.workspace_id)
