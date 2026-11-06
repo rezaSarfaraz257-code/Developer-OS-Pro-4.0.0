@@ -1233,4 +1233,10 @@ test("Web IDE collaboration sends one file patch per acknowledged workspace revi
   assert.ok(ide.includes("patchQueueBlockedRef.current.delete(String(ws.id))"));
   assert.ok(ide.includes("const recovered=persistInterruptedCollabWorkspace(blockedId,null)"));
   assert.ok(ide.includes("!pendingCollabPatchesRef.current.has(prefix+interrupted.path)"));
+  assert.ok(ide.includes('[conflictDialog,setConflictDialog]=useState(null)'));
+  assert.ok(ide.includes('setConflictDialog({workspaceId:String(w.id),path:p,local:'));
+  assert.ok(ide.includes("FILE REVISION CONFLICT"));
+  assert.ok(ide.includes("Use remote version"));
+  assert.ok(ide.includes("Keep my version and retry"));
+  assert.ok(ide.includes("No content is overwritten automatically."));
 });
