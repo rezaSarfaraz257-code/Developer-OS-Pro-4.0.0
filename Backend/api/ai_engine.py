@@ -867,6 +867,11 @@ def ai_agent_api(request):
     from .views import _consume_usage, _workspace_for_user
     project_id = request.data.get("project")
     conversation_id = request.data.get("conversation")
+    workspace_id = request.data.get("workspace")
+    workspace = _workspace_for_user(workspace_id, request.user) if workspace_id else None
+
+    # Authorize the workspace before creating a new conversation, so invalid
+    # workspace IDs cannot leave orphaned AIConversation records.
     try:
         conversation = _conversation(request, project_id, conversation_id)
     except DatabaseError:
@@ -874,12 +879,8 @@ def ai_agent_api(request):
         conversation = None
     if conversation is None and conversation_id:
         return Response({"error": "Conversation not found or unavailable."}, status=404)
-
-    workspace_id = request.data.get("workspace")
-    if workspace_id:
-        workspace = _workspace_for_user(workspace_id, request.user)
-        if conversation and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
-            return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
+    if workspace and conversation and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
+        return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
 
     # Reserve the billable unit before contacting the provider. The usage
     # ledger is row-locked and atomic, so concurrent requests cannot both pass
