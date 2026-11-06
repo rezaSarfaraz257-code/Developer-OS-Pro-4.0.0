@@ -199,6 +199,12 @@ class AgentRunLifecycleTests(TestCase):
         ).exists())
         self.assertEqual(run.tasks.get(key="inspect").agent_role, "architect")
         self.assertEqual(run.tasks.get(key="tests").agent_role, "testing")
+        payload = self.client.get(f"/api/ai/agent/runs/{run.id}/").data
+        testing_task = next(item for item in payload["tasks"] if item["key"] == "tests")
+        self.assertIn("design_tests", testing_task["allowed_capabilities"])
+        self.assertNotIn("shell", testing_task["allowed_capabilities"])
+        self.assertNotIn("workspace_write", testing_task["allowed_capabilities"])
+        self.assertNotIn("deploy", testing_task["allowed_capabilities"])
         self.assertEqual(run.tasks.get(key="inspect").status, "ready")
         self.assertEqual(run.tasks.get(key="tests").status, "blocked")
         self.assertEqual(
