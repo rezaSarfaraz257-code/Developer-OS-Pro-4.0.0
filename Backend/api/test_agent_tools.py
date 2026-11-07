@@ -45,7 +45,7 @@ class ReadOnlyAgentToolTests(TestCase):
         return f"/api/ai/agent/runs/{(run or self.run).id}/tasks/{(task or self.task).id}/tools/{tool}/"
 
     def test_safe_path_rejects_traversal_absolute_and_malformed_paths(self):
-        for path in ("../secret.txt", "src/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "src//main.py", "src/./main.py", "bad\\x00name.py", "", "x" * 501):
+        for path in ("../secret.txt", "src/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "src//main.py", "src/./main.py", "bad\x00name.py", "", "x" * 501):
             with self.subTest(path=path):
                 self.assertFalse(_safe_path(path))
         self.assertTrue(_safe_path("src/components/App.jsx"))
