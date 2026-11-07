@@ -136,6 +136,7 @@ urlpatterns = [
     path("ai/agent/", ai_engine.ai_agent_api, name="ai-agent"),
     path("ai/agent/runs/", agent_runtime.agent_run_create_api, name="ai-agent-run-create"),
     path("ai/agent/runs/<int:pk>/", agent_runtime.agent_run_detail_api, name="ai-agent-run-detail"),
+    path("ai/agent/sync-jobs/<int:job_id>/", agent_runtime.agent_runner_sync_status_api, name="ai-agent-runner-sync-status"),
     path("ai/agent/runs/<int:pk>/cancel/", agent_runtime.agent_run_cancel_api, name="ai-agent-run-cancel"),
     path("ai/agent/runs/<int:pk>/approve/", agent_runtime.agent_run_approve_api, name="ai-agent-run-approve"),
     path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/tools/<slug:tool_name>/", agent_runtime.agent_task_tool_api, name="ai-agent-task-tool"),
