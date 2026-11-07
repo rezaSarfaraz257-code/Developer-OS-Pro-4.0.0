@@ -13,7 +13,7 @@ MAX_FINDINGS = 50
 
 
 def _safe_path(path):
-    normalized = str(path).replace("\\\\", "/").strip("/")
+    normalized = str(path).replace("\\", "/").strip("/")
     parts = normalized.lower().split("/")
     name = parts[-1] if parts else ""
     return not (
@@ -29,7 +29,7 @@ def _safe_path(path):
 def _files(workspace):
     raw = workspace.files if isinstance(workspace.files, dict) else {}
     return {
-        str(path).replace("\\\\", "/")[:500]: value
+        str(path).replace("\\", "/")[:500]: value
         for path, value in list(raw.items())[:MAX_WORKSPACE_FILES]
         if _safe_path(path) and isinstance(value, str) and len(value.encode("utf-8", "ignore")) <= MAX_FILE_BYTES
     }
@@ -78,7 +78,7 @@ def analyze_dependencies(workspace):
                 line = line.strip()
                 if not line or line.startswith(("#", "-")):
                     continue
-                match = re.match(r"^([A-Za-z0-9_.-]+)\\s*(.*)$", line)
+                match = re.match(r"^([A-Za-z0-9_.-]+)\s*(.*)$", line)
                 if match:
                     dependencies.append({"name": match.group(1)[:120], "version": match.group(2)[:80], "group": "python"})
         elif name == "pyproject.toml":
@@ -90,12 +90,12 @@ def analyze_dependencies(workspace):
 def review_security(workspace):
     files = _files(workspace)
     rules = [
-        ("debug_enabled", re.compile(r"(?im)^\\s*DEBUG\\s*=\\s*True\\b"), "high", "Debug mode appears enabled in source configuration."),
-        ("wildcard_hosts", re.compile(r"(?im)^\\s*ALLOWED_HOSTS\\s*=\\s*\\[[^\\]]*['\\\"]\\*['\\\"]"), "high", "Wildcard host configuration appears present."),
-        ("shell_true", re.compile(r"(?i)\\bshell\\s*=\\s*True\\b"), "high", "A subprocess call appears to enable shell interpretation."),
-        ("dynamic_eval", re.compile(r"\\b(?:eval|exec)\\s*\\("), "medium", "Dynamic code evaluation appears in source."),
-        ("os_system", re.compile(r"\\bos\\.system\\s*\\("), "high", "Direct operating-system shell invocation appears in source."),
-        ("hardcoded_secret", re.compile(r"(?i)\\b(?:api[_-]?key|client[_-]?secret|password|secret[_-]?key)\\b\\s*[:=]\\s*['\\\"][^'\\\"]{8,}['\\\"]"), "high", "A possible hard-coded credential assignment appears in source."),
+        ("debug_enabled", re.compile(r"(?im)^\s*DEBUG\s*=\s*True\b"), "high", "Debug mode appears enabled in source configuration."),
+        ("wildcard_hosts", re.compile(r"(?im)^\s*ALLOWED_HOSTS\s*=\s*\[[^\]]*['\\"]\*['\\"]"), "high", "Wildcard host configuration appears present."),
+        ("shell_true", re.compile(r"(?i)\bshell\s*=\s*True\b"), "high", "A subprocess call appears to enable shell interpretation."),
+        ("dynamic_eval", re.compile(r"\b(?:eval|exec)\s*\("), "medium", "Dynamic code evaluation appears in source."),
+        ("os_system", re.compile(r"\bos\.system\s*\("), "high", "Direct operating-system shell invocation appears in source."),
+        ("hardcoded_secret", re.compile(r"(?i)\b(?:api[_-]?key|client[_-]?secret|password|secret[_-]?key)\b\s*[:=]\s*['\\"][^'\\"]{8,}['\\"]"), "high", "A possible hard-coded credential assignment appears in source."),
     ]
     findings = []
     for path, content in files.items():
@@ -117,14 +117,14 @@ def review_security(workspace):
 def analyze_schema(workspace):
     files = _files(workspace)
     models = []
-    class_pattern = re.compile(r"^\\s*class\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\([^)]*models\\.Model[^)]*\\)\\s*:", re.MULTILINE)
-    field_pattern = re.compile(r"^\\s{4,}([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*models\\.([A-Za-z][A-Za-z0-9_]*)\\s*\\(", re.MULTILINE)
+    class_pattern = re.compile(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*models\.Model[^)]*\)\s*:", re.MULTILINE)
+    field_pattern = re.compile(r"^\s{4,}([A-Za-z_][A-Za-z0-9_]*)\s*=\s*models\.([A-Za-z][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
     for path, content in files.items():
         if path.rsplit("/", 1)[-1].lower() not in {"models.py", "models"}:
             continue
         for match in class_pattern.finditer(content):
             start = match.end()
-            next_class = re.search(r"^\\s*class\\s+", content[start:], re.MULTILINE)
+            next_class = re.search(r"^\s*class\s+", content[start:], re.MULTILINE)
             body = content[start:start + next_class.start()] if next_class else content[start:]
             fields = [{"name": field.group(1), "type": field.group(2)}
                       for field in field_pattern.finditer(body)][:80]
