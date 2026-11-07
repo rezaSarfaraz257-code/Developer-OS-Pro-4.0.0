@@ -296,7 +296,16 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         workspace.refresh_from_db()
         self.assertEqual(workspace.files["main.py"], "print('after')\n")
-        self.assertEqual(response.data["status"], "applied")
+        self.assertEqual(response.data["status"], "applied_sync_pending")
+        self.assertTrue(response.data["sync"]["queued"])
+        self.assertEqual(response.data["sync"]["job_id"], response.data["verification"]["job_id"])
+        from .models import BackgroundJob
+        sync_job = BackgroundJob.objects.get(
+            kind="ai_agent_runner_sync",
+            idempotency_key=f"agent-runner-sync:{workspace.id}:{workspace.revision}",
+        )
+        self.assertEqual(sync_job.status, "queued")
+        self.assertEqual(sync_job.payload["requested_revision"], workspace.revision)
         self.assertTrue(AuditLog.objects.filter(
             user=self.user,
             action="ai_agent.patch_applied",
