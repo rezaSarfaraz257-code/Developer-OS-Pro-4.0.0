@@ -5,12 +5,41 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_runtime import AGENT_SPECIALIST_CAPABILITIES, _redact_sensitive_content, _validate_plan, build_agent_plan
+from .agent_runtime import (
+    AGENT_CONTEXT_MAX_SAMPLE_CHARS,
+    AGENT_SPECIALIST_CAPABILITIES,
+    _agent_context_file_samples,
+    _redact_sensitive_content,
+    _validate_plan,
+    build_agent_plan,
+)
 from .agent_tools import TOOL_REGISTRY
 from .models import AgentRun, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class AgentContextRedactionTests(TestCase):
+    def test_workspace_samples_enforce_file_and_aggregate_budgets(self):
+        files = {
+            f"module_{index}.py": "x" * 1800
+            for index in range(120)
+        }
+        files["late_secret.py"] = "API_KEY=must-not-leak"
+        samples = _agent_context_file_samples(files)
+        self.assertLessEqual(sum(len(value) for value in samples.values()), AGENT_CONTEXT_MAX_SAMPLE_CHARS)
+        self.assertLessEqual(len(samples), 120)
+        self.assertNotIn("late_secret.py", samples)
+
+    def test_workspace_samples_skip_oversized_and_sensitive_files(self):
+        samples = _agent_context_file_samples({
+            "oversized.py": "API_KEY=oversized-secret-value" + ("x" * 256000),
+            ".env.production": "SECRET=must-not-leak",
+            "secrets/service.json": "password=must-not-leak",
+            "safe.py": "API_KEY=inline-secret-value-123",
+        })
+        self.assertEqual(set(samples), {"safe.py"})
+        self.assertNotIn("inline-secret-value-123", samples["safe.py"])
+        self.assertIn("[REDACTED]", samples["safe.py"])
+
     def test_redacts_named_credentials_and_common_provider_tokens(self):
         source = (
             'API_KEY="inline-secret-value-123"\n'
