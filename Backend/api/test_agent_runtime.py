@@ -5,7 +5,8 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_runtime import _redact_sensitive_content, _validate_plan, build_agent_plan
+from .agent_runtime import AGENT_SPECIALIST_CAPABILITIES, _redact_sensitive_content, _validate_plan, build_agent_plan
+from .agent_tools import TOOL_REGISTRY
 from .models import AgentRun, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
@@ -56,6 +57,16 @@ class AgentContextRedactionTests(TestCase):
 
 
 class AgentPlanValidationTests(TestCase):
+    def test_advertised_specialist_capabilities_are_registered_tools(self):
+        self.assertEqual(set(AGENT_SPECIALIST_CAPABILITIES), {
+            "product_manager", "architect", "frontend", "backend", "database",
+            "ui_ux", "testing", "security", "devops", "debugger",
+            "code_reviewer", "documentation",
+        })
+        for role, capabilities in AGENT_SPECIALIST_CAPABILITIES.items():
+            with self.subTest(role=role):
+                self.assertTrue(capabilities)
+                self.assertTrue(set(capabilities).issubset(TOOL_REGISTRY))
     def test_rejects_dependency_cycles(self):
         with self.assertRaisesRegex(ValueError, "cycle"):
             _validate_plan({
@@ -258,7 +269,8 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(run.tasks.get(key="tests").agent_role, "testing")
         payload = self.client.get(f"/api/ai/agent/runs/{run.id}/").data
         testing_task = next(item for item in payload["tasks"] if item["key"] == "tests")
-        self.assertIn("design_tests", testing_task["allowed_capabilities"])
+        self.assertIn("inspect_workspace", testing_task["allowed_capabilities"])
+        self.assertNotIn("design_tests", testing_task["allowed_capabilities"])
         self.assertNotIn("shell", testing_task["allowed_capabilities"])
         self.assertNotIn("workspace_write", testing_task["allowed_capabilities"])
         self.assertNotIn("deploy", testing_task["allowed_capabilities"])
