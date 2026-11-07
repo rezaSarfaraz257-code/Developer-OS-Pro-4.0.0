@@ -4,7 +4,8 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_tools import analyze_dependencies\nfrom .models import AgentRun, AgentTask, AuditLog, CodeWorkspace
+from .agent_tools import analyze_dependencies
+from .models import AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
 class ReadOnlyAgentToolTests(TestCase):
