@@ -112,7 +112,17 @@ def _agent_context_file_samples(files):
     for path, value in islice(files.items(), AGENT_CONTEXT_MAX_FILES):
         if not isinstance(path, str) or not isinstance(value, str):
             continue
-        normalized_path = path.replace("\\", "/").lower()
+        normalized_path = path.replace("\\", "/")
+        if (
+            not normalized_path
+            or len(normalized_path) > 500
+            or "\x00" in normalized_path
+            or normalized_path.startswith("/")
+            or re.match(r"^[a-zA-Z]:", normalized_path)
+            or any(part in {"", ".", ".."} for part in normalized_path.split("/"))
+        ):
+            continue
+        normalized_path = normalized_path.lower()
         parts = normalized_path.split("/")
         name = parts[-1] if parts else ""
         sensitive_name = (
