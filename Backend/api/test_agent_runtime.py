@@ -247,6 +247,7 @@ class AgentRunLifecycleTests(TestCase):
         self.workspace.refresh_from_db()
         self.assertEqual(result["status"], "awaiting_approval")
         self.assertEqual(run.status, "awaiting_approval")
+        self.assertIsNone(run.finished_at)
         self.assertEqual(run.tasks.count(), 2)
         self.assertTrue(AuditLog.objects.filter(
             user=self.user,
