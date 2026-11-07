@@ -118,6 +118,8 @@ class AgentEvidenceTests(SimpleTestCase):
             "src/main.py": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\\nprint('safe')",
             ".env": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
             "config/.env.production": "DATABASE_URL=postgres://user:password123@db.example/app",
+            "config/credentials.production": "API_KEY=another-secret-value",
+            "config/secrets.production.json": "private-secret",
             ".aws/credentials": "aws_secret_access_key=example-secret-value",
             "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
             "docs/readme.md": "Public documentation",
@@ -129,6 +131,8 @@ class AgentEvidenceTests(SimpleTestCase):
         self.assertNotIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", serialized)
         self.assertNotIn("password123", serialized)
         self.assertNotIn("example-secret-value", serialized)
+        self.assertNotIn("another-secret-value", serialized)
+        self.assertNotIn("private-secret", serialized)
         self.assertNotIn("private-material", serialized)
         self.assertNotIn(".env", serialized)
         self.assertIn("[REDACTED", serialized)
