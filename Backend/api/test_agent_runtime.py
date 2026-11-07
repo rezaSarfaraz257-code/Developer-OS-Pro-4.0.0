@@ -85,6 +85,18 @@ class AgentContextRedactionTests(TestCase):
         self.assertNotIn("database-password-value", redacted)
         self.assertIn("[REDACTED]", redacted)
 
+    def test_redacts_complete_quoted_credentials_containing_spaces(self):
+        source = (
+            'password = "correct horse battery staple"\n' +
+            "API_KEY='multi word provider credential value'\n" +
+            'authorization: "Bearer opaque token with spaces"\n'
+        )
+        redacted = _redact_sensitive_content(source)
+        self.assertNotIn("correct horse battery staple", redacted)
+        self.assertNotIn("multi word provider credential value", redacted)
+        self.assertNotIn("opaque token with spaces", redacted)
+        self.assertEqual(redacted.count("[REDACTED]"), 3)
+
     def test_redacts_pem_private_key_blocks(self):
         source = (
             "-----BEGIN PRIVATE KEY-----\n"
