@@ -193,6 +193,49 @@ def _require_real_email_transport() -> None:
 
 
 def execute(job):
+    if job.kind == "ai_agent_runner_sync":
+        # Serialize the snapshot read and Runner write against workspace edits.
+        # If several revisions queued, an older job coalesces to the newest
+        # authoritative database snapshot instead of overwriting Runner backwards.
+        from api.models import CodeWorkspace
+        from api.views import _runner_request, _workspace_payload, _workspace_write_allowed
+
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        with transaction.atomic():
+            workspace = CodeWorkspace.objects.select_for_update().filter(
+                pk=payload.get("workspace_id"),
+                owner_id=payload.get("owner_id"),
+            ).first()
+            if workspace is None:
+                raise RuntimeError("Workspace no longer exists or is not owned by the requesting account.")
+            if not _workspace_write_allowed(workspace, workspace.owner):
+                raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
+            synced_revision = int(workspace.revision)
+            runner_data, runner_error = _runner_request(
+                "POST", "/sync", _workspace_payload(workspace), timeout=30
+            )
+            if runner_error:
+                # Keep provider/Runner diagnostics out of durable job errors.
+                raise RuntimeError("Runner workspace synchronization failed.")
+            AuditLog.objects.create(
+                user=workspace.owner,
+                action="ai_agent.runner_workspace_synced",
+                target_type="CodeWorkspace",
+                target_id=str(workspace.id),
+                metadata={
+                    "revision": synced_revision,
+                    "requested_revision": payload.get("requested_revision"),
+                    "coalesced": synced_revision != payload.get("requested_revision"),
+                    "job_id": job.id,
+                },
+            )
+        return {
+            "status": "synced",
+            "workspace_id": workspace.id,
+            "revision": synced_revision,
+            "coalesced": synced_revision != payload.get("requested_revision"),
+            "runner": runner_data if isinstance(runner_data, dict) else {},
+        }
     if job.kind == "ai_agent_plan":
         from api.agent_runtime import build_agent_plan
         return build_agent_plan(job.payload["run_id"])
