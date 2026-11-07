@@ -176,3 +176,13 @@ The planning context sanitizer now redacts inline credential assignments and com
 The sanitizer is a defense-in-depth filter, not a guarantee that every secret format can be detected. Users should still avoid committing credentials to workspace files and should rotate any credential that may already have been exposed.
 
 **Latest snapshot:** PR #212 remains Draft/Open, 82 commits ahead of master and 0 behind. The read-only production route/availability smoke check and operational policy gate passed on the prior CI snapshot. The health endpoint regression workflow passed on the latest test run; full backend validation, CodeQL, and runner checks remain pending. No production migration or autonomous workspace mutation is enabled.
+
+### Approved read-only specialist tool registry
+
+A real, deterministic tool registry now exists on this isolated branch with four implemented tools: `inspect_workspace`, `analyze_dependencies`, `review_security`, and `analyze_schema`. The tools are bounded by file count, per-file size, result size, and finding count. They inspect workspace metadata and source statically; they do not execute project code, access networks, install packages, return source excerpts, or write workspace files.
+
+The new authenticated task-tool endpoint is owner-scoped and requires all of the following: an approved AgentRun, a ready AgentTask, a tool registered on the server, a matching server-owned specialist capability, workspace access, and an unchanged workspace revision. Every successful invocation creates an AuditLog record. The Web IDE exposes only the implemented read-only tools for ready tasks after plan approval and renders their results.
+
+Regression coverage in `Backend/api/test_agent_tools.py` currently contains nine tests for approval gating, role authorization, owner isolation, stale revisions, blocked tasks, unknown tool rejection, no workspace mutation, secret-file exclusion, and malformed package-manifest handling. These tests have been added to the branch but are **not yet verified as passing on the latest commit**.
+
+**Latest implementation snapshot:** PR #212 remains Draft/Open and isolated from protected master. The latest full CI run observed in this review belongs to an earlier SHA and therefore does not validate the new tool registry, endpoint, or Web IDE controls. No production migrations, deployments, or Runner execution were performed. The registry is a first read-only capability slice, not autonomous code execution.
