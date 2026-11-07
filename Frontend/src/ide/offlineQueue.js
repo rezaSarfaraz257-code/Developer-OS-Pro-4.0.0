@@ -144,3 +144,33 @@ export function rebaseWorkspacePatches(queue, workspaceId, revision) {
       : item
   );
 }
+
+
+// Persist an interrupted collaboration batch without allowing an older in-flight
+// full-file payload to replace a newer edit queued for the same path.
+export function preserveInterruptedWorkspacePatches(queue, workspaceId, inFlight, pendingPatches) {
+  if (workspaceId == null || String(workspaceId).trim() === "") {
+    return Array.isArray(queue) ? queue : [];
+  }
+
+  const baseRevision = inFlight?.base_revision;
+  const latestByPath = new Map();
+  if (inFlight && typeof inFlight.path === "string" && typeof inFlight.content === "string") {
+    latestByPath.set(inFlight.path, inFlight);
+  }
+  for (const patch of Array.isArray(pendingPatches) ? pendingPatches : []) {
+    if (patch && typeof patch.path === "string" && typeof patch.content === "string") {
+      latestByPath.set(patch.path, patch);
+    }
+  }
+
+  let next = Array.isArray(queue) ? queue : [];
+  for (const patch of latestByPath.values()) {
+    next = queueWorkspacePatch(next, {
+      ...patch,
+      workspace_id: String(workspaceId),
+      base_revision: baseRevision ?? patch.base_revision,
+    });
+  }
+  return next;
+}

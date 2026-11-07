@@ -210,7 +210,6 @@ def repository_push_api(request, pk):
     with transaction.atomic():
         repo.framework = branch
         repo.files = files
-        repo.revision = int(repo.revision or 1) + 1
         repo.save(update_fields=["framework", "files", "revision", "updated_at"])
         commit = Activity.objects.create(
             actor=request.user,
@@ -251,7 +250,6 @@ def repository_pull_api(request, pk):
     repo.framework = branch
     repo.files = files
     repo.active_file = next(iter(files), "")
-    repo.revision = int(repo.revision or 1) + 1
     repo.save()
     Activity.objects.create(actor=request.user, verb="pulled repository commit", message=commit.message, related_type="repository_pull", related_id=repo.id, metadata={"hash": (commit.metadata or {}).get("hash"), "branch": branch})
     return Response({"repository": _repo_payload(repo, request.user, include_files=True), "commit": _commit_payload(commit)})
@@ -323,7 +321,6 @@ def repository_sync_workspace_api(request, pk):
         repo.files = files
         repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
         repo.framework = repo.framework or DEFAULT_BRANCH
-        repo.revision = int(repo.revision or 1) + 1
         repo.save()
         return Response({
             "direction": "push",

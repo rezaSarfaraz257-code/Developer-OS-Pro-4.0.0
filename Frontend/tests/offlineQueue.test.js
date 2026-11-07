@@ -8,6 +8,7 @@ import {
   canSafelySyncOfflinePatches,
   removeSyncedWorkspacePatches,
   rebaseWorkspacePatches,
+  preserveInterruptedWorkspacePatches,
 } from "../src/ide/offlineQueue.js";
 
 test("offline queue parsing tolerates corrupt storage and preserves only file patches", () => {
@@ -120,4 +121,94 @@ test("rebasing advances only the target workspace and rejects invalid revisions"
   ]);
   assert.deepEqual(rebaseWorkspacePatches(queue, 5, "not-a-revision"), queue);
   assert.deepEqual(rebaseWorkspacePatches(queue, null, 3), queue);
+});
+
+
+test("interrupted collaboration keeps the newest same-file edit and original dispatch revision", () => {
+  const originalQueue = [
+    { workspace_id: "other", path: "src/main.js", content: "other workspace", base_revision: 2 },
+    { workspace_id: "7", path: "src/keep.js", content: "already queued", base_revision: 8 },
+    { path: "legacy.js", content: "legacy patch" },
+  ];
+  const inFlight = {
+    workspace_id: "7",
+    path: "src/main.js",
+    content: "older dispatched content",
+    base_revision: 8,
+  };
+  const pending = [
+    {
+      workspace_id: "7",
+      path: "src/main.js",
+      content: "newest local content",
+      base_revision: 8,
+    },
+  ];
+
+  const recovered = preserveInterruptedWorkspacePatches(
+    originalQueue,
+    7,
+    inFlight,
+    pending,
+  );
+
+  assert.deepEqual(recovered, [
+    ...originalQueue,
+    {
+      ...pending[0],
+      workspace_id: "7",
+      base_revision: 8,
+    },
+  ]);
+  assert.equal(
+    recovered.find((patch) => patch.workspace_id === "7" && patch.path === "src/main.js").content,
+    "newest local content",
+  );
+  assert.equal(
+    recovered.find((patch) => patch.workspace_id === "7" && patch.path === "src/main.js").base_revision,
+    8,
+    "uncertain in-flight writes must retain their original base revision",
+  );
+  assert.equal(originalQueue.length, 3, "recovery must not mutate the existing queue");
+});
+
+test("interrupted collaboration preserves independent pending files and workspace boundaries", () => {
+  const queue = [
+    { workspace_id: 3, path: "src/a.js", content: "old A", base_revision: 4 },
+    { workspace_id: 9, path: "src/b.js", content: "other workspace", base_revision: 6 },
+  ];
+  const recovered = preserveInterruptedWorkspacePatches(
+    queue,
+    3,
+    { workspace_id: 3, path: "src/a.js", content: "in-flight A", base_revision: 4 },
+    [
+      { workspace_id: 3, path: "src/a.js", content: "latest A", base_revision: 4 },
+      { workspace_id: 3, path: "src/b.js", content: "pending B", base_revision: 4 },
+    ],
+  );
+
+  assert.deepEqual(recovered, [
+    { workspace_id: 9, path: "src/b.js", content: "other workspace", base_revision: 6 },
+    { workspace_id: "3", path: "src/a.js", content: "latest A", base_revision: 4 },
+    { workspace_id: "3", path: "src/b.js", content: "pending B", base_revision: 4 },
+  ]);
+});
+
+test("interrupted collaboration safely ignores malformed patches and empty workspace IDs", () => {
+  const queue = [{ workspace_id: 2, path: "keep.js", content: "keep" }];
+  assert.strictEqual(
+    preserveInterruptedWorkspacePatches(queue, "  ", { path: "a.js", content: "x" }, []),
+    queue,
+  );
+  assert.deepEqual(
+    preserveInterruptedWorkspacePatches(queue, 2, null, [
+      null,
+      { path: "missing-content.js" },
+      { path: "valid.js", content: "valid", base_revision: 5 },
+    ]),
+    [
+      queue[0],
+      { path: "valid.js", content: "valid", base_revision: 5, workspace_id: "2" },
+    ],
+  );
 });
