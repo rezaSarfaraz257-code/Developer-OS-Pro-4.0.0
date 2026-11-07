@@ -126,6 +126,8 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.status_code, 409)
 
     def test_role_cannot_invoke_tool_outside_its_capability_contract(self):
+        self.task.agent_role = "frontend"
+        self.task.save(update_fields=["agent_role"])
         response = self.client.post(self.tool_url("review_security"), {}, format="json")
         self.assertEqual(response.status_code, 403)
 
