@@ -248,8 +248,10 @@ def build_agent_plan(run_id):
         remaining = 24000 - total_chars
         if remaining <= 0:
             break
-        bounded = value[:min(1800, remaining)]
-        bounded = _redact_sensitive_content(bounded)
+        # Redact the complete source before applying the sample budget. Truncating
+        # first can split a credential at the boundary and leak its prefix/suffix.
+        redacted_value = _redact_sensitive_content(value)
+        bounded = redacted_value[:min(1800, remaining)]
         safe_files[str(path)[:500]] = bounded
         total_chars += len(bounded)
 
