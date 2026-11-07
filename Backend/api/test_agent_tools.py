@@ -6,7 +6,6 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .agent_tools import MAX_WORKSPACE_TOTAL_BYTES, _files, _safe_path, analyze_dependencies
-from .agent_runtime import agent_task_tool_api
 from .models import AIConversation, AIMessage, AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
@@ -182,8 +181,8 @@ class ReadOnlyAgentToolTests(TestCase):
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
         self.assertEqual(response.status_code, 409)
 
-    @patch.object(agent_task_tool_api.cls, "throttle_classes", [])
-    def test_unknown_tool_is_not_executable(self):
+    @patch("rest_framework.views.APIView.get_throttles", return_value=[])
+    def test_unknown_tool_is_not_executable(self, _get_throttles):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
 
