@@ -63,7 +63,7 @@ def _redact_sensitive_content(value):
         return value
     patterns = [
         # Named credentials and password-bearing connection strings.
-        (re.compile(r'(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|password|passwd|authorization|private[_-]?key)\b\s*[:=]\s*)([\"\']?)([^\s,;\"\']{8,})'), r'\1\2[REDACTED]'),
+        (re.compile(r'(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret(?:[_-]?key)?|password|passwd|authorization|private[_-]?key)\b\s*[:=]\s*)([\"\']?)([^\s,;\"\']{8,})([\"\']?)'), r'\1\2[REDACTED]\4'),
         # Well-known provider token formats.
         (re.compile(r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b'), '[REDACTED_AWS_KEY]'),
         (re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b'), '[REDACTED_GITHUB_TOKEN]'),
