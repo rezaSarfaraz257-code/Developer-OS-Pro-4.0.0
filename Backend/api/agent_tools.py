@@ -66,6 +66,9 @@ def analyze_dependencies(workspace):
             except (TypeError, ValueError):
                 manifests.append({"path": path, "status": "invalid_json"})
                 continue
+            if not isinstance(data, dict):
+                manifests.append({"path": path, "status": "invalid_manifest_shape"})
+                continue
             manifests.append({"path": path, "status": "parsed"})
             for group in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
                 values = data.get(group, {})
