@@ -18,7 +18,17 @@ from .models import AgentRun, AIConversation, AIMessage, AuditLog, BackgroundJob
 
 
 class AgentContextRedactionTests(TestCase):
-    def test_workspace_samples_enforce_file_and_aggregate_budgets(self):
+    def test_workspace_samples_reject_malformed_and_traversal_paths(self):
+        samples = _agent_context_file_samples({
+            "../outside.py": "must-not-leak",
+            "/absolute.py": "must-not-leak",
+            "C:/private.py": "must-not-leak",
+            "src//broken.py": "must-not-leak",
+            "src/./dot.py": "must-not-leak",
+            "safe/main.py": "value = 1",
+        })
+        self.assertEqual(samples, {"safe/main.py": "value = 1"})
+
         files = {
             f"module_{index}.py": "x" * 1800
             for index in range(120)
