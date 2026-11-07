@@ -65,10 +65,12 @@ export default function AIAssistantPage({ setPage }) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(errorText(data, "Unable to refresh Agent run."));
     setAgentRun(data);
+    setMode(`AGENT RUN · ${String(data.status || "unknown").replaceAll("_", " ").toUpperCase()}`);
+    const terminalError = ["failed", "canceled"].includes(data.status);
     setTimeline([
-      { label: "PLAN", state: ["awaiting_approval", "approved", "running", "succeeded"].includes(data.status) ? "complete" : "active" },
-      { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : "pending" },
-      { label: "ENGINEERING TASKS", state: ["approved", "running"].includes(data.status) ? "active" : data.status === "succeeded" ? "complete" : "pending" },
+      { label: "PLAN", state: data.plan ? "complete" : terminalError ? "error" : "active" },
+      { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : terminalError ? "error" : "pending" },
+      { label: "ENGINEERING TASKS", state: data.status === "succeeded" ? "complete" : ["approved", "running"].includes(data.status) ? "active" : terminalError ? "error" : "pending" },
     ]);
   }, [agentRun?.id]);
 
