@@ -167,10 +167,12 @@ class AgentEvidenceTests(SimpleTestCase):
                 ".env": "API_KEY=must-not-leak",
             },
         )
-        with patch("api.views._workspace_for_user", return_value=workspace), \\
-             patch("api.ai_engine._agent_repository_evidence", return_value={"connected": False}), \\
-             patch("api.ai_engine._agent_diagnostics_evidence", return_value={"status": "skipped"}), \\
-             patch("api.ai_engine._agent_runner_evidence", return_value={"status": "skipped"}):
+        with (
+            patch("api.views._workspace_for_user", return_value=workspace),
+            patch("api.ai_engine._agent_repository_evidence", return_value={"connected": False}),
+            patch("api.ai_engine._agent_diagnostics_evidence", return_value={"status": "skipped"}),
+            patch("api.ai_engine._agent_runner_evidence", return_value={"status": "skipped"}),
+        ):
             evidence = _agent_evidence(request)
 
         serialized = __import__("json").dumps(evidence)
