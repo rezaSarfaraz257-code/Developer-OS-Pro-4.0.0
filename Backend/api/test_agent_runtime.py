@@ -436,6 +436,49 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(blocked.status, "blocked")
         self.assertEqual(prerequisite.status, "ready")
 
+    def test_runner_sync_status_is_owner_scoped_and_does_not_expose_worker_errors(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={"workspace_id": self.workspace.id, "owner_id": self.user.id, "requested_revision": 2},
+            status="failed",
+            attempts=3,
+            max_attempts=3,
+            error="private runner host, token=must-not-leak",
+            result={"workspace_id": self.workspace.id, "revision": 2, "coalesced": False},
+            idempotency_key="agent-runner-status-0001",
+        )
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["workspace_id"], self.workspace.id)
+        self.assertEqual(response.data["revision"], 2)
+        self.assertEqual(response.data["attempts"], 3)
+        self.assertIn("inspect Runner health", response.data["error"])
+        self.assertNotIn("must-not-leak", json.dumps(response.data))
+        self.assertNotIn("private runner host", json.dumps(response.data))
+        self.assertNotIn("locked_by", response.data)
+        self.assertNotIn("result", response.data)
+
+    def test_other_user_cannot_read_runner_sync_status(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={"workspace_id": self.workspace.id, "owner_id": self.user.id, "requested_revision": 2},
+            idempotency_key="agent-runner-status-private-001",
+        )
+        self.client.force_authenticate(self.other)
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_runner_sync_status_rejects_other_job_kinds(self):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"owner_id": self.user.id},
+            idempotency_key="agent-runner-status-wrong-kind",
+        )
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+        self.assertEqual(response.status_code, 404)
+
     def test_cancel_stops_queued_run_and_job(self):
         run = AgentRun.objects.create(
             owner=self.user,
