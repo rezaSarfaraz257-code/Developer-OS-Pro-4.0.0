@@ -44,19 +44,21 @@ AGENT_SPECIALIST_ROLES = {
 }
 # Server-owned, read-only capability contracts. These are metadata only; no
 # capability below is a shell, deployment, workspace-write, or arbitrary-tool grant.
+# Advertise only tools that are implemented in agent_tools.TOOL_REGISTRY.
+# This prevents the API/UI from promising specialist actions that cannot run.
 AGENT_SPECIALIST_CAPABILITIES = {
-    "product_manager": ["inspect_workspace", "draft_requirements"],
-    "architect": ["inspect_workspace", "analyze_dependencies", "draft_architecture"],
-    "frontend": ["inspect_workspace", "analyze_frontend", "review_accessibility"],
-    "backend": ["inspect_workspace", "analyze_backend", "review_api_contracts"],
-    "database": ["inspect_workspace", "analyze_schema", "review_data_integrity"],
-    "ui_ux": ["inspect_workspace", "review_accessibility", "draft_interaction_spec"],
-    "testing": ["inspect_workspace", "design_tests", "review_test_coverage"],
-    "security": ["inspect_workspace", "review_security", "identify_secret_exposure"],
-    "devops": ["inspect_workspace", "review_ci_configuration", "review_deployment_config"],
-    "debugger": ["inspect_workspace", "analyze_failures", "draft_debug_plan"],
-    "code_reviewer": ["inspect_workspace", "review_changes", "identify_regressions"],
-    "documentation": ["inspect_workspace", "draft_documentation"],
+    "product_manager": ["inspect_workspace", "analyze_dependencies"],
+    "architect": ["inspect_workspace", "analyze_dependencies", "analyze_schema", "review_security"],
+    "frontend": ["inspect_workspace"],
+    "backend": ["inspect_workspace", "analyze_schema", "review_security"],
+    "database": ["inspect_workspace", "analyze_schema", "analyze_dependencies"],
+    "ui_ux": ["inspect_workspace"],
+    "testing": ["inspect_workspace"],
+    "security": ["inspect_workspace", "review_security"],
+    "devops": ["inspect_workspace", "analyze_dependencies", "review_security"],
+    "debugger": ["inspect_workspace", "review_security"],
+    "code_reviewer": ["inspect_workspace", "analyze_dependencies", "analyze_schema", "review_security"],
+    "documentation": ["inspect_workspace"],
 }
 
 
