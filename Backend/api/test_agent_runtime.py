@@ -201,6 +201,25 @@ class AgentRunLifecycleTests(TestCase):
             target_id=str(run_id),
         ).exists())
 
+    def test_unknown_legacy_agent_role_advertises_no_capabilities(self):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Review a legacy task safely",
+            idempotency_key="legacy-role-run-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        AgentTask.objects.create(
+            run=run,
+            key="legacy",
+            title="Legacy specialist task",
+            agent_role="unknown_legacy_role",
+            status="ready",
+        )
+        response = self.client.get(f"/api/ai/agent/runs/{run.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["tasks"][0]["allowed_capabilities"], [])
+
     def test_other_user_cannot_read_or_cancel_agent_run(self):
         run = AgentRun.objects.create(
             owner=self.user,
