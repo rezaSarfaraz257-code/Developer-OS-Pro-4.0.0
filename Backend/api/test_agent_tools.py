@@ -17,7 +17,7 @@ class ReadOnlyAgentToolTests(TestCase):
             name="Tool registry workspace",
             language="python",
             files={
-                "main.py": "DEBUG = True\\nsubprocess.run(command, shell=True)\\n",
+                "main.py": "DEBUG = True\nsubprocess.run(command, shell=True)\n",
                 "package.json": json.dumps({"dependencies": {"react": "^19.0.0"}, "devDependencies": {"vite": "^7.0.0"}}),
                 ".env": "DATABASE_URL=postgres://user:private-password@db.example.test/app",
                 "keys/private.pem": "PRIVATE KEY MATERIAL",
