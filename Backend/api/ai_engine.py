@@ -875,7 +875,7 @@ def _agent_context_file_samples(files):
             any(part in excluded_directories for part in parts[:-1])
             or name in sensitive_names
             or name.endswith(sensitive_suffixes)
-            or name.startswith(".env.")
+            or name.startswith((".env.", "credentials.", "secret.", "secrets."))
         ):
             continue
         remaining = 24000 - total_chars
