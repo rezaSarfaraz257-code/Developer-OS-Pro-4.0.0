@@ -367,7 +367,9 @@ def build_agent_plan(run_id):
         }
         run.status = "awaiting_approval"
         run.error = ""
-        run.finished_at = timezone.now()
+        # Planning is complete, but the AgentRun lifecycle is not: keep
+        # finished_at empty until execution succeeds, fails, or is canceled.
+        run.finished_at = None
         run.save(update_fields=["plan", "status", "error", "finished_at", "updated_at"])
         AuditLog.objects.create(
             user_id=run.owner_id,
