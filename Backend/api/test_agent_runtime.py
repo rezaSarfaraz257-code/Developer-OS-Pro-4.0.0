@@ -95,7 +95,7 @@ class AgentRunLifecycleTests(TestCase):
             owner=self.user,
             name="Agent runtime workspace",
             language="python",
-            files={"main.py": "def main():\n    return 1\n", ".env": "SECRET=must-not-leak", ".npmrc": "//registry/token=hidden", ".aws/credentials": "aws_secret_access_key=hidden", "keys/private.pem": "PRIVATE KEY"},
+            files={"main.py": "API_KEY = 'inline-secret-value-123'\ndef main():\n    return 1\n", ".env": "SECRET=must-not-leak", ".npmrc": "//registry/token=hidden", ".aws/credentials": "aws_secret_access_key=hidden", "keys/private.pem": "PRIVATE KEY"},
         )
         self.client = APIClient()
         self.client.force_authenticate(self.user)
