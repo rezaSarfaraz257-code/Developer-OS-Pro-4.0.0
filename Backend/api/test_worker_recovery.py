@@ -80,10 +80,10 @@ class StaleWorkerJobRecoveryTests(TestCase):
         workspace = CodeWorkspace.objects.create(
             owner=owner,
             name="Runner sync workspace",
-            files={"main.py": "print('v1')\\n"},
+            files={"main.py": "print('v1')\n"},
         )
         requested_revision = workspace.revision
-        workspace.files = {"main.py": "print('v2')\\n"}
+        workspace.files = {"main.py": "print('v2')\n"}
         workspace.save(update_fields={"files"})
         workspace.refresh_from_db()
         job = BackgroundJob.objects.create(
