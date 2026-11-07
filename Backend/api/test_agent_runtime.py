@@ -212,7 +212,7 @@ class AgentRunLifecycleTests(TestCase):
             owner=self.user,
             workspace=self.workspace,
             conversation=conversation,
-            goal="Review the code and propose tests",
+            goal="Review the code and propose tests. password=synthetic-test-value",
             idempotency_key="worker-plan-0001",
             workspace_revision=self.workspace.revision,
         )
@@ -256,6 +256,9 @@ class AgentRunLifecycleTests(TestCase):
             ["inspect"],
         )
         self.assertEqual(self.workspace.files, original_files)
+        sent_prompt = provider.call_args.args[0]
+        self.assertNotIn("synthetic-test-value", sent_prompt)
+        self.assertIn("[REDACTED]", sent_prompt)
         sent_context = provider.call_args.args[1]
         sent_history = provider.call_args.args[2]
         serialized_history = json.dumps(sent_history)
