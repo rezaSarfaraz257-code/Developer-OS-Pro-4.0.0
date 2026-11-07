@@ -21,7 +21,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .models import AIConversation, AIMessage, Project
+from .models import AIConversation, AIMessage, AuditLog, Project
 from .serializers import AIConversationSerializer, AIMessageSerializer
 
 logger = logging.getLogger("developer_os.ai")
@@ -1044,6 +1044,7 @@ def ai_agent_apply_api(request):
             if workspace.revision != payload.get("workspace_revision"):
                 return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
 
+            previous_revision = workspace.revision
             current = dict(workspace.files or {})
             updated = dict(current)
             for change in parsed_proposal.get("changes", []):
@@ -1082,6 +1083,21 @@ def ai_agent_apply_api(request):
 
             workspace.files = updated
             workspace.save(update_fields={"files"})
+            AuditLog.objects.create(
+                user=request.user,
+                action="ai_agent.patch_applied",
+                target_type="CodeWorkspace",
+                target_id=str(workspace.id),
+                metadata={
+                    "previous_revision": previous_revision,
+                    "revision": workspace.revision,
+                    "changed_files": [
+                        {"path": item["path"], "operation": item["operation"]}
+                        for item in diffs
+                    ],
+                    "approval": "signed_single_use_revision_bound",
+                },
+            )
     except (TypeError, ValueError, KeyError):
         logger.exception("AI patch application rejected due to invalid workspace or proposal data")
         return Response({"error": "Patch could not be safely applied. Reload the workspace and re-analyze."}, status=400)
@@ -1152,9 +1168,22 @@ def ai_agent_rollback_api(request):
             }, status=409)
 
         active_file = workspace.active_file if workspace.active_file in safe_files else next(iter(safe_files), "")
+        previous_revision = workspace.revision
         workspace.files = safe_files
         workspace.active_file = active_file
         workspace.save(update_fields={"files", "active_file"})
+        AuditLog.objects.create(
+            user=request.user,
+            action="ai_agent.workspace_rolled_back",
+            target_type="CodeWorkspace",
+            target_id=str(workspace.id),
+            metadata={
+                "previous_revision": previous_revision,
+                "revision": workspace.revision,
+                "restored_file_count": len(safe_files),
+                "restore_method": "owner_authorized_revision_guarded",
+            },
+        )
 
     return Response({
         "status": "rolled_back",
