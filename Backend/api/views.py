@@ -204,6 +204,24 @@ def _secure_runner_ready():
     )
 
 
+def _email_transport_ready(strict_runtime):
+    """Accept only a real configured mail transport in deployed runtimes."""
+    email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").strip()
+    email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
+    resend_api_key = str(getattr(settings, "RESEND_API_KEY", "") or "").strip()
+    is_console = email_backend.endswith("console.EmailBackend")
+    is_resend = email_backend == "api.email_backends.resend.EmailBackend"
+
+    if strict_runtime:
+        if is_console:
+            return False
+        if is_resend:
+            return bool(resend_api_key and getattr(settings, "DEFAULT_FROM_EMAIL", "").strip())
+        return bool(email_host)
+
+    return bool(email_host or is_console or (is_resend and resend_api_key))
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -248,14 +266,7 @@ def readiness_api(request):
         )
     )
 
-    email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
-    email_host = str(getattr(settings, "EMAIL_HOST", "") or "").strip()
-    # Console email is acceptable only for local development. A deployed
-    # service must have a real mail transport configured even if DEBUG is wrong.
-    if strict_runtime:
-        checks["email"] = bool(email_host and not email_backend.endswith("console.EmailBackend"))
-    else:
-        checks["email"] = bool(email_host or email_backend.endswith("console.EmailBackend"))
+    checks["email"] = _email_transport_ready(strict_runtime)
 
     try:
         from django.core.cache import cache
