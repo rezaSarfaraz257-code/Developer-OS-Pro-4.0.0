@@ -293,6 +293,9 @@ def build_agent_plan(run_id):
             })
             history_chars += len(bounded)
 
+    # The goal is user-controlled text and may accidentally contain credentials.
+    # Keep the durable user request intact, but never forward raw secrets upstream.
+    safe_goal = _redact_sensitive_content(goal)
     prompt = (
         "Create a safe, dependency-aware engineering implementation plan for the user's goal. "
         "Return ONLY valid JSON with keys summary, risks, acceptance_criteria, tasks. "
@@ -303,7 +306,7 @@ def build_agent_plan(run_id):
         "Order tasks topologically. Include inspection and verification tasks when relevant. "
         "Do not claim code was changed, commands were run, or tests passed. "
         "Do not request or expose secrets. No shell commands or deployment actions.\n\n"
-        f"GOAL:\n{goal}"
+        f"GOAL:\n{safe_goal}"
     )
     answer, provider_error = _call_provider(prompt, context, history, "autonomous engineering plan")
     if provider_error or not answer:
