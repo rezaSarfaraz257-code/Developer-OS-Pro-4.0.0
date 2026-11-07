@@ -410,8 +410,7 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
         remaining = run.tasks.exclude(status="succeeded").exists()
         run.status = "running" if remaining else "succeeded"
         run.started_at = run.started_at or timezone.now()
-        if not remaining:
-            run.finished_at = timezone.now()
+        run.finished_at = None if remaining else timezone.now()
         run.save(update_fields=["status", "started_at", "finished_at", "updated_at"])
 
         if run.conversation_id:
