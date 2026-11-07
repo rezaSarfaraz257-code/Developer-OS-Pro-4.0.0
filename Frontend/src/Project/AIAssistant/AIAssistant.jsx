@@ -154,6 +154,7 @@ export default function AIAssistantPage({ setPage }) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
         setAgentRun(data); setAgentToolResult("");
+        if (data.workspace) setWorkspace(String(data.workspace));
         setConversation(data.conversation ? { id: data.conversation } : conversation);
         setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
         setAnswer(data.status === "awaiting_approval" ? "A reviewable engineering plan is ready. Inspect the tasks and approve before any specialist tool can run." : "Your engineering plan is being prepared. This workflow does not modify workspace files.");
@@ -280,7 +281,7 @@ export default function AIAssistantPage({ setPage }) {
                 <div className="agent-run-actions"><button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>{!["succeeded", "failed", "canceled"].includes(agentRun.status) && <button type="button" disabled={busy} onClick={cancelAgentRun}>CANCEL RUN</button>}</div>
               </div>
               <p>{agentRun.plan?.summary || agentRun.goal}</p>
-              <div className="agent-run-context"><span>WORKSPACE REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>PLAN ONLY · NO FILE CHANGES</b></span></div>
+              <div className="agent-run-context"><span>WORKSPACE ID <b>#{agentRun.workspace}</b></span><span>REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>PLAN ONLY · NO FILE CHANGES</b></span></div>
               {agentRun.plan?.acceptance_criteria?.length > 0 && <div className="agent-run-criteria"><b>ACCEPTANCE CRITERIA</b>{agentRun.plan.acceptance_criteria.map((item, index) => <span key={index}>{index + 1}. {item}</span>)}</div>}
               {agentRun.error && <div className="agent-run-error">{agentRun.error}</div>}
               {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
