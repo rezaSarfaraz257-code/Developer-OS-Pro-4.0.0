@@ -27,6 +27,7 @@ _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,120}$")
 _MAX_TASKS = 12
 AGENT_HISTORY_MAX_CHARS = 12000
 AGENT_HISTORY_MESSAGE_MAX_CHARS = 3000
+AGENT_GOAL_MAX_CHARS = 8000
 AGENT_SPECIALIST_ROLES = {
     "product_manager": "Product Manager: clarify scope, requirements, milestones, and acceptance criteria",
     "architect": "Software Architect: inspect system boundaries, architecture, and integration risks",
@@ -283,8 +284,10 @@ def build_agent_plan(run_id):
             remaining = AGENT_HISTORY_MAX_CHARS - history_chars
             if remaining <= 0:
                 break
-            bounded = content[:AGENT_HISTORY_MESSAGE_MAX_CHARS]
-            bounded = _redact_sensitive_content(bounded)[:remaining]
+            # Redact the complete stored message before truncating it; cutting
+            # first can split a credential marker/value at the budget boundary.
+            bounded = _redact_sensitive_content(content)[:AGENT_HISTORY_MESSAGE_MAX_CHARS]
+            bounded = bounded[:remaining]
             if not bounded:
                 continue
             history.append({
@@ -295,7 +298,7 @@ def build_agent_plan(run_id):
 
     # The goal is user-controlled text and may accidentally contain credentials.
     # Keep the durable user request intact, but never forward raw secrets upstream.
-    safe_goal = _redact_sensitive_content(goal)
+    safe_goal = _redact_sensitive_content(goal)[:AGENT_GOAL_MAX_CHARS]
     prompt = (
         "Create a safe, dependency-aware engineering implementation plan for the user's goal. "
         "Return ONLY valid JSON with keys summary, risks, acceptance_criteria, tasks. "
