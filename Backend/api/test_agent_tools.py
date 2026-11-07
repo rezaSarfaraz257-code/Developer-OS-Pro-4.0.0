@@ -60,6 +60,7 @@ class ReadOnlyAgentToolTests(TestCase):
         })()
         self.assertEqual(_files(workspace), {"safe/main.py": "value = 1"})
 
+    def test_workspace_snapshot_enforces_aggregate_byte_budget(self):
         workspace = type("Workspace", (), {
             "files": {f"module_{index}.py": "x" * 150_000 for index in range(20)}
         })()
