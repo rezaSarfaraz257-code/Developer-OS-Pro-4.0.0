@@ -1137,7 +1137,7 @@ def ai_agent_apply_api(request):
     # Do not perform a best-effort network call here: that would reintroduce the
     # database/Runner dual-write gap this outbox is designed to close.
     verification = {"status": "queued", "job_id": sync_job.id}
-    diagnostics = _agent_diagnostics_evidence(workspace)
+    diagnostics = {"status": "pending", "reason": "Runner synchronization is queued; diagnostics will be refreshed after sync."}
     return Response({
         "status": "applied_sync_pending",
         "workspace": {"id": workspace.id, "revision": workspace.revision, "files": workspace.files, "active_file": workspace.active_file},
