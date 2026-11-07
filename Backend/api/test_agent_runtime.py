@@ -18,6 +18,8 @@ class AgentContextRedactionTests(TestCase):
             'github=ghp_abcdefghijklmnopqrstuvwxyz123456\\n'
             'openai=sk-proj-abcdefghijklmnopqrstuvwxyz123456\\n'
             'slack=xoxb-1234567890-abcdefghijk\\n'
+            'authorization=Bearer abcdefghijklmnopqrstuvwxyz123456\\n'
+            'DATABASE_URL=postgres://agent:database-password-value@db.example.test:5432/app\\n'
         )
         redacted = _redact_sensitive_content(source)
         self.assertNotIn("inline-secret-value-123", redacted)
@@ -26,6 +28,8 @@ class AgentContextRedactionTests(TestCase):
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", redacted)
         self.assertNotIn("sk-proj-abcdefghijklmnopqrstuvwxyz123456", redacted)
         self.assertNotIn("xoxb-1234567890-abcdefghijk", redacted)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("database-password-value", redacted)
         self.assertIn("[REDACTED]", redacted)
 
     def test_redacts_pem_private_key_blocks(self):
