@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import requests
@@ -20,10 +21,18 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .models import AIConversation, AIMessage, Project
+from .models import AIConversation, AIMessage, AuditLog, BackgroundJob, Project
 from .serializers import AIConversationSerializer, AIMessageSerializer
 
 logger = logging.getLogger("developer_os.ai")
+
+ACTION_INSTRUCTIONS = {
+    "review": "Review the selected project and workspace for correctness, security, data loss, concurrency, performance, and maintainability. Prioritize findings by severity and cite concrete evidence.",
+    "tests": "Design focused automated tests for the requested change. Identify existing test conventions, critical edge cases, authorization boundaries, and verification commands. Do not claim tests were run.",
+    "explain": "Explain the selected code and its direct dependencies using only supplied workspace evidence. State assumptions and uncertainties.",
+    "plan": "Create an implementation plan with ordered, independently verifiable tasks, dependencies, risks, and acceptance criteria. Do not claim implementation has occurred.",
+    "debug": "Diagnose the reported failure using supplied code and runtime evidence. Separate confirmed facts from hypotheses and propose the smallest safe fix plus verification steps.",
+}
 
 MAX_CONTEXT_CHARS = int(os.getenv("AI_MAX_CONTEXT_CHARS", "60000"))
 MAX_HISTORY_MESSAGES = max(0, int(os.getenv("AI_MAX_HISTORY_MESSAGES", "16")))
@@ -262,6 +271,45 @@ def _agent_tool_result(name: str, args: dict[str, Any], evidence: dict[str, Any]
     return {"error": "Unknown agent tool."}
 
 
+def _agent_safe_patch_path(path: Any) -> bool:
+    """Match the IDE workspace path contract before a model patch can be approved."""
+    if not isinstance(path, str) or not path or len(path) > 500 or "\\" in path:
+        return False
+    parts = path.split("/")
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
+    reserved_runtime_roots = {
+        ".git", "node_modules", ".venv", ".home", ".tmp",
+        ".cache", ".npm-cache", ".pip-cache", ".ssh", ".aws",
+    }
+    sensitive_names = {
+        ".env", ".npmrc", ".pypirc", ".netrc", "credentials",
+        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+        "known_hosts", "authorized_keys",
+    }
+    sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".keystore")
+    safe_components = all(
+        part not in {"", ".", ".."}
+        and part.casefold() not in reserved_runtime_roots
+        and component_pattern.fullmatch(part)
+        for part in parts
+    )
+    safe_sensitive_boundary = all(
+        part.casefold() not in sensitive_names
+        and not part.casefold().endswith(sensitive_suffixes)
+        and not (
+            part.casefold().startswith(".env.")
+            and part.casefold() not in {".env.example", ".env.sample", ".env.template"}
+        )
+        for part in parts
+    )
+    return bool(
+        not path.startswith("/")
+        and not re.match(r"^[A-Za-z]:", path)
+        and safe_components
+        and safe_sensitive_boundary
+    )
+
+
 def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
     """Validate a model patch proposal; applying it is a separate approval action."""
     try:
@@ -271,23 +319,34 @@ def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
     if not isinstance(data, dict) or data.get("type") != "patch_proposal":
         return None
     changes = data.get("changes")
-    if not isinstance(changes, list) or len(changes) > AGENT_PATCH_MAX_FILES:
+    if not isinstance(changes, list) or not changes or len(changes) > AGENT_PATCH_MAX_FILES:
         return None
     total = 0
+    seen_paths = set()
     for change in changes:
         if not isinstance(change, dict):
             return None
-        path = str(change.get("path") or "")
-        operation = str(change.get("operation") or "")
+        path = change.get("path")
+        operation = change.get("operation")
         full_content = change.get("content")
+        if not _agent_safe_patch_path(path):
+            return None
+        if path.casefold() in seen_paths:
+            return None
+        seen_paths.add(path.casefold())
+        if not isinstance(operation, str) or operation not in {"modify", "create", "delete"}:
+            return None
         if full_content is not None and not isinstance(full_content, str):
             return None
         if operation in {"modify", "create"} and full_content is None:
             return None
-        if not path or operation not in {"modify", "create", "delete"}:
+        if operation == "delete" and full_content is not None:
             return None
-        normalized = path.replace("\\", "/")
-        if normalized.startswith("/") or ".." in normalized.split("/"):
+        try:
+            content_bytes = len((full_content or "").encode("utf-8"))
+        except UnicodeEncodeError:
+            return None
+        if content_bytes > 1_000_000:
             return None
         total += len(full_content or "")
         if total > AGENT_PATCH_MAX_CHARS:
@@ -501,7 +560,7 @@ def _run(request, message: str, action: str | None = None):
     history = []
     if conversation is not None:
         history = list(
-            conversation.messages.order_by("-created_at")
+            conversation.messages.order_by("-created_at", "-id")
             .values("role", "content")[:MAX_HISTORY_MESSAGES]
         )[::-1]
 
@@ -829,17 +888,45 @@ def ai_agent_api(request):
         return Response({"error": "message is required"}, status=400)
     if len(message) > 12000:
         return Response({"error": "message too long"}, status=400)
-    from .views import _consume_usage
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 0)
+
+    from .views import _consume_usage, _workspace_for_user
+    project_id = request.data.get("project")
+    conversation_id = request.data.get("conversation")
+    workspace_id = request.data.get("workspace")
+    workspace = _workspace_for_user(workspace_id, request.user) if workspace_id else None
+
+    # Authorize the workspace before creating a new conversation, so invalid
+    # workspace IDs cannot leave orphaned AIConversation records.
+    try:
+        conversation = _conversation(request, project_id, conversation_id)
+    except DatabaseError:
+        logger.exception("AI agent conversation persistence unavailable; continuing in stateless mode")
+        conversation = None
+    if conversation is None and conversation_id:
+        return Response({"error": "Conversation not found or unavailable."}, status=404)
+    if workspace and conversation and conversation.project_id and workspace.project_id not in (None, conversation.project_id):
+        return Response({"error": "Workspace does not belong to the conversation project."}, status=400)
+
+    # Reserve the billable unit before contacting the provider. The usage
+    # ledger is row-locked and atomic, so concurrent requests cannot both pass
+    # a free-capacity check and then exceed the monthly allowance.
+    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
     if not allowed:
         return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
 
-    evidence = _agent_evidence(request)
-    evidence = _compact_context(evidence)
+    evidence = _compact_context(_agent_evidence(request))
+    context = {"agent_evidence": evidence}
+    history = []
+    if conversation is not None:
+        history = list(
+            conversation.messages.order_by("-created_at", "-id")
+            .values("role", "content")[:MAX_HISTORY_MESSAGES]
+        )[::-1]
+
     answer, provider_error = _call_provider(
         message,
-        {"agent_evidence": evidence},
-        [],
+        context,
+        history,
         "agentic developer intelligence",
     )
     if not answer:
@@ -853,14 +940,36 @@ def ai_agent_api(request):
             "verification": evidence,
             "evidence_status": "provider_unavailable",
         }, ensure_ascii=False)
-    allowed, used, limit, plan = _consume_usage(request.user, "ai_messages_month", 1)
-    if not allowed:
-        return Response({"error": "Monthly AI usage limit reached.", "plan": plan, "used": used, "limit": limit}, status=429)
+
+    message_payload = {"id": None, "role": "assistant", "content": answer, "context": context}
+    conversation_payload = {"id": None, "title": "Developer OS Intelligence"}
+    persistence = "degraded"
+    if conversation is not None:
+        try:
+            with transaction.atomic():
+                AIMessage.objects.create(conversation=conversation, role="user", content=message, context=context)
+                assistant_message = AIMessage.objects.create(
+                    conversation=conversation,
+                    role="assistant",
+                    content=answer,
+                    context=context,
+                )
+                conversation.save(update_fields={"updated_at"})
+            message_payload = AIMessageSerializer(assistant_message).data
+            conversation_payload = AIConversationSerializer(conversation).data
+            persistence = "saved"
+        except DatabaseError:
+            logger.exception("AI agent conversation message persistence failed")
+
+    approval_token = _issue_patch_approval_token(request, answer)
     return Response({
         "mode": "agent" if provider_error is None else "agent-fallback",
         "answer": answer,
+        "message": message_payload,
+        "conversation": conversation_payload,
+        "persistence": persistence,
         "evidence": evidence,
-        "approval_token": _issue_patch_approval_token(request, answer),
+        "approval_token": approval_token,
         "usage": {"used": used, "limit": limit, "plan": plan},
         "provider_status": provider_error,
     })
@@ -935,70 +1044,107 @@ def ai_agent_apply_api(request):
     if payload.get("user_id") != request.user.id:
         return Response({"error": "Patch approval belongs to another user."}, status=403)
 
-    from .views import _workspace_for_user, _runner_request, _workspace_payload
-    workspace = _workspace_for_user(payload.get("workspace_id"), request.user)
-    if not workspace:
-        return Response({"error": "Workspace not found."}, status=404)
-    if workspace.revision != payload.get("workspace_revision"):
-        return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
-
     proposal = payload.get("proposal")
-    if not isinstance(proposal, dict) or _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) is None:
+    parsed_proposal = _agent_parse_patch(json.dumps(proposal, ensure_ascii=False)) if isinstance(proposal, dict) else None
+    if parsed_proposal is None:
         return Response({"error": "Patch proposal failed safety validation."}, status=400)
 
-    current = dict(workspace.files or {})
-    updated = dict(current)
+    from .views import _workspace_for_user, _workspace_write_allowed, _runner_request, _workspace_payload
     diffs = []
-    for change in proposal.get("changes", []):
-        path = str(change.get("path") or "")
-        operation = change.get("operation")
-        if not path or path.startswith("/") or "\\" in path or ".." in path.split("/"):
-            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
-        before = str(updated.get(path, ""))
-        if operation == "delete":
-            if path not in updated:
-                return Response({"error": f"Cannot delete missing file: {path}"}, status=400)
-            del updated[path]
-            after = ""
-        elif operation == "modify":
-            if path not in updated:
-                return Response({"error": f"Cannot modify missing file: {path}"}, status=400)
-            after = str(change.get("content") or "")
-            updated[path] = after
-        elif operation == "create":
-            if path in updated:
-                return Response({"error": f"Cannot create existing file: {path}"}, status=400)
-            after = str(change.get("content") or "")
-            updated[path] = after
-        else:
-            return Response({"error": "Unsupported patch operation."}, status=400)
-        diffs.append({
-            "path": path,
-            "operation": operation,
-            "diff": "".join(difflib.unified_diff(
-                before.splitlines(True), after.splitlines(True),
-                fromfile=path, tofile=path
-            )),
-        })
+    try:
+        with transaction.atomic():
+            # Lock the authoritative workspace row before checking its revision.
+            # This prevents two approvals from racing and overwriting each other.
+            workspace = _workspace_for_user(payload.get("workspace_id"), request.user, for_update=True)
+            if not _workspace_write_allowed(workspace, request.user):
+                return Response({"error": "You do not have permission to modify this workspace."}, status=403)
+            if workspace.revision != payload.get("workspace_revision"):
+                return Response({"error": "Workspace changed since analysis. Re-analyze before applying."}, status=409)
 
-    total_bytes = sum(len(str(value).encode("utf-8")) for value in updated.values())
-    if len(updated) > 2000 or total_bytes > 25_000_000:
-        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+            previous_revision = workspace.revision
+            current = dict(workspace.files or {})
+            updated = dict(current)
+            for change in parsed_proposal.get("changes", []):
+                path = change["path"]
+                operation = change["operation"]
+                before = str(updated.get(path, ""))
+                if operation == "delete":
+                    if path not in updated:
+                        return Response({"error": f"Cannot delete missing file: {path}"}, status=400)
+                    del updated[path]
+                    after = ""
+                elif operation == "modify":
+                    if path not in updated:
+                        return Response({"error": f"Cannot modify missing file: {path}"}, status=400)
+                    after = change["content"]
+                    updated[path] = after
+                elif operation == "create":
+                    if path in updated:
+                        return Response({"error": f"Cannot create existing file: {path}"}, status=400)
+                    after = change["content"]
+                    updated[path] = after
+                else:
+                    return Response({"error": "Unsupported patch operation."}, status=400)
+                diffs.append({
+                    "path": path,
+                    "operation": operation,
+                    "diff": "".join(difflib.unified_diff(
+                        before.splitlines(True), after.splitlines(True),
+                        fromfile=path, tofile=path
+                    )),
+                })
 
-    with transaction.atomic():
-        workspace.files = updated
-        workspace.save(update_fields={"files"})
+            total_bytes = sum(len(value.encode("utf-8")) for value in updated.values())
+            if len(updated) > 2000 or total_bytes > 25_000_000:
+                return Response({"error": "Workspace limits would be exceeded."}, status=400)
 
-    sync_data, sync_error = _runner_request("POST", "/sync", _workspace_payload(workspace), timeout=30)
-    verification = _agent_runner_evidence(workspace)
+            workspace.files = updated
+            workspace.save(update_fields={"files"})
+            # Durable outbox: the workspace mutation and its Runner sync job
+            # commit together. A worker outage cannot lose the synchronization intent.
+            sync_job, _ = BackgroundJob.objects.get_or_create(
+                kind="ai_agent_runner_sync",
+                idempotency_key=f"agent-runner-sync:{workspace.id}:{workspace.revision}",
+                defaults={
+                    "payload": {
+                        "workspace_id": workspace.id,
+                        "owner_id": request.user.id,
+                        "requested_revision": workspace.revision,
+                    },
+                    "max_attempts": 8,
+                },
+            )
+            AuditLog.objects.create(
+                user=request.user,
+                action="ai_agent.patch_applied",
+                target_type="CodeWorkspace",
+                target_id=str(workspace.id),
+                metadata={
+                    "previous_revision": previous_revision,
+                    "revision": workspace.revision,
+                    "changed_files": [
+                        {"path": item["path"], "operation": item["operation"]}
+                        for item in diffs
+                    ],
+                    "approval": "signed_single_use_revision_bound",
+                },
+            )
+    except (TypeError, ValueError, KeyError):
+        logger.exception("AI patch application rejected due to invalid workspace or proposal data")
+        return Response({"error": "Patch could not be safely applied. Reload the workspace and re-analyze."}, status=400)
+
+    # Runner synchronization is processed by the durable background worker.
+    # Do not perform a best-effort network call here: that would reintroduce the
+    # database/Runner dual-write gap this outbox is designed to close.
+    verification = {"status": "queued", "job_id": sync_job.id}
     diagnostics = _agent_diagnostics_evidence(workspace)
     return Response({
-        "status": "applied",
+        "status": "applied_sync_pending",
         "workspace": {"id": workspace.id, "revision": workspace.revision, "files": workspace.files, "active_file": workspace.active_file},
         "files": workspace.files,
         "changed_files": [item["path"] for item in diffs],
         "diffs": diffs,
-        "sync": {"ok": sync_error is None, "error": sync_error, "data": sync_data},
+        "sync": {"ok": False, "queued": True, "job_id": sync_job.id, "status": sync_job.status},
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
@@ -1009,8 +1155,8 @@ def ai_agent_apply_api(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agent_rollback_api(request):
-    """Atomically restore the workspace snapshot captured before an AI patch."""
-    from .views import _workspace_for_user
+    """Restore a workspace snapshot only for an authorized writer at the expected revision."""
+    from .views import _workspace_for_user, _workspace_write_allowed
     workspace_id = request.data.get("workspace")
     expected_revision = request.data.get("revision")
     files = request.data.get("files")
@@ -1021,8 +1167,31 @@ def ai_agent_rollback_api(request):
     except (TypeError, ValueError):
         return Response({"error": "Invalid workspace revision."}, status=400)
 
+    safe_files = {}
+    seen_paths = set()
+    total_bytes = 0
+    for path, value in files.items():
+        if not _agent_safe_patch_path(path):
+            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
+        normalized_path = path.casefold()
+        if normalized_path in seen_paths:
+            return Response({"error": f"Duplicate workspace path: {path}"}, status=400)
+        seen_paths.add(normalized_path)
+        if not isinstance(value, str):
+            return Response({"error": f"Invalid file content: {path}"}, status=400)
+        content_bytes = len(value.encode("utf-8"))
+        if content_bytes > 2_000_000:
+            return Response({"error": f"File is too large: {path}"}, status=400)
+        total_bytes += content_bytes
+        safe_files[path] = value
+
+    if len(safe_files) > 2000 or total_bytes > 25_000_000:
+        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+
     with transaction.atomic():
         workspace = _workspace_for_user(workspace_id, request.user, for_update=True)
+        if not _workspace_write_allowed(workspace, request.user):
+            return Response({"error": "You do not have permission to restore this workspace."}, status=403)
         if workspace.revision != expected_revision:
             return Response({
                 "error": "Workspace changed after the AI apply. Reload before undoing.",
@@ -1030,49 +1199,33 @@ def ai_agent_rollback_api(request):
                 "revision": workspace.revision,
             }, status=409)
 
-        safe_files = {}
-        total_bytes = 0
-        for raw_path, value in files.items():
-            path = str(raw_path or "").replace("\\", "/").strip().lstrip("/")
-            if (
-                not path or len(path) > 500 or
-                any(part in {"", ".", ".."} for part in path.split("/")) or
-                path == ".git" or path.startswith(".git/")
-            ):
-                return Response({"error": f"Unsafe workspace path: {raw_path}"}, status=400)
-            if not isinstance(value, str):
-                return Response({"error": f"Invalid file content: {path}"}, status=400)
-            total_bytes += len(value.encode("utf-8"))
-            if len(value) > 2_000_000:
-                return Response({"error": f"File is too large: {path}"}, status=400)
-            safe_files[path] = value
-
-        if len(safe_files) > 2000 or total_bytes > 25_000_000:
-            return Response({"error": "Workspace limits would be exceeded."}, status=400)
-
         active_file = workspace.active_file if workspace.active_file in safe_files else next(iter(safe_files), "")
+        previous_revision = workspace.revision
         workspace.files = safe_files
         workspace.active_file = active_file
         workspace.save(update_fields={"files", "active_file"})
+        AuditLog.objects.create(
+            user=request.user,
+            action="ai_agent.workspace_rolled_back",
+            target_type="CodeWorkspace",
+            target_id=str(workspace.id),
+            metadata={
+                "previous_revision": previous_revision,
+                "revision": workspace.revision,
+                "restored_file_count": len(safe_files),
+                "restore_method": "owner_authorized_revision_guarded",
+            },
+        )
 
     return Response({
         "status": "rolled_back",
-        "workspace": {"id": workspace.id, "revision": workspace.revision},
-        "files": workspace.files,
-        "active_file": workspace.active_file,
+        "workspace": {
+            "id": workspace.id,
+            "revision": workspace.revision,
+            "files": workspace.files,
+            "active_file": workspace.active_file,
+        },
     })
-
-
-ACTION_INSTRUCTIONS = {
-    "review": "Perform a senior-level code review. Group findings by severity and give exact fixes.",
-    "tests": "Design focused automated tests for the supplied code and context. Include edge cases and expected assertions.",
-    "debug": "Debug the supplied issue. Separate observed evidence from hypotheses and give the smallest safe fix plus verification.",
-    "plan": "Create an implementation plan with dependencies, files likely affected, risks, and a verification checklist.",
-    "explain": "Explain the supplied code or architecture from high level to implementation detail, using the actual context.",
-    "project": "Act as a senior project manager for this workspace. Analyze project scope, tasks, deadlines, priorities, blockers and delivery signals. Return: current state, top risks, priority order, next milestone, task candidates with rationale, dependencies, and a verification checklist. Do not invent missing project facts.",
-    "sprint": "Design the next practical sprint from the real workspace context. Prioritize the smallest high-impact deliverables, identify dependencies and blockers, define acceptance criteria, and separate observed facts from recommendations.",
-    "risk": "Perform a delivery-risk review of the workspace. Identify schedule, technical, security, dependency and quality risks from available evidence, assign qualitative severity only when supported, and give concrete mitigations and owners/next actions.",
-}
 
 
 @api_view(["POST"])
