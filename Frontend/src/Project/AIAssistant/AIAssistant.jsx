@@ -38,6 +38,7 @@ export default function AIAssistantPage({ setPage }) {
   const [toolCalls, setToolCalls] = useState([]);
   const [showDiff, setShowDiff] = useState(true);
   const [agentRun, setAgentRun] = useState(null);
+  const [agentToolResult, setAgentToolResult] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +88,22 @@ export default function AIAssistantPage({ setPage }) {
     }
   }
 
+  async function cancelAgentRun() {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/cancel/`, { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent cancellation failed."));
+      setAgentRun(data);
+      await refreshAgentRun(data.id);
+    } catch (err) {
+      setError(err.message || "Agent cancellation failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function invokeAgentTool(task, tool) {
     if (!agentRun?.id || busy) return;
     setBusy(true); setError("");
@@ -98,6 +115,7 @@ export default function AIAssistantPage({ setPage }) {
       if (!response.ok) throw new Error(errorText(data, "Agent evidence tool failed."));
       await refreshAgentRun(agentRun.id);
       setToolCalls((old) => [...old, { name: tool, state: "complete" }]);
+      setAgentToolResult(JSON.stringify(data.result || {}, null, 2).slice(0, 12000));
       setAnswer(`Task "${task.title}" completed using ${tool}. The tool is read-only; no workspace files were changed.`);
     } catch (err) {
       setError(err.message || "Agent evidence tool failed.");
@@ -133,7 +151,7 @@ export default function AIAssistantPage({ setPage }) {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
-        setAgentRun(data);
+        setAgentRun(data); setAgentToolResult("");
         setConversation(data.conversation ? { id: data.conversation } : conversation);
         setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
         setAnswer(data.status === "awaiting_approval" ? "A reviewable engineering plan is ready. Inspect the tasks and approve before any specialist tool can run." : "Your engineering plan is being prepared. This workflow does not modify workspace files.");
@@ -257,7 +275,7 @@ export default function AIAssistantPage({ setPage }) {
             <section className="agent-run-panel" aria-live="polite">
               <div className="agent-run-heading">
                 <div><small>AUTONOMOUS ENGINEERING RUN</small><strong>Run #{agentRun.id} · {String(agentRun.status).replaceAll("_", " ").toUpperCase()}</strong></div>
-                <button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>
+                <div className="agent-run-actions"><button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>{!["succeeded", "failed", "canceled"].includes(agentRun.status) && <button type="button" disabled={busy} onClick={cancelAgentRun}>CANCEL RUN</button>}</div>
               </div>
               <p>{agentRun.plan?.summary || agentRun.goal}</p>
               {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
@@ -274,6 +292,7 @@ export default function AIAssistantPage({ setPage }) {
                 ))}
               </div>
               {agentRun.status === "awaiting_approval" && <button type="button" className="primary agent-run-approve" disabled={busy} onClick={approveAgentRun}>APPROVE PLAN & UNLOCK TOOLS →</button>}
+              {agentToolResult && <div className="agent-run-result"><b>LATEST TOOL EVIDENCE</b><pre>{agentToolResult}</pre></div>}
               <small className="agent-run-safety">Human approval is required. Available specialist tools are read-only and cannot execute shell commands or mutate workspace files.</small>
             </section>
           )}
