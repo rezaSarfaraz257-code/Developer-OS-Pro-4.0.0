@@ -179,7 +179,10 @@ def _run_payload(run):
                 "title": task.title,
                 "description": task.description,
                 "agent_role": task.agent_role,
-                "allowed_capabilities": AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, ["inspect_workspace"]),
+                # Unknown/legacy roles receive no advertised permissions. The
+                # execution endpoint also denies capabilities absent from the
+                # server-owned role contract.
+                "allowed_capabilities": AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, []),
                 "status": task.status,
                 "sequence": task.sequence,
                 "depends_on": list(task.depends_on.order_by("sequence").values_list("key", flat=True)),
