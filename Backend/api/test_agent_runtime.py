@@ -17,6 +17,12 @@ class AgentContextRedactionTests(TestCase):
             'aws_access_key=AKIAABCDEFGHIJKLMNOP\n'
             'github=ghp_abcdefghijklmnopqrstuvwxyz123456\n'
             'openai=sk-proj-abcdefghijklmnopqrstuvwxyz123456\n'
+            'stripe=sk_test_abcdefghijklmnopqrstuvwxyz123456\n'
+            'google=AIza0123456789abcdefghijklmnopqrstuvwx\n'
+            'gitlab=glpat-abcdefghijklmnopqrstuvwxyz123456\n'
+            'npm=npm_abcdefghijklmnopqrstuvwxyz123456789012345\n'
+            'pypi=pypi-abcdefghijklmnopqrstuvwxyz12345678901234567890123456789012345678901234567890\n'
+            'jwt=eyJabcdefghijk.eyJabcdefghijk.signaturevalue12345\n'
             'slack=xoxb-1234567890-abcdefghijk\n'
             'authorization=Bearer abcdefghijklmnopqrstuvwxyz123456\n'
             'DATABASE_URL=postgres://agent:database-password-value@db.example.test:5432/app\n'
@@ -27,6 +33,12 @@ class AgentContextRedactionTests(TestCase):
         self.assertNotIn("AKIAABCDEFGHIJKLMNOP", redacted)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", redacted)
         self.assertNotIn("sk-proj-abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("sk_test_abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("AIza0123456789abcdefghijklmnopqrstuvwx", redacted)
+        self.assertNotIn("glpat-abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("npm_abcdefghijklmnopqrstuvwxyz123456789012345", redacted)
+        self.assertNotIn("pypi-abcdefghijklmnopqrstuvwxyz12345678901234567890123456789012345678901234567890", redacted)
+        self.assertNotIn("eyJabcdefghijk.eyJabcdefghijk.signaturevalue12345", redacted)
         self.assertNotIn("xoxb-1234567890-abcdefghijk", redacted)
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", redacted)
         self.assertNotIn("database-password-value", redacted)
