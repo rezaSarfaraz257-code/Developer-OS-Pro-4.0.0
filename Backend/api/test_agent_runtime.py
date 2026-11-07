@@ -111,7 +111,7 @@ class AgentRunLifecycleTests(TestCase):
             owner=self.user,
             name="Agent runtime workspace",
             language="python",
-            files={"main.py": "API_KEY = 'inline-secret-value-123'\ndef main():\n    return 1\n", ".env": "SECRET=must-not-leak", ".npmrc": "//registry/token=hidden", ".aws/credentials": "aws_secret_access_key=hidden", "keys/private.pem": "PRIVATE KEY"},
+            files={"main.py": "API_KEY = 'inline-secret-value-123'\ndef main():\n    return 1\n", "boundary.py": ("x" * 1790) + "API_KEY=boundary-secret-value-123456", ".env": "SECRET=must-not-leak", ".npmrc": "//registry/token=hidden", ".aws/credentials": "aws_secret_access_key=hidden", "keys/private.pem": "PRIVATE KEY"},
         )
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -287,6 +287,8 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn(".aws/credentials", sent_context["workspace"]["file_samples"])
         self.assertNotIn("keys/private.pem", sent_context["workspace"]["file_samples"])
         self.assertNotIn("inline-secret-value-123", sent_context["workspace"]["file_samples"]["main.py"])
+        self.assertNotIn("boundary-secret-value-123456", sent_context["workspace"]["file_samples"]["boundary.py"])
+        self.assertIn("[REDACTED]", sent_context["workspace"]["file_samples"]["boundary.py"])
         self.assertTrue(sent_context["workspace"]["secrets_excluded"])
 
     @patch("api.ai_engine._call_provider")
