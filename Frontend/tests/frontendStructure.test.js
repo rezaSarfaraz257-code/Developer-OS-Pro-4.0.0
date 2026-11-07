@@ -1211,8 +1211,14 @@ test("Web IDE exposes durable autonomous agent planning, approval, cancellation,
   assert.match(ide, /analyze_dependencies/);
   assert.match(ide, /analyze_schema/);
   assert.match(ide, /task\.agent_role\|\|"architect"/);
-  assert.match(ide, /PLAN TASKS/);
-  assert.match(ide, /COMPLETED/);
-  assert.doesNotMatch(ide, /CONFIDENCE<\/small><b>LIVE/);
   assert.match(styles, /\.dos-ai-task/);
+});
+
+
+test("AI Assistant agent control center reports evidence-backed metrics rather than placeholder confidence", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+  assert.match(assistant, /PLAN TASKS/);
+  assert.match(assistant, /COMPLETED/);
+  assert.match(assistant, /APPROVAL/);
+  assert.doesNotMatch(assistant, /CONFIDENCE<\/small><b>LIVE/);
 });
