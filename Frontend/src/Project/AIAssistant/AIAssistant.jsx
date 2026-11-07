@@ -37,6 +37,7 @@ export default function AIAssistantPage({ setPage }) {
   const [timeline, setTimeline] = useState([]);
   const [toolCalls, setToolCalls] = useState([]);
   const [showDiff, setShowDiff] = useState(true);
+  const [agentRun, setAgentRun] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +58,62 @@ export default function AIAssistantPage({ setPage }) {
     [workspaces, workspace],
   );
 
+  async function refreshAgentRun(runId = agentRun?.id) {
+    if (!runId) return;
+    const response = await apiFetch(`/ai/agent/runs/${runId}/`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(errorText(data, "Unable to refresh Agent run."));
+    setAgentRun(data);
+    setTimeline([
+      { label: "PLAN", state: ["awaiting_approval", "approved", "running", "succeeded"].includes(data.status) ? "complete" : "active" },
+      { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : "pending" },
+      { label: "ENGINEERING TASKS", state: data.status === "running" ? "active" : data.status === "succeeded" ? "complete" : "pending" },
+    ]);
+  }
+
+  async function approveAgentRun() {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent plan approval failed."));
+      setAgentRun(data);
+      await refreshAgentRun(data.id);
+    } catch (err) {
+      setError(err.message || "Agent plan approval failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function invokeAgentTool(task, tool) {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/tasks/${task.id}/tools/${tool}/`, {
+        method: "POST", body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent evidence tool failed."));
+      await refreshAgentRun(agentRun.id);
+      setToolCalls((old) => [...old, { name: tool, state: "complete" }]);
+      setAnswer(`Task "${task.title}" completed using ${tool}. The tool is read-only; no workspace files were changed.`);
+    } catch (err) {
+      setError(err.message || "Agent evidence tool failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!agentRun?.id || !["queued", "planning"].includes(agentRun.status)) return undefined;
+    const timer = setInterval(() => {
+      refreshAgentRun(agentRun.id).catch((err) => setError(err.message || "Agent status refresh failed."));
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [agentRun?.id, agentRun?.status]);
+
   async function ask(e) {
     e?.preventDefault();
     const text = message.trim();
@@ -65,7 +122,27 @@ export default function AIAssistantPage({ setPage }) {
     setError("");
     if (agentMode) { setTimeline([{label:"ANALYZE",state:"active"},{label:"INSPECT",state:"active"},{label:"DIAGNOSE",state:"active"}]); setToolCalls([]); }
     try {
-      const response = await apiFetch(agentMode ? "/ai/agent/" : "/ai/chat/", {
+      if (agentMode) {
+        const response = await apiFetch("/ai/agent/runs/", {
+          method: "POST",
+          body: JSON.stringify({
+            goal: text,
+            workspace: workspace || undefined,
+            conversation: conversation?.id || undefined,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
+        setAgentRun(data);
+        setConversation(data.conversation ? { id: data.conversation } : conversation);
+        setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
+        setAnswer(data.status === "awaiting_approval" ? "A reviewable engineering plan is ready. Inspect the tasks and approve before any specialist tool can run." : "Your engineering plan is being prepared. This workflow does not modify workspace files.");
+        setMode(`AGENT RUN · ${String(data.status || "queued").toUpperCase()}`);
+        setTimeline([{ label: "PLAN", state: "active" }, { label: "HUMAN APPROVAL", state: "pending" }, { label: "ENGINEERING TASKS", state: "pending" }]);
+        setMessage("");
+        return;
+      }
+      const response = await apiFetch("/ai/chat/", {
         method: "POST",
         body: JSON.stringify({
           message: text,
@@ -175,6 +252,31 @@ export default function AIAssistantPage({ setPage }) {
           <div className="ai-actions ai-actions-pro">
             {QUICK_ACTIONS.map(([id, label, hint]) => <button type="button" key={id} onClick={() => runAction(id)} disabled={busy || !message.trim()} title={hint}>{label}</button>)}
           </div>
+
+          {agentMode && agentRun && (
+            <section className="agent-run-panel" aria-live="polite">
+              <div className="agent-run-heading">
+                <div><small>AUTONOMOUS ENGINEERING RUN</small><strong>Run #{agentRun.id} · {String(agentRun.status).replaceAll("_", " ").toUpperCase()}</strong></div>
+                <button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>
+              </div>
+              <p>{agentRun.plan?.summary || agentRun.goal}</p>
+              {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
+              <div className="agent-run-tasks">
+                {(agentRun.tasks || []).map((task) => (
+                  <article className="agent-run-task" key={task.id}>
+                    <div className="agent-run-task-title"><b>{task.sequence + 1}. {task.title}</b><span>{task.status.replaceAll("_", " ")}</span></div>
+                    <p>{task.description}</p>
+                    <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
+                    {agentRun.status === "running" && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
+                      <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
+                    )}
+                  </article>
+                ))}
+              </div>
+              {agentRun.status === "awaiting_approval" && <button type="button" className="primary agent-run-approve" disabled={busy} onClick={approveAgentRun}>APPROVE PLAN & UNLOCK TOOLS →</button>}
+              <small className="agent-run-safety">Human approval is required. Available specialist tools are read-only and cannot execute shell commands or mutate workspace files.</small>
+            </section>
+          )}
           {agentMode && <div className="agent-control-center">
             <div className="acc-header"><div><small>AGENT CONTROL CENTER</small><strong>ENGINEERING LOOP</strong></div><span>{busy ? "LIVE · WORKING" : "READY · OBSERVABLE"}</span></div>
             <div className="acc-timeline">{timeline.length ? timeline.map((item,index) => <div className={"acc-step "+item.state} key={index}><i></i><span>{item.label}</span></div>) : <div className="acc-muted">Start an Agent request to initialize the engineering loop.</div>}</div>
