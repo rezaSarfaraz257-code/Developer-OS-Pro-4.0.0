@@ -59,6 +59,9 @@ export default function AIAssistantPage({ setPage }) {
     [workspaces, workspace],
   );
 
+  const syncJobId = applyResult?.sync?.job_id;
+  const syncJobStatus = applyResult?.sync?.status;
+
   const refreshAgentRun = useCallback(async (runId = agentRun?.id) => {
     if (!runId) return;
     const response = await apiFetch(`/ai/agent/runs/${runId}/`);
@@ -135,9 +138,8 @@ export default function AIAssistantPage({ setPage }) {
   }, [agentRun?.id, agentRun?.status, refreshAgentRun]);
 
   useEffect(() => {
-    const jobId = applyResult?.sync?.job_id;
-    const currentStatus = applyResult?.sync?.status;
-    if (!jobId || !["queued", "running"].includes(currentStatus)) return undefined;
+    const jobId = syncJobId;
+    if (!jobId || !["queued", "running"].includes(syncJobStatus)) return undefined;
 
     let active = true;
     const refreshSyncStatus = async () => {
@@ -177,7 +179,7 @@ export default function AIAssistantPage({ setPage }) {
       active = false;
       clearInterval(timer);
     };
-  }, [applyResult?.sync?.job_id, applyResult?.sync?.status]);
+  }, [syncJobId, syncJobStatus]);
 
   async function ask(e) {
     e?.preventDefault();
