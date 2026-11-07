@@ -622,6 +622,34 @@ def agent_run_detail_api(request, pk):
     return Response(_run_payload(run))
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def agent_runner_sync_status_api(request, job_id):
+    """Expose only owner-scoped, non-sensitive status for an AI patch sync job."""
+    job = get_object_or_404(
+        BackgroundJob,
+        pk=job_id,
+        kind="ai_agent_runner_sync",
+        payload__owner_id=request.user.id,
+    )
+    result = job.result if isinstance(job.result, dict) else {}
+    response = {
+        "job_id": job.id,
+        "status": job.status,
+        "attempts": job.attempts,
+        "max_attempts": job.max_attempts,
+        "workspace_id": result.get("workspace_id"),
+        "revision": result.get("revision"),
+        "coalesced": bool(result.get("coalesced", False)),
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
+    if job.status == "failed":
+        # Never return raw worker/provider/Runner diagnostics through this endpoint.
+        response["error"] = "Runner synchronization failed. The workspace change remains saved; inspect Runner health before retrying."
+    return Response(response)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def agent_run_cancel_api(request, pk):
