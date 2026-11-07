@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .agent_runtime import _redact_sensitive_content, _validate_plan, build_agent_plan
-from .models import AgentRun, AIConversation, AuditLog, BackgroundJob, CodeWorkspace
+from .models import AgentRun, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class AgentContextRedactionTests(TestCase):
@@ -198,6 +198,16 @@ class AgentRunLifecycleTests(TestCase):
     @patch("api.ai_engine._call_provider")
     def test_worker_persists_plan_and_dependency_graph_without_mutating_workspace(self, provider):
         conversation = AIConversation.objects.create(owner=self.user, title="Agent plan")
+        AIMessage.objects.create(
+            conversation=conversation,
+            role="user",
+            content="Please inspect this. API_KEY=history-secret-value-123",
+        )
+        AIMessage.objects.create(
+            conversation=conversation,
+            role="assistant",
+            content="context " * 2500,
+        )
         run = AgentRun.objects.create(
             owner=self.user,
             workspace=self.workspace,
@@ -247,6 +257,12 @@ class AgentRunLifecycleTests(TestCase):
         )
         self.assertEqual(self.workspace.files, original_files)
         sent_context = provider.call_args.args[1]
+        sent_history = provider.call_args.args[2]
+        serialized_history = json.dumps(sent_history)
+        self.assertNotIn("history-secret-value-123", serialized_history)
+        self.assertIn("[REDACTED]", serialized_history)
+        self.assertLessEqual(sum(len(item["content"]) for item in sent_history), 12000)
+        self.assertTrue(all(len(item["content"]) <= 3000 for item in sent_history))
         self.assertNotIn(".env", sent_context["workspace"]["file_samples"])
         self.assertNotIn(".npmrc", sent_context["workspace"]["file_samples"])
         self.assertNotIn(".aws/credentials", sent_context["workspace"]["file_samples"])
