@@ -374,7 +374,7 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
             pk=task_pk,
             run=run,
         )
-        if run.status != "approved":
+        if run.status not in {"approved", "running"}:
             return Response({"error": "Approve the plan before invoking specialist tools."}, status=409)
         if task.status != "ready":
             return Response({"error": "Only ready tasks can invoke specialist tools."}, status=409)
@@ -395,6 +395,38 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=400)
 
+        # Persist bounded tool evidence and advance the dependency graph in the
+        # same transaction as the task transition. A retry cannot execute a
+        # completed task twice because only ready tasks are accepted.
+        task.status = "succeeded"
+        task.save(update_fields=["status", "updated_at"])
+        newly_ready = []
+        for dependent in task.dependents.select_for_update().filter(status="blocked"):
+            if all(dependency.status == "succeeded" for dependency in dependent.depends_on.all()):
+                dependent.status = "ready"
+                dependent.save(update_fields=["status", "updated_at"])
+                newly_ready.append(dependent.key)
+
+        remaining = run.tasks.exclude(status="succeeded").exists()
+        run.status = "running" if remaining else "succeeded"
+        run.started_at = run.started_at or timezone.now()
+        if not remaining:
+            run.finished_at = timezone.now()
+        run.save(update_fields=["status", "started_at", "finished_at", "updated_at"])
+
+        if run.conversation_id:
+            AIMessage.objects.create(
+                conversation_id=run.conversation_id,
+                role="tool",
+                content=json.dumps(result, ensure_ascii=False, default=str),
+                context={
+                    "agent_run_id": run.id,
+                    "agent_task_id": task.id,
+                    "tool": tool_name,
+                    "workspace_revision": workspace.revision,
+                    "read_only": True,
+                },
+            )
         AuditLog.objects.create(
             user=request.user,
             action="agent_task.readonly_tool_invoked",
@@ -406,6 +438,8 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
                 "tool": tool_name,
                 "workspace_revision": workspace.revision,
                 "read_only": True,
+                "task_status": task.status,
+                "run_status": run.status,
             },
         )
         return Response({
@@ -415,6 +449,9 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
             "tool": tool_name,
             "workspace_revision": workspace.revision,
             "result": result,
+            "task_status": task.status,
+            "run_status": run.status,
+            "newly_ready_tasks": newly_ready,
             "execution_state": "read_only_analysis_no_workspace_mutations",
         })
 
