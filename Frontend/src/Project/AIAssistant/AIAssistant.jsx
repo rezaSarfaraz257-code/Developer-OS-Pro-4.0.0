@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../services/api";
 import "./AIAssistant.css";
 
@@ -37,6 +37,8 @@ export default function AIAssistantPage({ setPage }) {
   const [timeline, setTimeline] = useState([]);
   const [toolCalls, setToolCalls] = useState([]);
   const [showDiff, setShowDiff] = useState(true);
+  const [agentRun, setAgentRun] = useState(null);
+  const [agentToolResult, setAgentToolResult] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +59,128 @@ export default function AIAssistantPage({ setPage }) {
     [workspaces, workspace],
   );
 
+  const syncJobId = applyResult?.sync?.job_id;
+  const syncJobStatus = applyResult?.sync?.status;
+
+  const refreshAgentRun = useCallback(async (runId = agentRun?.id) => {
+    if (!runId) return;
+    const response = await apiFetch(`/ai/agent/runs/${runId}/`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(errorText(data, "Unable to refresh Agent run."));
+    setAgentRun(data);
+    setMode(`AGENT RUN · ${String(data.status || "unknown").replaceAll("_", " ").toUpperCase()}`);
+    const terminalError = ["failed", "canceled"].includes(data.status);
+    setTimeline([
+      { label: "PLAN", state: data.plan ? "complete" : terminalError ? "error" : "active" },
+      { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : terminalError ? "error" : "pending" },
+      { label: "ENGINEERING TASKS", state: data.status === "succeeded" ? "complete" : ["approved", "running"].includes(data.status) ? "active" : terminalError ? "error" : "pending" },
+    ]);
+  }, [agentRun?.id]);
+
+  async function approveAgentRun() {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent plan approval failed."));
+      setAgentRun(data);
+      await refreshAgentRun(data.id);
+    } catch (err) {
+      setError(err.message || "Agent plan approval failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelAgentRun() {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/cancel/`, { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent cancellation failed."));
+      setAgentRun(data);
+      await refreshAgentRun(data.id);
+    } catch (err) {
+      setError(err.message || "Agent cancellation failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function invokeAgentTool(task, tool) {
+    if (!agentRun?.id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/ai/agent/runs/${agentRun.id}/tasks/${task.id}/tools/${tool}/`, {
+        method: "POST", body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent evidence tool failed."));
+      await refreshAgentRun(agentRun.id);
+      setToolCalls((old) => [...old, { name: tool, state: "complete" }]);
+      setAgentToolResult(JSON.stringify(data.result || {}, null, 2).slice(0, 12000));
+      setAnswer(`Task "${task.title}" completed using ${tool}. The tool is read-only; no workspace files were changed.`);
+    } catch (err) {
+      setError(err.message || "Agent evidence tool failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!agentRun?.id || !["queued", "planning"].includes(agentRun.status)) return undefined;
+    const timer = setInterval(() => {
+      refreshAgentRun(agentRun.id).catch((err) => setError(err.message || "Agent status refresh failed."));
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [agentRun?.id, agentRun?.status, refreshAgentRun]);
+
+  useEffect(() => {
+    const jobId = syncJobId;
+    if (!jobId || !["queued", "running"].includes(syncJobStatus)) return undefined;
+
+    let active = true;
+    const refreshSyncStatus = async () => {
+      try {
+        const response = await apiFetch(`/ai/agent/sync-jobs/${jobId}/`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(errorText(data, "Runner sync status is unavailable."));
+        if (!active) return;
+        setApplyResult((current) => {
+          if (!current || current.sync?.job_id !== jobId) return current;
+          return {
+            ...current,
+            sync: {
+              ...current.sync,
+              status: data.status,
+              ok: data.status === "succeeded",
+              attempts: data.attempts,
+              revision: data.revision,
+              coalesced: data.coalesced,
+              error: data.error || "",
+            },
+          };
+        });
+        if (data.status === "succeeded") setMode("PATCH SAVED · RUNNER SYNCED");
+        if (data.status === "failed") {
+          setMode("PATCH SAVED · RUNNER SYNC FAILED");
+          setError(data.error || "Runner synchronization failed.");
+        }
+      } catch (err) {
+        if (active) setError(err.message || "Runner sync status refresh failed.");
+      }
+    };
+
+    refreshSyncStatus();
+    const timer = setInterval(refreshSyncStatus, 4000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [syncJobId, syncJobStatus]);
+
   async function ask(e) {
     e?.preventDefault();
     const text = message.trim();
@@ -65,7 +189,28 @@ export default function AIAssistantPage({ setPage }) {
     setError("");
     if (agentMode) { setTimeline([{label:"ANALYZE",state:"active"},{label:"INSPECT",state:"active"},{label:"DIAGNOSE",state:"active"}]); setToolCalls([]); }
     try {
-      const response = await apiFetch(agentMode ? "/ai/agent/" : "/ai/chat/", {
+      if (agentMode) {
+        const response = await apiFetch("/ai/agent/runs/", {
+          method: "POST",
+          body: JSON.stringify({
+            goal: text,
+            workspace: workspace || undefined,
+            conversation: conversation?.id || undefined,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
+        setAgentRun(data); setAgentToolResult("");
+        if (data.workspace) setWorkspace(String(data.workspace));
+        setConversation(data.conversation ? { id: data.conversation } : conversation);
+        setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
+        setAnswer(data.status === "awaiting_approval" ? "A reviewable engineering plan is ready. Inspect the tasks and approve before any specialist tool can run." : "Your engineering plan is being prepared. This workflow does not modify workspace files.");
+        setMode(`AGENT RUN · ${String(data.status || "queued").toUpperCase()}`);
+        setTimeline([{ label: "PLAN", state: "active" }, { label: "HUMAN APPROVAL", state: "pending" }, { label: "ENGINEERING TASKS", state: "pending" }]);
+        setMessage("");
+        return;
+      }
+      const response = await apiFetch("/ai/chat/", {
         method: "POST",
         body: JSON.stringify({
           message: text,
@@ -167,19 +312,48 @@ export default function AIAssistantPage({ setPage }) {
           <form onSubmit={ask} className="ai-composer">
             <textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={busy} placeholder="Ask Developer OS Intelligence…" />
             <div className="ai-composer-bottom">
-              <span>{activeWorkspace ? `Workspace: ${activeWorkspace.name}` : "Context: projects + tasks + notes + snippets"}</span>
+              <label className="ai-workspace-picker"><span>WORKSPACE</span><select value={workspace} onChange={(event) => setWorkspace(event.target.value)} disabled={busy}><option value="">Select workspace…</option>{workspaces.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</select></label>
               <label className="ai-agent-toggle"><input type="checkbox" checked={agentMode} onChange={(e) => setAgentMode(e.target.checked)} /> Agent mode</label>
-              <button className="primary" disabled={busy || !message.trim()}>{busy ? "ANALYZING…" : "ASK INTELLIGENCE →"}</button>
+              <button className="primary" disabled={busy || !message.trim() || (agentMode && !workspace)}>{busy ? "ANALYZING…" : "ASK INTELLIGENCE →"}</button>
             </div>
           </form>
           <div className="ai-actions ai-actions-pro">
             {QUICK_ACTIONS.map(([id, label, hint]) => <button type="button" key={id} onClick={() => runAction(id)} disabled={busy || !message.trim()} title={hint}>{label}</button>)}
           </div>
+
+          {agentMode && agentRun && (
+            <section className="agent-run-panel" aria-live="polite">
+              <div className="agent-run-heading">
+                <div><small>AUTONOMOUS ENGINEERING RUN</small><strong>Run #{agentRun.id} · {String(agentRun.status).replaceAll("_", " ").toUpperCase()}</strong></div>
+                <div className="agent-run-actions"><button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>{!["succeeded", "failed", "canceled"].includes(agentRun.status) && <button type="button" disabled={busy} onClick={cancelAgentRun}>CANCEL RUN</button>}</div>
+              </div>
+              <p>{agentRun.plan?.summary || agentRun.goal}</p>
+              <div className="agent-run-context"><span>WORKSPACE ID <b>#{agentRun.workspace}</b></span><span>REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>PLAN ONLY · NO FILE CHANGES</b></span></div>
+              {agentRun.plan?.acceptance_criteria?.length > 0 && <div className="agent-run-criteria"><b>ACCEPTANCE CRITERIA</b>{agentRun.plan.acceptance_criteria.map((item, index) => <span key={index}>{index + 1}. {item}</span>)}</div>}
+              {agentRun.error && <div className="agent-run-error">{agentRun.error}</div>}
+              {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
+              <div className="agent-run-tasks">
+                {(agentRun.tasks || []).map((task) => (
+                  <article className="agent-run-task" key={task.id}>
+                    <div className="agent-run-task-title"><b>{task.sequence + 1}. {task.title}</b><span>{task.status.replaceAll("_", " ")}</span></div>
+                    <p>{task.description}</p>
+                    <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
+                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
+                      <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
+                    )}
+                  </article>
+                ))}
+              </div>
+              {agentRun.status === "awaiting_approval" && <button type="button" className="primary agent-run-approve" disabled={busy} onClick={approveAgentRun}>APPROVE PLAN & UNLOCK TOOLS →</button>}
+              {agentToolResult && <div className="agent-run-result"><b>LATEST TOOL EVIDENCE</b><pre>{agentToolResult}</pre></div>}
+              <small className="agent-run-safety">Human approval is required. Available specialist tools are read-only and cannot execute shell commands or mutate workspace files.</small>
+            </section>
+          )}
           {agentMode && <div className="agent-control-center">
             <div className="acc-header"><div><small>AGENT CONTROL CENTER</small><strong>ENGINEERING LOOP</strong></div><span>{busy ? "LIVE · WORKING" : "READY · OBSERVABLE"}</span></div>
             <div className="acc-timeline">{timeline.length ? timeline.map((item,index) => <div className={"acc-step "+item.state} key={index}><i></i><span>{item.label}</span></div>) : <div className="acc-muted">Start an Agent request to initialize the engineering loop.</div>}</div>
             <div className="acc-tools"><div className="acc-section-title">TOOL CALLS <b>{toolCalls.length}</b></div>{toolCalls.length ? toolCalls.map((call,index) => <div className="acc-tool" key={index}><span>●</span><b>{call.name || call.tool || "tool"}</b><em>{call.state || "complete"}</em></div>) : <div className="acc-muted">Tool activity will appear here when the Agent invokes evidence tools.</div>}</div>
-            {agentMode && <div className="acc-intel-grid"><div><small>CONFIDENCE</small><b>LIVE</b></div><div><small>RISK</small><b>REVIEW</b></div><div><small>LOOP</small><b>{applyResult ? "VERIFYING" : approvalToken ? "APPROVAL" : busy ? "RUNNING" : "READY"}</b></div></div>}
+            {agentMode && <div className="acc-intel-grid"><div><small>PLAN TASKS</small><b>{agentRun?.tasks?.length ?? "—"}</b></div><div><small>COMPLETED</small><b>{agentRun?.tasks?.filter((task) => task.status === "succeeded").length ?? 0}</b></div><div><small>APPROVAL</small><b>{agentRun?.status === "awaiting_approval" ? "REQUIRED" : ["approved", "running", "succeeded"].includes(agentRun?.status) ? "GRANTED" : "PENDING"}</b></div></div>}
             {evidence?.repository && <div className="acc-metrics"><div><small>REPOSITORY</small><b>{evidence.repository.connected ? "CONNECTED" : "OFFLINE"}</b></div><div><small>DIAGNOSTICS</small><b>{evidence.diagnostics?.status || "UNKNOWN"}</b></div><div><small>RUNNER</small><b>{evidence.runner?.status || "UNKNOWN"}</b></div></div>}
             {answer && answer.trim().startsWith("{") && <div className="acc-proposal"><div className="acc-section-title">PATCH PREVIEW <button onClick={() => setShowDiff(!showDiff)}>{showDiff ? "HIDE" : "SHOW"}</button></div>{showDiff && <pre>{answer}</pre>}</div>}
           </div>}
@@ -192,7 +366,7 @@ export default function AIAssistantPage({ setPage }) {
                   const response = await apiFetch("/ai/agent/apply/", { method: "POST", body: JSON.stringify({ approval_token: approvalToken }) });
                   const data = await response.json().catch(() => ({}));
                   if (!response.ok) throw new Error(errorText(data, "Patch application failed."));
-                  setApplyResult(data); setApprovalToken(null); setMode("PATCH APPLIED · VERIFYING");
+                  setApplyResult(data); setApprovalToken(null); setMode(data.status === "applied_sync_pending" ? "PATCH SAVED · RUNNER SYNC QUEUED" : "PATCH APPLIED · VERIFYING");
                 } catch (err) { setError(err.message || "Patch application failed."); }
                 finally { setBusy(false); }
               }}>APPROVE & APPLY →</button>
@@ -201,9 +375,9 @@ export default function AIAssistantPage({ setPage }) {
           )}
           {applyResult && (
             <div className="ai-approval-result">
-              <strong>VERIFICATION COMPLETE</strong>
-              <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner: {applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
-              <small>{applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback captured — re-analysis ready."}</small>
+              <strong>{applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "succeeded" ? "WORKSPACE UPDATED · RUNNER SYNCED" : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "failed" ? "WORKSPACE SAVED · RUNNER SYNC FAILED" : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "running" ? "WORKSPACE UPDATED · RUNNER SYNCING" : applyResult.status === "applied_sync_pending" ? "WORKSPACE UPDATED · RUNNER SYNC QUEUED" : applyResult.repair_loop?.passed ? "VERIFICATION PASSED" : "PATCH RESULT · VERIFICATION PENDING"}</strong>
+              <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner sync: {applyResult.sync?.status || applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
+              <small>{applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "succeeded" ? "The saved workspace revision has reached the Runner. This confirms synchronization only; diagnostics and execution verification are still pending." : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "failed" ? "The workspace change remains saved, but Runner synchronization failed. Do not treat this patch as executable or verified." : applyResult.status === "applied_sync_pending" ? "The workspace change is saved. Runner synchronization is being tracked automatically; diagnostics and execution verification are not complete yet." : applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback is pending. Review the Runner and diagnostics status before treating this change as complete."}</small>
             </div>
           )}
           {error && <div className="ai-error">{error}</div>}

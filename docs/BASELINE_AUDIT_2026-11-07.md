@@ -1,0 +1,188 @@
+# Developer OS — Baseline Audit (2026-11-07)
+
+**Scope:** Repository source and GitHub branch/CI metadata available during this audit.
+**Purpose:** Establish a truthful starting point for the Autonomous Software Universe roadmap.
+**Limit:** This is not a live penetration test, full source audit, or production acceptance certificate.
+
+## Executive assessment
+
+Developer OS already has a substantial product foundation. The next step is not a rewrite. It is to make the existing workspace dependable, prove secure execution end to end, and then build trusted AI task execution and orchestration on top.
+
+The most important near-term technical gate is the secure Runner readiness contract. An existing isolated PR (#211) addresses a concrete mismatch between core execution readiness and optional package-install/preview bridges. Its observed CI workflows all completed successfully in the latest retrieved run set. It remains unmerged and must still receive human review and live deployment verification.
+
+## Evidence-backed capability inventory
+
+| Area | Evidence in current repository | Assessment |
+|---|---|---|
+| Product foundation | README documents React/Vite frontend, Django REST backend, PostgreSQL, JWT, Docker/Nginx/Gunicorn | Implemented foundation; production acceptance is separate |
+| Workspace and project management | README documents projects, tasks, notes, snippets, favorites, collaboration, activity and analytics | Implemented product surface; each journey needs current E2E evidence |
+| Web IDE | README documents persistent multi-file browser workspace, file tree, editor and terminal surface | Partial/needs end-to-end verification |
+| Independent repository | README documents working tree, immutable SHA-256 snapshots, commits, branches, push/pull, clone and history | Documented implementation; concurrency, recovery and restore need acceptance tests |
+| AI assistant | README documents optional OpenAI-compatible provider; current frontend includes workspace-context assistant integration | Partial; provider configuration, tool execution, patch safety, and task completion require live evidence |
+| Language tooling | Current Monaco editor imports LSP request/response mapping and document queue modules; Runner contains an LSP engine | Partial; language coverage, cancellation, stale-response handling and multi-file correctness need systematic tests |
+| Secure code execution | README states arbitrary user code is not run inside Django; execution crosses an isolated Runner/worker boundary | Architecture boundary exists; live sandbox isolation and lifecycle must be proven |
+| SaaS / billing | README documents subscriptions, entitlements, organizations and API-key foundations; release gate requires webhook signature/idempotency checks | Partial; real provider credentials, webhook tests, metering and reconciliation remain acceptance gates |
+| Production operations | Health/readiness endpoints, release identity and CI workflows are present | Partial; live service health, cache/worker/runner state and recovery need continuous evidence |
+
+## Confirmed high-priority findings
+
+### 1. Runner readiness contract mismatch on current master
+
+The current master implementation of _secure_runner_ready() requires install and preview operations and a preview network bridge as part of core readiness. That couples the core execute/process service to optional capabilities that may intentionally remain unavailable under a strict isolated configuration.
+
+PR #211 (fix/strict-runner-readiness-contract-20261106) changes the core readiness contract to require:
+- strict Bubblewrap sandbox (bwrap / bubblewrap);
+- strict security level and execution availability;
+- no trusted shared container;
+- isolated network enforcement;
+- working execute and process operations.
+
+It deliberately leaves package-install and preview unavailable unless their own secure bridges are deployed, preserving fail-closed endpoint guards.
+
+**Observed evidence:** PR #211 is 2 commits ahead of master, 0 behind at audit time. The retrieved workflow runs for its head commit report success for Dependency Review, Operational Policy Gate, Live SaaS Smoke Monitor, Security, Backend Health Contract Tests, Node Compatibility, Container Security, and Production Validation.
+
+**Disposition:** Strong first merge candidate after human code review and confirmation that optional install/preview endpoints still return their intended safe unavailable responses. Do not treat green CI as proof that the deployed Runner is actually provisioned.
+
+### 2. Email transport PR requires branch synchronization
+
+PR #209 adds a Resend HTTPS backend for environments where outbound SMTP is unavailable. Its retrieved workflow runs all report success. However, its branch is 12 commits ahead and 1 commit behind current master.
+
+**Disposition:** Do not merge blindly. Rebase/synchronize with current master, rerun all checks, and validate sender-domain configuration and delivery from the actual deployment environment. No credentials should be committed.
+
+### 3. Web IDE modernization branch is not merge-ready
+
+The branch feat/webide-workbench-rebased-20261105 contains a substantial Monaco/LSP/editor update, including editor changes, workbench CSS, completion mapping, LSP document queue, explorer conflict helper, and tests. The comparison against current master reports 1 commit ahead and 9 behind.
+
+**Disposition:** Do not merge the branch as-is. Review each change against current master, transplant only compatible improvements onto a fresh branch, and run the full frontend and Runner test suites. Avoid overwriting newer IDE fixes.
+
+### 4. IDE maintainability needs incremental improvement
+
+Frontend/src/ProIDE.jsx currently concentrates a large amount of editor/workspace behavior in one component and suppresses several lint rule families at file scope.
+
+**Disposition:** Do not rewrite the IDE. First add/retain behavior tests around workspace loading, saving, conflict resolution, offline synchronization, terminal lifecycle, and editor state. Then extract bounded hooks/modules one responsibility at a time with no UI or API behavior change.
+
+## Current open pull requests observed
+
+| PR | Scope | Snapshot |
+|---|---|---|
+| #212 | Autonomous Software Universe roadmap | Draft documentation PR; 4 commits ahead, 0 behind at audit time |
+| #211 | Strict Runner readiness contract | 2 commits ahead, 0 behind; all retrieved CI workflows successful |
+| #209 | Resend HTTPS email delivery | 12 commits ahead, 1 behind; all retrieved CI workflows successful, but requires synchronization |
+
+Branch and workflow state can change after this audit. Recheck GitHub before any merge or release decision.
+
+## Recommended execution order
+
+1. Review and land the isolated Runner readiness correction only after human approval; verify live readiness and optional bridge fail-closed behavior.
+2. Synchronize and revalidate the email transport change if it is still needed for the active deployment.
+3. Stabilize Web IDE persistence: server-authoritative saves, explicit save state, stale-write/conflict handling, offline replay, and recovery.
+4. Prove secure Runner job lifecycle: authenticated submission, isolation, quotas, cancellation, logs, artifacts, and tenant separation.
+5. Harden AI as a bounded project-aware engineering assistant with reviewable diffs, tool authorization, budgets, and test evidence.
+6. Introduce multi-agent orchestration only after single-agent tasks are reliable and idempotent.
+7. Build the evidence-backed Project Digital Twin and end-to-end deploy/monitor/rollback loop.
+
+## Release discipline
+
+- Keep master protected; use isolated branches and reviewable pull requests.
+- Never bypass sandbox checks or disable readiness gates to obtain a green deployment.
+- Never report a feature as complete from UI presence, documentation, or a successful build alone.
+- For every milestone, retain test results, deployment identity, operational evidence, and a rollback path.
+- Treat this audit as a dated snapshot, not a permanent source of truth.
+
+## Verified follow-up — 2026-11-07
+
+This section supersedes any branch-count or PR-state snapshot above where the two conflict. It was checked against GitHub after the original audit text was drafted.
+
+### Current PR #212 state
+
+- PR #212 remains an open draft, based on `master` at `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf`.
+- Its roadmap branch is 7 commits ahead and 0 behind `master`; it changes five documentation files only.
+- It does not add runtime orchestration, persistent agent runs, task DAGs, agent permissions, approval workflows, or new AI execution capabilities.
+
+### Web IDE collaboration work is a separate engineering stream
+
+PR #213 (`fix/webide-serialized-collab-patches-20261107`) is open and draft, 75 commits ahead and 0 behind `master` at head `aa6b8d884e9596f8ebc3eebe7e2d89904877ca7a`. It changes ten backend/frontend files and adds revision-ordered collaboration, offline recovery, explicit conflict review, and CRDT validation. Its PR description reports seven successful CI workflows, including backend/frontend/Runner validation, CodeQL, dependency checks, container security, PostgreSQL backup/restore, and Docker Compose health validation. Manual two-authenticated-browser collaboration E2E remains outstanding; PR-triggered checks do not certify live production availability. This is meaningful Phase 1 work, but it is not an AI-agent orchestrator.
+
+### Existing AI foundation — implementation boundary
+
+The current backend contains `AIConversation` and `AIMessage` persistence models, an authenticated `/api/assistant/` endpoint, and structured `ai_actions_api` actions for review, tests, explain, plan, and debug. The assistant endpoint builds deterministic project/task summary context and can call an optional OpenAI-compatible provider. The structured action endpoint enforces an AI usage allowance and project/workspace access checks; its local fallback is deliberately advisory.
+
+These are useful foundations, but source inspection does not establish an autonomous engineering system:
+- The inspected `assistant_api` returns a response but does not persist a conversation/message in the shown handler.
+- The structured actions do not create durable agent-run records, task dependency graphs, resumable execution state, or a specialist-agent registry.
+- No verified tool-execution contract, patch-application transaction, approval queue, cancellation lifecycle, or per-agent permission boundary was found in the inspected routes/handlers.
+- The current assistant must therefore be classified as **partial AI copilot**, not AI Agent Build or multi-agent orchestration.
+
+### Corrected execution order for the Autonomous Software Universe
+
+1. Complete Phase 1 workspace reliability and manual multi-client E2E evidence (including review of PR #213); do not treat PR #213 as an agent feature.
+2. Prove Phase 2 Runner isolation, quotas, cancellation, artifact boundaries, and fail-closed behavior in the deployed environment. PR #211 remains subject to human review and live verification.
+3. Build Phase 3 as a bounded, durable single-agent workflow: persisted run/task state, authorized project context, structured plan, reviewable patch proposal, test evidence, approval, apply/rollback, cancellation, and cost/time limits. Reuse existing AI models and usage accounting only after checking their constraints; avoid duplicate sources of truth.
+4. Add Phase 4 specialist agents and orchestration only after the single-agent workflow is repeatable and idempotent.
+5. Keep deploy/monitor/rollback and the Project Digital Twin behind verified runner and lifecycle evidence.
+
+**Implementation gate:** Before adding models or migrations, inspect the complete existing AI, workspace, usage, audit, job, and runner schemas and all corresponding authorization paths. Every agent-run operation must be tenant-scoped, idempotent, auditable, cancellable, resource-bounded, and unable to execute untrusted code outside the strict Runner. No agent may push, deploy, spend money, access secrets, or perform destructive data operations without explicit authorization and approval.
+
+
+## Implementation hardening — 2026-11-07
+
+The roadmap branch now includes a narrowly scoped hardening pass on the existing AI patch-approval path (not a new parallel agent subsystem):
+
+- AI-generated patch paths are checked against the IDE workspace contract: reject absolute and drive-prefixed paths, backslashes, empty/dot/traversal components, reserved runtime roots (`.git`, `node_modules`, virtual environments and caches), invalid path characters, duplicate case-insensitive targets, and individual file contents above 1 MB.
+- Approved patch application now locks the workspace row inside a database transaction before checking the signed approval's workspace revision. It re-checks write permission under the lock and persists the patch only against the exact revision that was approved, preventing concurrent approvals from silently overwriting one another.
+- Replaying an approval after the workspace revision changes is rejected as stale. A Runner synchronization failure is reported as `applied_sync_pending`, not mislabeled as a fully synchronized apply.
+- Regression coverage was added for reserved/ambiguous paths, duplicate case-insensitive targets, oversized files, cross-user approval-token use, and approval replay after a successful apply.
+
+**Commits:** `0c99c8c` (patch path contract), `0451d57` (serialized approval apply), `f39ba80` (regression tests), and `c1369a2` (fixture correction).
+
+**Verification status at this snapshot:** GitHub reports Operational Policy Gate, Node Compatibility, Dependency Review, and Live SaaS Smoke Monitor successful; Security is queued; Container Security and Production Validation are still in progress. No local Django test run or live AI-provider/Runner acceptance test has been performed in this session. Do not mark the Autonomous Software Universe, multi-agent orchestration, or end-to-end autonomous build as complete.
+
+### Persistent AI-agent conversation continuity
+
+The existing `/api/ai/agent/` endpoint now reuses the established `AIConversation`/`AIMessage` records rather than creating a stateless agent response only. It accepts an owner-scoped conversation ID, includes a bounded recent history in subsequent provider requests, persists user/assistant turns transactionally, and returns the same `conversation`/`message` response shape used by the existing AI chat clients. The Web IDE retains that conversation ID while the selected workspace remains unchanged and resets it when switching workspaces. Conversation history is ordered deterministically by timestamp and message ID. Regression tests cover multi-turn persistence/history and cross-user conversation denial.
+
+This closes a persistence gap in the current single-agent copilot workflow; it does **not** yet provide durable background agent runs, task DAG orchestration, specialist agents, resumable execution, or autonomous multi-step job scheduling.
+
+### Rollback authorization and quota enforcement hardening
+
+A follow-up security pass aligned AI rollback with the same strict workspace path policy used for approved patches. Rollback now rejects unsafe/reserved paths, ambiguous case-insensitive duplicate targets, non-string content and oversized snapshots; it locks the workspace, checks the expected revision, and independently verifies write permission before restoring files. Regression tests cover unsafe rollback paths, read-only access denial, and unchanged workspace state after denial.
+
+AI Agent monthly usage is now reserved atomically before provider execution rather than after the external call. This prevents concurrent requests from exceeding a user's allowance after both passed a non-billable preflight check. A regression test verifies the provider is not contacted when quota reservation fails. Workspace access is also checked before creating a new conversation, avoiding orphaned conversation records for unauthorized workspace IDs.
+
+**Latest branch snapshot:** 28 commits ahead of `master`, 0 behind. PR #212 remains draft/open. GitHub Actions has queued the backend/frontend/runner validation, security, CodeQL, dependency, container, Node compatibility, operational policy and read-only production smoke workflows. At this snapshot those checks are not yet complete; no local test execution or production AI-provider acceptance has been performed in this session.
+
+### Durable asynchronous Agent planning runtime (implementation milestone)
+
+A first executable orchestration layer now uses the existing `BackgroundJob` queue and worker rather than introducing a parallel queue. New `AgentRun` and `AgentTask` records persist the user-owned run lifecycle and a dependency graph. Authenticated endpoints create idempotent runs, inspect their state, cancel queued/planning work, and approve a plan only when the workspace revision and write permission still match. The worker generates a bounded plan (maximum 12 tasks), validates unique task IDs, known dependencies, topological order and cycle freedom, and persists the task graph transactionally. Failed provider/planning attempts use the existing worker retry/dead-letter lifecycle.
+
+The planner excludes common credential-bearing files (`.env*`, `.npmrc`, `.pypirc`, SSH/AWS credential paths and private-key file extensions) from provider context, caps file samples and rechecks workspace write access and revision both before and after provider execution. Regression coverage was added for idempotency, owner isolation, cancellation, stale approvals, dependency validation, permission revocation, and secret-file exclusion.
+
+**Execution boundary:** this milestone is deliberately a planning runtime, not yet an autonomous code executor. It does not run shell commands, edit files, push commits, deploy, or execute approved tasks. The API reports `execution_state=plan_only_no_workspace_mutations`; task execution still requires a separately reviewed, permissioned tool runner and explicit per-action approval. Apply migrations before enabling these endpoints in a deployment.
+
+### Follow-up reliability and specialist-contract pass
+
+The Agent Runtime now reconciles durable run state with the existing worker's retry/dead-letter transitions. A retryable stale worker lease returns an interrupted planning run to queued; an exhausted lease marks the run failed and records an agent_run.failed audit event. Terminal/canceled states are not overwritten. Regression tests cover both requeue and dead-letter behavior.
+
+The task graph now assigns each task to one of 12 allowlisted specialist roles (product manager, architect, frontend, backend, database, UI/UX, testing, security, DevOps, debugger, code reviewer, technical writer). Migration 0036_agent_task_specialist_role adds the persisted agent_role field. The server, not the model provider, supplies a role-specific read-only capability contract; capabilities are descriptive metadata only and do not grant shell, deployment, arbitrary tool, or workspace-write access. The Web IDE displays the assigned specialist and its allowed capability labels.
+
+**Latest branch snapshot:** PR #212 remains Draft/Open, 73 commits ahead of master, 0 behind; master remains untouched. At the latest observed run, Backend Health Contract Tests and the broader CI matrix were still running/queued. No claim is made that the new regression suite has passed until the relevant latest-commit jobs finish. Production migration 0036 has not been applied by this branch change, and live provider/Runner acceptance remains outstanding.
+
+A final duplicate-delivery guard prevents a second worker delivery from invoking the provider while the same AgentRun is already in planning, and treats failed runs as terminal. Stale-lease recovery explicitly returns abandoned planning runs to queued before a retry, so the guard does not block legitimate recovery. Regression tests cover duplicate planning delivery and terminal failed-run behavior.
+
+### Provider-context credential redaction
+
+The planning context sanitizer now redacts inline credential assignments and common token formats (AWS access keys, GitHub tokens, OpenAI/provider keys, Slack tokens) as well as PEM private-key blocks, Bearer authorization values, and passwords embedded in PostgreSQL/MySQL/MongoDB/Redis connection URLs before workspace source samples are sent to the AI provider. Existing path-based exclusions remain in place. Quoted assignment syntax is preserved around the redaction marker. Regression coverage was added for inline assignments, provider token formats, private-key blocks, and the actual workspace-to-provider context path.
+
+The sanitizer is a defense-in-depth filter, not a guarantee that every secret format can be detected. Users should still avoid committing credentials to workspace files and should rotate any credential that may already have been exposed.
+
+**Latest snapshot:** PR #212 remains Draft/Open, 82 commits ahead of master and 0 behind. The read-only production route/availability smoke check and operational policy gate passed on the prior CI snapshot. The health endpoint regression workflow passed on the latest test run; full backend validation, CodeQL, and runner checks remain pending. No production migration or autonomous workspace mutation is enabled.
+
+### Approved read-only specialist tool registry
+
+A real, deterministic tool registry now exists on this isolated branch with four implemented tools: `inspect_workspace`, `analyze_dependencies`, `review_security`, and `analyze_schema`. The tools are bounded by file count, per-file size, result size, and finding count. They inspect workspace metadata and source statically; they do not execute project code, access networks, install packages, return source excerpts, or write workspace files.
+
+The new authenticated task-tool endpoint is owner-scoped and requires all of the following: an approved AgentRun, a ready AgentTask, a tool registered on the server, a matching server-owned specialist capability, workspace access, and an unchanged workspace revision. Every successful invocation creates an AuditLog record. The Web IDE exposes only the implemented read-only tools for ready tasks after plan approval and renders their results.
+
+Regression coverage in `Backend/api/test_agent_tools.py` currently contains nine tests for approval gating, role authorization, owner isolation, stale revisions, blocked tasks, unknown tool rejection, no workspace mutation, secret-file exclusion, and malformed package-manifest handling. These tests have been added to the branch but are **not yet verified as passing on the latest commit**.
+
+**Latest implementation snapshot:** PR #212 remains Draft/Open and isolated from protected master. The latest full CI run observed in this review belongs to an earlier SHA and therefore does not validate the new tool registry, endpoint, or Web IDE controls. No production migrations, deployments, or Runner execution were performed. The registry is a first read-only capability slice, not autonomous code execution.

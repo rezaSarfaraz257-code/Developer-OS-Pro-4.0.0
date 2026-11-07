@@ -111,6 +111,81 @@ class IntelligenceEngineTests(SimpleTestCase):
         self.assertIn('"provider_status": 401', provider_error)
 
 class AgentEvidenceTests(SimpleTestCase):
+    def test_agent_context_excludes_secret_files_and_redacts_inline_credentials(self):
+        from api.ai_engine import _agent_context_file_samples
+
+        samples = _agent_context_file_samples({
+            "src/main.py": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\\nprint('safe')",
+            ".env": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            "config/.env.production": "DATABASE_URL=postgres://user:password123@db.example/app",
+            "config/credentials.production": "API_KEY=another-secret-value",
+            "config/secrets.production.json": "private-secret",
+            ".aws/credentials": "aws_secret_access_key=example-secret-value",
+            "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
+            "docs/readme.md": "Public documentation",
+        })
+
+        serialized = __import__("json").dumps(samples)
+        self.assertIn("src/main.py", samples)
+        self.assertIn("docs/readme.md", samples)
+        self.assertNotIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", serialized)
+        self.assertNotIn("password123", serialized)
+        self.assertNotIn("example-secret-value", serialized)
+        self.assertNotIn("another-secret-value", serialized)
+        self.assertNotIn("private-secret", serialized)
+        self.assertNotIn("private-material", serialized)
+        self.assertNotIn(".env", serialized)
+        self.assertIn("[REDACTED", serialized)
+
+    def test_agent_context_file_samples_enforce_file_and_total_character_budgets(self):
+        from api.ai_engine import _agent_context_file_samples
+
+        samples = _agent_context_file_samples({
+            f"src/file_{index}.py": "x" * 5000 for index in range(120)
+        })
+
+        self.assertLessEqual(len(samples), 120)
+        self.assertLessEqual(sum(len(value) for value in samples.values()), 24000)
+        self.assertTrue(all(len(value) <= 1800 for value in samples.values()))
+
+    def test_agent_evidence_uses_secret_filtered_workspace_samples(self):
+        from api.ai_engine import _agent_evidence
+        from unittest.mock import patch
+
+        user = object()
+        request = Mock()
+        request.data = {"workspace": 7}
+        request.user = user
+        workspace = Mock(
+            id=7,
+            name="Evidence workspace",
+            project_id=None,
+            language="python",
+            framework="",
+            runtime="python",
+            package_manager="",
+            active_file="main.py",
+            revision=3,
+            files={
+                "main.py": "API_KEY=abcdefghijklmno\\nprint('safe')",
+                ".env": "API_KEY=must-not-leak",
+            },
+        )
+        with (
+            patch("api.views._workspace_for_user", return_value=workspace),
+            patch("api.ai_engine._agent_repository_evidence", return_value={"connected": False}),
+            patch("api.ai_engine._agent_diagnostics_evidence", return_value={"status": "skipped"}),
+            patch("api.ai_engine._agent_runner_evidence", return_value={"status": "skipped"}),
+        ):
+            evidence = _agent_evidence(request)
+
+        serialized = __import__("json").dumps(evidence)
+        self.assertTrue(evidence["workspace"]["secrets_excluded"])
+        self.assertIn("main.py", evidence["workspace"]["files"])
+        self.assertNotIn(".env", evidence["workspace"]["files"])
+        self.assertNotIn("abcdefghijklmno", serialized)
+        self.assertNotIn("must-not-leak", serialized)
+
     def test_agent_evidence_is_bounded(self):
         from api.ai_engine import _compact_context
         evidence = {"workspace": {"files": {"main.py": "x" * 70000}}, "repository": {}, "diagnostics": {}, "runner": {}}

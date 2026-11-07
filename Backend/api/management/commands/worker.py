@@ -12,7 +12,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
-from api.models import BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
+from api.models import AgentRun, AuditLog, BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
 from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
@@ -50,6 +50,28 @@ def recover_stale_jobs():
                 "status", "available_at", "locked_at", "locked_by",
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
             ])
+            if locked.kind == "ai_agent_plan":
+                run = AgentRun.objects.select_for_update().filter(
+                    pk=locked.payload.get("run_id")
+                ).first()
+                if run and run.status in {"queued", "planning"}:
+                    if locked.status == "queued":
+                        run.status = "queued"
+                        run.started_at = None
+                        run.error = ""
+                        run.save(update_fields=["status", "started_at", "error", "updated_at"])
+                    else:
+                        run.status = "failed"
+                        run.error = "WorkerLeaseExpired: planning could not be recovered."
+                        run.finished_at = now
+                        run.save(update_fields=["status", "error", "finished_at", "updated_at"])
+                        AuditLog.objects.create(
+                            user_id=run.owner_id,
+                            action="agent_run.failed",
+                            target_type="AgentRun",
+                            target_id=str(run.id),
+                            metadata={"reason": "worker_lease_exhausted", "attempts": locked.attempts},
+                        )
             if locked.status == "failed" and locked.kind == "data_export":
                 DataExportRequest.objects.filter(
                     pk=locked.payload.get("export_id"),
@@ -171,6 +193,52 @@ def _require_real_email_transport() -> None:
 
 
 def execute(job):
+    if job.kind == "ai_agent_runner_sync":
+        # Serialize the snapshot read and Runner write against workspace edits.
+        # If several revisions queued, an older job coalesces to the newest
+        # authoritative database snapshot instead of overwriting Runner backwards.
+        from api.models import CodeWorkspace
+        from api.views import _runner_request, _workspace_payload, _workspace_write_allowed
+
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        with transaction.atomic():
+            workspace = CodeWorkspace.objects.select_for_update().filter(
+                pk=payload.get("workspace_id"),
+                owner_id=payload.get("owner_id"),
+            ).first()
+            if workspace is None:
+                raise RuntimeError("Workspace no longer exists or is not owned by the requesting account.")
+            if not _workspace_write_allowed(workspace, workspace.owner):
+                raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
+            synced_revision = int(workspace.revision)
+            runner_data, runner_error = _runner_request(
+                "POST", "/sync", _workspace_payload(workspace), timeout=30
+            )
+            if runner_error:
+                # Keep provider/Runner diagnostics out of durable job errors.
+                raise RuntimeError("Runner workspace synchronization failed.")
+            AuditLog.objects.create(
+                user=workspace.owner,
+                action="ai_agent.runner_workspace_synced",
+                target_type="CodeWorkspace",
+                target_id=str(workspace.id),
+                metadata={
+                    "revision": synced_revision,
+                    "requested_revision": payload.get("requested_revision"),
+                    "coalesced": synced_revision != payload.get("requested_revision"),
+                    "job_id": job.id,
+                },
+            )
+        return {
+            "status": "synced",
+            "workspace_id": workspace.id,
+            "revision": synced_revision,
+            "coalesced": synced_revision != payload.get("requested_revision"),
+            "runner": runner_data if isinstance(runner_data, dict) else {},
+        }
+    if job.kind == "ai_agent_plan":
+        from api.agent_runtime import build_agent_plan
+        return build_agent_plan(job.payload["run_id"])
     if job.kind == "email":
         _require_real_email_transport()
         payload = job.payload
@@ -293,6 +361,28 @@ class Command(BaseCommand):
                         "status", "result", "error", "available_at", "finished_at",
                         "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
                     ])
+                    if job.kind == "ai_agent_plan" and job.status in {"queued", "failed"}:
+                        run = AgentRun.objects.select_for_update().filter(
+                            pk=job.payload.get("run_id")
+                        ).first()
+                        if run and run.status in {"queued", "planning"}:
+                            if job.status == "queued":
+                                run.status = "queued"
+                                run.started_at = None
+                                run.error = ""
+                                run.save(update_fields=["status", "started_at", "error", "updated_at"])
+                            else:
+                                run.status = "failed"
+                                run.error = f"{type(exc).__name__}: planning failed"[:500]
+                                run.finished_at = now
+                                run.save(update_fields=["status", "error", "finished_at", "updated_at"])
+                                AuditLog.objects.create(
+                                    user_id=run.owner_id,
+                                    action="agent_run.failed",
+                                    target_type="AgentRun",
+                                    target_id=str(run.id),
+                                    metadata={"reason": "planning_failed", "attempts": job.attempts},
+                                )
                     if job.kind == "data_export" and job.status == "failed":
                         DataExportRequest.objects.filter(
                             pk=job.payload.get("export_id"),

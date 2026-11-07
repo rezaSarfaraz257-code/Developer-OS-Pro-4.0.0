@@ -4,6 +4,7 @@ from . import mature
 from . import repository
 from . import repository_engine
 from . import ai_engine
+from . import agent_runtime
 from . import ai_recovery
 from . import operational_health
 
@@ -133,6 +134,12 @@ urlpatterns = [
     path("ai/health/", ai_engine.ai_health_api, name="ai-health"),
     path("ai/chat/", ai_recovery.ai_chat_api_recovery, name="ai-chat"),
     path("ai/agent/", ai_engine.ai_agent_api, name="ai-agent"),
+    path("ai/agent/runs/", agent_runtime.agent_run_create_api, name="ai-agent-run-create"),
+    path("ai/agent/runs/<int:pk>/", agent_runtime.agent_run_detail_api, name="ai-agent-run-detail"),
+    path("ai/agent/sync-jobs/<int:job_id>/", agent_runtime.agent_runner_sync_status_api, name="ai-agent-runner-sync-status"),
+    path("ai/agent/runs/<int:pk>/cancel/", agent_runtime.agent_run_cancel_api, name="ai-agent-run-cancel"),
+    path("ai/agent/runs/<int:pk>/approve/", agent_runtime.agent_run_approve_api, name="ai-agent-run-approve"),
+    path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/tools/<slug:tool_name>/", agent_runtime.agent_task_tool_api, name="ai-agent-task-tool"),
     path("ai/agent/apply/", ai_engine.ai_agent_apply_api, name="ai-agent-apply"),
     path("ai/agent/rollback/", ai_engine.ai_agent_rollback_api, name="ai-agent-rollback"),
     path("ai/actions/", ai_engine.ai_actions_api, name="ai-actions"),
