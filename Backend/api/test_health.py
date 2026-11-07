@@ -173,6 +173,40 @@ class SharedReleaseIdentityIntegrationTests(TestCase):
             self.assertEqual(response.json()["version"], "4.0.0")
             self.assertEqual(response.json()["release_sha"], render_sha)
 
+class EmailTransportReadinessTests(TestCase):
+    @override_settings(
+        EMAIL_BACKEND="api.email_backends.resend.EmailBackend",
+        EMAIL_HOST="",
+        RESEND_API_KEY="re_test_key",
+        DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.com>",
+    )
+    def test_resend_https_transport_is_ready_without_smtp_host(self):
+        from .views import _email_transport_ready
+
+        self.assertTrue(_email_transport_ready(strict_runtime=True))
+
+    @override_settings(
+        EMAIL_BACKEND="api.email_backends.resend.EmailBackend",
+        EMAIL_HOST="",
+        RESEND_API_KEY="",
+        DEFAULT_FROM_EMAIL="Developer OS <no-reply@example.com>",
+    )
+    def test_resend_transport_fails_closed_without_api_key(self):
+        from .views import _email_transport_ready
+
+        self.assertFalse(_email_transport_ready(strict_runtime=True))
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        EMAIL_HOST="",
+        RESEND_API_KEY="",
+    )
+    def test_console_transport_is_not_ready_in_deployed_runtime(self):
+        from .views import _email_transport_ready
+
+        self.assertFalse(_email_transport_ready(strict_runtime=True))
+
+
 class ReadinessFailureLoggingTests(TestCase):
     def test_not_ready_emits_secret_safe_structured_log(self):
         with patch.dict(os.environ, {
