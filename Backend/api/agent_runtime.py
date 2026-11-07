@@ -601,7 +601,8 @@ def agent_run_approve_api(request, pk):
             return Response({"error": "Workspace changed after planning. Generate a fresh plan.", "code": "stale_workspace"}, status=409)
         run.status = "approved"
         run.approved_at = timezone.now()
-        run.save(update_fields=["status", "approved_at", "updated_at"])
+        run.finished_at = None
+        run.save(update_fields=["status", "approved_at", "finished_at", "updated_at"])
         AuditLog.objects.create(
             user=request.user,
             action="agent_run.plan_approved",
