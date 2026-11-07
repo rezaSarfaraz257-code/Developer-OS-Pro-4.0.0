@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from itertools import islice
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -28,6 +29,10 @@ _MAX_TASKS = 12
 AGENT_HISTORY_MAX_CHARS = 12000
 AGENT_HISTORY_MESSAGE_MAX_CHARS = 3000
 AGENT_GOAL_MAX_CHARS = 8000
+AGENT_CONTEXT_MAX_FILES = 120
+AGENT_CONTEXT_MAX_FILE_CHARS = 256000
+AGENT_CONTEXT_MAX_SAMPLE_CHARS = 24000
+AGENT_CONTEXT_SAMPLE_CHARS_PER_FILE = 1800
 AGENT_SPECIALIST_ROLES = {
     "product_manager": "Product Manager: clarify scope, requirements, milestones, and acceptance criteria",
     "architect": "Software Architect: inspect system boundaries, architecture, and integration risks",
@@ -87,6 +92,48 @@ def _redact_sensitive_content(value):
     for pattern, replacement in patterns:
         redacted = pattern.sub(replacement, redacted)
     return redacted
+
+
+def _agent_context_file_samples(files):
+    """Build a bounded, secret-filtered provider snapshot without copying the workspace."""
+    if not isinstance(files, dict):
+        return {}
+    samples = {}
+    total_chars = 0
+    sensitive_names = {
+        ".env", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_dsa",
+        "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys",
+        "credentials", "secrets.json", "service-account.json",
+    }
+    sensitive_directories = {".aws", ".ssh", "secrets", "credentials"}
+    sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")
+
+    # islice bounds iteration without materializing a second copy of the map.
+    for path, value in islice(files.items(), AGENT_CONTEXT_MAX_FILES):
+        if not isinstance(path, str) or not isinstance(value, str):
+            continue
+        normalized_path = path.replace("\\", "/").lower()
+        parts = normalized_path.split("/")
+        name = parts[-1] if parts else ""
+        sensitive_name = (
+            name in sensitive_names
+            or name.startswith((".env.", "credentials.", "secret.", "secrets."))
+            or any(part in sensitive_directories for part in parts[:-1])
+            or name.endswith(sensitive_suffixes)
+        )
+        if sensitive_name or len(value) > AGENT_CONTEXT_MAX_FILE_CHARS:
+            continue
+        remaining = AGENT_CONTEXT_MAX_SAMPLE_CHARS - total_chars
+        if remaining <= 0:
+            break
+        # Redact the complete bounded file before truncation so token boundaries
+        # cannot be split by the sample limit.
+        redacted_value = _redact_sensitive_content(value)
+        bounded = redacted_value[:min(AGENT_CONTEXT_SAMPLE_CHARS_PER_FILE, remaining)]
+        if bounded:
+            samples[path[:500]] = bounded
+            total_chars += len(bounded)
+    return samples
 
 
 def _workspace_access(workspace_id, user):
@@ -228,34 +275,7 @@ def build_agent_plan(run_id):
     if workspace.revision != revision:
         raise RuntimeError("Workspace changed before agent planning began. Create a new run from the latest revision.")
 
-    files = workspace.files if isinstance(workspace.files, dict) else {}
-    safe_files = {}
-    total_chars = 0
-    for path, value in list(files.items())[:120]:
-        normalized_path = str(path).replace("\\", "/").lower()
-        parts = normalized_path.split("/")
-        name = parts[-1] if parts else ""
-        sensitive_name = (
-            name == ".env"
-            or name.startswith(".env.")
-            or name in {".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials", "secrets.json", "service-account.json"}
-            or name.startswith(("credentials.", "secret.", "secrets."))
-            or any(part in {".aws", ".ssh", "secrets", "credentials"} for part in parts[:-1])
-            or name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"))
-        )
-        if sensitive_name:
-            continue
-        if not isinstance(value, str):
-            continue
-        remaining = 24000 - total_chars
-        if remaining <= 0:
-            break
-        # Redact the complete source before applying the sample budget. Truncating
-        # first can split a credential at the boundary and leak its prefix/suffix.
-        redacted_value = _redact_sensitive_content(value)
-        bounded = redacted_value[:min(1800, remaining)]
-        safe_files[str(path)[:500]] = bounded
-        total_chars += len(bounded)
+    safe_files = _agent_context_file_samples(workspace.files)
 
     context = {
         "workspace": {
