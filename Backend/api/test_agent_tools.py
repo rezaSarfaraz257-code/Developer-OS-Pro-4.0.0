@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -183,6 +184,14 @@ class ReadOnlyAgentToolTests(TestCase):
     def test_unknown_tool_is_not_executable(self):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
+
+    @patch("api.agent_runtime.execute_readonly_tool", side_effect=ValueError("internal path and parser details"))
+    def test_tool_validation_exception_does_not_leak_internal_details(self, _execute_tool):
+        response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "agent_tool_invalid_input")
+        self.assertEqual(response.data["error"], "The requested analysis could not be completed.")
+        self.assertNotIn("internal path", json.dumps(response.data))
 
     def test_dependency_analyzer_rejects_valid_json_with_wrong_manifest_shape(self):
         self.workspace.files = {**self.workspace.files, "package.json": "[]"}
