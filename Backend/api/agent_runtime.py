@@ -25,6 +25,8 @@ User = get_user_model()
 _AGENT_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,120}$")
 _MAX_TASKS = 12
+AGENT_HISTORY_MAX_CHARS = 12000
+AGENT_HISTORY_MESSAGE_MAX_CHARS = 3000
 AGENT_SPECIALIST_ROLES = {
     "product_manager": "Product Manager: clarify scope, requirements, milestones, and acceptance criteria",
     "architect": "Software Architect: inspect system boundaries, architecture, and integration risks",
@@ -265,11 +267,31 @@ def build_agent_plan(run_id):
     }
     history = []
     if conversation_id:
-        history = list(
+        raw_history = list(
             AIMessage.objects.filter(conversation_id=conversation_id, conversation__owner_id=owner_id)
             .order_by("-created_at", "-id")
             .values("role", "content")[:8]
         )[::-1]
+        # Conversation history is untrusted input too: redact credential
+        # material and enforce per-message plus aggregate budgets before it
+        # crosses the provider boundary.
+        history_chars = 0
+        for message in raw_history:
+            content = message.get("content")
+            if not isinstance(content, str) or not content:
+                continue
+            remaining = AGENT_HISTORY_MAX_CHARS - history_chars
+            if remaining <= 0:
+                break
+            bounded = content[:AGENT_HISTORY_MESSAGE_MAX_CHARS]
+            bounded = _redact_sensitive_content(bounded)[:remaining]
+            if not bounded:
+                continue
+            history.append({
+                "role": str(message.get("role") or "user")[:32],
+                "content": bounded,
+            })
+            history_chars += len(bounded)
 
     prompt = (
         "Create a safe, dependency-aware engineering implementation plan for the user's goal. "
