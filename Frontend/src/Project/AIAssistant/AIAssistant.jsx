@@ -262,9 +262,9 @@ export default function AIAssistantPage({ setPage }) {
           <form onSubmit={ask} className="ai-composer">
             <textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={busy} placeholder="Ask Developer OS Intelligence…" />
             <div className="ai-composer-bottom">
-              <span>{activeWorkspace ? `Workspace: ${activeWorkspace.name}` : "Context: projects + tasks + notes + snippets"}</span>
+              <label className="ai-workspace-picker"><span>WORKSPACE</span><select value={workspace} onChange={(event) => setWorkspace(event.target.value)} disabled={busy}><option value="">Select workspace…</option>{workspaces.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}</select></label>
               <label className="ai-agent-toggle"><input type="checkbox" checked={agentMode} onChange={(e) => setAgentMode(e.target.checked)} /> Agent mode</label>
-              <button className="primary" disabled={busy || !message.trim()}>{busy ? "ANALYZING…" : "ASK INTELLIGENCE →"}</button>
+              <button className="primary" disabled={busy || !message.trim() || (agentMode && !workspace)}>{busy ? "ANALYZING…" : "ASK INTELLIGENCE →"}</button>
             </div>
           </form>
           <div className="ai-actions ai-actions-pro">
@@ -278,6 +278,9 @@ export default function AIAssistantPage({ setPage }) {
                 <div className="agent-run-actions"><button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>{!["succeeded", "failed", "canceled"].includes(agentRun.status) && <button type="button" disabled={busy} onClick={cancelAgentRun}>CANCEL RUN</button>}</div>
               </div>
               <p>{agentRun.plan?.summary || agentRun.goal}</p>
+              <div className="agent-run-context"><span>WORKSPACE REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>PLAN ONLY · NO FILE CHANGES</b></span></div>
+              {agentRun.plan?.acceptance_criteria?.length > 0 && <div className="agent-run-criteria"><b>ACCEPTANCE CRITERIA</b>{agentRun.plan.acceptance_criteria.map((item, index) => <span key={index}>{index + 1}. {item}</span>)}</div>}
+              {agentRun.error && <div className="agent-run-error">{agentRun.error}</div>}
               {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
               <div className="agent-run-tasks">
                 {(agentRun.tasks || []).map((task) => (
