@@ -91,11 +91,11 @@ def review_security(workspace):
     files = _files(workspace)
     rules = [
         ("debug_enabled", re.compile(r"(?im)^\s*DEBUG\s*=\s*True\b"), "high", "Debug mode appears enabled in source configuration."),
-        ("wildcard_hosts", re.compile(r"(?im)^\s*ALLOWED_HOSTS\s*=\s*\[[^\]]*['\\"]\*['\\"]"), "high", "Wildcard host configuration appears present."),
+        ("wildcard_hosts", re.compile(r"(?im)^\s*ALLOWED_HOSTS\s*=\s*\[[^\]]*\*"), "high", "Wildcard host configuration appears present."),
         ("shell_true", re.compile(r"(?i)\bshell\s*=\s*True\b"), "high", "A subprocess call appears to enable shell interpretation."),
         ("dynamic_eval", re.compile(r"\b(?:eval|exec)\s*\("), "medium", "Dynamic code evaluation appears in source."),
         ("os_system", re.compile(r"\bos\.system\s*\("), "high", "Direct operating-system shell invocation appears in source."),
-        ("hardcoded_secret", re.compile(r"(?i)\b(?:api[_-]?key|client[_-]?secret|password|secret[_-]?key)\b\s*[:=]\s*['\\"][^'\\"]{8,}['\\"]"), "high", "A possible hard-coded credential assignment appears in source."),
+        ("hardcoded_secret", re.compile(r"""(?i)\b(?:api[_-]?key|client[_-]?secret|password|secret[_-]?key)\b\s*[:=]\s*[\'"][^\'"]{8,}[\'"]"""), "high", "A possible hard-coded credential assignment appears in source."),
     ]
     findings = []
     for path, content in files.items():
