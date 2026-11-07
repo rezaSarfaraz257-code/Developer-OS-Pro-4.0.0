@@ -279,17 +279,34 @@ def _agent_safe_patch_path(path: Any) -> bool:
     component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     reserved_runtime_roots = {
         ".git", "node_modules", ".venv", ".home", ".tmp",
-        ".cache", ".npm-cache", ".pip-cache",
+        ".cache", ".npm-cache", ".pip-cache", ".ssh", ".aws",
     }
+    sensitive_names = {
+        ".env", ".npmrc", ".pypirc", ".netrc", "credentials",
+        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+        "known_hosts", "authorized_keys",
+    }
+    sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".keystore")
+    safe_components = all(
+        part not in {"", ".", ".."}
+        and part.casefold() not in reserved_runtime_roots
+        and component_pattern.fullmatch(part)
+        for part in parts
+    )
+    safe_sensitive_boundary = all(
+        part.casefold() not in sensitive_names
+        and not part.casefold().endswith(sensitive_suffixes)
+        and not (
+            part.casefold().startswith(".env.")
+            and part.casefold() not in {".env.example", ".env.sample", ".env.template"}
+        )
+        for part in parts
+    )
     return bool(
         not path.startswith("/")
         and not re.match(r"^[A-Za-z]:", path)
-        and all(
-            part not in {"", ".", ".."}
-            and part.casefold() not in reserved_runtime_roots
-            and component_pattern.fullmatch(part)
-            for part in parts
-        )
+        and safe_components
+        and safe_sensitive_boundary
     )
 
 
