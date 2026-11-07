@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_tools import MAX_WORKSPACE_TOTAL_BYTES, _files, analyze_dependencies
+from .agent_tools import MAX_WORKSPACE_TOTAL_BYTES, _files, _safe_path, analyze_dependencies
 from .models import AIConversation, AIMessage, AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
@@ -44,7 +44,22 @@ class ReadOnlyAgentToolTests(TestCase):
     def tool_url(self, tool, task=None, run=None):
         return f"/api/ai/agent/runs/{(run or self.run).id}/tasks/{(task or self.task).id}/tools/{tool}/"
 
-    def test_workspace_snapshot_enforces_aggregate_byte_budget(self):
+    def test_safe_path_rejects_traversal_absolute_and_malformed_paths(self):
+        for path in ("../secret.txt", "src/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "src//main.py", "src/./main.py", "bad\\x00name.py", "", "x" * 501):
+            with self.subTest(path=path):
+                self.assertFalse(_safe_path(path))
+        self.assertTrue(_safe_path("src/components/App.jsx"))
+
+    def test_workspace_snapshot_excludes_traversal_paths(self):
+        workspace = type("Workspace", (), {
+            "files": {
+                "../outside.py": "must-not-enter-agent-context",
+                "/absolute.py": "must-not-enter-agent-context",
+                "safe/main.py": "value = 1",
+            }
+        })()
+        self.assertEqual(_files(workspace), {"safe/main.py": "value = 1"})
+
         workspace = type("Workspace", (), {
             "files": {f"module_{index}.py": "x" * 150_000 for index in range(20)}
         })()
