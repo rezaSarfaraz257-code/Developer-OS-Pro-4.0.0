@@ -212,7 +212,7 @@ class AgentRunLifecycleTests(TestCase):
             owner=self.user,
             workspace=self.workspace,
             conversation=conversation,
-            goal="Review the code and propose tests. password=synthetic-test-value",
+            goal="Review the code and propose tests. password=synthetic-test-value" + ("x" * 9000),
             idempotency_key="worker-plan-0001",
             workspace_revision=self.workspace.revision,
         )
@@ -259,6 +259,9 @@ class AgentRunLifecycleTests(TestCase):
         sent_prompt = provider.call_args.args[0]
         self.assertNotIn("synthetic-test-value", sent_prompt)
         self.assertIn("[REDACTED]", sent_prompt)
+        provider_goal = sent_prompt.split("GOAL:\\n", 1)[1]
+        self.assertLessEqual(len(provider_goal), 8000)
+        self.assertEqual(len(run.goal), len("Review the code and propose tests. password=synthetic-test-value") + 9000)
         sent_context = provider.call_args.args[1]
         sent_history = provider.call_args.args[2]
         serialized_history = json.dumps(sent_history)
