@@ -362,6 +362,80 @@ class AgentRunLifecycleTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(task.status, "ready")
 
+    @patch("api.agent_tools.execute_readonly_tool")
+    def test_other_user_cannot_invoke_private_run_task_tool(self, execute_tool):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Private workspace inspection",
+            status="approved",
+            idempotency_key="private-tool-run-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        task = AgentTask.objects.create(
+            run=run,
+            key="inspect",
+            title="Inspect private workspace",
+            agent_role="architect",
+            sequence=0,
+            status="ready",
+        )
+
+        self.client.force_authenticate(self.other)
+        response = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/tools/inspect_workspace/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        execute_tool.assert_not_called()
+        task.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(task.status, "ready")
+        self.assertEqual(run.status, "approved")
+
+    @patch("api.agent_tools.execute_readonly_tool")
+    def test_blocked_task_cannot_run_before_dependencies_succeed(self, execute_tool):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Respect task dependency ordering",
+            status="approved",
+            idempotency_key="blocked-tool-run-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        prerequisite = AgentTask.objects.create(
+            run=run,
+            key="prerequisite",
+            title="Complete prerequisite",
+            agent_role="architect",
+            sequence=0,
+            status="ready",
+        )
+        blocked = AgentTask.objects.create(
+            run=run,
+            key="dependent",
+            title="Run dependent analysis",
+            agent_role="architect",
+            sequence=1,
+            status="blocked",
+        )
+        blocked.depends_on.add(prerequisite)
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{blocked.id}/tools/inspect_workspace/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        execute_tool.assert_not_called()
+        blocked.refresh_from_db()
+        prerequisite.refresh_from_db()
+        self.assertEqual(blocked.status, "blocked")
+        self.assertEqual(prerequisite.status, "ready")
+
     def test_cancel_stops_queued_run_and_job(self):
         run = AgentRun.objects.create(
             owner=self.user,
