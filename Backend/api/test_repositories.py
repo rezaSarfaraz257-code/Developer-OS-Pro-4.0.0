@@ -34,6 +34,7 @@ class IndependentRepositoryApiTests(APITestCase):
             {"files": {"main.py": "print(2)", "README.md": "# Snapshot"}},
             format="json",
         )
+        repo_before_push = CodeWorkspace.objects.get(pk=repo_id).revision
         pushed = self.client.post(
             f"/api/repositories/{repo_id}/push/",
             {"message": "Add README and update code", "branch": "main"},
@@ -41,6 +42,7 @@ class IndependentRepositoryApiTests(APITestCase):
         )
         self.assertEqual(pushed.status_code, status.HTTP_201_CREATED)
         self.assertEqual(pushed.data["commit"]["files"], 2)
+        self.assertEqual(pushed.data["repository"]["revision"], repo_before_push + 1)
 
         history = self.client.get(f"/api/repositories/{repo_id}/history/?branch=main")
         self.assertEqual(history.status_code, status.HTTP_200_OK)
@@ -51,14 +53,38 @@ class IndependentRepositoryApiTests(APITestCase):
             {"files": {"main.py": "broken"}},
             format="json",
         )
+        repo_before_pull = CodeWorkspace.objects.get(pk=repo_id).revision
         pulled = self.client.post(
             f"/api/repositories/{repo_id}/pull/",
             {"branch": "main"},
             format="json",
         )
         self.assertEqual(pulled.status_code, status.HTTP_200_OK)
+        self.assertEqual(pulled.data["repository"]["revision"], repo_before_pull + 1)
         self.assertEqual(pulled.data["repository"]["files"]["main.py"], "print(2)")
         self.assertEqual(pulled.data["repository"]["files"]["README.md"], "# Snapshot")
+
+
+    def test_workspace_sync_push_advances_repository_revision_once(self):
+        repository = self.client.post(
+            "/api/repositories/",
+            {"name": "Workspace Sync", "files": {"main.py": "print('repo')"}},
+            format="json",
+        )
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Workspace source", files={"main.py": "print('workspace')"},
+            active_file="main.py",
+        )
+        repo_id = repository.data["id"]
+        revision_before = CodeWorkspace.objects.get(pk=repo_id).revision
+        response = self.client.post(
+            f"/api/repositories/{repo_id}/sync-workspace/",
+            {"workspace_id": workspace.pk, "direction": "push"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["repository"]["revision"], revision_before + 1)
+        self.assertEqual(response.data["repository"]["files"]["main.py"], "print('workspace')")
 
     def test_repository_isolation(self):
         created = self.client.post("/api/repositories/", {"name": "Private"}, format="json")

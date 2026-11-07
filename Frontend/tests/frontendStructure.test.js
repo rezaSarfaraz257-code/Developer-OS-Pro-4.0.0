@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches } from "../src/ide/offlineQueue.js";
+import { parseOfflineQueue, queueWorkspacePatch, getWorkspacePatches, removeWorkspacePatches, canSafelySyncOfflinePatches, removeSyncedWorkspacePatches, rebaseWorkspacePatches, preserveInterruptedWorkspacePatches } from "../src/ide/offlineQueue.js";
 import { appendBoundedText, DEFAULT_TERMINAL_BUFFER_LIMIT } from "../src/ide/terminalBuffer.js";
-import { canAcknowledgeWorkspaceEdit } from "../src/ide/collaborationState.js";
+import { canAcknowledgeWorkspaceEdit, isExpectedWorkspacePatchAck, getMonotonicWorkspaceRevision, isNewerWorkspaceRevision } from "../src/ide/collaborationState.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -200,6 +200,25 @@ test("offline queue replaces only the same path in the same workspace", () => {
   assert.equal(next.find((item) => item.workspace_id === "1").content, "new A");
   assert.equal(next.find((item) => item.workspace_id === "2").content, "B");
   assert.ok(next.some((item) => item.path === "legacy.txt"));
+});
+
+test("interrupted collaboration recovery keeps the newest edit for each file", () => {
+  const original = [
+    { workspace_id: "7", path: "keep.js", content: "existing", base_revision: 3 },
+    { workspace_id: "8", path: "other.js", content: "other workspace", base_revision: 9 },
+  ];
+  const recovered = preserveInterruptedWorkspacePatches(original, "7",
+    { path: "same.js", content: "in-flight older", base_revision: 4 },
+    [
+      { path: "same.js", content: "newest local edit", base_revision: 4 },
+      { path: "next.js", content: "pending file", base_revision: 4 },
+    ],
+  );
+  assert.equal(recovered.find((item) => item.path === "same.js" && item.workspace_id === "7").content, "newest local edit");
+  assert.equal(recovered.find((item) => item.path === "same.js" && item.workspace_id === "7").base_revision, 4);
+  assert.equal(recovered.find((item) => item.path === "next.js" && item.workspace_id === "7").content, "pending file");
+  assert.equal(recovered.find((item) => item.path === "keep.js").content, "existing");
+  assert.equal(recovered.find((item) => item.workspace_id === "8").content, "other workspace");
 });
 
 test("offline queue parsing retains identifiable legacy edits and ignores malformed entries", () => {
@@ -1221,4 +1240,100 @@ test("AI Assistant agent control center reports evidence-backed metrics rather t
   assert.match(assistant, /COMPLETED/);
   assert.match(assistant, /APPROVAL/);
   assert.doesNotMatch(assistant, /CONFIDENCE<\/small><b>LIVE/);
+});
+
+
+test("Web IDE collaboration sends one file patch per acknowledged workspace revision", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /pendingCollabPatchesRef=useRef\(new Map\(\)\),patchInFlightRef=useRef\(null\),patchQueueBlockedRef=useRef\(new Set\(\)\)/);
+  assert.ok(ide.includes("patchQueueBlockedRef.current.has(String(w?.id))||patchInFlightRef.current"));
+  assert.match(ide, /base_revision:Number\(w\.revision\?\?pending\.base_revision\?\?0\)/);
+  assert.match(ide, /pendingCollabPatchesRef\.current\.set\(key,\{\.\.\.msg,workspace_id:String\(w\.id\)\}\);sendNextCollabPatch\(\)/);
+  assert.match(ide, /const expectedAck=isExpectedWorkspacePatchAck\(/);
+  assert.ok(ide.includes('sendNextCollabPatch()}else if(d.type==="conflict")'));
+  assert.match(ide, /patchQueueBlockedRef\.current\.add\(conflictWorkspaceId\)/);
+  assert.ok(ide.includes('const conflictWorkspaceId=String(refs.ws.current?.id??"")'));
+  assert.ok(ide.includes("setConflictDialog({workspaceId:conflictWorkspaceId,path:conflictPath"));
+  assert.ok(ide.includes("patchQueueBlockedRef.current.add(conflictWorkspaceId)"));
+  assert.match(ide, /if\(collab\.current\?\.readyState===1\)\{enqueueCollabPatch\(msg\)\}/);
+  assert.ok(ide.includes("preserveInterruptedWorkspacePatches(parseOfflineQueue(localStorage.getItem(OFFLINE_QUEUE_KEY)),id,interrupted,pending)"));
+  assert.ok(ide.includes("preserveInterruptedWorkspacePatches("));
+  assert.ok(ide.includes("localStorage.setItem(OFFLINE_QUEUE_KEY,JSON.stringify(queue))"));
+  assert.ok(ide.includes("Connection lost — latest local edits preserved for revision-checked recovery."));
+  assert.ok(ide.includes("persistInterruptedCollabWorkspace=(workspaceId,interrupted)=>"));
+  assert.ok(ide.includes("persistInterruptedCollabWorkspace(interruptedWorkspace,interrupted);if(patchInFlightRef.current===interrupted)patchInFlightRef.current=null"));
+  assert.ok(ide.includes("patchQueueBlockedRef.current.delete(String(ws.id))"));
+  assert.ok(ide.includes("const recovered=persistInterruptedCollabWorkspace(blockedId,null)"));
+  assert.ok(ide.includes("!pendingCollabPatchesRef.current.has(prefix+interrupted.path)"));
+  assert.ok(ide.includes('[conflictDialog,setConflictDialog]=useState(null)'));
+  assert.ok(ide.includes('setConflictDialog({workspaceId:String(w.id),path:p,base:dirtyBaseContentRef.current.get(p)??null,local:'));
+  assert.ok(ide.includes("FILE REVISION CONFLICT"));
+  assert.ok(ide.includes("Use remote version"));
+  assert.ok(ide.includes("Keep my version and retry"));
+  assert.ok(ide.includes("No content is overwritten automatically."));
+  assert.ok(ide.includes("dirtyBaseContentRef=useRef(new Map())"));
+  assert.ok(ide.includes('base:dirtyBaseContentRef.current.get(p)??null'));
+  assert.ok(ide.includes("BASE VERSION"));
+  assert.ok(ide.includes("[Original version was not captured]"));
+  assert.ok(ide.includes('if(typeof serverContent!=="string"||serverContent!==content)'));
+  assert.ok(ide.includes('else if(d.type==="conflict")'));
+  assert.ok(ide.includes('const conflictPath=String(rejected?.path||d.path||"")'));
+  assert.ok(ide.includes("Conflict loaded — compare Base, Local and Remote before choosing."));
+  assert.ok(ide.includes("const saved=await saveFile(false,c.path)"));
+  assert.ok(ide.includes('pendingCollabPatchesRef.current.delete(c.workspaceId+":"+c.path)'));
+  assert.ok(ide.includes('queued.filter(item=>!(String(item?.workspace_id)===c.workspaceId&&item?.path===c.path))'));
+  assert.ok(ide.includes("Cannot safely remove the stale offline patch; conflict remains blocked."));
+});
+
+test("collaboration patch acknowledgements must match the in-flight revision and payload", () => {
+  const base = {
+    activeWorkspaceId: 7, inFlightWorkspaceId: "7", ackWorkspaceId: 7,
+    inFlightPath: "src/app.js", ackPath: "src/app.js",
+    inFlightContent: "saved content", ackContent: "saved content",
+    baseRevision: 41, ackRevision: 42,
+  };
+  assert.equal(isExpectedWorkspacePatchAck(base), true);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: 41 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: 43 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: "invalid" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackWorkspaceId: 8 }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackPath: "src/other.js" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackContent: "older duplicate" }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, baseRevision: Number.MAX_SAFE_INTEGER }), false);
+  assert.equal(isExpectedWorkspacePatchAck({ ...base, ackRevision: Number.MAX_SAFE_INTEGER + 1 }), false);
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.match(ide, /isExpectedWorkspacePatchAck\(/);
+  assert.match(ide, /Ignored stale or mismatched collaboration acknowledgement/);
+});
+
+
+test("out-of-order collaboration acknowledgements never regress the observed workspace revision", () => {
+  assert.equal(getMonotonicWorkspaceRevision(43, 42), 43);
+  assert.equal(getMonotonicWorkspaceRevision("43", "42"), 43);
+  assert.equal(getMonotonicWorkspaceRevision(41, 42), 42);
+  assert.equal(getMonotonicWorkspaceRevision(null, "42"), 42);
+  assert.equal(getMonotonicWorkspaceRevision("invalid", 42), 42);
+  assert.equal(getMonotonicWorkspaceRevision(43, "invalid"), 43);
+  assert.equal(getMonotonicWorkspaceRevision(Number.MAX_SAFE_INTEGER + 1, 42), 42);
+});
+
+
+test("remote collaboration events cannot overwrite files with stale or duplicate revisions", () => {
+  assert.equal(isNewerWorkspaceRevision(43, 42), false);
+  assert.equal(isNewerWorkspaceRevision(43, 43), false);
+  assert.equal(isNewerWorkspaceRevision(42, 43), true);
+  assert.equal(isNewerWorkspaceRevision(null, 0), true);
+  assert.equal(isNewerWorkspaceRevision("invalid", 2), true);
+  assert.equal(isNewerWorkspaceRevision(2, "invalid"), false);
+  assert.equal(isNewerWorkspaceRevision(2, Number.MAX_SAFE_INTEGER + 1), false);
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.equal((ide.match(/if\(!isNewerWorkspaceRevision\(refs\.ws\.current\?\.revision,d\.revision\)\)return;/g) || []).length, 2);
+});
+
+test("Web IDE does not request unused CRDT history that its client cannot apply", () => {
+  const ide = fs.readFileSync(path.resolve(srcDir, "ProIDE.jsx"), "utf8");
+  assert.doesNotMatch(
+    ide,
+    /socket\.send\(JSON\.stringify\(\{\s*type:\s*["']crdt-sync["']/
+  );
 });

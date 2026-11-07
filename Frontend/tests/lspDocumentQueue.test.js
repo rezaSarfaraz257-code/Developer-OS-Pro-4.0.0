@@ -52,3 +52,55 @@ test("LSP queue isolates different documents and flush waits only for its own do
   assert.equal(flushedA, true);
   await queue.flush("workspace-1:b.py");
 });
+
+
+test("LSP queue isolates identical URIs across workspaces", async () => {
+  const queue = createLspDocumentQueue();
+  let releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const first = queue.enqueue("workspace-10:file:///shared.py", () => firstGate);
+  const second = queue.enqueue("workspace-11:file:///shared.py", async () => "independent");
+
+  assert.equal(await second, "independent");
+  releaseFirst();
+  await first;
+});
+
+test("LSP queue recovers after a synchronous exception and preserves later FIFO work", async () => {
+  const queue = createLspDocumentQueue();
+  const order = [];
+  const failed = queue.enqueue("workspace:file:///sync.py", () => {
+    order.push("throws");
+    throw new TypeError("synchronous provider failure");
+  });
+  const recovered = queue.enqueue("workspace:file:///sync.py", () => {
+    order.push("recovered");
+    return "ok";
+  });
+
+  await assert.rejects(failed, /synchronous provider failure/);
+  assert.equal(await recovered, "ok");
+  assert.deepEqual(order, ["throws", "recovered"]);
+});
+
+test("flush waits for its captured queue tail, not later enqueues", async () => {
+  const queue = createLspDocumentQueue();
+  let releaseFirst;
+  let releaseLater;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const laterGate = new Promise(resolve => { releaseLater = resolve; });
+  const first = queue.enqueue("doc", () => firstGate);
+  let flushed = false;
+  const snapshot = queue.flush("doc").then(() => { flushed = true; });
+  let laterFinished = false;
+  const later = queue.enqueue("doc", () => laterGate).then(() => { laterFinished = true; });
+
+  releaseFirst();
+  await Promise.all([first, snapshot]);
+  assert.equal(flushed, true);
+  assert.equal(laterFinished, false, "a later enqueue must not extend an earlier flush snapshot");
+
+  releaseLater();
+  await later;
+  assert.equal(laterFinished, true);
+});

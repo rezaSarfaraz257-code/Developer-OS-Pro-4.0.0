@@ -1,7 +1,7 @@
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import User
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework_simplejwt.tokens import AccessToken
 from urllib.parse import parse_qs
 import time
@@ -14,6 +14,23 @@ from datetime import timedelta
 from .models import CodeWorkspace, WorkspaceCollaborationSession, WorkspaceFileRevision, WorkspaceFileLock, WorkspaceCRDTOperation
 from .websocket_auth import APP_SUBPROTOCOL, extract_websocket_token
 from .workspace_validation import (validate_workspace_path, validate_workspace_text, validate_workspace_total, bounded_json_object, validate_client_id, validate_websocket_message, MAX_CRDT_INSERT_BYTES)
+
+def _parse_protocol_integer(value, default=None):
+    """Accept only exact integers or signed ASCII decimal strings from the wire."""
+    if value is None or value == "":
+        if default is not None:
+            return default
+        raise ValueError("integer_required")
+    if isinstance(value, bool):
+        raise ValueError("boolean_is_not_integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        digits = value[1:] if value.startswith("-") else value
+        if digits and digits.isascii() and digits.isdigit():
+            return int(value)
+    raise ValueError("invalid_integer")
+
 
 class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
@@ -103,7 +120,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def _crdt_receive(self, content):
         result=await sync_to_async(self._apply_crdt_operation)(content)
         await self.send_json(result)
-        if result.get("type")=="crdt-ack":
+        if result.get("type")=="crdt-ack" and not result.get("duplicate") and isinstance(result.get("event"),dict):
             await self.channel_layer.group_send(self.group_name,{"type":"crdt_event","payload":result["event"]})
 
     def crdt_event(self,event):
@@ -111,51 +128,81 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             return self.send_json(event["payload"])
 
     def _apply_crdt_operation(self, content):
-        path=str(content.get("path") or "").strip()
-        opid=str(content.get("operation_id") or "")
-        kind=str(content.get("kind") or "")
+        raw_path = content.get("path")
+        opid = content.get("operation_id")
+        kind = content.get("kind")
+        if not isinstance(raw_path, str):
+            return {"type":"crdt-reject","reason":"invalid_path"}
         try:
-            path = validate_workspace_path(path)
+            path = validate_workspace_path(raw_path.strip())
         except ValueError:
             return {"type":"crdt-reject","reason":"invalid_path"}
-        if not opid or len(opid) > 128 or kind not in {"insert","delete"}:
+        if (
+            not isinstance(opid, str)
+            or not opid
+            or opid != opid.strip()
+            or len(opid) > 128
+            or any(ord(char) < 32 or ord(char) == 127 for char in opid)
+            or not isinstance(kind, str)
+            or kind not in {"insert","delete"}
+        ):
             return {"type":"crdt-reject","reason":"invalid_operation"}
-        if WorkspaceCRDTOperation.objects.filter(operation_id=opid).exists():
+
+        def duplicate_result(existing):
+            if existing.workspace_id != self.workspace.id:
+                return {"type":"crdt-reject","reason":"operation_id_conflict"}
             return {"type":"crdt-ack","duplicate":True,"event":{"type":"crdt-op","operation_id":opid,"client_id":self.client_id}}
-        with transaction.atomic():
-            ws=CodeWorkspace.objects.select_for_update().get(pk=self.workspace.id)
-            last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
-            try:
-                requested_lamport = int(content.get("lamport") or 0)
-                pos = int(content.get("position") or 0)
-                count = int(content.get("delete_count") or 0)
-            except (TypeError, ValueError, OverflowError):
-                return {"type":"crdt-reject","reason":"invalid_operation"}
-            if requested_lamport < 0 or requested_lamport > 9_223_372_036_854_775_806 or pos < 0 or count < 0:
-                return {"type":"crdt-reject","reason":"invalid_operation"}
-            try:
-                inserted = validate_workspace_text(content.get("text") or "") if kind == "insert" else ""
-                if len(inserted.encode("utf-8")) > MAX_CRDT_INSERT_BYTES:
-                    return {"type":"crdt-reject","reason":"operation_too_large"}
-            except ValueError:
-                return {"type":"crdt-reject","reason":"invalid_content"}
-            current=str((ws.files or {}).get(path,""))
-            # Preserve the editor protocol's existing insert offset semantics (1-based after the first character).
-            if kind == "insert" and pos > 0:
-                pos = min(len(current), pos + 1)
-            if pos > len(current) or (kind == "delete" and pos + count > len(current)):
-                return {"type":"crdt-reject","reason":"invalid_range"}
-            lamport=max(requested_lamport,int(last.lamport if last else 0))+1
-            next_content=current[:pos]+inserted+current[pos:] if kind=="insert" else current[:pos]+current[pos+count:]
-            files=dict(ws.files or {}); files[path]=next_content
-            try:
-                validate_workspace_total(files)
-            except ValueError:
-                return {"type":"crdt-reject","reason":"workspace_limit"}
-            ws.files=files; ws.revision=(ws.revision or 0)+1; ws.save(update_fields={"files","revision"})
-            blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
-            WorkspaceCRDTOperation.objects.create(workspace=ws,path=path,operation_id=opid,actor_id=self.client_id,lamport=lamport,kind=kind,position=pos,delete_count=count,text=inserted,update_blob=blob,author=self.user)
-            return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":inserted,"content":next_content,"client_id":self.client_id}}
+
+        existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+        if existing:
+            return duplicate_result(existing)
+
+        try:
+            with transaction.atomic():
+                ws=CodeWorkspace.objects.select_for_update().get(pk=self.workspace.id)
+                # Recheck after acquiring the workspace lock to close the same-workspace race.
+                existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+                if existing:
+                    return duplicate_result(existing)
+                last=WorkspaceCRDTOperation.objects.filter(workspace=ws,path=path).order_by("-lamport").first()
+                try:
+                    requested_lamport = _parse_protocol_integer(content.get("lamport"), default=0)
+                    pos = _parse_protocol_integer(content.get("position"), default=0)
+                    count = _parse_protocol_integer(content.get("delete_count"), default=0)
+                except (TypeError, ValueError, OverflowError):
+                    return {"type":"crdt-reject","reason":"invalid_operation"}
+                if requested_lamport < 0 or requested_lamport > 9_223_372_036_854_775_806 or pos < 0 or count < 0:
+                    return {"type":"crdt-reject","reason":"invalid_operation"}
+                try:
+                    inserted = validate_workspace_text(content.get("text") or "") if kind == "insert" else ""
+                    if len(inserted.encode("utf-8")) > MAX_CRDT_INSERT_BYTES:
+                        return {"type":"crdt-reject","reason":"operation_too_large"}
+                except ValueError:
+                    return {"type":"crdt-reject","reason":"invalid_content"}
+                current=str((ws.files or {}).get(path,""))
+                # Preserve the editor protocol's existing insert offset semantics (1-based after the first character).
+                if kind == "insert" and pos > 0:
+                    pos = min(len(current), pos + 1)
+                if pos > len(current) or (kind == "delete" and pos + count > len(current)):
+                    return {"type":"crdt-reject","reason":"invalid_range"}
+                lamport=max(requested_lamport,int(last.lamport if last else 0))+1
+                next_content=current[:pos]+inserted+current[pos:] if kind=="insert" else current[:pos]+current[pos+count:]
+                files=dict(ws.files or {}); files[path]=next_content
+                try:
+                    validate_workspace_total(files)
+                except ValueError:
+                    return {"type":"crdt-reject","reason":"workspace_limit"}
+                ws.files=files; ws.save(update_fields={"files","revision"})
+                blob=base64.b64encode(json.dumps({"path":path,"revision":ws.revision,"lamport":lamport}).encode()).decode()
+                WorkspaceCRDTOperation.objects.create(workspace=ws,path=path,operation_id=opid,actor_id=self.client_id,lamport=lamport,kind=kind,position=pos,delete_count=count,text=inserted,update_blob=blob,author=self.user)
+                return {"type":"crdt-ack","revision":ws.revision,"event":{"type":"crdt-op","workspace_id":ws.id,"revision":ws.revision,"path":path,"operation_id":opid,"lamport":lamport,"kind":kind,"position":pos,"delete_count":count,"text":inserted,"content":next_content,"client_id":self.client_id}}
+        except IntegrityError:
+            # A globally unique operation_id may race across different workspace locks.
+            # The outer transaction rolls back the file and revision update on collision.
+            existing=WorkspaceCRDTOperation.objects.filter(operation_id=opid).only("workspace_id").first()
+            if existing:
+                return duplicate_result(existing)
+            raise
 
     def _presence_snapshot(self):
         now=timezone.now()
@@ -186,7 +233,7 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
         try:
             path = validate_workspace_path(content.get("path"))
             next_content = validate_workspace_text(content.get("content") if content.get("content") is not None else "")
-            client_revision = int(content.get("base_revision"))
+            client_revision = _parse_protocol_integer(content.get("base_revision"))
         except (ValueError, TypeError, OverflowError):
             return {"type":"conflict","reason":"invalid_patch"}
         if client_revision < 0 or client_revision > 9_223_372_036_854_775_807:
@@ -207,7 +254,6 @@ class IDECollaborationConsumer(AsyncJsonWebsocketConsumer):
             except ValueError:
                 return {"type":"conflict","reason":"workspace_limit","server_revision":ws.revision}
             ws.files=files
-            ws.revision=(ws.revision or 0)+1
             ws.save(update_fields={"files","revision"})
             WorkspaceFileRevision.objects.create(workspace=ws,path=path,revision=ws.revision,content=next_content,author=self.user,client_id=client_id)
             return {"type":"patch-ack","revision":ws.revision,"event":{"type":"file-update","workspace_id":ws.id,"path":path,"content":next_content,"revision":ws.revision,"user_id":self.user.id,"username":self.user.username,"client_id":client_id}}
