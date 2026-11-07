@@ -67,7 +67,7 @@ export default function AIAssistantPage({ setPage }) {
     setTimeline([
       { label: "PLAN", state: ["awaiting_approval", "approved", "running", "succeeded"].includes(data.status) ? "complete" : "active" },
       { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : "pending" },
-      { label: "ENGINEERING TASKS", state: data.status === "running" ? "active" : data.status === "succeeded" ? "complete" : "pending" },
+      { label: "ENGINEERING TASKS", state: ["approved", "running"].includes(data.status) ? "active" : data.status === "succeeded" ? "complete" : "pending" },
     ]);
   }, [agentRun?.id]);
 
@@ -267,7 +267,7 @@ export default function AIAssistantPage({ setPage }) {
                     <div className="agent-run-task-title"><b>{task.sequence + 1}. {task.title}</b><span>{task.status.replaceAll("_", " ")}</span></div>
                     <p>{task.description}</p>
                     <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
-                    {agentRun.status === "running" && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
+                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
                       <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
                     )}
                   </article>
