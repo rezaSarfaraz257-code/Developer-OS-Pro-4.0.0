@@ -5,7 +5,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .agent_tools import analyze_dependencies
-from .models import AgentRun, AgentTask, AuditLog, CodeWorkspace
+from .models import AIConversation, AIMessage, AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
 class ReadOnlyAgentToolTests(TestCase):
@@ -50,6 +50,8 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_state"], "read_only_analysis_no_workspace_mutations")
         self.assertEqual(response.data["result"]["dependency_count"], 2)
+        self.assertEqual(response.data["task_status"], "succeeded")
+        self.assertEqual(response.data["run_status"], "succeeded")
         self.assertNotIn(".env", [item["path"] for item in response.data["result"]["manifests"]])
         self.assertTrue(response.data["result"]["read_only"])
         self.workspace.refresh_from_db()
@@ -60,6 +62,42 @@ class ReadOnlyAgentToolTests(TestCase):
             target_id=str(self.task.id),
             metadata__tool="analyze_dependencies",
         ).exists())
+
+    def test_read_only_task_completion_persists_evidence_and_unlocks_dag(self):
+        conversation = AIConversation.objects.create(owner=self.user, title="Agent evidence")
+        self.run.conversation = conversation
+        self.run.save(update_fields=["conversation"])
+        dependent = AgentTask.objects.create(
+            run=self.run,
+            key="follow_up",
+            title="Inspect after dependency analysis",
+            agent_role="architect",
+            status="blocked",
+            sequence=1,
+        )
+        dependent.depends_on.add(self.task)
+
+        first = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.data["run_status"], "running")
+        self.assertEqual(first.data["newly_ready_tasks"], ["follow_up"])
+        dependent.refresh_from_db()
+        self.assertEqual(dependent.status, "ready")
+        self.assertTrue(AIMessage.objects.filter(
+            conversation=conversation,
+            role="tool",
+            context__agent_task_id=self.task.id,
+        ).exists())
+
+        second = self.client.post(
+            self.tool_url("analyze_dependencies", task=dependent), {}, format="json"
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["run_status"], "succeeded")
+        self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 2)
+
+        replay = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
+        self.assertEqual(replay.status_code, 409)
 
     def test_unapproved_run_cannot_invoke_tool(self):
         self.run.status = "awaiting_approval"
