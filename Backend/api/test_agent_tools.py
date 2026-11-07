@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_tools import analyze_dependencies
+from .agent_tools import MAX_WORKSPACE_TOTAL_BYTES, _files, analyze_dependencies
 from .models import AIConversation, AIMessage, AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
@@ -43,6 +43,26 @@ class ReadOnlyAgentToolTests(TestCase):
 
     def tool_url(self, tool, task=None, run=None):
         return f"/api/ai/agent/runs/{(run or self.run).id}/tasks/{(task or self.task).id}/tools/{tool}/"
+
+    def test_workspace_snapshot_enforces_aggregate_byte_budget(self):
+        workspace = type("Workspace", (), {
+            "files": {f"module_{index}.py": "x" * 150_000 for index in range(20)}
+        })()
+        selected = _files(workspace)
+        total_bytes = sum(len(value.encode("utf-8")) for value in selected.values())
+        self.assertLessEqual(total_bytes, MAX_WORKSPACE_TOTAL_BYTES)
+        self.assertLess(len(selected), 20)
+
+    def test_workspace_snapshot_skips_oversized_files_and_continues(self):
+        workspace = type("Workspace", (), {
+            "files": {
+                "oversized.py": "x" * 300_000,
+                "safe.py": "value = 1",
+                ".env": "SECRET=must-not-be-read",
+            }
+        })()
+        selected = _files(workspace)
+        self.assertEqual(selected, {"safe.py": "value = 1"})
 
     def test_approved_architect_can_analyze_dependencies_without_mutating_workspace(self):
         before = dict(self.workspace.files)
