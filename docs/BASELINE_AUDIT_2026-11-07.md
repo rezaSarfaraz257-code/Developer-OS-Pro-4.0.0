@@ -168,3 +168,11 @@ The task graph now assigns each task to one of 12 allowlisted specialist roles (
 **Latest branch snapshot:** PR #212 remains Draft/Open, 73 commits ahead of master, 0 behind; master remains untouched. At the latest observed run, Backend Health Contract Tests and the broader CI matrix were still running/queued. No claim is made that the new regression suite has passed until the relevant latest-commit jobs finish. Production migration 0036 has not been applied by this branch change, and live provider/Runner acceptance remains outstanding.
 
 A final duplicate-delivery guard prevents a second worker delivery from invoking the provider while the same AgentRun is already in planning, and treats failed runs as terminal. Stale-lease recovery explicitly returns abandoned planning runs to queued before a retry, so the guard does not block legitimate recovery. Regression tests cover duplicate planning delivery and terminal failed-run behavior.
+
+### Provider-context credential redaction
+
+The planning context sanitizer now redacts inline credential assignments and common token formats (AWS access keys, GitHub tokens, OpenAI/provider keys, Slack tokens) as well as PEM private-key blocks before workspace source samples are sent to the AI provider. Existing path-based exclusions remain in place. Quoted assignment syntax is preserved around the redaction marker. Regression coverage was added for inline assignments, provider token formats, private-key blocks, and the actual workspace-to-provider context path.
+
+The sanitizer is a defense-in-depth filter, not a guarantee that every secret format can be detected. Users should still avoid committing credentials to workspace files and should rotate any credential that may already have been exposed.
+
+**Latest snapshot:** PR #212 remains Draft/Open, 79 commits ahead of master and 0 behind. The read-only production route/availability smoke check and operational policy gate passed on the prior CI snapshot. The health endpoint regression workflow passed on the latest test run; full backend validation, CodeQL, and runner checks remain pending. No production migration or autonomous workspace mutation is enabled.
