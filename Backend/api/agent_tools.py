@@ -15,16 +15,24 @@ MAX_FINDINGS = 50
 
 
 def _safe_path(path):
-    normalized = str(path).replace("\\", "/").strip("/")
-    parts = normalized.lower().split("/")
-    name = parts[-1] if parts else ""
+    """Reject malformed/traversal paths before applying secret-file policy."""
+    if not isinstance(path, str) or not path or len(path) > 500 or "\x00" in path:
+        return False
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[a-zA-Z]:", normalized):
+        return False
+    parts = normalized.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        return False
+    lowered = [part.lower() for part in parts]
+    name = lowered[-1]
     return not (
         name == ".env"
         or name.startswith(".env.")
-        or name in {".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials", "secrets.json", "service-account.json"}
+        or name in {".npmrc", ".pypirc", ".netrc", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys", "credentials", "secrets.json", "service-account.json"}
         or name.startswith(("credentials.", "secret.", "secrets."))
         or name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"))
-        or any(part in {".aws", ".ssh", "secrets", "credentials"} for part in parts[:-1])
+        or any(part in {".aws", ".ssh", "secrets", "credentials"} for part in lowered[:-1])
     )
 
 
