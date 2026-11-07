@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../services/api";
 import "./AIAssistant.css";
 
@@ -58,7 +58,7 @@ export default function AIAssistantPage({ setPage }) {
     [workspaces, workspace],
   );
 
-  async function refreshAgentRun(runId = agentRun?.id) {
+  const refreshAgentRun = useCallback(async (runId = agentRun?.id) => {
     if (!runId) return;
     const response = await apiFetch(`/ai/agent/runs/${runId}/`);
     const data = await response.json().catch(() => ({}));
@@ -69,7 +69,7 @@ export default function AIAssistantPage({ setPage }) {
       { label: "HUMAN APPROVAL", state: data.status === "awaiting_approval" ? "ready" : ["approved", "running", "succeeded"].includes(data.status) ? "complete" : "pending" },
       { label: "ENGINEERING TASKS", state: data.status === "running" ? "active" : data.status === "succeeded" ? "complete" : "pending" },
     ]);
-  }
+  }, [agentRun?.id]);
 
   async function approveAgentRun() {
     if (!agentRun?.id || busy) return;
@@ -112,7 +112,7 @@ export default function AIAssistantPage({ setPage }) {
       refreshAgentRun(agentRun.id).catch((err) => setError(err.message || "Agent status refresh failed."));
     }, 4000);
     return () => clearInterval(timer);
-  }, [agentRun?.id, agentRun?.status]);
+  }, [agentRun?.id, agentRun?.status, refreshAgentRun]);
 
   async function ask(e) {
     e?.preventDefault();
