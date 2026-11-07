@@ -5,10 +5,12 @@ workspace state. Results contain metadata/findings only, never source excerpts.
 """
 import json
 import re
+from itertools import islice
 
 
 MAX_WORKSPACE_FILES = 500
 MAX_FILE_BYTES = 256_000
+MAX_WORKSPACE_TOTAL_BYTES = 2_000_000
 MAX_FINDINGS = 50
 
 
@@ -27,13 +29,24 @@ def _safe_path(path):
 
 
 def _files(workspace):
+    """Return a bounded safe snapshot without copying the entire workspace map."""
     raw = workspace.files if isinstance(workspace.files, dict) else {}
-    return {
-        str(path).replace("\\", "/")[:500]: value
-        for path, value in list(raw.items())[:MAX_WORKSPACE_FILES]
-        if _safe_path(path) and isinstance(value, str) and len(value.encode("utf-8", "ignore")) <= MAX_FILE_BYTES
-    }
-
+    selected = {}
+    total_bytes = 0
+    for path, value in islice(raw.items(), MAX_WORKSPACE_FILES):
+        if not _safe_path(path) or not isinstance(value, str):
+            continue
+        # Cheap character bound avoids encoding arbitrarily large strings.
+        if len(value) > MAX_FILE_BYTES:
+            continue
+        size_bytes = len(value.encode("utf-8"))
+        if size_bytes > MAX_FILE_BYTES:
+            continue
+        if total_bytes + size_bytes > MAX_WORKSPACE_TOTAL_BYTES:
+            continue
+        selected[str(path).replace("\\", "/")[:500]] = value
+        total_bytes += size_bytes
+    return selected
 
 def inspect_workspace(workspace):
     files = _files(workspace)
