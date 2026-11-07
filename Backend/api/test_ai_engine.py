@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .ai_engine import _agent_parse_patch, _provider_config
-from .models import AIConversation, AIMessage, CodeWorkspace
+from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
 class AIEngineUnitTests(TestCase):
@@ -259,6 +259,13 @@ class AIAgentApprovalTests(TestCase):
         workspace.refresh_from_db()
         self.assertEqual(workspace.files["main.py"], "print('after')\n")
         self.assertEqual(response.data["status"], "applied")
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.user,
+            action="ai_agent.patch_applied",
+            target_id=str(workspace.id),
+            metadata__previous_revision=1,
+            metadata__revision=workspace.revision,
+        ).exists())
 
         replay = self.client.post(
             "/api/ai/agent/apply/",
@@ -267,6 +274,32 @@ class AIAgentApprovalTests(TestCase):
         )
         self.assertEqual(replay.status_code, 409)
         self.assertEqual(workspace.revision, response.data["workspace"]["revision"])
+
+    def test_agent_rollback_records_audit_event_without_file_contents(self):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Rollback audit test",
+            files={"main.py": "print('current')\\n"},
+        )
+        response = self.client.post(
+            "/api/ai/agent/rollback/",
+            {
+                "workspace": workspace.id,
+                "revision": workspace.revision,
+                "files": {"main.py": "print('restored')\\n"},
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        event = AuditLog.objects.get(
+            user=self.user,
+            action="ai_agent.workspace_rolled_back",
+            target_id=str(workspace.id),
+        )
+        self.assertEqual(event.metadata["restored_file_count"], 1)
+        self.assertNotIn("files", event.metadata)
+        self.assertNotIn("print('restored')", json.dumps(event.metadata))
 
     def test_agent_rollback_rejects_unsafe_paths(self):
         self.client.force_authenticate(self.user)
