@@ -847,6 +847,50 @@ def _agent_diagnostics_evidence(ws):
     }
 
 
+def _agent_context_file_samples(files):
+    """Build a bounded, secret-filtered source sample for the AI provider boundary."""
+    from .agent_runtime import _redact_sensitive_content
+
+    if not isinstance(files, dict):
+        return {}
+    sensitive_names = {
+        ".env", ".npmrc", ".pypirc", ".netrc", "credentials",
+        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+        "known_hosts", "authorized_keys", "secrets.json",
+        "service-account.json",
+    }
+    sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")
+    excluded_directories = {".ssh", ".aws", "secrets", "credentials"}
+    samples = {}
+    total_chars = 0
+    for path, value in list(files.items())[:120]:
+        if not isinstance(path, str) or not isinstance(value, str):
+            continue
+        normalized = path.replace("\\", "/").strip("/")
+        parts = [part.casefold() for part in normalized.split("/") if part]
+        if not parts:
+            continue
+        name = parts[-1]
+        if (
+            any(part in excluded_directories for part in parts[:-1])
+            or name in sensitive_names
+            or name.endswith(sensitive_suffixes)
+            or name.startswith(".env.")
+        ):
+            continue
+        remaining = 24000 - total_chars
+        if remaining <= 0:
+            break
+        # Redact the entire file before truncation to prevent boundary-split
+        # credentials from leaking into the provider prompt.
+        safe_content = _redact_sensitive_content(value)
+        sample = safe_content[:min(1800, remaining)]
+        if sample:
+            samples[normalized[:500]] = sample
+            total_chars += len(sample)
+    return samples
+
+
 def _agent_evidence(request):
     from .views import _workspace_for_user
     workspace_id = request.data.get("workspace")
@@ -859,7 +903,8 @@ def _agent_evidence(request):
             "language": ws.language, "framework": ws.framework, "runtime": ws.runtime,
             "package_manager": ws.package_manager, "active_file": ws.active_file,
             "revision": ws.revision,
-            "files": {k: v[:12000] for k, v in (ws.files or {}).items() if isinstance(k, str) and isinstance(v, str)},
+            "files": _agent_context_file_samples(ws.files),
+            "secrets_excluded": True,
         },
         "repository": _agent_repository_evidence(ws, request.user),
         "diagnostics": _agent_diagnostics_evidence(ws),
