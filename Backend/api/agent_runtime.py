@@ -461,8 +461,14 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
 
         try:
             result = execute_readonly_tool(tool_name, workspace)
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=400)
+        except ValueError:
+            # Tool exceptions may contain implementation details. Keep the
+            # client response stable and non-sensitive; detailed diagnostics
+            # belong in protected server-side logs.
+            return Response(
+                {"error": "The requested analysis could not be completed.", "code": "agent_tool_invalid_input"},
+                status=400,
+            )
 
         # Persist bounded tool evidence and advance the dependency graph in the
         # same transaction as the task transition. A retry cannot execute a
