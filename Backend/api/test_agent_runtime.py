@@ -259,7 +259,7 @@ class AgentRunLifecycleTests(TestCase):
         sent_prompt = provider.call_args.args[0]
         self.assertNotIn("synthetic-test-value", sent_prompt)
         self.assertIn("[REDACTED]", sent_prompt)
-        provider_goal = sent_prompt.split("GOAL:\\n", 1)[1]
+        provider_goal = sent_prompt.split("GOAL:\n", 1)[1]
         self.assertLessEqual(len(provider_goal), 8000)
         self.assertEqual(len(run.goal), len("Review the code and propose tests. password=synthetic-test-value") + 9000)
         sent_context = provider.call_args.args[1]
