@@ -14,7 +14,7 @@ from .agent_runtime import (
     build_agent_plan,
 )
 from .agent_tools import TOOL_REGISTRY
-from .models import AgentRun, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
+from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class AgentContextRedactionTests(TestCase):
