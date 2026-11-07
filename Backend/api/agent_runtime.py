@@ -355,6 +355,72 @@ def build_agent_plan(run_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def agent_task_tool_api(request, pk, task_pk, tool_name):
+    """Run one registered, deterministic read-only tool for an approved ready task."""
+    from .agent_tools import TOOL_REGISTRY, execute_readonly_tool
+    from .views import _workspace_for_user, _workspace_write_allowed
+
+    if tool_name not in TOOL_REGISTRY:
+        return Response({"error": "Unsupported read-only agent tool."}, status=404)
+
+    with transaction.atomic():
+        run = get_object_or_404(
+            AgentRun.objects.select_for_update().select_related("workspace", "owner"),
+            pk=pk,
+            owner=request.user,
+        )
+        task = get_object_or_404(
+            AgentTask.objects.select_for_update(),
+            pk=task_pk,
+            run=run,
+        )
+        if run.status != "approved":
+            return Response({"error": "Approve the plan before invoking specialist tools."}, status=409)
+        if task.status != "ready":
+            return Response({"error": "Only ready tasks can invoke specialist tools."}, status=409)
+        allowed = AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, [])
+        if tool_name not in allowed:
+            return Response({"error": "This specialist role is not permitted to use that tool."}, status=403)
+        workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
+        if not _workspace_write_allowed(workspace, request.user):
+            return Response({"error": "Workspace access is no longer available."}, status=403)
+        if workspace.revision != run.workspace_revision:
+            return Response({
+                "error": "Workspace changed after plan approval. Generate and approve a fresh plan.",
+                "code": "stale_workspace",
+            }, status=409)
+
+        try:
+            result = execute_readonly_tool(tool_name, workspace)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        AuditLog.objects.create(
+            user=request.user,
+            action="agent_task.readonly_tool_invoked",
+            target_type="AgentTask",
+            target_id=str(task.id),
+            metadata={
+                "agent_run_id": run.id,
+                "agent_role": task.agent_role,
+                "tool": tool_name,
+                "workspace_revision": workspace.revision,
+                "read_only": True,
+            },
+        )
+        return Response({
+            "run_id": run.id,
+            "task_id": task.id,
+            "agent_role": task.agent_role,
+            "tool": tool_name,
+            "workspace_revision": workspace.revision,
+            "result": result,
+            "execution_state": "read_only_analysis_no_workspace_mutations",
+        })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def agent_run_create_api(request):
     goal = str(request.data.get("goal") or "").strip()
     if not goal or len(goal) > 12000:
