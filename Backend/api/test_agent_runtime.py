@@ -5,8 +5,38 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .agent_runtime import _validate_plan, build_agent_plan
+from .agent_runtime import _redact_sensitive_content, _validate_plan, build_agent_plan
 from .models import AgentRun, AIConversation, AuditLog, BackgroundJob, CodeWorkspace
+
+
+class AgentContextRedactionTests(TestCase):
+    def test_redacts_named_credentials_and_common_provider_tokens(self):
+        source = (
+            'API_KEY="inline-secret-value-123"\\n'
+            'password=super-secret-password-value\\n'
+            'aws_access_key=AKIAABCDEFGHIJKLMNOP\\n'
+            'github=ghp_abcdefghijklmnopqrstuvwxyz123456\\n'
+            'openai=sk-proj-abcdefghijklmnopqrstuvwxyz123456\\n'
+            'slack=xoxb-1234567890-abcdefghijk\\n'
+        )
+        redacted = _redact_sensitive_content(source)
+        self.assertNotIn("inline-secret-value-123", redacted)
+        self.assertNotIn("super-secret-password-value", redacted)
+        self.assertNotIn("AKIAABCDEFGHIJKLMNOP", redacted)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("sk-proj-abcdefghijklmnopqrstuvwxyz123456", redacted)
+        self.assertNotIn("xoxb-1234567890-abcdefghijk", redacted)
+        self.assertIn("[REDACTED]", redacted)
+
+    def test_redacts_pem_private_key_blocks(self):
+        source = (
+            "-----BEGIN PRIVATE KEY-----\\n"
+            "MIIE-private-material-that-must-not-leak\\n"
+            "-----END PRIVATE KEY-----"
+        )
+        redacted = _redact_sensitive_content(source)
+        self.assertNotIn("MIIE-private-material-that-must-not-leak", redacted)
+        self.assertIn("[REDACTED_PRIVATE_KEY]", redacted)
 
 
 class AgentPlanValidationTests(TestCase):
@@ -217,6 +247,7 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn(".npmrc", sent_context["workspace"]["file_samples"])
         self.assertNotIn(".aws/credentials", sent_context["workspace"]["file_samples"])
         self.assertNotIn("keys/private.pem", sent_context["workspace"]["file_samples"])
+        self.assertNotIn("inline-secret-value-123", sent_context["workspace"]["file_samples"]["main.py"])
         self.assertTrue(sent_context["workspace"]["secrets_excluded"])
 
     @patch("api.ai_engine._call_provider")
