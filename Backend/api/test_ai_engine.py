@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -100,6 +101,8 @@ class AIEngineUnitTests(TestCase):
 
 class AIHealthAPITests(TestCase):
     def setUp(self):
+        # DRF throttle cache is external to TestCase database rollback.
+        cache.clear()
         self.user = User.objects.create_user(username="ai-test", password="StrongPassword123!")
         self.client = APIClient()
 
@@ -121,6 +124,8 @@ class AIHealthAPITests(TestCase):
 
 class AIAgentApprovalTests(TestCase):
     def setUp(self):
+        # DRF throttle cache is external to TestCase database rollback.
+        cache.clear()
         self.user = User.objects.create_user(username="agent-test", password="StrongPassword123!")
         self.client = APIClient()
 
