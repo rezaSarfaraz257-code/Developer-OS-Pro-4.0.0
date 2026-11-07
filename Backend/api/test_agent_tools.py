@@ -185,7 +185,7 @@ class ReadOnlyAgentToolTests(TestCase):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
 
-    @patch("api.agent_runtime.execute_readonly_tool", side_effect=ValueError("internal path and parser details"))
+    @patch("api.agent_tools.execute_readonly_tool", side_effect=ValueError("internal path and parser details"))
     def test_tool_validation_exception_does_not_leak_internal_details(self, _execute_tool):
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
         self.assertEqual(response.status_code, 400)
