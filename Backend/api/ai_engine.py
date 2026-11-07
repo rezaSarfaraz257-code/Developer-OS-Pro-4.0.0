@@ -21,7 +21,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .models import AIConversation, AIMessage, AuditLog, Project
+from .models import AIConversation, AIMessage, AuditLog, BackgroundJob, Project
 from .serializers import AIConversationSerializer, AIMessageSerializer
 
 logger = logging.getLogger("developer_os.ai")
@@ -1100,6 +1100,20 @@ def ai_agent_apply_api(request):
 
             workspace.files = updated
             workspace.save(update_fields={"files"})
+            # Durable outbox: the workspace mutation and its Runner sync job
+            # commit together. A worker outage cannot lose the synchronization intent.
+            sync_job, _ = BackgroundJob.objects.get_or_create(
+                kind="ai_agent_runner_sync",
+                idempotency_key=f"agent-runner-sync:{workspace.id}:{workspace.revision}",
+                defaults={
+                    "payload": {
+                        "workspace_id": workspace.id,
+                        "owner_id": request.user.id,
+                        "requested_revision": workspace.revision,
+                    },
+                    "max_attempts": 8,
+                },
+            )
             AuditLog.objects.create(
                 user=request.user,
                 action="ai_agent.patch_applied",
@@ -1119,17 +1133,18 @@ def ai_agent_apply_api(request):
         logger.exception("AI patch application rejected due to invalid workspace or proposal data")
         return Response({"error": "Patch could not be safely applied. Reload the workspace and re-analyze."}, status=400)
 
-    sync_data, sync_error = _runner_request("POST", "/sync", _workspace_payload(workspace), timeout=30)
-    verification = _agent_runner_evidence(workspace)
+    # Runner synchronization is processed by the durable background worker.
+    # Do not perform a best-effort network call here: that would reintroduce the
+    # database/Runner dual-write gap this outbox is designed to close.
+    verification = {"status": "queued", "job_id": sync_job.id}
     diagnostics = _agent_diagnostics_evidence(workspace)
-    sync_ok = sync_error is None
     return Response({
-        "status": "applied" if sync_ok else "applied_sync_pending",
+        "status": "applied_sync_pending",
         "workspace": {"id": workspace.id, "revision": workspace.revision, "files": workspace.files, "active_file": workspace.active_file},
         "files": workspace.files,
         "changed_files": [item["path"] for item in diffs],
         "diffs": diffs,
-        "sync": {"ok": sync_ok, "error": sync_error, "data": sync_data},
+        "sync": {"ok": False, "queued": True, "job_id": sync_job.id, "status": sync_job.status},
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
