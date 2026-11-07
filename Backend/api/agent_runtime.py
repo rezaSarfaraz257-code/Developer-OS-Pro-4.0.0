@@ -74,7 +74,7 @@ def _redact_sensitive_content(value):
     patterns = [
         # Named credentials and password-bearing connection strings.
         # Consume complete quoted values (including spaces) as well as unquoted tokens.
-        (re.compile(r"""(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret(?:[_-]?key)?|password|passwd|authorization|private[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)"""), r'\1[REDACTED]'),
+        (re.compile(r"""(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret(?:[_-]?key)?|password|passwd|authorization|private[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r'\1[REDACTED]'),
         # Well-known provider token formats.
         (re.compile(r'(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}'), r'\1[REDACTED_BEARER_TOKEN]'),
         (re.compile(r'(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^:/@\s]+:)[^@\s]+(@)'), r'\1[REDACTED]\2'),
