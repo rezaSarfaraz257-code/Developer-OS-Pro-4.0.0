@@ -316,7 +316,7 @@ export default function AIAssistantPage({ setPage }) {
                   const response = await apiFetch("/ai/agent/apply/", { method: "POST", body: JSON.stringify({ approval_token: approvalToken }) });
                   const data = await response.json().catch(() => ({}));
                   if (!response.ok) throw new Error(errorText(data, "Patch application failed."));
-                  setApplyResult(data); setApprovalToken(null); setMode("PATCH APPLIED · VERIFYING");
+                  setApplyResult(data); setApprovalToken(null); setMode(data.status === "applied_sync_pending" ? "PATCH SAVED · RUNNER SYNC QUEUED" : "PATCH APPLIED · VERIFYING");
                 } catch (err) { setError(err.message || "Patch application failed."); }
                 finally { setBusy(false); }
               }}>APPROVE & APPLY →</button>
@@ -325,9 +325,9 @@ export default function AIAssistantPage({ setPage }) {
           )}
           {applyResult && (
             <div className="ai-approval-result">
-              <strong>VERIFICATION COMPLETE</strong>
-              <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner: {applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
-              <small>{applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback captured — re-analysis ready."}</small>
+              <strong>{applyResult.status === "applied_sync_pending" ? "WORKSPACE UPDATED · RUNNER SYNC QUEUED" : applyResult.repair_loop?.passed ? "VERIFICATION PASSED" : "PATCH RESULT · VERIFICATION PENDING"}</strong>
+              <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner sync: {applyResult.sync?.status || applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
+              <small>{applyResult.status === "applied_sync_pending" ? "The workspace change is saved. Runner synchronization is queued; diagnostics and execution verification are not complete yet." : applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback is pending. Review the Runner and diagnostics status before treating this change as complete."}</small>
             </div>
           )}
           {error && <div className="ai-error">{error}</div>}
