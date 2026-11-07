@@ -134,6 +134,51 @@ export default function AIAssistantPage({ setPage }) {
     return () => clearInterval(timer);
   }, [agentRun?.id, agentRun?.status, refreshAgentRun]);
 
+  useEffect(() => {
+    const jobId = applyResult?.sync?.job_id;
+    const currentStatus = applyResult?.sync?.status;
+    if (!jobId || !["queued", "running"].includes(currentStatus)) return undefined;
+
+    let active = true;
+    const refreshSyncStatus = async () => {
+      try {
+        const response = await apiFetch(`/ai/agent/sync-jobs/${jobId}/`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(errorText(data, "Runner sync status is unavailable."));
+        if (!active) return;
+        setApplyResult((current) => {
+          if (!current || current.sync?.job_id !== jobId) return current;
+          return {
+            ...current,
+            sync: {
+              ...current.sync,
+              status: data.status,
+              ok: data.status === "succeeded",
+              attempts: data.attempts,
+              revision: data.revision,
+              coalesced: data.coalesced,
+              error: data.error || "",
+            },
+          };
+        });
+        if (data.status === "succeeded") setMode("PATCH SAVED · RUNNER SYNCED");
+        if (data.status === "failed") {
+          setMode("PATCH SAVED · RUNNER SYNC FAILED");
+          setError(data.error || "Runner synchronization failed.");
+        }
+      } catch (err) {
+        if (active) setError(err.message || "Runner sync status refresh failed.");
+      }
+    };
+
+    refreshSyncStatus();
+    const timer = setInterval(refreshSyncStatus, 4000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [applyResult?.sync?.job_id, applyResult?.sync?.status]);
+
   async function ask(e) {
     e?.preventDefault();
     const text = message.trim();
@@ -328,9 +373,9 @@ export default function AIAssistantPage({ setPage }) {
           )}
           {applyResult && (
             <div className="ai-approval-result">
-              <strong>{applyResult.status === "applied_sync_pending" ? "WORKSPACE UPDATED · RUNNER SYNC QUEUED" : applyResult.repair_loop?.passed ? "VERIFICATION PASSED" : "PATCH RESULT · VERIFICATION PENDING"}</strong>
+              <strong>{applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "succeeded" ? "WORKSPACE UPDATED · RUNNER SYNCED" : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "failed" ? "WORKSPACE SAVED · RUNNER SYNC FAILED" : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "running" ? "WORKSPACE UPDATED · RUNNER SYNCING" : applyResult.status === "applied_sync_pending" ? "WORKSPACE UPDATED · RUNNER SYNC QUEUED" : applyResult.repair_loop?.passed ? "VERIFICATION PASSED" : "PATCH RESULT · VERIFICATION PENDING"}</strong>
               <span>{applyResult.changed_files?.length || 0} file(s) changed · Runner sync: {applyResult.sync?.status || applyResult.verification?.status || "unknown"} · Diagnostics: {applyResult.diagnostics?.status || "unknown"}</span>
-              <small>{applyResult.status === "applied_sync_pending" ? "The workspace change is saved. Runner synchronization is queued; diagnostics and execution verification are not complete yet." : applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback is pending. Review the Runner and diagnostics status before treating this change as complete."}</small>
+              <small>{applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "succeeded" ? "The saved workspace revision has reached the Runner. This confirms synchronization only; diagnostics and execution verification are still pending." : applyResult.status === "applied_sync_pending" && applyResult.sync?.status === "failed" ? "The workspace change remains saved, but Runner synchronization failed. Do not treat this patch as executable or verified." : applyResult.status === "applied_sync_pending" ? "The workspace change is saved. Runner synchronization is being tracked automatically; diagnostics and execution verification are not complete yet." : applyResult.repair_loop?.next_step === "complete" ? "Verification passed — repair loop complete." : applyResult.repair_loop?.next_step === "manual_review" ? "Iteration limit reached — manual review required." : "Verification feedback is pending. Review the Runner and diagnostics status before treating this change as complete."}</small>
             </div>
           )}
           {error && <div className="ai-error">{error}</div>}
