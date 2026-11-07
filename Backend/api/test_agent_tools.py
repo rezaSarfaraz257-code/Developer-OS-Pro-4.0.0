@@ -1,8 +1,9 @@
 import json
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .agent_tools import MAX_WORKSPACE_TOTAL_BYTES, _files, _safe_path, analyze_dependencies
@@ -181,6 +182,7 @@ class ReadOnlyAgentToolTests(TestCase):
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
         self.assertEqual(response.status_code, 409)
 
+    @override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "DEFAULT_THROTTLE_CLASSES": ()})
     def test_unknown_tool_is_not_executable(self):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
