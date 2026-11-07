@@ -238,6 +238,130 @@ class AgentRunLifecycleTests(TestCase):
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, original_files)
 
+    @patch("api.agent_tools.execute_readonly_tool", return_value={"file_count": 1, "findings": []})
+    def test_approved_ready_task_executes_registered_readonly_tool_once(self, execute_tool):
+        conversation = AIConversation.objects.create(owner=self.user, title="Agent evidence")
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            conversation=conversation,
+            goal="Inspect this workspace safely",
+            status="approved",
+            idempotency_key="readonly-tool-run-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        task = AgentTask.objects.create(
+            run=run,
+            key="inspect",
+            title="Inspect workspace",
+            agent_role="architect",
+            sequence=0,
+            status="ready",
+        )
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/tools/inspect_workspace/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task_status"], "succeeded")
+        self.assertEqual(response.data["run_status"], "succeeded")
+        self.assertEqual(response.data["execution_state"], "read_only_analysis_no_workspace_mutations")
+        execute_tool.assert_called_once_with("inspect_workspace", self.workspace)
+        task.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(task.status, "succeeded")
+        self.assertEqual(run.status, "succeeded")
+        self.assertIsNotNone(run.finished_at)
+        self.assertTrue(AIMessage.objects.filter(
+            conversation=conversation,
+            role="tool",
+            context__agent_run_id=run.id,
+            context__agent_task_id=task.id,
+            context__read_only=True,
+        ).exists())
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.user,
+            action="agent_task.readonly_tool_invoked",
+            target_id=str(task.id),
+            metadata__read_only=True,
+        ).exists())
+
+        replay = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/tools/inspect_workspace/",
+            {},
+            format="json",
+        )
+        self.assertEqual(replay.status_code, 409)
+        execute_tool.assert_called_once()
+
+    @patch("api.agent_tools.execute_readonly_tool")
+    def test_specialist_cannot_invoke_tool_outside_role_capabilities(self, execute_tool):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Frontend inspection",
+            status="approved",
+            idempotency_key="readonly-role-guard-001",
+            workspace_revision=self.workspace.revision,
+        )
+        task = AgentTask.objects.create(
+            run=run,
+            key="frontend",
+            title="Inspect frontend",
+            agent_role="frontend",
+            sequence=0,
+            status="ready",
+        )
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/tools/review_security/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        execute_tool.assert_not_called()
+        task.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(task.status, "ready")
+        self.assertEqual(run.status, "approved")
+
+    @patch("api.agent_tools.execute_readonly_tool")
+    def test_specialist_tool_rejects_workspace_revision_changed_after_approval(self, execute_tool):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Inspect stable revision",
+            status="approved",
+            idempotency_key="readonly-stale-revision-01",
+            workspace_revision=self.workspace.revision,
+        )
+        task = AgentTask.objects.create(
+            run=run,
+            key="inspect",
+            title="Inspect workspace",
+            agent_role="architect",
+            sequence=0,
+            status="ready",
+        )
+        self.workspace.files = {"main.py": "new_revision = True"}
+        self.workspace.save(update_fields=["files"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/tools/inspect_workspace/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "stale_workspace")
+        execute_tool.assert_not_called()
+        task.refresh_from_db()
+        self.assertEqual(task.status, "ready")
+
     def test_cancel_stops_queued_run_and_job(self):
         run = AgentRun.objects.create(
             owner=self.user,
