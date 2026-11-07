@@ -29,6 +29,7 @@ class AgentContextRedactionTests(TestCase):
         })
         self.assertEqual(samples, {"safe/main.py": "value = 1"})
 
+    def test_workspace_samples_enforce_file_and_aggregate_budgets(self):
         files = {
             f"module_{index}.py": "x" * 1800
             for index in range(120)
