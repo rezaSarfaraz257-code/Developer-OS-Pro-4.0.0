@@ -181,8 +181,8 @@ class ReadOnlyAgentToolTests(TestCase):
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
         self.assertEqual(response.status_code, 409)
 
-    @patch("rest_framework.views.APIView.get_throttles", return_value=[])
-    def test_unknown_tool_is_not_executable(self, _get_throttles):
+    @patch("api.security.consume_rate_limit", return_value=(True, None))
+    def test_unknown_tool_is_not_executable(self, _consume_rate_limit):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
 
