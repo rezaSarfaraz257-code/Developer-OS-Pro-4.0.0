@@ -48,6 +48,44 @@ class AIEngineUnitTests(TestCase):
                 }
                 self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
 
+    def test_patch_contract_rejects_secret_and_private_key_paths(self):
+        invalid_paths = [
+            ".env",
+            ".env.production",
+            ".npmrc",
+            ".aws/credentials",
+            ".ssh/id_ed25519",
+            "certs/server.pem",
+            "secrets/service.key",
+            "private/identity.p12",
+        ]
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                proposal = {
+                    "type": "patch_proposal",
+                    "changes": [{
+                        "path": path,
+                        "operation": "create",
+                        "reason": "must never write credential material",
+                        "content": "placeholder",
+                    }],
+                }
+                self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
+
+    def test_patch_contract_allows_documented_environment_templates(self):
+        for path in (".env.example", ".env.sample", ".env.template"):
+            with self.subTest(path=path):
+                proposal = {
+                    "type": "patch_proposal",
+                    "changes": [{
+                        "path": path,
+                        "operation": "create",
+                        "reason": "document required configuration",
+                        "content": "API_URL=https://example.invalid",
+                    }],
+                }
+                self.assertIsNotNone(_agent_parse_patch(json.dumps(proposal)))
+
     def test_patch_contract_rejects_duplicate_case_insensitive_paths(self):
         proposal = {
             "type": "patch_proposal",
