@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import AgentRun, AgentTask, AuditLog, CodeWorkspace
+from .agent_tools import analyze_dependencies\nfrom .models import AgentRun, AgentTask, AuditLog, CodeWorkspace
 
 
 class ReadOnlyAgentToolTests(TestCase):
@@ -106,3 +106,11 @@ class ReadOnlyAgentToolTests(TestCase):
     def test_unknown_tool_is_not_executable(self):
         response = self.client.post(self.tool_url("shell"), {"command": "whoami"}, format="json")
         self.assertEqual(response.status_code, 404)
+
+    def test_dependency_analyzer_rejects_valid_json_with_wrong_manifest_shape(self):
+        self.workspace.files = {**self.workspace.files, "package.json": "[]"}
+        self.workspace.save(update_fields=["files"])
+        result = analyze_dependencies(self.workspace)
+        manifest = next(item for item in result["manifests"] if item["path"] == "package.json")
+        self.assertEqual(manifest["status"], "invalid_manifest_shape")
+        self.assertEqual(result["dependency_count"], 0)
