@@ -4,20 +4,24 @@ export const MAX_RECOVERY_ENTRIES = 50;
 export const MAX_RECOVERY_STORAGE_CHARS = 1_500_000;
 
 function validRevision(value) {
-  if (typeof value !== "number" && !(typeof value === "string" && /^\\d+$/.test(value.trim()))) return null;
+  if (typeof value !== "number" && !(typeof value === "string" && /^\d+$/.test(value.trim()))) return null;
   const revision = Number(value);
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
 }
 
-function isSafeWorkspacePath(path) {\n  if (typeof path !== "string" || !path || path.length > 512 || path.startsWith("/") || path.includes("\\\\") || path.includes("\\0")) return false;\n  const segments = path.split("/");\n  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");\n}\n\nfunction validEntry(entry) {
+function isSafeWorkspacePath(path) {
+  if (typeof path !== "string" || !path || path.length > 512 || path.startsWith("/") || path.includes("\\") || path.includes("\0")) return false;
+  const segments = path.split("/");
+  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function validEntry(entry) {
   return Boolean(
     entry &&
     typeof entry === "object" &&
     entry.workspace_id != null &&
     String(entry.workspace_id).trim() !== "" &&
-    typeof entry.path === "string" &&
-    entry.path.length > 0 &&
-    entry.path.length <= 512 &&
+    isSafeWorkspacePath(entry.path) &&
     typeof entry.content === "string" &&
     entry.content.length <= 750_000 &&
     (entry.base_content === null || typeof entry.base_content === "string") &&
