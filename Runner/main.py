@@ -203,7 +203,13 @@ def _append_job_output(job_id, chunk):
         encoded = (current + data).encode("utf-8", errors="replace")
         if len(encoded) > JOB_OUTPUT_MAX_BYTES:
             encoded = encoded[-JOB_OUTPUT_MAX_BYTES:]
-        JOB_OUTPUT[job_id] = encoded.decode("utf-8", errors="replace")
+            # Drop a partial leading UTF-8 code point instead of decoding it
+            # with U+FFFD, whose three encoded bytes could exceed the byte cap.
+            start = 0
+            while start < len(encoded) and encoded[start] & 0xC0 == 0x80:
+                start += 1
+            encoded = encoded[start:]
+        JOB_OUTPUT[job_id] = encoded.decode("utf-8")
 
 def _job_output_slice(job_id, cursor=0):
     with JOB_OUTPUT_LOCK:
