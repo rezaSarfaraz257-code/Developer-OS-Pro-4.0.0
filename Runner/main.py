@@ -1420,15 +1420,24 @@ def _metrics_snapshot():
 
 
 def _process_output_reader(pid, stream_name, stream):
+    """Drain untrusted process output without allowing an unbounded line allocation.
+
+    TextIO.readline() without a size limit can allocate an arbitrarily large
+    string when a child emits data without newline characters. A bounded size
+    keeps each transient read finite while preserving the existing text-based
+    process API and tail-buffer behavior.
+    """
+    read_chunk_chars = 8192
     try:
-        for line in iter(stream.readline, ""):
-            if not line:
+        while True:
+            chunk = stream.readline(read_chunk_chars)
+            if not chunk:
                 break
             with PROCESS_LOCK:
                 item = PROCESSES.get(pid)
                 if not item:
                     break
-                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+                item[stream_name] = (item.get(stream_name, "") + chunk)[-MAX_PROCESS_OUTPUT:]
     finally:
         try:
             stream.close()
