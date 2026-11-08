@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import os
 import sys
+import threading
 from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
@@ -1232,3 +1233,26 @@ class RunnerJobOutputByteBudgetTests(unittest.TestCase):
         self.assertLessEqual(len(output.encode("utf-8")), 64)
         self.assertTrue(output.endswith("界" * 16))
         self.assertEqual(output.encode("utf-8").decode("utf-8"), output)
+
+
+    def test_job_output_reader_uses_fixed_size_reads_for_untrusted_lines(self):
+        job_id = "bounded-stream-read"
+        stdout_done = threading.Event()
+        stderr_done = threading.Event()
+        stdout = Mock()
+        stderr = Mock()
+        stdout.read.side_effect = ["x" * 8192, ""]
+        stderr.read.side_effect = [""]
+        stdout.close.side_effect = stdout_done.set
+        stderr.close.side_effect = stderr_done.set
+        process = Mock(stdout=stdout, stderr=stderr)
+
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 16384):
+            main._capture_process_output(job_id, process)
+            self.assertTrue(stdout_done.wait(2))
+            self.assertTrue(stderr_done.wait(2))
+            output = main._job_output_snapshot(job_id)
+
+        self.assertEqual(stdout.read.call_args_list[0].args, (8192,))
+        self.assertEqual(stderr.read.call_args_list[0].args, (8192,))
+        self.assertEqual(len(output.encode("utf-8")), 8192)
