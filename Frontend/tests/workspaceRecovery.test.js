@@ -55,7 +55,7 @@ test("upsert replaces only the same workspace and path without mutating input", 
 test("invalid or unscoped snapshots cannot enter the recovery journal", () => {
   const empty = { version: WORKSPACE_RECOVERY_VERSION, entries: [] };
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ workspace_id: "" })), empty);
-  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ base_revision: null })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ base_revision: null })), empty);\n  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "../outside.js" })), empty);\n  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "src\\\\outside.js" })), empty);
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ content: "x".repeat(750_001) })), empty);
 });
 
