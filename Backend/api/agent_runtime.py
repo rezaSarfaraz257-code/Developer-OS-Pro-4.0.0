@@ -474,23 +474,12 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
                 status=400,
             )
 
-        # Persist bounded tool evidence and advance the dependency graph in the
-        # same transaction as the task transition. A retry cannot execute a
-        # completed task twice because only ready tasks are accepted.
-        task.status = "succeeded"
-        task.save(update_fields=["status", "updated_at"])
+        # A read-only inspection is evidence, not completion of the engineering
+        # task. Keep the task ready and the approved run open until a future,
+        # separately authorized implementation/verification workflow records
+        # actual completion. In particular, static analysis must never unlock
+        # dependent tasks or mark an AgentRun succeeded.
         newly_ready = []
-        for dependent in task.dependents.select_for_update().filter(status="blocked"):
-            if all(dependency.status == "succeeded" for dependency in dependent.depends_on.all()):
-                dependent.status = "ready"
-                dependent.save(update_fields=["status", "updated_at"])
-                newly_ready.append(dependent.key)
-
-        remaining = run.tasks.exclude(status="succeeded").exists()
-        run.status = "running" if remaining else "succeeded"
-        run.started_at = run.started_at or timezone.now()
-        run.finished_at = None if remaining else timezone.now()
-        run.save(update_fields=["status", "started_at", "finished_at", "updated_at"])
 
         if run.conversation_id:
             AIMessage.objects.create(
