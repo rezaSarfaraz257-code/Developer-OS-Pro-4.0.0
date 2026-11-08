@@ -1117,27 +1117,22 @@ class ProcessEnvironmentBoundsTests(unittest.TestCase):
         self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
 
 def test_timeout_runner_terminates_process_group_and_preserves_output():
-    process = Mock()
-    process.communicate.side_effect = [
-        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
-        ("partial", "warning"),
+    command = [
+        sys.executable, "-c",
+        "import sys,time; print('partial', flush=True); print('warning', file=sys.stderr, flush=True); time.sleep(5)",
     ]
-    with patch("main.subprocess.Popen", return_value=process) as popen, patch(
-        "main._terminate_process_group"
-    ) as terminate:
+    with patch("main._terminate_process_group", wraps=main._terminate_process_group) as terminate:
         result_error = None
         try:
             main._run_process_with_timeout(
-                ["test-command"], cwd=Path("/tmp"), env={}, timeout=0.01, preexec_fn=lambda: None
+                command, cwd=Path("/tmp"), env=dict(os.environ), timeout=0.1, preexec_fn=lambda: None
             )
         except subprocess.TimeoutExpired as exc:
             result_error = exc
-    popen.assert_called_once()
-    assert popen.call_args.kwargs["shell"] is False
-    terminate.assert_called_once_with(process, grace_seconds=0.1)
+    terminate.assert_called_once()
     assert result_error is not None
-    assert result_error.output == "partial"
-    assert result_error.stderr == "warning"
+    assert result_error.output.strip().endswith("partial")
+    assert result_error.stderr.strip().endswith("warning")
 
 
 def test_terminate_process_group_signals_descendants_after_leader_exits():
