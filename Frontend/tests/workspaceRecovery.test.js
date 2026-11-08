@@ -130,3 +130,140 @@ test("deletes the workspace-specific recovery snapshot without touching other wo
   assert.equal(await loadWorkspaceRecoverySnapshot("42"), null);
   assert.notEqual(await loadWorkspaceRecoverySnapshot("43"), null);
 });
+
+function installFakeIndexedDB() {
+  const records = new Map();
+  let failNextTransaction = false;
+  const database = {
+    objectStoreNames: { contains: (name) => records.has(name) },
+    createObjectStore(name) {
+      records.set(name, new Map());
+      return {};
+    },
+    transaction(name) {
+      const transaction = { error: null };
+      transaction.objectStore = () => {
+        const store = records.get(name);
+        return {
+          put(value) {
+            const request = { result: value.workspace_id };
+            queueMicrotask(() => {
+              if (failNextTransaction) {
+                failNextTransaction = false;
+                transaction.error = new Error("simulated IndexedDB transaction abort");
+                transaction.onabort?.();
+                return;
+              }
+              store.set(value.workspace_id, structuredClone(value));
+              queueMicrotask(() => transaction.oncomplete?.());
+            });
+            return request;
+          },
+          get(key) {
+            const request = { result: undefined };
+            queueMicrotask(() => {
+              request.result = store.get(key);
+              queueMicrotask(() => transaction.oncomplete?.());
+            });
+            return request;
+          },
+          delete(key) {
+            const request = { result: undefined };
+            queueMicrotask(() => {
+              store.delete(key);
+              queueMicrotask(() => transaction.oncomplete?.());
+            });
+            return request;
+          },
+        };
+      };
+      return transaction;
+    },
+    close() {},
+  };
+  globalThis.indexedDB = {
+    open() {
+      const request = { result: database };
+      queueMicrotask(() => {
+        request.onupgradeneeded?.();
+        queueMicrotask(() => request.onsuccess?.());
+      });
+      return request;
+    },
+  };
+  return {
+    records,
+    abortNextTransaction() { failNextTransaction = true; },
+  };
+}
+
+test("IndexedDB is the primary recovery store and supports save, load, and delete", async () => {
+  const previousIndexedDB = globalThis.indexedDB;
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  const fake = installFakeIndexedDB();
+  try {
+    const saved = await saveWorkspaceRecoverySnapshot(validSnapshot());
+    assert.equal(saved.storage, "indexeddb");
+    assert.equal(fake.records.get("snapshots").has("42"), true);
+    const restored = await loadWorkspaceRecoverySnapshot("42");
+    assert.equal(restored.base_revision, 7);
+    assert.deepEqual(restored.files, validSnapshot().files);
+    await deleteWorkspaceRecoverySnapshot("42");
+    assert.equal(fake.records.get("snapshots").has("42"), false);
+    assert.equal(storage.has("dos-workspace-recovery:42"), false);
+  } finally {
+    globalThis.indexedDB = previousIndexedDB;
+    globalThis.localStorage = previousLocalStorage;
+  }
+});
+
+test("newer local fallback wins over an older IndexedDB snapshot after an outage", async () => {
+  const previousIndexedDB = globalThis.indexedDB;
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  installFakeIndexedDB();
+  try {
+    await saveWorkspaceRecoverySnapshot(validSnapshot({ updated_at: 100, files: { "src/main.js": "older" } }));
+    saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot({ updated_at: 200, files: { "src/main.js": "newer" } }));
+    const restored = await loadWorkspaceRecoverySnapshot("42");
+    assert.equal(restored.updated_at, 200);
+    assert.equal(restored.files["src/main.js"], "newer");
+  } finally {
+    globalThis.indexedDB = previousIndexedDB;
+    globalThis.localStorage = previousLocalStorage;
+  }
+});
+
+test("IndexedDB transaction abort falls back to bounded localStorage without losing the snapshot", async () => {
+  const previousIndexedDB = globalThis.indexedDB;
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  const fake = installFakeIndexedDB();
+  fake.abortNextTransaction();
+  try {
+    const saved = await saveWorkspaceRecoverySnapshot(validSnapshot());
+    assert.equal(saved.storage, "localstorage");
+    const restored = await loadWorkspaceRecoverySnapshot("42");
+    assert.deepEqual(restored.files, validSnapshot().files);
+  } finally {
+    globalThis.indexedDB = previousIndexedDB;
+    globalThis.localStorage = previousLocalStorage;
+  }
+});
+
