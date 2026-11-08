@@ -20,7 +20,7 @@ const snapshot = (overrides = {}) => ({
 });
 
 test("recovery journal rejects corrupt, unknown and malformed storage safely", () => {
-  assert.deepEqual(parseWorkspaceRecoveryJournal("broken"), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
+  assert.deepEqual(parseWorkspaceRecoveryJournal("broken"), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });\n  assert.deepEqual(parseWorkspaceRecoveryJournal("x".repeat(1_500_001)), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
   assert.deepEqual(parseWorkspaceRecoveryJournal(JSON.stringify({ version: 99, entries: [snapshot()] })), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
   const parsed = parseWorkspaceRecoveryJournal(JSON.stringify({
     version: WORKSPACE_RECOVERY_VERSION,
