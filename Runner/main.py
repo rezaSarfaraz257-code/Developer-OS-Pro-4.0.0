@@ -183,12 +183,22 @@ def _capture_process_output(job_id, proc):
             threading.Thread(target=reader, args=(stream,), daemon=True).start()
 
 def _append_job_output(job_id, chunk):
+    """Append job output while enforcing a true UTF-8 byte budget.
+
+    Python string slicing limits code points, not encoded bytes. A stream of
+    multi-byte characters could therefore exceed the configured memory bound.
+    Keep the newest byte tail and decode with replacement if the cut crosses
+    a UTF-8 code-point boundary.
+    """
     if not chunk:
         return
     data = str(chunk)
     with JOB_OUTPUT_LOCK:
         current = JOB_OUTPUT.get(job_id, "")
-        JOB_OUTPUT[job_id] = (current + data)[-JOB_OUTPUT_MAX_BYTES:]
+        encoded = (current + data).encode("utf-8", errors="replace")
+        if len(encoded) > JOB_OUTPUT_MAX_BYTES:
+            encoded = encoded[-JOB_OUTPUT_MAX_BYTES:]
+        JOB_OUTPUT[job_id] = encoded.decode("utf-8", errors="replace")
 
 def _job_output_slice(job_id, cursor=0):
     with JOB_OUTPUT_LOCK:
