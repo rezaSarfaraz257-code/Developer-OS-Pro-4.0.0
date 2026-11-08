@@ -1204,3 +1204,31 @@ class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
         ]
         self.assertEqual(len(as_calls), 1)
         self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
+
+
+class RunnerJobOutputByteBudgetTests(unittest.TestCase):
+    def setUp(self):
+        with main.JOB_OUTPUT_LOCK:
+            main.JOB_OUTPUT.clear()
+
+    def tearDown(self):
+        with main.JOB_OUTPUT_LOCK:
+            main.JOB_OUTPUT.clear()
+
+    def test_job_output_is_bounded_by_utf8_bytes_not_character_count(self):
+        job_id = "utf8-byte-budget"
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 128):
+            main._append_job_output(job_id, "🙂" * 100)
+            output = main._job_output_snapshot(job_id)
+        self.assertLessEqual(len(output.encode("utf-8")), 128)
+        self.assertTrue(output.endswith("🙂" * 32))
+
+    def test_job_output_keeps_newest_tail_after_mixed_unicode_chunks(self):
+        job_id = "utf8-tail-budget"
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 64):
+            main._append_job_output(job_id, "A" * 40)
+            main._append_job_output(job_id, "界" * 20)
+            output = main._job_output_snapshot(job_id)
+        self.assertLessEqual(len(output.encode("utf-8")), 64)
+        self.assertTrue(output.endswith("界" * 16))
+        self.assertEqual(output.encode("utf-8").decode("utf-8"), output)
