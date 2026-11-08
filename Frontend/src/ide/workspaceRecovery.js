@@ -7,7 +7,7 @@ const MAX_SNAPSHOT_BYTES = 50_000_000;
 const MAX_FILES = 2_000;
 
 function normalizeRevision(value) {
-  if (typeof value !== "number" && !(typeof value === "string" && /^\\d+$/.test(value.trim()))) {
+  if (typeof value !== "number" && !(typeof value === "string" && /^\d+$/.test(value.trim()))) {
     return null;
   }
   const revision = Number(value);
@@ -16,8 +16,8 @@ function normalizeRevision(value) {
 
 function normalizePath(value) {
   if (typeof value !== "string" || !value || value.length > 500) return null;
-  if (/[\\x00-\\x1f\\x7f]/.test(value)) return null;
-  const normalized = value.replace(/\\\\/g, "/");
+  if (/[\x00-\x1f\x7f]/.test(value)) return null;
+  const normalized = value.replace(/\\/g, "/");
   if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) return null;
   const parts = normalized.split("/");
   if (parts.some((part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git" || part.includes(":"))) {
@@ -39,7 +39,7 @@ export function normalizeWorkspaceRecoverySnapshot(value) {
   let totalBytes = 0;
   for (const [rawPath, content] of entries) {
     const path = normalizePath(rawPath);
-    if (!path || typeof content !== "string" || content.includes("\\0")) return null;
+    if (!path || typeof content !== "string" || content.includes("\0")) return null;
     let bytes;
     try {
       bytes = new TextEncoder().encode(content).byteLength;
