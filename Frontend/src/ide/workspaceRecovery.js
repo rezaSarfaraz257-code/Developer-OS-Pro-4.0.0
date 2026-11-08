@@ -38,6 +38,7 @@ function validEntry(entry) {
  */
 export function parseWorkspaceRecoveryJournal(raw) {
   try {
+    if (typeof raw === "string" && raw.length > MAX_RECOVERY_STORAGE_CHARS) return { version: WORKSPACE_RECOVERY_VERSION, entries: [] };
     const value = JSON.parse(raw || "null");
     if (!value || value.version !== WORKSPACE_RECOVERY_VERSION || !Array.isArray(value.entries)) {
       return { version: WORKSPACE_RECOVERY_VERSION, entries: [] };
