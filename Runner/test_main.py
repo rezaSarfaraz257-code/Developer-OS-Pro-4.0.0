@@ -1204,3 +1204,27 @@ class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
         ]
         self.assertEqual(len(as_calls), 1)
         self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
+
+
+class RunnerBoundedOutputCaptureTests(unittest.TestCase):
+    def test_process_output_capture_is_bounded_and_keeps_the_tail(self):
+        root = Path(tempfile.mkdtemp(prefix="runner-output-bound-"))
+        command = "python -c \"import sys; sys.stdout.write('A' * 200000); sys.stderr.write('B' * 200000)\""
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+            result = main.run_command(root, command)
+        self.assertEqual(result["status"], "completed")
+        self.assertLessEqual(len(result["stdout"].encode("utf-8")), main.MAX_OUTPUT_BYTES)
+        self.assertLessEqual(len(result["stderr"].encode("utf-8")), main.MAX_OUTPUT_BYTES)
+        self.assertTrue(result["stdout"].endswith("A" * 100))
+        self.assertTrue(result["stderr"].endswith("B" * 100))
+
+    def test_direct_process_helper_returns_text_and_preserves_exit_code(self):
+        result = main._run_process_with_timeout(
+            [sys.executable, "-c", "print('bounded-output-ok')"],
+            cwd=Path(tempfile.gettempdir()),
+            env=dict(os.environ),
+            timeout=5,
+            preexec_fn=lambda: None,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("bounded-output-ok", result.stdout)
