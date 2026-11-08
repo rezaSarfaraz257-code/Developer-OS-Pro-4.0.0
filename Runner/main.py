@@ -1063,7 +1063,7 @@ def _capability_manifest():
             "execution_available": sandbox_available,
             "unavailable_reason": sandbox_unavailable_reason,
             "process_boundary": True,
-            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
+            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not _network_access_allowed(True) else "provisioning-network")),
         },
         "runtimes": _runtime_info(),
         "limits": {
@@ -1259,7 +1259,7 @@ def health():
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
-        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
+        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not _network_access_allowed(True) else "provisioning-network")),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
         "runtimes": _runtime_info(),
         "capabilities_version": "1",
