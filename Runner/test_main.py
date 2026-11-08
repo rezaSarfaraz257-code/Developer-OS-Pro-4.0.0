@@ -369,9 +369,6 @@ class RunnerSecurityTests(unittest.TestCase):
                 pass
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 def test_job_is_cancelled_helper_handles_missing_and_cancelled_jobs():
     assert main._job_is_cancelled("missing-job") is False
@@ -1237,3 +1234,64 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
                 for root in roots:
                     import shutil
                     shutil.rmtree(root, ignore_errors=True)
+
+
+    def test_global_capacity_reservation_blocks_concurrent_starts(self):
+        root = Path(tempfile.mkdtemp(prefix="dos-runner-reservation-"))
+        reserved = threading.Event()
+        release = threading.Event()
+        first_result = {}
+        original_sandbox = main._sandbox_command
+
+        def pause_after_reservation(*args, **kwargs):
+            reserved.set()
+            if not release.wait(5):
+                raise RuntimeError("test reservation gate timed out")
+            return original_sandbox(*args, **kwargs)
+
+        def start_first():
+            try:
+                first_result["id"] = main._start_process(
+                    root, "python -c \"import time; time.sleep(30)\""
+                )
+            except Exception as exc:
+                first_result["error"] = exc
+
+        with patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main.MAX_TOTAL_PROCESSES", 1), \
+             patch("main._sandbox_command", side_effect=pause_after_reservation):
+            worker = threading.Thread(target=start_first)
+            try:
+                worker.start()
+                self.assertTrue(reserved.wait(3), "first request did not reserve capacity")
+                with self.assertRaises(HTTPException) as ctx:
+                    main._start_process(
+                        Path(tempfile.mkdtemp(prefix="dos-runner-reservation-other-")),
+                        "python -c \"import time; time.sleep(30)\""
+                    )
+                self.assertEqual(ctx.exception.status_code, 429)
+            finally:
+                release.set()
+                worker.join(8)
+                process_id = first_result.get("id")
+                if process_id:
+                    try:
+                        main._stop_process(process_id)
+                    except Exception:
+                        pass
+                    with main.PROCESS_LOCK:
+                        item = main.PROCESSES.pop(process_id, None)
+                    if item:
+                        main._remove_command_script(item.get("command_file"))
+                with main.PROCESS_LOCK:
+                    PROCESS_STARTING = getattr(main, "PROCESS_STARTING", {})
+                    PROCESS_STARTING.clear()
+                import shutil
+                shutil.rmtree(root, ignore_errors=True)
+        self.assertFalse(worker.is_alive(), "first process start thread leaked")
+        self.assertNotIn("error", first_result, repr(first_result.get("error")))
+
+
+if __name__ == "__main__":
+    unittest.main()
