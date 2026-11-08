@@ -1204,3 +1204,36 @@ class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
         ]
         self.assertEqual(len(as_calls), 1)
         self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
+
+
+class RunnerGlobalProcessCapacityTests(unittest.TestCase):
+    def test_global_process_cap_applies_across_workspaces(self):
+        roots = [Path(tempfile.mkdtemp(prefix="dos-runner-cap-a-")),
+                 Path(tempfile.mkdtemp(prefix="dos-runner-cap-b-"))]
+        process_id = None
+        with patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main.MAX_TOTAL_PROCESSES", 1):
+            try:
+                process_id = main._start_process(
+                    roots[0], "python -c \"import time; time.sleep(30)\""
+                )
+                with self.assertRaises(HTTPException) as ctx:
+                    main._start_process(
+                        roots[1], "python -c \"import time; time.sleep(30)\""
+                    )
+                self.assertEqual(ctx.exception.status_code, 429)
+                self.assertEqual(ctx.exception.detail, "Runner process capacity reached.")
+            finally:
+                if process_id is not None:
+                    try:
+                        main._stop_process(process_id)
+                    except Exception:
+                        pass
+                    with main.PROCESS_LOCK:
+                        item = main.PROCESSES.pop(process_id, None)
+                    if item:
+                        main._remove_command_script(item.get("command_file"))
+                for root in roots:
+                    import shutil
+                    shutil.rmtree(root, ignore_errors=True)
