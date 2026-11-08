@@ -40,3 +40,8 @@ Do not set `RUNNER_ALLOW_NETWORK=true` or enable per-preview shared networking t
 ## Package installation egress
 
 Python package installation uses a pinned `uv` executable and a workspace-local `.venv`; the runtime image does not ship system `pip`. In strict Bubblewrap mode, package installation remains disabled until a registry-restricted egress proxy is available. Do not enable unrestricted network access for package installation: user-controlled manifests and package indexes must not be able to reach cloud metadata, private network services, or Runner control-plane endpoints.
+
+
+## Enforced egress policy
+
+A request flag such as `allow_network=true` is not an authorization grant. Bubblewrap keeps the network namespace isolated unless the Runner operator explicitly sets `RUNNER_ALLOW_NETWORK=true` in a non-production environment. Managed production (including Render markers) always forces network isolation, even if that variable or a request flag is set. Package installation and preview traffic therefore remain unavailable in strict production until a registry-restricted egress/ingress proxy is implemented and reviewed.
