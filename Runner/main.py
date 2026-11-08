@@ -1463,13 +1463,12 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         "npm_config_update_notifier": "false",
     }
     _safe_process_env(env, env_extra)
-    (root / ".home").mkdir(exist_ok=True)
-    command_file = _create_command_script(root, command)
 
     # Reserve capacity under the same lock used to register live processes.
     # Without a reservation, concurrent requests can all pass the quota check
     # before any of their Popen children are inserted into PROCESSES.
     process_id = None
+    command_file = None
     try:
         with PROCESS_LOCK:
             active = [p for p in PROCESSES.values() if p["popen"].poll() is None]
@@ -1485,6 +1484,9 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
             process_id = str(PROCESS_SEQ)
             PROCESS_STARTING[process_id] = root.name
 
+        # Do not touch the workspace filesystem until capacity is reserved.
+        (root / ".home").mkdir(exist_ok=True)
+        command_file = _create_command_script(root, command)
         argv = _sandbox_command(root, command_file, allow_network=allow_network)
         proc = subprocess.Popen(
             argv, shell=False, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1494,13 +1496,15 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         if process_id is not None:
             with PROCESS_LOCK:
                 PROCESS_STARTING.pop(process_id, None)
-        _remove_command_script(command_file)
+        if command_file:
+            _remove_command_script(command_file)
         raise
     except Exception as exc:
         if process_id is not None:
             with PROCESS_LOCK:
                 PROCESS_STARTING.pop(process_id, None)
-        _remove_command_script(command_file)
+        if command_file:
+            _remove_command_script(command_file)
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
 
     with PROCESS_LOCK:
