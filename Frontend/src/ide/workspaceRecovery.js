@@ -138,6 +138,11 @@ export async function saveWorkspaceRecoverySnapshot(value) {
     } finally {
       database.close();
     }
+    try {
+      saveLocalFallback(snapshot);
+    } catch {
+      try { globalThis.localStorage?.removeItem(localStorageKey(snapshot.workspace_id)); } catch { /* IndexedDB remains authoritative. */ }
+    }
     return { storage: "indexeddb", snapshot };
   } catch (indexedDbError) {
     try {
@@ -180,7 +185,8 @@ export async function deleteWorkspaceRecoverySnapshot(workspaceId) {
     indexedDbError = error;
   }
   try {
-    globalThis.localStorage?.removeItem(localStorageKey(workspaceId));
+    if (!globalThis.localStorage) throw new Error("Local recovery storage is unavailable.");
+    globalThis.localStorage.removeItem(localStorageKey(workspaceId));
   } catch (error) {
     if (indexedDbError) throw new Error("Could not clear workspace recovery data.", { cause: error });
   }
