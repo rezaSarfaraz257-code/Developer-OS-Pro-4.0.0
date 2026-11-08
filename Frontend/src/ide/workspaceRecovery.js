@@ -24,7 +24,7 @@ function hasControlCharacters(value) {
 
 function normalizePath(value) {
   if (typeof value !== "string" || !value || value.length > 500) return null;
-  if (/[\x00-\x1f\x7f]/.test(value)) return null;
+  if (hasControlCharacters(value)) return null;
   const normalized = value.replace(/\\/g, "/");
   if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) return null;
   const parts = normalized.split("/");
@@ -163,7 +163,7 @@ export async function saveWorkspaceRecoverySnapshot(value) {
       try { globalThis.localStorage?.removeItem(localStorageKey(snapshot.workspace_id)); } catch { /* IndexedDB remains authoritative. */ }
     }
     return { storage: "indexeddb", snapshot };
-  } catch (indexedDbError) {
+  } catch {
     try {
       saveLocalFallback(snapshot);
       return { storage: "localstorage", snapshot };
