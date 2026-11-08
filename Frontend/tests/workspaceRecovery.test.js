@@ -48,7 +48,7 @@ test("rejects malformed, unsafe, oversized, and unversioned recovery data", () =
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "../secrets": "x" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "/etc/passwd": "x" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { ".git/config": "x" } })), null);
-  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad.js": "x\\0y" } })), null);
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad.js": "x\0y" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "large.js": "x".repeat(1_000_001) } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: " " })), null);
 });
