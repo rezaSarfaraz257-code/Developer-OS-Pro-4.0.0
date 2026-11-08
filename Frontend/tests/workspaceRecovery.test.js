@@ -63,7 +63,7 @@ test("invalid or unscoped snapshots and unsafe paths cannot enter the recovery j
 
 test("recovery journal evicts oldest entries and stays within its entry bound", () => {
   const entries = Array.from({ length: MAX_RECOVERY_ENTRIES }, (_, index) =>
-    snapshot({ path: \`file-\${index}.js\`, updated_at: index })
+    snapshot({ path: "file-" + index + ".js", updated_at: index })
   );
   const next = upsertWorkspaceRecoverySnapshot({ version: WORKSPACE_RECOVERY_VERSION, entries },
     snapshot({ path: "new.js", updated_at: 10_000 }));
