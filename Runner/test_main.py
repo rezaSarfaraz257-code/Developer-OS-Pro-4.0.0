@@ -1327,3 +1327,13 @@ class RunnerProcessOutputUtf8BudgetTests(unittest.TestCase):
                 self.assertEqual(encoded.decode("utf-8"), output)
         finally:
             main.MAX_PROCESS_OUTPUT = original_limit
+
+    def test_process_output_tail_stays_valid_across_mixed_unicode_chunks(self):
+        with patch("main.MAX_PROCESS_OUTPUT", 31):
+            output = ""
+            for chunk in ("start-", "🙂" * 5, "-middle-", "界" * 8, "-end"):
+                output = main._bounded_process_output_tail(output, chunk)
+        encoded = output.encode("utf-8")
+        self.assertLessEqual(len(encoded), 31)
+        self.assertEqual(encoded.decode("utf-8"), output)
+        self.assertTrue(output.endswith("-end"))
