@@ -40,3 +40,9 @@ Do not set `RUNNER_ALLOW_NETWORK=true` or enable per-preview shared networking t
 ## Package installation egress
 
 Python package installation uses a pinned `uv` executable and a workspace-local `.venv`; the runtime image does not ship system `pip`. In strict Bubblewrap mode, package installation remains disabled until a registry-restricted egress proxy is available. Do not enable unrestricted network access for package installation: user-controlled manifests and package indexes must not be able to reach cloud metadata, private network services, or Runner control-plane endpoints.
+
+## Process capacity and deployment scope
+
+The Runner enforces both a per-workspace process quota and a total process quota. Configure the latter with `RUNNER_MAX_TOTAL_PROCESSES`; its default is derived from the Runner's configured execution concurrency and is bounded by the application setting. Capacity reservations are held under the in-process process lock while a child is starting, so concurrent requests handled by the same Runner process cannot all pass the quota check before process registration.
+
+This quota is **per Runner process/instance**, not a fleet-wide distributed limit. Multiple Uvicorn workers or horizontally scaled Runner replicas each maintain independent process registries and reservations. Do not interpret the local quota as a global tenant or fleet capacity guarantee. Before enabling multiple workers/replicas for shared capacity, add an atomic shared lease/coordinator with expiry and crash recovery, or route each workspace consistently to one Runner instance. Until then, deploy one Runner worker per capacity domain and size the instance/container limits accordingly.
