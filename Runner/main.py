@@ -58,6 +58,22 @@ MAX_OUTPUT_BYTES = MAX_OUTPUT
 MAX_PROCESS_DURATION = TIMEOUT
 PROCESS_TTL = _bounded_int_env("RUNNER_PROCESS_TTL_SECONDS", 3600, 300, 86400)
 ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
+
+
+def _network_access_allowed(requested, environ=None):
+    """Allow egress only as an explicit non-production operator opt-in.
+
+    Request payloads cannot enable network access on their own. Managed production
+    always stays network-isolated until a registry-restricted egress proxy exists.
+    """
+    env = os.environ if environ is None else environ
+    managed_production = (
+        str(env.get("ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+        or str(env.get("RENDER", "")).strip().lower() == "true"
+        or any(env.get(name) for name in ("RENDER_SERVICE_ID", "RENDER_GIT_COMMIT", "RENDER_EXTERNAL_URL"))
+    )
+    operator_opt_in = str(env.get("RUNNER_ALLOW_NETWORK", "false")).strip().lower() in {"1", "true", "yes", "on"}
+    return bool(requested) and operator_opt_in and not managed_production
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
 def _effective_runner_security_level(environ=None):
@@ -794,7 +810,7 @@ def _sandbox_command(root, command_file, allow_network=False):
         "--chdir", "/workspace", "--proc", "/proc", "--dev", "/dev",
         "--tmpfs", "/tmp", "--clearenv",
     ]
-    if not allow_network and not ALLOW_NETWORK:
+    if not _network_access_allowed(allow_network):
         args.append("--unshare-net")
     args.extend([
         "--setenv", "PATH", "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
