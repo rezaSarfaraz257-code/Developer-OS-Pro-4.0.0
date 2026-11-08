@@ -20,7 +20,8 @@ const snapshot = (overrides = {}) => ({
 });
 
 test("recovery journal rejects corrupt, unknown and malformed storage safely", () => {
-  assert.deepEqual(parseWorkspaceRecoveryJournal("broken"), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });\n  assert.deepEqual(parseWorkspaceRecoveryJournal("x".repeat(1_500_001)), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
+  assert.deepEqual(parseWorkspaceRecoveryJournal("broken"), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
+  assert.deepEqual(parseWorkspaceRecoveryJournal("x".repeat(1_500_001)), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
   assert.deepEqual(parseWorkspaceRecoveryJournal(JSON.stringify({ version: 99, entries: [snapshot()] })), { version: WORKSPACE_RECOVERY_VERSION, entries: [] });
   const parsed = parseWorkspaceRecoveryJournal(JSON.stringify({
     version: WORKSPACE_RECOVERY_VERSION,
@@ -57,7 +58,8 @@ test("invalid or unscoped snapshots and unsafe paths cannot enter the recovery j
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ workspace_id: "" })), empty);
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ base_revision: null })), empty);
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "../outside.js" })), empty);
-  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "src\\outside.js" })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "src" + String.fromCharCode(92) + "outside.js" })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "__proto__" })), empty);
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ content: "x".repeat(750_001) })), empty);
 });
 
