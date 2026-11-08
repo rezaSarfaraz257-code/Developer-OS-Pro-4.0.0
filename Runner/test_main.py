@@ -1216,10 +1216,12 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
                 process_id = main._start_process(
                     roots[0], "python -c \"import time; time.sleep(30)\""
                 )
-                with self.assertRaises(HTTPException) as ctx:
-                    main._start_process(
-                        roots[1], "python -c \"import time; time.sleep(30)\""
-                    )
+                with patch("main._create_command_script") as create_script:
+                    with self.assertRaises(HTTPException) as ctx:
+                        main._start_process(
+                            roots[1], "python -c \"import time; time.sleep(30)\""
+                        )
+                    create_script.assert_not_called()
                 self.assertEqual(ctx.exception.status_code, 429)
                 self.assertEqual(ctx.exception.detail, "Runner process capacity reached.")
             finally:
