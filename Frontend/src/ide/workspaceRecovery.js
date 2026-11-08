@@ -34,6 +34,21 @@ function normalizePath(value) {
   return normalized;
 }
 
+function isSensitiveRecoveryPath(path) {
+  const parts = path.split("/").map((part) => part.toLowerCase());
+  const basename = parts[parts.length - 1] || "";
+  const safeEnvTemplate = /^\.env(?:\..+)?\.(?:example|sample|template)$/.test(basename)
+    || /^\.env\.(?:example|sample|template)$/.test(basename);
+  if ((basename === ".env" || /^\.env\./.test(basename)) && !safeEnvTemplate) return true;
+  if (parts.includes(".ssh")) return true;
+  if ([".npmrc", ".pypirc", ".netrc", ".git-credentials", "credentials", "credentials.json"].includes(basename)) return true;
+  if (/^(?:service[-_]?account|credentials?)(?:[-_.].*)?\.json$/.test(basename)) return true;
+  if (/^(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)(?:\.key)?$/.test(basename)) return true;
+  if (/\.(?:pem|key|p12|pfx|jks|keystore)$/.test(basename) && !basename.endsWith(".pub")) return true;
+  if (parts.includes(".aws") && basename === "credentials") return true;
+  return false;
+}
+
 export function normalizeWorkspaceRecoverySnapshot(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.workspace_id == null || String(value.workspace_id).trim() === "" || String(value.workspace_id).length > 128) return null;
@@ -48,6 +63,9 @@ export function normalizeWorkspaceRecoverySnapshot(value) {
   for (const [rawPath, content] of entries) {
     const path = normalizePath(rawPath);
     if (!path || typeof content !== "string" || content.includes("\0")) return null;
+    // Browser recovery storage is not encrypted. Never persist files whose
+    // conventional names indicate credentials, private keys, or secret env.
+    if (isSensitiveRecoveryPath(path)) continue;
     let bytes;
     try {
       bytes = new TextEncoder().encode(content).byteLength;
@@ -60,8 +78,12 @@ export function normalizeWorkspaceRecoverySnapshot(value) {
     Object.defineProperty(files, path, { value: content, enumerable: true, writable: true, configurable: true });
   }
 
-  const active_file = value.active_file == null ? "" : normalizePath(value.active_file);
-  if (value.active_file != null && !active_file) return null;
+  if (!Object.keys(files).length) return null;
+  const normalizedActiveFile = value.active_file == null ? "" : normalizePath(value.active_file);
+  if (value.active_file != null && !normalizedActiveFile) return null;
+  const active_file = normalizedActiveFile && !isSensitiveRecoveryPath(normalizedActiveFile)
+    ? normalizedActiveFile
+    : "";
   const updated_at = Number.isSafeInteger(value.updated_at) && value.updated_at >= 0
     ? value.updated_at
     : Date.now();
