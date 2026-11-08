@@ -183,10 +183,30 @@ class RunnerSecurityTests(unittest.TestCase):
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
 
-    def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
-        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
+    def test_request_cannot_enable_network_without_operator_opt_in(self):
+        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False), \\
+             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
+             patch("main._bwrap_runtime_available", return_value=True):
             command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
-            self.assertNotIn("--unshare-net", command)
+        self.assertIn("--unshare-net", command)
+
+    def test_network_requires_explicit_operator_opt_in_outside_production(self):
+        env = {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}
+        self.assertTrue(main._network_access_allowed(True, env))
+        self.assertFalse(main._network_access_allowed(False, env))
+
+    def test_managed_production_never_allows_unrestricted_runner_egress(self):
+        for marker in ({"ENVIRONMENT": "production"}, {"RENDER": "true"}, {"RENDER_SERVICE_ID": "srv-test"}):
+            env = {"RUNNER_ALLOW_NETWORK": "true", **marker}
+            with self.subTest(marker=marker):
+                self.assertFalse(main._network_access_allowed(True, env))
+
+    def test_bwrap_network_isolation_is_enabled_when_operator_opt_in_is_absent(self):
+        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False), \\
+             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
+             patch("main._bwrap_runtime_available", return_value=True):
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
+        self.assertIn("--unshare-net", command)
 
     def test_capability_manifest_is_machine_readable(self):
         from main import _capability_manifest
