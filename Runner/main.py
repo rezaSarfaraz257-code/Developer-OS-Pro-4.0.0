@@ -170,9 +170,14 @@ STREAM_WAIT_SECONDS = _bounded_float_env("RUNNER_STREAM_WAIT_SECONDS", 0.5, 0.1,
 def _capture_process_output(job_id, proc):
     def reader(stream):
         try:
-            for line in iter(stream.readline, ""):
-                if line:
-                    _append_job_output(job_id, line)
+            # Fixed-size reads are essential here: readline() can return an
+            # arbitrarily large attacker-controlled line with no newline.
+            # Keep each transient chunk bounded before it reaches the tail buffer.
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                _append_job_output(job_id, chunk)
         finally:
             try:
                 stream.close()
