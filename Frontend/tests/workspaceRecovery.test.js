@@ -59,6 +59,31 @@ test("rejects malformed, unsafe, and oversized recovery data", () => {
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: JSON.parse('{"__proto__":"safe"}') })).files.__proto__, "safe");
 });
 
+test("excludes conventional secret and private-key files from browser recovery", () => {
+  const normalized = normalizeWorkspaceRecoverySnapshot(validSnapshot({
+    active_file: ".env",
+    files: {
+      "src/main.js": "console.log('safe');",
+      ".env": "API_KEY=secret",
+      ".env.production": "DATABASE_URL=secret",
+      ".ssh/id_ed25519": "PRIVATE KEY",
+      "certs/server.pem": "PRIVATE KEY",
+      ".npmrc": "//registry.example/:_authToken=secret",
+      ".env.example": "API_KEY=replace-me",
+      ".env.local.template": "DATABASE_URL=replace-me",
+    },
+  }));
+  assert.deepEqual(Object.keys(normalized.files).sort(), [
+    ".env.example",
+    ".env.local.template",
+    "src/main.js",
+  ]);
+  assert.equal(normalized.active_file, "");
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({
+    files: { ".env": "API_KEY=secret" },
+  })), null);
+});
+
 test("synchronous page-shutdown fallback preserves a bounded dirty snapshot", () => {
   const storage = installLocalStorage();
   assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot()), true);
