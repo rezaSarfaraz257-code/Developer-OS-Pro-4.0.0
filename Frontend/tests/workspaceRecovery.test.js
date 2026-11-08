@@ -61,7 +61,8 @@ test("synchronous page-shutdown fallback preserves a bounded dirty snapshot", ()
   const storage = installLocalStorage();
   assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot()), true);
   assert.equal(JSON.parse(storage.get("dos-workspace-recovery:42")).files["src/main.js"], "console.log('recovered');");
-  assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot({ files: { "large.js": "x".repeat(4_000_001) } })), false);
+  const oversized = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`large-${index}.js`, "x".repeat(900_000)]));
+  assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot({ files: oversized })), false);
 });
 
 test("persists and restores a recovery snapshot through the bounded local fallback", async () => {
