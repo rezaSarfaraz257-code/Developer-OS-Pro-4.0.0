@@ -884,22 +884,29 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             reader = threading.Thread(target=drain, args=(stream, buffer), daemon=True)
             reader.start()
             readers.append(reader)
+        timed_out = False
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
+            timed_out = True
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
                 proc.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 _terminate_process_group(proc, grace_seconds=0.1)
                 proc.wait(timeout=1)
+        for reader in readers:
+            reader.join(timeout=1)
+        # A shell can exit while a background descendant still holds the pipes.
+        # Do not return early and leave that process running outside the request.
+        if any(reader.is_alive() for reader in readers):
+            _terminate_process_group(proc, grace_seconds=0.1)
             for reader in readers:
                 reader.join(timeout=1)
+        if timed_out:
             stdout = bytes(stdout_tail).decode("utf-8", errors="replace")
             stderr = bytes(stderr_tail).decode("utf-8", errors="replace")
             raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
-        for reader in readers:
-            reader.join(timeout=1)
         stdout = bytes(stdout_tail).decode("utf-8", errors="replace")
         stderr = bytes(stderr_tail).decode("utf-8", errors="replace")
         return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
