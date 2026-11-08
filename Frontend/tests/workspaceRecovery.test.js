@@ -52,16 +52,18 @@ test("upsert replaces only the same workspace and path without mutating input", 
   assert.equal(original.entries[0].content, "old");
 });
 
-test("invalid or unscoped snapshots cannot enter the recovery journal", () => {
+test("invalid or unscoped snapshots and unsafe paths cannot enter the recovery journal", () => {
   const empty = { version: WORKSPACE_RECOVERY_VERSION, entries: [] };
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ workspace_id: "" })), empty);
-  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ base_revision: null })), empty);\n  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "../outside.js" })), empty);\n  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "src\\\\outside.js" })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ base_revision: null })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "../outside.js" })), empty);
+  assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ path: "src\\outside.js" })), empty);
   assert.deepEqual(upsertWorkspaceRecoverySnapshot(empty, snapshot({ content: "x".repeat(750_001) })), empty);
 });
 
 test("recovery journal evicts oldest entries and stays within its entry bound", () => {
   const entries = Array.from({ length: MAX_RECOVERY_ENTRIES }, (_, index) =>
-    snapshot({ path: `file-${index}.js`, updated_at: index })
+    snapshot({ path: \`file-\${index}.js\`, updated_at: index })
   );
   const next = upsertWorkspaceRecoverySnapshot({ version: WORKSPACE_RECOVERY_VERSION, entries },
     snapshot({ path: "new.js", updated_at: 10_000 }));
