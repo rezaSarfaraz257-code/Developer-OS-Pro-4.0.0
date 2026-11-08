@@ -28,7 +28,7 @@ function normalizePath(value) {
 
 export function normalizeWorkspaceRecoverySnapshot(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (value.workspace_id == null || String(value.workspace_id).trim() === "") return null;
+  if (value.workspace_id == null || String(value.workspace_id).trim() === "" || String(value.workspace_id).length > 128) return null;
   const base_revision = normalizeRevision(value.base_revision);
   if (base_revision === null) return null;
   if (!value.files || typeof value.files !== "object" || Array.isArray(value.files)) return null;
@@ -49,7 +49,7 @@ export function normalizeWorkspaceRecoverySnapshot(value) {
     if (bytes > MAX_FILE_BYTES) return null;
     totalBytes += bytes;
     if (totalBytes > MAX_SNAPSHOT_BYTES) return null;
-    files[path] = content;
+    Object.defineProperty(files, path, { value: content, enumerable: true, writable: true, configurable: true });
   }
 
   const active_file = value.active_file == null ? "" : normalizePath(value.active_file);
@@ -119,7 +119,7 @@ function saveLocalFallback(snapshot) {
 function loadLocalFallback(workspaceId) {
   if (!globalThis.localStorage) return null;
   const raw = globalThis.localStorage.getItem(localStorageKey(workspaceId));
-  if (!raw) return null;
+  if (!raw || raw.length > 4_000_000) return null;
   try {
     const parsed = normalizeWorkspaceRecoverySnapshot(JSON.parse(raw));
     return parsed && parsed.workspace_id === String(workspaceId) ? parsed : null;
@@ -156,19 +156,25 @@ export async function saveWorkspaceRecoverySnapshot(value) {
 
 export async function loadWorkspaceRecoverySnapshot(workspaceId) {
   if (workspaceId == null || String(workspaceId).trim() === "") return null;
+  let indexedSnapshot = null;
   try {
     const database = await openDatabase();
     try {
       const result = await transact(database, "readonly", (store) => store.get(String(workspaceId)));
       const normalized = normalizeWorkspaceRecoverySnapshot(result);
-      if (normalized && normalized.workspace_id === String(workspaceId)) return normalized;
+      if (normalized && normalized.workspace_id === String(workspaceId)) indexedSnapshot = normalized;
     } finally {
       database.close();
     }
   } catch {
-    // The local fallback is intentionally checked if IndexedDB is unavailable.
+    // The bounded local fallback remains available if IndexedDB is unavailable.
   }
-  return loadLocalFallback(workspaceId);
+  const localSnapshot = loadLocalFallback(workspaceId);
+  if (!indexedSnapshot) return localSnapshot;
+  if (!localSnapshot) return indexedSnapshot;
+  // A fallback written during a temporary IndexedDB outage may be newer than
+  // the last IndexedDB record. Never resurrect that older snapshot on recovery.
+  return localSnapshot.updated_at > indexedSnapshot.updated_at ? localSnapshot : indexedSnapshot;
 }
 
 export async function deleteWorkspaceRecoverySnapshot(workspaceId) {
@@ -185,9 +191,11 @@ export async function deleteWorkspaceRecoverySnapshot(workspaceId) {
     indexedDbError = error;
   }
   try {
-    if (!globalThis.localStorage) throw new Error("Local recovery storage is unavailable.");
-    globalThis.localStorage.removeItem(localStorageKey(workspaceId));
+    globalThis.localStorage?.removeItem(localStorageKey(workspaceId));
   } catch (error) {
     if (indexedDbError) throw new Error("Could not clear workspace recovery data.", { cause: error });
+  }
+  if (indexedDbError && globalThis.indexedDB) {
+    throw new Error("Could not clear the IndexedDB recovery snapshot.", { cause: indexedDbError });
   }
 }
