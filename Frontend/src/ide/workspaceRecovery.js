@@ -50,7 +50,7 @@ function isSensitiveRecoveryPath(path) {
   if (parts.includes(".kube") && basename === "config") return true;
   if (parts.includes(".azure") && ["accesstokens.json", "azureprofile.json"].includes(basename)) return true;
   if (parts.includes(".config") && parts.includes("gcloud") && basename === "application_default_credentials.json") return true;
-  if (basename === ".vault-token" || /^terraform\\.tfstate(?:\\..*)?$/.test(basename)) return true;
+  if (basename === ".vault-token" || /^terraform\.tfstate(?:\..*)?$/.test(basename)) return true;
   return false;
 }
 
