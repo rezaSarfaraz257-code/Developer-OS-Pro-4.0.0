@@ -853,7 +853,20 @@ def _normalize_command(command):
     return command
 
 def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
-    """Run a fixed-argv script in its own process group and terminate descendants on timeout."""
+    """Run a process with bounded tail capture so noisy code cannot exhaust Runner memory."""
+    def drain(stream, buffer):
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            if len(buffer) > MAX_OUTPUT_BYTES:
+                del buffer[:-MAX_OUTPUT_BYTES]
+
+    stdout_tail = bytearray()
+    stderr_tail = bytearray()
+    readers = []
+    proc = None
     try:
         proc = subprocess.Popen(
             argv,
@@ -863,27 +876,41 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             start_new_session=True,
             preexec_fn=preexec_fn,
         )
+        for stream, buffer in ((proc.stdout, stdout_tail), (proc.stderr, stderr_tail)):
+            reader = threading.Thread(target=drain, args=(stream, buffer), daemon=True)
+            reader.start()
+            readers.append(reader)
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
-                stdout, stderr = proc.communicate(timeout=1)
+                proc.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 _terminate_process_group(proc, grace_seconds=0.1)
-                try:
-                    stdout, stderr = proc.communicate(timeout=1)
-                except subprocess.TimeoutExpired:
-                    stdout, stderr = exc.output or "", exc.stderr or ""
-            stdout = stdout or exc.output or ""
-            stderr = stderr or exc.stderr or ""
+                proc.wait(timeout=1)
+            for reader in readers:
+                reader.join(timeout=1)
+            stdout = bytes(stdout_tail).decode("utf-8", errors="replace")
+            stderr = bytes(stderr_tail).decode("utf-8", errors="replace")
             raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
+        for reader in readers:
+            reader.join(timeout=1)
+        stdout = bytes(stdout_tail).decode("utf-8", errors="replace")
+        stderr = bytes(stderr_tail).decode("utf-8", errors="replace")
         return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
     finally:
+        if proc is not None:
+            for stream in (proc.stdout, proc.stderr):
+                try:
+                    if stream and not stream.closed:
+                        stream.close()
+                except OSError:
+                    pass
         _remove_command_script(cleanup_path)
 
 
