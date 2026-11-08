@@ -1,6 +1,7 @@
 import main
 import unittest
 import time
+import threading
 import subprocess
 import tempfile
 import os
@@ -1238,6 +1239,7 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
 
     def test_global_capacity_reservation_blocks_concurrent_starts(self):
         root = Path(tempfile.mkdtemp(prefix="dos-runner-reservation-"))
+        other_root = Path(tempfile.mkdtemp(prefix="dos-runner-reservation-other-"))
         reserved = threading.Event()
         release = threading.Event()
         first_result = {}
@@ -1267,7 +1269,7 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
                 self.assertTrue(reserved.wait(3), "first request did not reserve capacity")
                 with self.assertRaises(HTTPException) as ctx:
                     main._start_process(
-                        Path(tempfile.mkdtemp(prefix="dos-runner-reservation-other-")),
+                        other_root,
                         "python -c \"import time; time.sleep(30)\""
                     )
                 self.assertEqual(ctx.exception.status_code, 429)
@@ -1285,10 +1287,10 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
                     if item:
                         main._remove_command_script(item.get("command_file"))
                 with main.PROCESS_LOCK:
-                    PROCESS_STARTING = getattr(main, "PROCESS_STARTING", {})
-                    PROCESS_STARTING.clear()
+                    self.assertFalse(main.PROCESS_STARTING)
                 import shutil
                 shutil.rmtree(root, ignore_errors=True)
+                shutil.rmtree(other_root, ignore_errors=True)
         self.assertFalse(worker.is_alive(), "first process start thread leaked")
         self.assertNotIn("error", first_result, repr(first_result.get("error")))
 
