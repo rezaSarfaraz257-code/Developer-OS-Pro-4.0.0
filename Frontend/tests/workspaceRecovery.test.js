@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalizeWorkspaceRecoverySnapshot,
   saveWorkspaceRecoverySnapshot,
+  saveWorkspaceRecoverySnapshotFallbackSync,
   loadWorkspaceRecoverySnapshot,
   deleteWorkspaceRecoverySnapshot,
 } from "../src/ide/workspaceRecovery.js";
@@ -54,6 +55,13 @@ test("rejects malformed, unsafe, oversized, and unversioned recovery data", () =
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: "x".repeat(129) })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad\\\\path.js": "x" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: JSON.parse('{"__proto__":"safe"}') })).files.__proto__, "safe");
+});
+
+test("synchronous page-shutdown fallback preserves a bounded dirty snapshot", () => {
+  const storage = installLocalStorage();
+  assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot()), true);
+  assert.equal(JSON.parse(storage.get("dos-workspace-recovery:42")).files["src/main.js"], "console.log('recovered');");
+  assert.equal(saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot({ files: { "large.js": "x".repeat(4_000_001) } })), false);
 });
 
 test("persists and restores a recovery snapshot through the bounded local fallback", async () => {
