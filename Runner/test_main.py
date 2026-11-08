@@ -1290,3 +1290,40 @@ class RunnerProcessOutputReadBoundsTests(unittest.TestCase):
             with main.PROCESS_LOCK:
                 main.PROCESSES.pop(pid, None)
         stream.close.assert_called_once()
+
+
+class RunnerProcessOutputUtf8BudgetTests(unittest.TestCase):
+    def setUp(self):
+        with main.PROCESS_LOCK:
+            main.PROCESSES.pop("utf8-process-output", None)
+
+    def tearDown(self):
+        with main.PROCESS_LOCK:
+            main.PROCESSES.pop("utf8-process-output", None)
+
+    def test_process_output_is_bounded_by_utf8_bytes(self):
+        pid = "utf8-process-output"
+        stream = Mock()
+        stream.readline.side_effect = ["🙂" * 8192, ""]
+        stream.close = Mock()
+        with main.PROCESS_LOCK:
+            main.PROCESSES[pid] = {"stdout": "", "stderr": ""}
+        with patch("main.MAX_PROCESS_OUTPUT", 128):
+            main._process_output_reader(pid, "stdout", stream)
+            output = main.PROCESSES[pid]["stdout"]
+        self.assertLessEqual(len(output.encode("utf-8")), 128)
+        self.assertEqual(output.encode("utf-8").decode("utf-8"), output)
+        self.assertTrue(output.endswith("🙂" * 32))
+        stream.close.assert_called_once()
+
+    def test_process_output_utf8_tail_respects_every_small_byte_limit(self):
+        original_limit = main.MAX_PROCESS_OUTPUT
+        try:
+            for limit in range(1, 17):
+                with patch("main.MAX_PROCESS_OUTPUT", limit):
+                    output = main._bounded_process_output_tail("", "🙂" * 8)
+                encoded = output.encode("utf-8")
+                self.assertLessEqual(len(encoded), limit)
+                self.assertEqual(encoded.decode("utf-8"), output)
+        finally:
+            main.MAX_PROCESS_OUTPUT = original_limit
