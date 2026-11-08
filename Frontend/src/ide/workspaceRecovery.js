@@ -9,7 +9,7 @@ function validRevision(value) {
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
 }
 
-function validEntry(entry) {
+function isSafeWorkspacePath(path) {\n  if (typeof path !== "string" || !path || path.length > 512 || path.startsWith("/") || path.includes("\\\\") || path.includes("\\0")) return false;\n  const segments = path.split("/");\n  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");\n}\n\nfunction validEntry(entry) {
   return Boolean(
     entry &&
     typeof entry === "object" &&
