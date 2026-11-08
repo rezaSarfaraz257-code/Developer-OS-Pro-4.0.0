@@ -45,7 +45,12 @@ function isSensitiveRecoveryPath(path) {
   if (/^(?:service[-_]?account|credentials?)(?:[-_.].*)?\.json$/.test(basename)) return true;
   if (/^(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)(?:\.key)?$/.test(basename)) return true;
   if (/\.(?:pem|key|p12|pfx|jks|keystore)$/.test(basename) && !basename.endsWith(".pub")) return true;
-  if (parts.includes(".aws") && basename === "credentials") return true;
+  if (parts.includes(".aws") && ["credentials", "config"].includes(basename)) return true;
+  if (parts.includes(".docker") && basename === "config.json") return true;
+  if (parts.includes(".kube") && basename === "config") return true;
+  if (parts.includes(".azure") && ["accesstokens.json", "azureprofile.json"].includes(basename)) return true;
+  if (parts.includes(".config") && parts.includes("gcloud") && basename === "application_default_credentials.json") return true;
+  if (basename === ".vault-token" || /^terraform\\.tfstate(?:\\..*)?$/.test(basename)) return true;
   return false;
 }
 
