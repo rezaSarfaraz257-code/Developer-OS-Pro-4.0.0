@@ -1373,6 +1373,11 @@ PROCESS_SEQ = 0
 PREVIEW_PORT_BASE = _bounded_int_env("IDE_PREVIEW_PORT_BASE", 10000, 1024, 65535)
 PREVIEW_PORT_SPAN = _bounded_int_env("IDE_PREVIEW_PORT_SPAN", 1000, 1, 10000)
 MAX_PROCESSES_PER_WORKSPACE = 4
+# Bound aggregate long-running processes across all tenants/workspaces. Per-workspace
+# quotas alone do not prevent many workspaces from exhausting the shared Runner.
+MAX_TOTAL_PROCESSES = _bounded_int_env(
+    "RUNNER_MAX_TOTAL_PROCESSES", max(4, MAX_CONCURRENT * 4), 1, 256
+)
 MAX_PROCESS_OUTPUT = 200_000
 PROCESS_TAIL_BYTES = 16_384
 PROCESS_RETENTION_SECONDS = _bounded_int_env("RUNNER_PROCESS_RETENTION_SECONDS", 1800, 300, 86400)
@@ -1422,10 +1427,13 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
     with PROCESS_LOCK:
-        active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
+        active = [p for p in PROCESSES.values() if p["popen"].poll() is None]
+        workspace_active = [p for p in active if p["workspace_id"] == root.name]
+        if len(active) >= MAX_TOTAL_PROCESSES:
+            raise HTTPException(status_code=429, detail="Runner process capacity reached.")
         policy = _entitlement_policy({"entitlement": entitlement or {}})
         process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
-        if len(active) >= process_limit:
+        if len(workspace_active) >= process_limit:
             raise HTTPException(status_code=429, detail="Workspace process limit reached.")
         PROCESS_SEQ += 1
         process_id = str(PROCESS_SEQ)
