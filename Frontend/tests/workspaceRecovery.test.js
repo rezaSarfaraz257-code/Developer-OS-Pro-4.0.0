@@ -51,6 +51,9 @@ test("rejects malformed, unsafe, oversized, and unversioned recovery data", () =
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad.js": "x\0y" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "large.js": "x".repeat(1_000_001) } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: " " })), null);
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: "x".repeat(129) })), null);
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad\\\\path.js": "x" } })), null);
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: JSON.parse('{"__proto__":"safe"}') })).files.__proto__, "safe");
 });
 
 test("persists and restores a recovery snapshot through the bounded local fallback", async () => {
