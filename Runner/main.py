@@ -1370,6 +1370,8 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
 PROCESS_LOCK = threading.RLock()
 PROCESSES = {}
 PROCESS_SEQ = 0
+# Reservations close the race between concurrent start requests and Popen registration.
+PROCESS_STARTING = {}
 PREVIEW_PORT_BASE = _bounded_int_env("IDE_PREVIEW_PORT_BASE", 10000, 1024, 65535)
 PREVIEW_PORT_SPAN = _bounded_int_env("IDE_PREVIEW_PORT_SPAN", 1000, 1, 10000)
 MAX_PROCESSES_PER_WORKSPACE = 4
@@ -1426,17 +1428,8 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         raise HTTPException(status_code=400, detail="Invalid process command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
-    with PROCESS_LOCK:
-        active = [p for p in PROCESSES.values() if p["popen"].poll() is None]
-        workspace_active = [p for p in active if p["workspace_id"] == root.name]
-        if len(active) >= MAX_TOTAL_PROCESSES:
-            raise HTTPException(status_code=429, detail="Runner process capacity reached.")
-        policy = _entitlement_policy({"entitlement": entitlement or {}})
-        process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
-        if len(workspace_active) >= process_limit:
-            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
-        PROCESS_SEQ += 1
-        process_id = str(PROCESS_SEQ)
+
+    policy = _entitlement_policy({"entitlement": entitlement or {}})
     env = {
         "PATH": f"{root / '.venv' / 'bin'}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
@@ -1454,19 +1447,46 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
     _safe_process_env(env, env_extra)
     (root / ".home").mkdir(exist_ok=True)
     command_file = _create_command_script(root, command)
+
+    # Reserve capacity under the same lock used to register live processes.
+    # Without a reservation, concurrent requests can all pass the quota check
+    # before any of their Popen children are inserted into PROCESSES.
+    process_id = None
     try:
+        with PROCESS_LOCK:
+            active = [p for p in PROCESSES.values() if p["popen"].poll() is None]
+            starting_workspaces = list(PROCESS_STARTING.values())
+            if len(active) + len(PROCESS_STARTING) >= MAX_TOTAL_PROCESSES:
+                raise HTTPException(status_code=429, detail="Runner process capacity reached.")
+            workspace_active = sum(1 for p in active if p["workspace_id"] == root.name)
+            workspace_starting = sum(1 for workspace_id in starting_workspaces if workspace_id == root.name)
+            process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
+            if workspace_active + workspace_starting >= process_limit:
+                raise HTTPException(status_code=429, detail="Workspace process limit reached.")
+            PROCESS_SEQ += 1
+            process_id = str(PROCESS_SEQ)
+            PROCESS_STARTING[process_id] = root.name
+
         argv = _sandbox_command(root, command_file, allow_network=allow_network)
         proc = subprocess.Popen(
             argv, shell=False, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, start_new_session=True, preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
         )
     except HTTPException:
+        if process_id is not None:
+            with PROCESS_LOCK:
+                PROCESS_STARTING.pop(process_id, None)
         _remove_command_script(command_file)
         raise
     except Exception as exc:
+        if process_id is not None:
+            with PROCESS_LOCK:
+                PROCESS_STARTING.pop(process_id, None)
         _remove_command_script(command_file)
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
+
     with PROCESS_LOCK:
+        PROCESS_STARTING.pop(process_id, None)
         PROCESSES[process_id] = {
             "id": process_id, "workspace_id": root.name, "command": command,
             "command_file": command_file, "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
