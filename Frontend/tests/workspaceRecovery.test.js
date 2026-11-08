@@ -82,6 +82,23 @@ test("excludes conventional secret and private-key files from browser recovery",
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({
     files: { ".env": "API_KEY=secret" },
   })), null);
+  const credentialStores = [
+    ".aws/config",
+    ".docker/config.json",
+    ".kube/config",
+    ".azure/accessTokens.json",
+    ".config/gcloud/application_default_credentials.json",
+    ".vault-token",
+    "infra/terraform.tfstate",
+    "infra/terraform.tfstate.backup",
+  ];
+  for (const path of credentialStores) {
+    assert.equal(
+      normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { [path]: "credential material" } })),
+      null,
+      `sensitive recovery path was not excluded: ${path}`,
+    );
+  }
 });
 
 test("synchronous page-shutdown fallback preserves a bounded dirty snapshot", () => {
