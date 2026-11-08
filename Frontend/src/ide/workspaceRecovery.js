@@ -12,7 +12,7 @@ function validRevision(value) {
 function isSafeWorkspacePath(path) {
   if (typeof path !== "string" || !path || path.length > 512 || path.startsWith("/") || path.includes("\\") || path.includes("\0")) return false;
   const segments = path.split("/");
-  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== ".." && !["__proto__", "prototype", "constructor"].includes(segment));
 }
 
 function validEntry(entry) {
