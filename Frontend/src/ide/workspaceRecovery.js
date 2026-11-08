@@ -14,6 +14,14 @@ function normalizeRevision(value) {
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
 }
 
+function hasControlCharacters(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
+}
+
 function normalizePath(value) {
   if (typeof value !== "string" || !value || value.length > 500) return null;
   if (/[\x00-\x1f\x7f]/.test(value)) return null;
@@ -149,7 +157,7 @@ export async function saveWorkspaceRecoverySnapshot(value) {
       saveLocalFallback(snapshot);
       return { storage: "localstorage", snapshot };
     } catch (fallbackError) {
-      throw new Error("Could not persist workspace recovery data.", { cause: fallbackError || indexedDbError });
+      throw new Error("Could not persist workspace recovery data.", { cause: fallbackError });
     }
   }
 }
