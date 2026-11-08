@@ -9,6 +9,8 @@ import {
 } from "../src/ide/workspaceRecovery.js";
 
 function installLocalStorage() {
+  // Keep fallback tests deterministic across Node versions that expose IndexedDB.
+  globalThis.indexedDB = undefined;
   const values = new Map();
   globalThis.localStorage = {
     getItem: (key) => values.has(key) ? values.get(key) : null,
