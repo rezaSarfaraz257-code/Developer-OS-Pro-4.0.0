@@ -1397,11 +1397,29 @@ def _metric(name, amount=1):
 
 def _metrics_snapshot():
     with METRICS_LOCK:
-        data=dict(METRICS)
-    uptime=max(0.0, time.time()-data["started_at"])
-    data["uptime_seconds"]=round(uptime, 3)
-    data["active_processes"]=sum(1 for item in PROCESSES.values() if item["popen"].poll() is None)
-    data["active_previews"]=sum(1 for item in PREVIEWS.values() if item["popen"].poll() is None)
+        data = dict(METRICS)
+    uptime = max(0.0, time.time() - data["started_at"])
+    data["uptime_seconds"] = round(uptime, 3)
+    # Snapshot each registry under its owning lock. Report reservations as
+    # occupied capacity so operators can distinguish startup pressure from
+    # already-running processes without exposing workspace identifiers.
+    with PROCESS_LOCK:
+        active_processes = sum(
+            1 for item in PROCESSES.values() if item["popen"].poll() is None
+        )
+        starting_processes = len(PROCESS_STARTING)
+    with PREVIEW_LOCK:
+        active_previews = sum(
+            1 for item in PREVIEWS.values()
+            if item.get("popen") and item["popen"].poll() is None
+        )
+    data["active_processes"] = active_processes
+    data["starting_processes"] = starting_processes
+    data["process_capacity"] = MAX_TOTAL_PROCESSES
+    data["available_process_slots"] = max(
+        0, MAX_TOTAL_PROCESSES - active_processes - starting_processes
+    )
+    data["active_previews"] = active_previews
     return data
 
 
