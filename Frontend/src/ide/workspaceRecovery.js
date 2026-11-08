@@ -136,6 +136,17 @@ function loadLocalFallback(workspaceId) {
   }
 }
 
+export function saveWorkspaceRecoverySnapshotFallbackSync(value) {
+  const snapshot = normalizeWorkspaceRecoverySnapshot(value);
+  if (!snapshot) return false;
+  try {
+    saveLocalFallback(snapshot);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveWorkspaceRecoverySnapshot(value) {
   const snapshot = normalizeWorkspaceRecoverySnapshot(value);
   if (!snapshot) throw new Error("Invalid workspace recovery snapshot.");
