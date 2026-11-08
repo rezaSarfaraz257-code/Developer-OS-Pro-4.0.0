@@ -148,11 +148,22 @@ function saveLocalFallback(snapshot) {
 
 function loadLocalFallback(workspaceId) {
   if (!globalThis.localStorage) return null;
-  const raw = globalThis.localStorage.getItem(localStorageKey(workspaceId));
+  const key = localStorageKey(workspaceId);
+  const raw = globalThis.localStorage.getItem(key);
   if (!raw || raw.length > 4_000_000) return null;
   try {
-    const parsed = normalizeWorkspaceRecoverySnapshot(JSON.parse(raw));
-    return parsed && parsed.workspace_id === String(workspaceId) ? parsed : null;
+    const source = JSON.parse(raw);
+    const parsed = normalizeWorkspaceRecoverySnapshot(source);
+    if (!parsed || parsed.workspace_id !== String(workspaceId)) {
+      // Remove invalid legacy data rather than leaving unsafe material at rest.
+      globalThis.localStorage.removeItem(key);
+      return null;
+    }
+    if (Object.keys(source.files || {}).length !== Object.keys(parsed.files).length) {
+      // Scrub sensitive files from snapshots created by older versions.
+      saveLocalFallback(parsed);
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -203,7 +214,15 @@ export async function loadWorkspaceRecoverySnapshot(workspaceId) {
     try {
       const result = await transact(database, "readonly", (store) => store.get(String(workspaceId)));
       const normalized = normalizeWorkspaceRecoverySnapshot(result);
-      if (normalized && normalized.workspace_id === String(workspaceId)) indexedSnapshot = normalized;
+      if (normalized && normalized.workspace_id === String(workspaceId)) {
+        indexedSnapshot = normalized;
+        if (Object.keys(result.files || {}).length !== Object.keys(normalized.files).length) {
+          // Rewrite legacy records so excluded secrets are not retained in IndexedDB.
+          await transact(database, "readwrite", (store) => store.put(normalized));
+        }
+      } else if (result) {
+        await transact(database, "readwrite", (store) => store.delete(String(workspaceId)));
+      }
     } finally {
       database.close();
     }
