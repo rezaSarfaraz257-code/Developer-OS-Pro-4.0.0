@@ -1342,3 +1342,9 @@ test("Web IDE does not request unused CRDT history that its client cannot apply"
     /socket\.send\(JSON\.stringify\(\{\s*type:\s*["']crdt-sync["']/
   );
 });
+
+
+test("workspace recovery warns that browser storage is not encrypted", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes("Browser recovery storage is not encrypted; avoid secrets in recovered files."));
+});
