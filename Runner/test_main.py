@@ -184,9 +184,12 @@ class RunnerSecurityTests(unittest.TestCase):
             self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
 
     def test_request_cannot_enable_network_without_operator_opt_in(self):
-        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False), \\
-             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
-             patch("main._bwrap_runtime_available", return_value=True):
+        with (
+            patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False),
+            patch("main.SANDBOX_MODE", "bwrap"),
+            patch("main.shutil.which", return_value="/usr/bin/bwrap"),
+            patch("main._bwrap_runtime_available", return_value=True),
+        ):
             command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
         self.assertIn("--unshare-net", command)
 
@@ -196,9 +199,12 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertFalse(main._network_access_allowed(False, env))
 
     def test_bwrap_egress_requires_both_request_and_development_operator_opt_in(self):
-        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}, clear=False), \\
-             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
-             patch("main._bwrap_runtime_available", return_value=True):
+        with (
+            patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}, clear=False),
+            patch("main.SANDBOX_MODE", "bwrap"),
+            patch("main.shutil.which", return_value="/usr/bin/bwrap"),
+            patch("main._bwrap_runtime_available", return_value=True),
+        ):
             command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
         self.assertNotIn("--unshare-net", command)
 
@@ -207,13 +213,6 @@ class RunnerSecurityTests(unittest.TestCase):
             env = {"RUNNER_ALLOW_NETWORK": "true", **marker}
             with self.subTest(marker=marker):
                 self.assertFalse(main._network_access_allowed(True, env))
-
-    def test_bwrap_network_isolation_is_enabled_when_operator_opt_in_is_absent(self):
-        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False), \\
-             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
-             patch("main._bwrap_runtime_available", return_value=True):
-            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
-        self.assertIn("--unshare-net", command)
 
     def test_capability_manifest_is_machine_readable(self):
         from main import _capability_manifest
