@@ -1269,3 +1269,24 @@ class RunnerJobOutputByteBudgetTests(unittest.TestCase):
             encoded = output.encode("utf-8")
             self.assertLessEqual(len(encoded), limit)
             self.assertEqual(encoded.decode("utf-8"), output)
+
+
+class RunnerProcessOutputReadBoundsTests(unittest.TestCase):
+    def test_process_output_reader_limits_each_read_for_untrusted_long_lines(self):
+        pid = "bounded-process-output"
+        stream = Mock()
+        stream.readline.side_effect = ["x" * 8192, "y" * 8192, ""]
+        stream.close = Mock()
+        with main.PROCESS_LOCK:
+            main.PROCESSES[pid] = {"stdout": "", "stderr": ""}
+        try:
+            main._process_output_reader(pid, "stdout", stream)
+            self.assertEqual(
+                [call.args for call in stream.readline.call_args_list],
+                [(8192,), (8192,), (8192,)],
+            )
+            self.assertEqual(len(main.PROCESSES[pid]["stdout"]), min(16384, main.MAX_PROCESS_OUTPUT))
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(pid, None)
+        stream.close.assert_called_once()
