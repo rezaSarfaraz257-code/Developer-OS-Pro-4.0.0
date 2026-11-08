@@ -1419,13 +1419,25 @@ def _metrics_snapshot():
     return data
 
 
+def _bounded_process_output_tail(current, chunk):
+    """Keep a valid UTF-8 tail within the configured process-output byte budget."""
+    encoded = (current + chunk).encode("utf-8")
+    if len(encoded) > MAX_PROCESS_OUTPUT:
+        encoded = encoded[-MAX_PROCESS_OUTPUT:]
+        # A byte-tail may start inside a multi-byte code point. Drop only
+        # continuation bytes so the retained text is valid UTF-8 and remains
+        # strictly within the byte budget.
+        while encoded and (encoded[0] & 0xC0) == 0x80:
+            encoded = encoded[1:]
+    return encoded.decode("utf-8")
+
+
 def _process_output_reader(pid, stream_name, stream):
-    """Drain untrusted process output without allowing an unbounded line allocation.
+    """Drain untrusted process output with bounded reads and UTF-8 byte storage.
 
     TextIO.readline() without a size limit can allocate an arbitrarily large
-    string when a child emits data without newline characters. A bounded size
-    keeps each transient read finite while preserving the existing text-based
-    process API and tail-buffer behavior.
+    string when a child emits data without newline characters. Bounded reads
+    limit transient allocations; the retained tail is separately byte-bounded.
     """
     read_chunk_chars = 8192
     try:
@@ -1437,7 +1449,9 @@ def _process_output_reader(pid, stream_name, stream):
                 item = PROCESSES.get(pid)
                 if not item:
                     break
-                item[stream_name] = (item.get(stream_name, "") + chunk)[-MAX_PROCESS_OUTPUT:]
+                item[stream_name] = _bounded_process_output_tail(
+                    item.get(stream_name, ""), chunk
+                )
     finally:
         try:
             stream.close()
