@@ -41,7 +41,7 @@ test("normalizes valid recovery snapshots without mutating their source", () => 
   assert.equal(input.workspace_id, 42);
 });
 
-test("rejects malformed, unsafe, oversized, and unversioned recovery data", () => {
+test("rejects malformed, unsafe, and oversized recovery data", () => {
   assert.equal(normalizeWorkspaceRecoverySnapshot(null), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ base_revision: -1 })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ base_revision: true })), null);
@@ -53,7 +53,7 @@ test("rejects malformed, unsafe, oversized, and unversioned recovery data", () =
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "large.js": "x".repeat(1_000_001) } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: " " })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ workspace_id: "x".repeat(129) })), null);
-  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "bad\\\\path.js": "x" } })), null);
+  assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: { "..\\secrets": "x" } })), null);
   assert.equal(normalizeWorkspaceRecoverySnapshot(validSnapshot({ files: JSON.parse('{"__proto__":"safe"}') })).files.__proto__, "safe");
 });
 
