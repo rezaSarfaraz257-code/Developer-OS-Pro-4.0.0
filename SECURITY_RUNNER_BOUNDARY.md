@@ -40,3 +40,8 @@ Do not set `RUNNER_ALLOW_NETWORK=true` or enable per-preview shared networking t
 ## Package installation egress
 
 Python package installation uses a pinned `uv` executable and a workspace-local `.venv`; the runtime image does not ship system `pip`. In strict Bubblewrap mode, package installation remains disabled until a registry-restricted egress proxy is available. Do not enable unrestricted network access for package installation: user-controlled manifests and package indexes must not be able to reach cloud metadata, private network services, or Runner control-plane endpoints.
+
+
+## Bounded execution output
+
+One-shot command output is drained concurrently from stdout and stderr into bounded tail buffers. Each stream retains at most `MAX_OUTPUT_BYTES`; excess earlier output is discarded while the process continues to be drained, preventing noisy or adversarial programs from making the Runner parent accumulate unbounded pipe output in memory. If a shell exits while descendants keep the output pipes open, the remaining process group is terminated before the request returns. This complements (and does not replace) the sandbox memory, CPU, process-count, and timeout limits.
