@@ -1294,6 +1294,18 @@ class RunnerGlobalProcessCapacityTests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), "first process start thread leaked")
         self.assertNotIn("error", first_result, repr(first_result.get("error")))
 
+    
+    def test_metrics_report_reserved_and_available_process_capacity(self):
+        with patch("main.MAX_TOTAL_PROCESSES", 3), \
+             patch.dict("main.PROCESS_STARTING", {"reserved-1": "workspace-a"}):
+            metrics = main._metrics_snapshot()
+        self.assertEqual(metrics["process_capacity"], 3)
+        self.assertEqual(metrics["starting_processes"], 1)
+        self.assertEqual(
+            metrics["available_process_slots"],
+            max(0, 3 - metrics["active_processes"] - 1),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
