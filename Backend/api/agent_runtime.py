@@ -520,6 +520,7 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
             "run_status": run.status,
             "newly_ready_tasks": newly_ready,
             "execution_state": "read_only_analysis_no_workspace_mutations",
+            "analysis_only": True,
         })
 
 
