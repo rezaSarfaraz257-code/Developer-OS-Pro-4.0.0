@@ -454,6 +454,20 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
         allowed = AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, [])
         if tool_name not in allowed:
             return Response({"error": "This specialist role is not permitted to use that tool."}, status=403)
+        # A task may gather different kinds of evidence, but the same
+        # deterministic tool must not be replayed for that task. The audit
+        # record is persisted in this transaction and the task row is locked,
+        # making this guard effective for concurrent retries as well.
+        if AuditLog.objects.filter(
+            user=request.user,
+            action="agent_task.readonly_tool_invoked",
+            target_id=str(task.id),
+            metadata__tool=tool_name,
+        ).exists():
+            return Response({
+                "error": "This analysis tool has already been invoked for this task.",
+                "code": "agent_tool_replay",
+            }, status=409)
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace access is no longer available."}, status=403)
