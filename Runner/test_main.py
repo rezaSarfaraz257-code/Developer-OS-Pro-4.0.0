@@ -195,6 +195,13 @@ class RunnerSecurityTests(unittest.TestCase):
         self.assertTrue(main._network_access_allowed(True, env))
         self.assertFalse(main._network_access_allowed(False, env))
 
+    def test_bwrap_egress_requires_both_request_and_development_operator_opt_in(self):
+        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}, clear=False), \\
+             patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), \\
+             patch("main._bwrap_runtime_available", return_value=True):
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
+        self.assertNotIn("--unshare-net", command)
+
     def test_managed_production_never_allows_unrestricted_runner_egress(self):
         for marker in ({"ENVIRONMENT": "production"}, {"RENDER": "true"}, {"RENDER_SERVICE_ID": "srv-test"}):
             env = {"RUNNER_ALLOW_NETWORK": "true", **marker}
