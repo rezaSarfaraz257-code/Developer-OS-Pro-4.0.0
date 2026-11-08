@@ -87,8 +87,9 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_state"], "read_only_analysis_no_workspace_mutations")
         self.assertEqual(response.data["result"]["dependency_count"], 2)
-        self.assertEqual(response.data["task_status"], "succeeded")
-        self.assertEqual(response.data["run_status"], "succeeded")
+        self.assertEqual(response.data["task_status"], "ready")
+        self.assertEqual(response.data["run_status"], "approved")
+        self.assertTrue(response.data["analysis_only"])
         self.assertNotIn(".env", [item["path"] for item in response.data["result"]["manifests"]])
         self.assertTrue(response.data["result"]["read_only"])
         self.workspace.refresh_from_db()
@@ -100,14 +101,14 @@ class ReadOnlyAgentToolTests(TestCase):
             metadata__tool="analyze_dependencies",
         ).exists())
 
-    def test_read_only_task_completion_persists_evidence_and_unlocks_dag(self):
+    def test_read_only_analysis_persists_evidence_without_completing_tasks_or_unlocking_dag(self):
         conversation = AIConversation.objects.create(owner=self.user, title="Agent evidence")
         self.run.conversation = conversation
         self.run.save(update_fields=["conversation"])
         dependent = AgentTask.objects.create(
             run=self.run,
             key="follow_up",
-            title="Inspect after dependency analysis",
+            title="Implement after dependency analysis",
             agent_role="architect",
             status="blocked",
             sequence=1,
@@ -116,25 +117,35 @@ class ReadOnlyAgentToolTests(TestCase):
 
         first = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.data["run_status"], "running")
-        self.assertEqual(first.data["newly_ready_tasks"], ["follow_up"])
+        self.assertEqual(first.data["run_status"], "approved")
+        self.assertEqual(first.data["task_status"], "ready")
+        self.assertEqual(first.data["newly_ready_tasks"], [])
+        self.assertTrue(first.data["analysis_only"])
         dependent.refresh_from_db()
-        self.assertEqual(dependent.status, "ready")
+        self.assertEqual(dependent.status, "blocked")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "ready")
+        self.assertEqual(self.run.status, "approved")
         self.assertTrue(AIMessage.objects.filter(
             conversation=conversation,
             role="tool",
             context__agent_task_id=self.task.id,
         ).exists())
 
-        second = self.client.post(
+        blocked = self.client.post(
             self.tool_url("analyze_dependencies", task=dependent), {}, format="json"
         )
-        self.assertEqual(second.status_code, 200)
-        self.assertEqual(second.data["run_status"], "succeeded")
-        self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 2)
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 1)
 
-        replay = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
-        self.assertEqual(replay.status_code, 409)
+        # A task may collect more than one independent read-only evidence item;
+        # repeating analysis still cannot change task/run completion state.
+        second = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["task_status"], "ready")
+        self.assertEqual(second.data["run_status"], "approved")
+        self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 2)
 
     def test_unapproved_run_cannot_invoke_tool(self):
         self.run.status = "awaiting_approval"
