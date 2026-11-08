@@ -1256,3 +1256,16 @@ class RunnerJobOutputByteBudgetTests(unittest.TestCase):
         self.assertEqual(stdout.read.call_args_list[0].args, (8192,))
         self.assertEqual(stderr.read.call_args_list[0].args, (8192,))
         self.assertEqual(len(output.encode("utf-8")), 8192)
+
+
+    def test_utf8_truncation_never_exceeds_cap_at_codepoint_boundaries(self):
+        job_id = "utf8-boundary-budget"
+        for limit in range(1, 17):
+            with main.JOB_OUTPUT_LOCK:
+                main.JOB_OUTPUT.clear()
+            with patch("main.JOB_OUTPUT_MAX_BYTES", limit):
+                main._append_job_output(job_id, "🙂" * 20)
+                output = main._job_output_snapshot(job_id)
+            encoded = output.encode("utf-8")
+            self.assertLessEqual(len(encoded), limit)
+            self.assertEqual(encoded.decode("utf-8"), output)
