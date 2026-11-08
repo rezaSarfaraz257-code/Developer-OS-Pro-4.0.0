@@ -161,7 +161,11 @@ function loadLocalFallback(workspaceId) {
     }
     if (Object.keys(source.files || {}).length !== Object.keys(parsed.files).length) {
       // Scrub sensitive files from snapshots created by older versions.
-      saveLocalFallback(parsed);
+      try {
+        saveLocalFallback(parsed);
+      } catch {
+        globalThis.localStorage.removeItem(key);
+      }
     }
     return parsed;
   } catch {
