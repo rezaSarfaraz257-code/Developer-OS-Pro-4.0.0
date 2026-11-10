@@ -409,6 +409,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.save(update_fields=["status", "attempts"])
         result = execute_agent_task_verification(job)
         self.task.refresh_from_db()
+        self.workspace.refresh_from_db()
         self.assertEqual(result["status"], "verification_stale")
         self.assertEqual(self.task.status, "failed")
         self.assertEqual(self.task.execution_evidence["state"], "stale_workspace")
