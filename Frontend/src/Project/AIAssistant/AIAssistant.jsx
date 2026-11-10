@@ -39,6 +39,8 @@ export default function AIAssistantPage({ setPage }) {
   const [showDiff, setShowDiff] = useState(true);
   const [agentRun, setAgentRun] = useState(null);
   const [agentToolResult, setAgentToolResult] = useState("");
+  const [verificationProfile, setVerificationProfile] = useState("python_pytest");
+  const [verificationStatus, setVerificationStatus] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +110,52 @@ export default function AIAssistantPage({ setPage }) {
       setBusy(false);
     }
   }
+
+  async function verifyAgentTask(task) {
+    if (!agentRun?.id || !task?.id || busy) return;
+    const syncJobId = applyResult?.sync?.job_id;
+    const revision = applyResult?.sync?.revision || applyResult?.workspace?.revision;
+    if (!syncJobId || applyResult?.sync?.status !== "succeeded" || !revision) {
+      setError("Apply and synchronize the human-approved patch before Runner verification.");
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch("/ai/agent/runs/" + agentRun.id + "/tasks/" + task.id + "/verify/", {
+        method: "POST",
+        body: JSON.stringify({ sync_job_id: syncJobId, revision, profile: verificationProfile }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Unable to queue Runner verification."));
+      setVerificationStatus(data);
+      await refreshAgentRun(agentRun.id);
+    } catch (err) {
+      setError(err.message || "Runner verification could not be queued.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    const current = verificationStatus;
+    if (!agentRun?.id || !current?.task_id || !["queued", "running"].includes(current?.job?.status)) return undefined;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await apiFetch("/ai/agent/runs/" + agentRun.id + "/tasks/" + current.task_id + "/verification/");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(errorText(data, "Runner verification status is unavailable."));
+        if (!active) return;
+        setVerificationStatus(data);
+        if (["succeeded", "failed"].includes(data.job?.status)) refreshAgentRun(agentRun.id).catch(() => {});
+      } catch (err) {
+        if (active) setError(err.message || "Runner verification status refresh failed.");
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, 4000);
+    return () => { active = false; clearInterval(timer); };
+  }, [agentRun?.id, verificationStatus?.task_id, verificationStatus?.job?.status, refreshAgentRun]);
 
   async function invokeAgentTool(task, tool) {
     if (!agentRun?.id || busy) return;
@@ -201,6 +249,7 @@ export default function AIAssistantPage({ setPage }) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
         setAgentRun(data); setAgentToolResult("");
+ setVerificationStatus(null);
         if (data.workspace) setWorkspace(String(data.workspace));
         setConversation(data.conversation ? { id: data.conversation } : conversation);
         setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
@@ -328,16 +377,26 @@ export default function AIAssistantPage({ setPage }) {
                 <div className="agent-run-actions"><button type="button" disabled={busy} onClick={() => refreshAgentRun().catch((err) => setError(err.message))}>REFRESH</button>{!["succeeded", "failed", "canceled"].includes(agentRun.status) && <button type="button" disabled={busy} onClick={cancelAgentRun}>CANCEL RUN</button>}</div>
               </div>
               <p>{agentRun.plan?.summary || agentRun.goal}</p>
-              <div className="agent-run-context"><span>WORKSPACE ID <b>#{agentRun.workspace}</b></span><span>REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>PLAN ONLY · NO FILE CHANGES</b></span></div>
+              <div className="agent-run-context"><span>WORKSPACE ID <b>#{agentRun.workspace}</b></span><span>REVISION <b>{agentRun.workspace_revision}</b></span><span>EXECUTION <b>{verificationStatus?.evidence?.state === "passed" ? "RUNNER VERIFIED" : applyResult?.sync?.status === "succeeded" ? "PATCH SYNCED · VERIFICATION READY" : "APPROVAL-GATED"}</b></span></div>
               {agentRun.plan?.acceptance_criteria?.length > 0 && <div className="agent-run-criteria"><b>ACCEPTANCE CRITERIA</b>{agentRun.plan.acceptance_criteria.map((item, index) => <span key={index}>{index + 1}. {item}</span>)}</div>}
               {agentRun.error && <div className="agent-run-error">{agentRun.error}</div>}
               {agentRun.plan?.risks?.length > 0 && <div className="agent-run-risks"><b>RISKS TO REVIEW</b>{agentRun.plan.risks.map((risk, index) => <span key={index}>{risk}</span>)}</div>}
+              <label className="agent-run-verification-profile">RUNNER VERIFICATION <select value={verificationProfile} onChange={(event) => setVerificationProfile(event.target.value)} disabled={busy}>
+                <option value="python_pytest">Python · pytest</option>
+                <option value="python_unittest">Python · unittest</option>
+                <option value="node_test">Node · tests</option>
+                <option value="node_build">Node · build</option>
+                <option value="node_lint">Node · lint</option>
+              </select></label>
               <div className="agent-run-tasks">
                 {(agentRun.tasks || []).map((task) => (
                   <article className="agent-run-task" key={task.id}>
                     <div className="agent-run-task-title"><b>{task.sequence + 1}. {task.title}</b><span>{task.status.replaceAll("_", " ")}</span></div>
                     <p>{task.description}</p>
                     <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
+                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && (
+                      <button type="button" className="agent-run-verify" disabled={busy || applyResult?.sync?.status !== "succeeded"} onClick={() => verifyAgentTask(task)}>VERIFY APPROVED PATCH WITH RUNNER</button>
+                    )}
                     {["approved", "running"].includes(agentRun.status) && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
                       <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
                     )}
@@ -345,8 +404,9 @@ export default function AIAssistantPage({ setPage }) {
                 ))}
               </div>
               {agentRun.status === "awaiting_approval" && <button type="button" className="primary agent-run-approve" disabled={busy} onClick={approveAgentRun}>APPROVE PLAN & UNLOCK TOOLS →</button>}
+              {verificationStatus && <div className="agent-run-result"><b>RUNNER VERIFICATION · {verificationStatus.job?.status || verificationStatus.status}</b><pre>{JSON.stringify({status: verificationStatus.status, revision: verificationStatus.revision, attempts: verificationStatus.attempts, evidence: verificationStatus.evidence, error: verificationStatus.error}, null, 2)}</pre></div>}
               {agentToolResult && <div className="agent-run-result"><b>LATEST TOOL EVIDENCE</b><pre>{agentToolResult}</pre></div>}
-              <small className="agent-run-safety">Human approval is required. Available specialist tools are read-only and cannot execute shell commands or mutate workspace files.</small>
+              <small className="agent-run-safety">Human approval is required for plan and patch changes. Read-only specialist tools do not write files; Runner verification uses fixed commands in the isolated Runner after a human-approved patch is synchronized.</small>
             </section>
           )}
           {agentMode && <div className="agent-control-center">
