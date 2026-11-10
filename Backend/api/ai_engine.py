@@ -74,6 +74,17 @@ def _redact_provider_file_content(content: str) -> str:
     return redacted
 
 
+def _provider_sensitive_context_key(key: str) -> bool:
+    """Identify structured credential fields even when values use unknown formats."""
+    normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
+    return normalized.endswith((
+        "apikey", "accesstoken", "refreshtoken", "sessiontoken", "authtoken",
+        "token", "clientsecret", "secret", "secretkey", "secretaccesskey",
+        "password", "passwd", "authorization", "privatekey", "signingkey",
+        "encryptionkey",
+    ))
+
+
 def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
     """Copy, filter, redact, and structurally bound provider-bound context."""
     if not isinstance(context, dict):
@@ -102,6 +113,9 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                     continue
                 safe_key = _redact_provider_file_content(child_key)[:120]
                 if not safe_key:
+                    continue
+                if _provider_sensitive_context_key(child_key):
+                    result[safe_key] = "[REDACTED]"
                     continue
                 if safe_key == "files" and isinstance(child, dict):
                     safe_files = {}
