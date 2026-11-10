@@ -53,6 +53,9 @@ def _provider_config() -> dict[str, str]:
 def _redact_provider_file_content(content: str) -> str:
     """Mask common credential values before workspace source reaches an AI provider."""
     patterns = [
+        # Cookie headers may contain several semicolon-delimited credentials;
+        # redact the entire header line rather than only its first pair.
+        (re.compile(r"(?im)(\\b(?:set-cookie|cookie)\\s*:\\s*)[^\\r\\n]+"), r"\\1[REDACTED_COOKIE_HEADER]"),
         # Azure Shared Access Signatures may appear as Authorization values rather
         # than a field named token; redact the complete SAS payload including sig=.
         (re.compile(r"""(?i)(\bSharedAccessSignature\b\s*(?:[:=]\s*|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s,;\"']+)"""), r"\1[REDACTED_AZURE_SAS]"),
@@ -89,8 +92,9 @@ def _provider_sensitive_context_key(key: str) -> bool:
         "sessiontoken", "authtoken", "sastoken", "token", "clientsecret",
         "clientassertion", "webhooksecret", "connectionstring", "credentials",
         "credential", "secret", "secretkey", "secretaccesskey", "password",
-        "passwd", "authorizationheader", "authheader", "authorization",
-        "privatekey", "signingkey", "encryptionkey",
+        "passwd", "cookie", "setcookie", "csrftoken", "xcsrftoken",
+        "xsrftoken", "sessionid", "authorizationheader", "authheader",
+        "authorization", "privatekey", "signingkey", "encryptionkey",
     ))
 
 
