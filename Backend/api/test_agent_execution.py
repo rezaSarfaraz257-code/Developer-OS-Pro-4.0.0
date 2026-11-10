@@ -19,6 +19,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.run = AgentRun.objects.create(
             owner=self.user, workspace=self.workspace, goal="Implement and verify a feature",
             status="approved", approved_at=timezone.now(),
+            plan={"acceptance_criteria": ["Feature behavior is correct", "Existing behavior remains compatible"]},
             idempotency_key="agent-execution-run-001", workspace_revision=self.workspace.revision,
         )
         self.task = AgentTask.objects.create(
@@ -98,7 +99,7 @@ class AgentTaskVerificationAPITests(TestCase):
     @patch("api.views._runner_request", return_value=(
         {"status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}, None,
     ))
-    def test_runner_success_persists_evidence_and_unblocks_dependents(self, runner_request):
+    def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
             run=self.run, key="review", title="Review", status="blocked",
         )
@@ -110,13 +111,24 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.attempts = 1
         result = execute_agent_task_verification(job)
-        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.task.refresh_from_db()
         dependent.refresh_from_db()
         self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "awaiting_approval")
+        self.assertEqual(dependent.status, "blocked")
+        self.assertEqual(self.run.status, "running")
+        accepted = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            format="json",
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.task.refresh_from_db()
+        dependent.refresh_from_db()
         self.assertEqual(self.task.status, "succeeded")
         self.assertEqual(dependent.status, "ready")
-        self.assertEqual(self.run.status, "running")
+        self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_run")
         self.assertEqual(self.task.execution_evidence["exit_code"], 0)
         self.assertNotIn("stdout", self.task.execution_evidence)
         runner_request.assert_called_once()
@@ -142,3 +154,37 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.status, "failed")
         self.assertEqual(self.run.status, "failed")
         self.assertEqual(self.task.execution_evidence["exit_code"], 1)
+        self.assertEqual(self.task.execution_evidence["state"], "failed")
+        self.assertEqual(self.task.execution_evidence["iteration"], 1)
+
+
+class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
+    def test_acceptance_requires_all_exact_plan_criteria(self):
+        self.task.status = "awaiting_approval"
+        self.task.execution_revision = self.workspace.revision
+        self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
+        self.task.save(update_fields=["status", "execution_revision", "execution_evidence"])
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": ["Feature behavior is correct"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "awaiting_approval")
+
+    def test_acceptance_rejected_if_workspace_changes_after_verification(self):
+        self.task.status = "awaiting_approval"
+        self.task.execution_revision = self.workspace.revision
+        self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
+        self.task.save(update_fields=["status", "execution_revision", "execution_evidence"])
+        self.workspace.files = {"main.py": "print('later change')"}
+        self.workspace.save(update_fields={"files"})
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "awaiting_approval")
