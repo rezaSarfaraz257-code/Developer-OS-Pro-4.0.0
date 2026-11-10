@@ -261,6 +261,16 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("must-not-reach-provider", serialized)
         self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
 
+    def test_provider_context_enforces_global_character_budget(self):
+        sanitized = _sanitize_provider_context({
+            "first": "A" * 60_000,
+            "second": "B" * 60_000,
+        })
+
+        total_value_chars = len(sanitized["first"]) + len(sanitized["second"])
+        self.assertLessEqual(total_value_chars, 60_000)
+        self.assertNotIn("B" * 100, json.dumps(sanitized))
+
 class AIHealthAPITests(TestCase):
     def setUp(self):
         # DRF throttle cache is external to TestCase database rollback.
