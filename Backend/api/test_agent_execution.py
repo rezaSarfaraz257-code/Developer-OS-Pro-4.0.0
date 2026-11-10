@@ -6,7 +6,10 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .agent_execution import VERIFICATION_PROFILES, execute_agent_task_verification
+from .agent_execution import (
+    VERIFICATION_PROFILES, execute_agent_task_verification,
+    fail_agent_task_verification,
+)
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
 
@@ -410,6 +413,31 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(self.task.status, "failed")
         self.assertEqual(self.task.execution_evidence["state"], "stale_workspace")
         self.assertNotIn("human_acceptance", self.task.execution_evidence)
+        resync = BackgroundJob.objects.get(pk=self.task.execution_evidence["resync_job_id"])
+        self.assertEqual(resync.kind, "ai_agent_runner_sync")
+        self.assertEqual(resync.payload["requested_revision"], self.workspace.revision)
+
+
+
+    def test_ambiguous_runner_failure_queues_authoritative_resync(self):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        fail_agent_task_verification(job)
+
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
+        resync = BackgroundJob.objects.get(pk=self.task.execution_evidence["resync_job_id"])
+        self.assertEqual(resync.kind, "ai_agent_runner_sync")
+        self.assertEqual(resync.payload["requested_revision"], self.workspace.revision)
+        self.assertIn("agent-runner-resync:", resync.idempotency_key)
 
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-collaborator-001", "status": "completed", "exit_code": 0,
