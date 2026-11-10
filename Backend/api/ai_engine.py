@@ -292,7 +292,7 @@ def _build_input(message: str, context: dict[str, Any], history: list[dict[str, 
             "PROJECT CONTEXT (JSON):\n"
             + json.dumps(_compact_context(context), default=str, ensure_ascii=False)
             + "\n\nCURRENT REQUEST:\n"
-            + message
+            + _redact_provider_file_content(message)
         ),
     })
     return items
