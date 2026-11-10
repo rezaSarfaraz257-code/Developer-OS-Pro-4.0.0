@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from itertools import islice
 from typing import Any
 
 import requests
@@ -86,7 +87,7 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
             for child_key, child in value.items():
                 if child_key == "files" and isinstance(child, dict):
                     safe_files = {}
-                    for path, source in list(child.items()):
+                    for path, source in islice(child.items(), 2_000):
                         if remaining_files <= 0:
                             break
                         if not isinstance(path, str) or not _provider_safe_context_path(path):
