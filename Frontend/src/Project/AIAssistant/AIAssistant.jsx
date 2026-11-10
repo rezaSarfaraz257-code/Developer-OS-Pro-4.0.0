@@ -354,6 +354,7 @@ export default function AIAssistantPage({ setPage }) {
       setEvidence(data.evidence || null);
       if (agentMode) { setToolCalls(data.tool_calls || []); setTimeline((items) => items.map((x) => ({...x,state:"complete"})).concat(data.approval_token ? [{label:"PATCH PROPOSAL",state:"ready"}] : [{label:"VERIFY",state:"complete"}])); }
       setApprovalToken(data.approval_token || null);
+      setPatchTaskId(null);
       setApplyResult(null);
       setAnswer(data.message?.content || data.answer || "The intelligence engine returned no answer.");
       setMode(agentMode ? (data.mode || "agentic intelligence") : (data.mode === "fallback" ? "local fallback" : "workspace intelligence"));
@@ -482,7 +483,7 @@ export default function AIAssistantPage({ setPage }) {
                 ))}
               </div>
               {agentRun.status === "awaiting_approval" && <button type="button" className="primary agent-run-approve" disabled={busy} onClick={approveAgentRun}>APPROVE PLAN & UNLOCK TOOLS →</button>}
-              {verificationStatus && <div className="agent-run-result"><b>RUNNER VERIFICATION · {verificationStatus.job?.status || verificationStatus.status}</b><pre>{JSON.stringify({status: verificationStatus.status, revision: verificationStatus.revision, attempts: verificationStatus.attempts, evidence: verificationStatus.evidence, error: verificationStatus.error}, null, 2)}</pre></div>}
+              {verificationStatus && <div className="agent-run-result"><b>RUNNER VERIFICATION · {String(verificationStatus.evidence?.state || verificationStatus.status || verificationStatus.job?.status || "unknown").replaceAll("_", " ").toUpperCase()}</b><pre>{JSON.stringify({status: verificationStatus.status, revision: verificationStatus.revision, attempts: verificationStatus.attempts, evidence: verificationStatus.evidence, error: verificationStatus.error}, null, 2)}</pre></div>}
               {agentToolResult && <div className="agent-run-result"><b>LATEST TOOL EVIDENCE</b><pre>{agentToolResult}</pre></div>}
               <small className="agent-run-safety">Human approval is required for plan and patch changes. Read-only specialist tools do not write files; Runner verification uses fixed commands in the isolated Runner after a human-approved patch is synchronized.</small>
             </section>
