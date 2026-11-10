@@ -194,3 +194,6 @@ jobs:
       - name: Collect Runner diagnostics on failure
         if: failure()
         run: docker logs developer-os-runner-ci || true
+      - name: Stop strict Runner
+        if: always()
+        run: docker rm -f developer-os-runner-ci || true
