@@ -441,6 +441,20 @@ def _provider_safe_context_path(path: str) -> bool:
         ".terraform", "private", "secrets", "credentials", "private_keys",
         "key_material", "vault", "keyrings",
     }
+    # Common user-level CLI credential stores are not always named
+    # "credentials" and can contain opaque tokens that regex redaction
+    # cannot reliably identify (for example GitHub CLI hosts.yml).
+    excluded_config_stores = {
+        ".config/gcloud", ".config/gh", ".config/azure",
+        ".config/containers", ".config/rclone", ".config/op",
+        ".config/1password", ".config/oci", ".config/terraform",
+    }
+    normalized_path = "/".join(parts)
+    if any(
+        normalized_path == prefix or normalized_path.startswith(prefix + "/")
+        for prefix in excluded_config_stores
+    ):
+        return False
     if any(part in excluded_directories for part in parts[:-1]):
         return False
     if name in {
