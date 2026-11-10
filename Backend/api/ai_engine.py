@@ -388,9 +388,9 @@ def _provider_safe_context_path(path: str) -> bool:
         return False
     parts = [part.casefold() for part in path.split("/")]
     name = parts[-1]
-    if any(part in {".aws", ".ssh", "secrets", "credentials"} for part in parts[:-1]):
+    if any(part in {".aws", ".ssh", ".docker", ".kube", "private", "secrets", "credentials"} for part in parts[:-1]):
         return False
-    if name in {"service-account.json", "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys"}:
+    if name in {"service-account.json", "application_default_credentials.json", ".git-credentials", "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys"}:
         return False
     if name.startswith(("credentials.", "secret.", "secrets.")):
         return False
