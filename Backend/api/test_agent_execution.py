@@ -97,7 +97,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(BackgroundJob.objects.filter(kind="ai_agent_task_verify").count(), 1)
 
     @patch("api.views._runner_request", return_value=(
-        {"status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}, None,
+        {"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}, None,
     ))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
@@ -130,6 +130,9 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(dependent.status, "ready")
         self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_run")
         self.assertEqual(self.task.execution_evidence["exit_code"], 0)
+        self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
+        self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
+        self.assertEqual(self.task.execution_evidence["sync_job_id"], self.sync_job.id)
         self.assertNotIn("stdout", self.task.execution_evidence)
         runner_request.assert_called_once()
         self.assertEqual(
