@@ -599,26 +599,19 @@ def _agent_prompt_with_tools() -> str:
 
 
 def _provider_error(code: str, message: str, *, status: int | None = None, detail: str | None = None) -> str:
+    # Provider-controlled diagnostics are deliberately not returned to clients.
+    # Providers sometimes echo submitted prompts or request fragments in error
+    # messages; regex redaction cannot prove arbitrary echoed text is secret-free.
     payload: dict[str, Any] = {"code": code, "message": message}
     if status is not None:
         payload["provider_status"] = status
-    if detail:
-        payload["detail"] = detail[:1000]
     return json.dumps(payload, ensure_ascii=False)
 
 
 def _safe_provider_detail(response: requests.Response | None) -> str:
-    if response is None:
-        return ""
-    try:
-        data = response.json()
-        error = data.get("error") if isinstance(data, dict) else None
-        if isinstance(error, dict):
-            value = error.get("message") or error.get("code") or error.get("type")
-            return str(value or "")
-        return str(data.get("message") or "") if isinstance(data, dict) else ""
-    except (ValueError, TypeError):
-        return ""
+    # Kept as a compatibility seam for callers/tests. Do not trust upstream
+    # error bodies: they may contain echoed workspace context or credentials.
+    return ""
 
 
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
@@ -711,7 +704,7 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         detail = _safe_provider_detail(exc.response)
-        logger.warning("AI provider HTTP error status=%s model=%s detail=%s", status_code, cfg["model"], detail[:300])
+        logger.warning("AI provider HTTP error status=%s model=%s", status_code, cfg["model"])
         if status_code in {401, 403}:
             code = "AI_AUTH_ERROR"
             message = "OpenAI rejected the API credentials."
@@ -729,11 +722,11 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
             message = "The AI provider returned a server error."
         return "", _provider_error(code, message, status=status_code, detail=detail)
     except requests.RequestException as exc:
-        logger.exception("AI provider request failed")
-        return "", _provider_error("AI_NETWORK_ERROR", "The AI provider could not be reached.", detail=str(exc))
+        logger.warning("AI provider request failed error_type=%s", type(exc).__name__)
+        return "", _provider_error("AI_NETWORK_ERROR", "The AI provider could not be reached.")
     except (ValueError, TypeError, KeyError, IndexError) as exc:
-        logger.exception("AI provider response parsing failed")
-        return "", _provider_error("AI_RESPONSE_ERROR", "The AI provider returned an unexpected response.", detail=str(exc))
+        logger.warning("AI provider response parsing failed error_type=%s", type(exc).__name__)
+        return "", _provider_error("AI_RESPONSE_ERROR", "The AI provider returned an unexpected response.")
 
 
 def _local_fallback(context: dict[str, Any], message: str) -> str:
