@@ -115,7 +115,10 @@ def agent_task_verification_start_api(request, pk, task_pk):
         approved_patch = AuditLog.objects.filter(
             user=request.user, action="ai_agent.patch_applied",
             target_type="CodeWorkspace", target_id=str(workspace.id),
-            metadata__revision=revision, created_at__gte=run.approved_at,
+            metadata__previous_revision=revision - 1,
+            metadata__revision=revision,
+            metadata__approval="signed_single_use_revision_bound",
+            created_at__gte=run.approved_at,
         ).exists()
         if not approved_patch:
             return Response({"error": "No human-approved AI patch is recorded for this workspace revision."}, status=403)
