@@ -144,6 +144,9 @@ class AIEngineUnitTests(TestCase):
                 "files": {
                     ".env": "API_KEY=must-never-leave-server",
                     ".env.production": "PASSWORD=another-secret",
+                    ".npmrc": "//registry.npmjs.org/:_authToken=npm-private-token-value",
+                    ".terraform/credentials.tfrc.json": "token=terraform-private-token",
+                    "terraform.tfstate": "private state snapshot",
                     ".ssh/id_ed25519": "PRIVATE KEY MATERIAL",
                     "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
                     "secrets/service.json": "API_KEY=directory-secret-value",
@@ -172,6 +175,12 @@ class AIEngineUnitTests(TestCase):
 
         self.assertNotIn("must-never-leave-server", serialized)
         self.assertNotIn("another-secret", serialized)
+        self.assertNotIn("npm-private-token-value", serialized)
+        self.assertNotIn("terraform-private-token", serialized)
+        self.assertNotIn(".env.production", sanitized["workspace"]["files"])
+        self.assertNotIn(".npmrc", sanitized["workspace"]["files"])
+        self.assertNotIn(".terraform/credentials.tfrc.json", sanitized["workspace"]["files"])
+        self.assertNotIn("terraform.tfstate", sanitized["workspace"]["files"])
         self.assertNotIn("PRIVATE KEY MATERIAL", serialized)
         self.assertNotIn("private-material", serialized)
         self.assertNotIn("directory-secret-value", serialized)
