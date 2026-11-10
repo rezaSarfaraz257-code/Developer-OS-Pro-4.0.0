@@ -43,7 +43,19 @@ class AgentRunnerIntegrationTests(TestCase):
                     "            with self.assertRaises(OSError):\n"
                     "                probe.connect(('127.0.0.1', 8080))\n"
                     "        finally:\n"
-                    "            probe.close()\n"
+                    "            probe.close()\n\n"
+                    "    def test_workload_profile_has_no_capabilities_or_namespace_privilege(self):\n"
+                    "        with open('/proc/self/attr/current', encoding='utf-8') as stream:\n"
+                    "            profile = stream.read()\n"
+                    "        self.assertIn('developer-os-runner-workload', profile)\n"
+                    "        status = {}\n"
+                    "        with open('/proc/self/status', encoding='utf-8') as stream:\n"
+                    "            for line in stream:\n"
+                    "                if ':' in line:\n"
+                    "                    key, value = line.split(':', 1)\n"
+                    "                    status[key] = value.strip()\n"
+                    "        self.assertEqual(status.get('CapEff'), '0000000000000000')\n"
+                    "        self.assertEqual(status.get('NoNewPrivs'), '1')\n"
                 ),
             },
         )
@@ -82,7 +94,19 @@ class AgentRunnerIntegrationTests(TestCase):
                 "            with self.assertRaises(OSError):\n"
                 "                probe.connect(('127.0.0.1', 8080))\n"
                 "        finally:\n"
-                "            probe.close()\n"
+                "            probe.close()\n\n"
+                    "    def test_workload_profile_has_no_capabilities_or_namespace_privilege(self):\n"
+                    "        with open('/proc/self/attr/current', encoding='utf-8') as stream:\n"
+                    "            profile = stream.read()\n"
+                    "        self.assertIn('developer-os-runner-workload', profile)\n"
+                    "        status = {}\n"
+                    "        with open('/proc/self/status', encoding='utf-8') as stream:\n"
+                    "            for line in stream:\n"
+                    "                if ':' in line:\n"
+                    "                    key, value = line.split(':', 1)\n"
+                    "                    status[key] = value.strip()\n"
+                    "        self.assertEqual(status.get('CapEff'), '0000000000000000')\n"
+                    "        self.assertEqual(status.get('NoNewPrivs'), '1')\n"
             ),
             "README.md": "Runner integration revision two\n",
         }
