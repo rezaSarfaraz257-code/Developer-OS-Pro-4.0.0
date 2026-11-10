@@ -212,17 +212,20 @@ def execute(job):
         # If several revisions queued, an older job coalesces to the newest
         # authoritative database snapshot instead of overwriting Runner backwards.
         from api.models import CodeWorkspace
-        from api.views import _runner_request, _workspace_payload, _workspace_write_allowed
+        from api.views import (
+            _runner_request, _workspace_for_user, _workspace_payload,
+            _workspace_write_allowed,
+        )
 
         payload = job.payload if isinstance(job.payload, dict) else {}
+        actor = User.objects.filter(pk=payload.get("owner_id")).first()
+        if actor is None:
+            raise RuntimeError("Runner sync requester is no longer available.")
         with transaction.atomic():
-            workspace = CodeWorkspace.objects.select_for_update().filter(
-                pk=payload.get("workspace_id"),
-                owner_id=payload.get("owner_id"),
-            ).first()
-            if workspace is None:
-                raise RuntimeError("Workspace no longer exists or is not owned by the requesting account.")
-            if not _workspace_write_allowed(workspace, workspace.owner):
+            workspace = _workspace_for_user(
+                payload.get("workspace_id"), actor, for_update=True,
+            )
+            if not _workspace_write_allowed(workspace, actor):
                 raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
             synced_revision = int(workspace.revision)
             runner_data, runner_error = _runner_request(
@@ -232,7 +235,7 @@ def execute(job):
                 # Keep provider/Runner diagnostics out of durable job errors.
                 raise RuntimeError("Runner workspace synchronization failed.")
             AuditLog.objects.create(
-                user=workspace.owner,
+                user=actor,
                 action="ai_agent.runner_workspace_synced",
                 target_type="CodeWorkspace",
                 target_id=str(workspace.id),
