@@ -447,6 +447,25 @@ class AIEngineUnitTests(TestCase):
         self.assertLessEqual(total_value_chars, 60_000)
         self.assertNotIn("B" * 100, json.dumps(sanitized))
 
+    def test_provider_redaction_preserves_safe_query_parameters_after_credentials(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/client.py": (
+                        "url = 'https://service.example/api?token=opaque-query-token"
+                        "&mode=fast&region=west'\n"
+                    ),
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("opaque-query-token", serialized)
+        self.assertIn("mode=fast", serialized)
+        self.assertIn("region=west", serialized)
+
     def test_provider_context_redacts_signed_cloud_urls_and_uri_userinfo(self):
         context = {
             "workspace": {
