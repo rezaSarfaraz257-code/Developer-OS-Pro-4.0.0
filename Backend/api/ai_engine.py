@@ -56,6 +56,9 @@ def _redact_provider_file_content(content: str) -> str:
         # Cookie headers may contain several semicolon-delimited credentials;
         # redact the entire header line rather than only its first pair.
         (re.compile(r"(?im)(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_HEADER]"),
+        # Session identifiers and cookie assignments also occur outside HTTP headers.
+        (re.compile(r"(?im)(\bcookie\s*=\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_VALUE]"),
+        (re.compile(r"""(?i)(\b(?:session[_-]?id|sessionid)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)"""), r"\1[REDACTED_SESSION_ID]"),
         # Azure Shared Access Signatures may appear as Authorization values rather
         # than a field named token; redact the complete SAS payload including sig=.
         (re.compile(r"""(?i)(\bSharedAccessSignature\b\s*(?:[:=]\s*|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s,;\"']+)"""), r"\1[REDACTED_AZURE_SAS]"),
