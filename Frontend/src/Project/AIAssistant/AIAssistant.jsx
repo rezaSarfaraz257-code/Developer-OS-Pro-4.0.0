@@ -42,6 +42,7 @@ export default function AIAssistantPage({ setPage }) {
   const [verificationProfile, setVerificationProfile] = useState("python_pytest");
   const [verificationStatus, setVerificationStatus] = useState(null);
   const [patchTaskId, setPatchTaskId] = useState(null);
+  const [acceptanceConfirmed, setAcceptanceConfirmed] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +192,31 @@ export default function AIAssistantPage({ setPage }) {
     const timer = setInterval(refresh, 4000);
     return () => { active = false; clearInterval(timer); };
   }, [agentRun?.id, verificationStatus?.task_id, verificationStatus?.job?.status, refreshAgentRun]);
+
+  async function acceptAgentTask(task) {
+    if (!agentRun?.id || !task?.id || busy) return;
+    const criteria = agentRun.plan?.acceptance_criteria || [];
+    if (!criteria.length || !acceptanceConfirmed[task.id]) {
+      setError("Review and confirm every Agent run acceptance criterion before accepting this task.");
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch("/ai/agent/runs/" + agentRun.id + "/tasks/" + task.id + "/accept/", {
+        method: "POST",
+        body: JSON.stringify({ accepted_criteria: criteria }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Task acceptance failed."));
+      setVerificationStatus(data);
+      setAcceptanceConfirmed((current) => ({ ...current, [task.id]: false }));
+      await refreshAgentRun(agentRun.id);
+    } catch (err) {
+      setError(err.message || "Task acceptance failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function invokeAgentTool(task, tool) {
     if (!agentRun?.id || busy) return;
@@ -429,11 +455,22 @@ export default function AIAssistantPage({ setPage }) {
                     <div className="agent-run-task-title"><b>{task.sequence + 1}. {task.title}</b><span>{task.status.replaceAll("_", " ")}</span></div>
                     <p>{task.description}</p>
                     <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
-                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && (
+                    {["approved", "running", "failed"].includes(agentRun.status) && ["ready", "failed"].includes(task.status) && (
                       <button type="button" className="agent-run-verify" disabled={busy || patchTaskId !== task.id || applyResult?.sync?.status !== "succeeded"} onClick={() => verifyAgentTask(task)}>VERIFY APPROVED PATCH WITH RUNNER</button>
                     )}
-                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && (
-                      <button type="button" className="agent-run-generate" disabled={busy} onClick={() => generateAgentTaskPatch(task)}>GENERATE TASK PATCH →</button>
+                    {["approved", "running", "failed"].includes(agentRun.status) && ["ready", "failed"].includes(task.status) && (
+                      <button type="button" className="agent-run-generate" disabled={busy} onClick={() => generateAgentTaskPatch(task)}>{task.status === "failed" ? "GENERATE RETRY PATCH →" : "GENERATE TASK PATCH →"}</button>
+                    )}
+                    {task.status === "awaiting_approval" && (
+                      <div className="agent-run-human-acceptance">
+                        <b>RUNNER CHECK PASSED · HUMAN ACCEPTANCE REQUIRED</b>
+                        <span>Review every run-level acceptance criterion before marking this task complete:</span>
+                        {(agentRun.plan?.acceptance_criteria || []).map((criterion, index) => (
+                          <span key={index}>{index + 1}. {criterion}</span>
+                        ))}
+                        <label><input type="checkbox" checked={Boolean(acceptanceConfirmed[task.id])} onChange={(event) => setAcceptanceConfirmed((current) => ({ ...current, [task.id]: event.target.checked }))} /> I reviewed and accept all listed criteria for this task.</label>
+                        <button type="button" disabled={busy || !acceptanceConfirmed[task.id] || !(agentRun.plan?.acceptance_criteria || []).length} onClick={() => acceptAgentTask(task)}>ACCEPT TASK & UNLOCK DEPENDENTS →</button>
+                      </div>
                     )}
                     {["approved", "running"].includes(agentRun.status) && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
                       <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
