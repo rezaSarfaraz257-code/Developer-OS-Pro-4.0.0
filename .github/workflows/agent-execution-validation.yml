@@ -203,6 +203,9 @@ jobs:
         run: |
           docker logs developer-os-runner-ci || true
           sudo aa-status | grep -E 'developer-os-runner|docker-default' || true
+          # Capture the host kernel's exact AppArmor denial; do not weaken policy
+          # based only on Bubblewrap's generic errno.
+          sudo journalctl -k --since '-10 minutes' --no-pager 2>/dev/null | grep -E 'apparmor="DENIED"|audit.*DENIED' | tail -80 || true
       - name: Stop strict Runner
         if: always()
         run: docker rm -f developer-os-runner-ci || true
