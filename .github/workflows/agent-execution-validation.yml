@@ -184,7 +184,7 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:8080/health >/dev/null
-          docker exec developer-os-runner-ci python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
+          docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
       - name: Check Django configuration and migrate integration database
         run: |
           python manage.py check
