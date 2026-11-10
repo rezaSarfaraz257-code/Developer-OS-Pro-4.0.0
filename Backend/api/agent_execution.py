@@ -98,7 +98,16 @@ def agent_task_verification_start_api(request, pk, task_pk):
             payload__workspace_id=workspace.id, payload__owner_id=request.user.id,
         )
         sync_result = sync_job.result if isinstance(sync_job.result, dict) else {}
-        if sync_job.status != "succeeded" or int(sync_result.get("revision") or 0) != revision:
+        if (
+            sync_job.status != "succeeded"
+            or sync_result.get("status") != "synced"
+            or int(sync_result.get("revision") or 0) != revision
+            or not AuditLog.objects.filter(
+                user=request.user, action="ai_agent.runner_workspace_synced",
+                target_type="CodeWorkspace", target_id=str(workspace.id),
+                metadata__job_id=sync_job.id, metadata__revision=revision,
+            ).exists()
+        ):
             return Response({"error": "The exact workspace revision must finish Runner synchronization first."}, status=409)
 
         # The existing AI apply endpoint creates this audit record only after
@@ -170,10 +179,17 @@ def agent_task_verification_status_api(request, pk, task_pk):
 
 
 def execute_agent_task_verification(job):
-    """Execute one fixed verification command through the existing isolated Runner."""
+    """Execute one fixed verification command through the existing isolated Runner.
+
+    Database locks protect the immutable revision snapshot and the final state
+    transition only. The network call is deliberately outside the transaction
+    so a slow Runner cannot pin workspace/task rows or starve worker leases.
+    """
     from django.contrib.auth import get_user_model
-    from .models import CodeWorkspace
-    from .views import _runner_request, _workspace_payload, _workspace_write_allowed
+    from .views import (
+        _runner_request, _workspace_for_user, _workspace_payload,
+        _workspace_write_allowed,
+    )
 
     payload = job.payload if isinstance(job.payload, dict) else {}
     profile = payload.get("profile")
@@ -181,65 +197,140 @@ def execute_agent_task_verification(job):
     if not command:
         raise RuntimeError("Unsupported Agent verification profile.")
 
-    # Hold workspace/task locks through Runner POST so a concurrent save
-    # cannot race a different revision into the Runner snapshot.
+    actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
+    if not actor:
+        raise RuntimeError("Agent task owner is no longer available.")
+
     with transaction.atomic():
+        current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
         run = AgentRun.objects.select_for_update().filter(
-            pk=payload.get("run_id"), owner_id=payload.get("owner_id"),
+            pk=payload.get("run_id"), owner_id=actor.id,
         ).first()
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
-        workspace = CodeWorkspace.objects.select_for_update().filter(
-            pk=payload.get("workspace_id"), owner_id=payload.get("owner_id"),
-        ).first()
-        if not run or not task or not workspace:
-            raise RuntimeError("Agent task verification target is unavailable.")
-        if task.status != "running" or task.execution_job_id != job.id:
+        if (
+            not current_job or current_job.status != "running"
+            or not run or run.status == "canceled" or not task
+        ):
             raise RuntimeError("Agent task verification lease is no longer current.")
-        if workspace.revision != payload.get("revision"):
-            raise RuntimeError("Workspace changed before Runner verification.")
-        actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
-        if not actor or not _workspace_write_allowed(workspace, actor):
+        if task.status != "running" or task.execution_job_id != current_job.id:
+            raise RuntimeError("Agent task verification lease is no longer current.")
+
+        workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+        if not _workspace_write_allowed(workspace, actor):
             raise RuntimeError("Workspace write permission was revoked before Runner verification.")
-        sync_job = BackgroundJob.objects.filter(
+        if workspace.id != payload.get("workspace_id") or workspace.revision != payload.get("revision"):
+            raise RuntimeError("Workspace changed before Runner verification.")
+
+        sync_job = BackgroundJob.objects.select_for_update().filter(
             pk=payload.get("sync_job_id"), kind="ai_agent_runner_sync", status="succeeded",
             payload__workspace_id=workspace.id, payload__owner_id=actor.id,
         ).first()
-        if not sync_job or int((sync_job.result or {}).get("revision") or 0) != workspace.revision:
+        sync_result = sync_job.result if sync_job and isinstance(sync_job.result, dict) else {}
+        sync_audited = bool(sync_job) and AuditLog.objects.filter(
+            user=actor, action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id, metadata__revision=workspace.revision,
+        ).exists()
+        if (
+            not sync_job or sync_result.get("status") != "synced"
+            or int(sync_result.get("revision") or 0) != workspace.revision
+            or not sync_audited
+        ):
             raise RuntimeError("The verified workspace revision is not synchronized to Runner.")
 
-        task.execution_attempts = job.attempts
-        task.save(update_fields=["execution_attempts", "updated_at"])
         revision = workspace.revision
-        result, error = _runner_request(
-            "POST", "/exec", {**_workspace_payload(workspace), "command": command}, timeout=125
-        )
-        if error or not isinstance(result, dict):
-            # This POST may already have reached Runner; max_attempts=1 avoids
-            # replaying an ambiguous execution and duplicating side effects.
-            raise RuntimeError("Isolated Runner verification request failed.")
+        workspace_snapshot = _workspace_payload(workspace)
+        task.execution_attempts = current_job.attempts
+        task.save(update_fields=["execution_attempts", "updated_at"])
 
-        runner_status = str(result.get("status") or "").lower()
-        exit_code = result.get("exit_code")
-        passed = runner_status in {"completed", "success", "passed"} and exit_code == 0
+    # This POST is intentionally outside transaction.atomic(). Runner has its
+    # own per-workspace lock and per-execution isolation. Never replay an
+    # ambiguous POST: this BackgroundJob is configured for one attempt.
+    result, error = _runner_request(
+        "POST", "/exec", {**workspace_snapshot, "command": command}, timeout=125
+    )
+    if error or not isinstance(result, dict):
+        raise RuntimeError("Isolated Runner verification request failed.")
+
+    runner_job_id = str(result.get("job_id") or "").strip()[:80]
+    runner_status = str(result.get("status") or "").lower()
+    exit_code = result.get("exit_code")
+    duration_ms = result.get("duration_ms")
+    if not runner_job_id:
+        raise RuntimeError("Runner did not return an execution job reference.")
+    if type(exit_code) is not int:
+        raise RuntimeError("Runner returned an invalid execution exit code.")
+    if not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or not 0 <= duration_ms <= 120_000:
+        duration_ms = None
+    passed = runner_status == "completed" and exit_code == 0
+    verified_at = timezone.now().isoformat()
+
+    with transaction.atomic():
+        current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
+        run = AgentRun.objects.select_for_update().filter(
+            pk=payload.get("run_id"), owner_id=actor.id,
+        ).first()
+        task = AgentTask.objects.select_for_update().filter(
+            pk=payload.get("task_id"), run=run,
+        ).first() if run else None
+        if (
+            not current_job or current_job.status != "running"
+            or not run or not task or run.status == "canceled"
+            or task.status != "running" or task.execution_job_id != job.id
+        ):
+            return {"status": "verification_superseded", "task_id": payload.get("task_id")}
+
+        workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+        if not _workspace_write_allowed(workspace, actor):
+            raise RuntimeError("Workspace write permission was revoked during Runner verification.")
+
         queued_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         evidence = {
             "state": "passed" if passed else "failed",
             "profile": profile, "revision": revision,
-            "verification_job_id": job.id,
+            "verification_job_id": current_job.id,
             "sync_job_id": payload.get("sync_job_id"),
-            "runner_job_id": str(result.get("job_id") or "")[:80],
+            "runner_job_id": runner_job_id,
             "iteration": queued_evidence.get("iteration", 1),
             "history": queued_evidence.get("history", []),
             "runner_status": runner_status or "unknown", "exit_code": exit_code,
-            "duration_ms": result.get("duration_ms") if isinstance(result.get("duration_ms"), int) else None,
-            "verified_at": timezone.now().isoformat(), "output_persisted": False,
+            "duration_ms": duration_ms, "verified_at": verified_at,
+            "output_persisted": False,
         }
+
+        # If the workspace moved while Runner was executing the immutable
+        # snapshot, the result is stale and must never unlock dependent tasks.
+        if workspace.revision != revision:
+            evidence.update({
+                "state": "stale_workspace",
+                "current_revision": workspace.revision,
+            })
+            task.execution_evidence = evidence
+            task.execution_error = "Workspace changed during Runner verification. Synchronize the latest revision and create a new approved patch."
+            task.status = "failed"
+            task.save(update_fields=["execution_evidence", "execution_error", "status", "updated_at"])
+            run.status = "failed"
+            run.finished_at = timezone.now()
+            run.save(update_fields=["status", "finished_at", "updated_at"])
+            AuditLog.objects.create(
+                user=actor, action="agent_task.runner_verification_stale",
+                target_type="AgentTask", target_id=str(task.id),
+                metadata={
+                    "run_id": run.id, "verified_revision": revision,
+                    "current_revision": workspace.revision,
+                    "verification_job_id": current_job.id,
+                    "sync_job_id": payload.get("sync_job_id"),
+                    "runner_job_id": runner_job_id,
+                },
+            )
+            return {"status": "verification_stale", "task_id": task.id, "evidence": evidence}
+
         task.execution_evidence = evidence
         task.execution_error = "" if passed else "Runner verification did not pass. Review the result and create a new approved patch."
-        # A passing generic profile is evidence only; the task remains pending
-        # until a human explicitly confirms every run-level acceptance criterion.
+        # Passing a generic profile is evidence only. Explicit human acceptance
+        # is required before the task can become succeeded.
         task.status = "awaiting_approval" if passed else "failed"
         task.save(update_fields=["execution_evidence", "execution_error", "status", "updated_at"])
         remaining = run.tasks.exclude(status="succeeded").exists()
@@ -248,14 +339,14 @@ def execute_agent_task_verification(job):
         run.finished_at = timezone.now() if run.status in {"failed", "succeeded"} else None
         run.save(update_fields=["status", "finished_at", "updated_at"])
         AuditLog.objects.create(
-            user_id=payload["owner_id"],
+            user=actor,
             action="agent_task.runner_verification_passed" if passed else "agent_task.runner_verification_failed",
             target_type="AgentTask", target_id=str(task.id),
             metadata={
                 "run_id": run.id, "revision": revision, "profile": profile,
-                "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
-                "runner_job_id": evidence["runner_job_id"],
-                "runner_status": evidence["runner_status"], "exit_code": exit_code,
+                "verification_job_id": current_job.id, "sync_job_id": payload.get("sync_job_id"),
+                "runner_job_id": runner_job_id,
+                "runner_status": runner_status, "exit_code": exit_code,
                 "iteration": evidence["iteration"],
             },
         )
