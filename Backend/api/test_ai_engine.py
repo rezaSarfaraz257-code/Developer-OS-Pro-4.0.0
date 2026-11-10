@@ -161,6 +161,7 @@ class AIEngineUnitTests(TestCase):
                         "github='ghp_abcdefghijklmnopqrstuvwxyz123456'\\n"
                         "aws='AKIAABCDEFGHIJKLMNOP'\\n"
                     ),
+                    "src/ghp_abcdefghijklmnopqrstuvwxyz123456/main.py": "print('safe content')\\n",
                     ".env.example": "API_URL=https://example.invalid\\n",
                 },
             },
@@ -207,6 +208,7 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("database-password-value", serialized)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", serialized)
         self.assertNotIn("AKIAABCDEFGHIJKLMNOP", serialized)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456/main.py", serialized)
         self.assertNotIn("NESTED_SECRET=must-not-leave", serialized)
         self.assertNotIn("nested-password-value", serialized)
         self.assertIn(".env.example", serialized)
