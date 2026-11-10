@@ -685,6 +685,36 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("detail", json.loads(error))
 
 
+    def test_provider_context_filters_sensitive_file_inventory_and_active_paths(self):
+        context = {
+            "workspace": {
+                "file_inventory": [
+                    ".config/gh/hosts.yml",
+                    ".aws/credentials",
+                    "config/.env.production",
+                    "../outside.py",
+                    "C:\\Users\\developer\\.ssh\\id_ed25519",
+                    "src/main.py",
+                ],
+                "active_file": ".env.production",
+                "file_samples": {
+                    "src/main.py": "print('safe source')",
+                    ".config/gh/hosts.yml": "opaque-gh-token",
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        workspace = sanitized["workspace"]
+
+        self.assertEqual(workspace["file_inventory"], ["src/main.py"])
+        self.assertEqual(workspace["active_file"], "[REDACTED_PATH]")
+        self.assertEqual(set(workspace["file_samples"]), {"src/main.py"})
+        serialized = json.dumps(sanitized)
+        self.assertNotIn(".config/gh/hosts.yml", serialized)
+        self.assertNotIn("opaque-gh-token", serialized)
+
+
     def test_provider_context_redacts_opaque_access_key_id_fields(self):
         context = {
             "provider_config": {
