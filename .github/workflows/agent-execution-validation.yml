@@ -206,6 +206,20 @@ jobs:
           # Capture the host kernel's exact AppArmor denial; do not weaken policy
           # based only on Bubblewrap's generic errno.
           sudo journalctl -k --since '-10 minutes' --no-pager 2>/dev/null | grep -E 'apparmor="DENIED"|audit.*DENIED' | tail -80 || true
+          # Diagnostic only: distinguish the custom seccomp allowlist from
+          # AppArmor/userns denial using /bin/true (never workspace code).
+          docker run --rm --read-only \
+            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --security-opt apparmor=developer-os-runner \
+            --security-opt seccomp=unconfined \
+            developer-os-runner-ci:agent-loop \
+            /usr/bin/bwrap --die-with-parent --new-session \
+              --unshare-user --unshare-pid --unshare-uts --unshare-ipc --unshare-net \
+              --ro-bind /usr /usr --ro-bind /usr/local /usr/local \
+              --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 \
+              --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true || true
       - name: Stop strict Runner
         if: always()
         run: docker rm -f developer-os-runner-ci || true
