@@ -89,7 +89,7 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                     for path, source in list(child.items()):
                         if remaining_files <= 0:
                             break
-                        if not isinstance(path, str) or not _agent_safe_patch_path(path):
+                        if not isinstance(path, str) or not _provider_safe_context_path(path):
                             continue
                         if not isinstance(source, str) or len(source) > 256_000:
                             continue
@@ -379,6 +379,23 @@ def _agent_safe_patch_path(path: Any) -> bool:
         and safe_components
         and safe_sensitive_boundary
     )
+
+
+def _provider_safe_context_path(path: str) -> bool:
+    """Exclude credential stores and key material from provider-bound context."""
+    if not _agent_safe_patch_path(path):
+        return False
+    parts = [part.casefold() for part in path.split("/")]
+    name = parts[-1]
+    if any(part in {".aws", ".ssh", "secrets", "credentials"} for part in parts[:-1]):
+        return False
+    if name in {"service-account.json", "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys"}:
+        return False
+    if name.startswith(("credentials.", "secret.", "secrets.")):
+        return False
+    if name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")):
+        return False
+    return True
 
 
 def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
