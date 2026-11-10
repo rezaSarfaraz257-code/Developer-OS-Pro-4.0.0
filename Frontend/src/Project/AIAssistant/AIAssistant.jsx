@@ -41,6 +41,7 @@ export default function AIAssistantPage({ setPage }) {
   const [agentToolResult, setAgentToolResult] = useState("");
   const [verificationProfile, setVerificationProfile] = useState("python_pytest");
   const [verificationStatus, setVerificationStatus] = useState(null);
+  const [patchTaskId, setPatchTaskId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +107,39 @@ export default function AIAssistantPage({ setPage }) {
       await refreshAgentRun(data.id);
     } catch (err) {
       setError(err.message || "Agent cancellation failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateAgentTaskPatch(task) {
+    if (!agentRun?.id || !task?.id || busy) return;
+    setBusy(true); setError(""); setApprovalToken(null); setApplyResult(null); setVerificationStatus(null); setPatchTaskId(null);
+    try {
+      const prompt = [
+        "Implement only this approved AgentRun task.",
+        "Overall engineering goal: " + agentRun.goal,
+        "Task: " + task.title,
+        "Task details: " + (task.description || "Use the task title and acceptance criteria."),
+        "Run acceptance criteria: " + JSON.stringify(agentRun.plan?.acceptance_criteria || []),
+        "Keep the patch minimal, preserve existing architecture, and return a complete-file patch proposal.",
+        "Do not claim changes were applied. The human must review and approve the patch.",
+      ].join("\n");
+      const response = await apiFetch("/ai/agent/", {
+        method: "POST",
+        body: JSON.stringify({ message: prompt, workspace: agentRun.workspace, conversation: agentRun.conversation || undefined }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Agent task patch generation failed."));
+      setAnswer(data.answer || "The Agent did not return a patch proposal.");
+      setApprovalToken(data.approval_token || null);
+      setEvidence(data.evidence || null);
+      setConversation(data.conversation?.id ? { id: data.conversation.id } : conversation);
+      setPatchTaskId(task.id);
+      setMode(data.approval_token ? "TASK PATCH · HUMAN REVIEW REQUIRED" : "TASK ANALYSIS · NO PATCH PROPOSAL");
+      if (!data.approval_token) setError("No approvable patch was returned. Review the Agent response before continuing.");
+    } catch (err) {
+      setError(err.message || "Agent task patch generation failed.");
     } finally {
       setBusy(false);
     }
@@ -395,7 +429,10 @@ export default function AIAssistantPage({ setPage }) {
                     <p>{task.description}</p>
                     <small>{task.agent_role.replaceAll("_", " ")} · {task.depends_on?.length ? `Depends on: ${task.depends_on.join(", ")}` : "No dependencies"}</small>
                     {["approved", "running"].includes(agentRun.status) && task.status === "ready" && (
-                      <button type="button" className="agent-run-verify" disabled={busy || applyResult?.sync?.status !== "succeeded"} onClick={() => verifyAgentTask(task)}>VERIFY APPROVED PATCH WITH RUNNER</button>
+                      <button type="button" className="agent-run-verify" disabled={busy || patchTaskId !== task.id || applyResult?.sync?.status !== "succeeded"} onClick={() => verifyAgentTask(task)}>VERIFY APPROVED PATCH WITH RUNNER</button>
+                    )}
+                    {["approved", "running"].includes(agentRun.status) && task.status === "ready" && (
+                      <button type="button" className="agent-run-generate" disabled={busy} onClick={() => generateAgentTaskPatch(task)}>GENERATE TASK PATCH →</button>
                     )}
                     {["approved", "running"].includes(agentRun.status) && task.status === "ready" && task.allowed_capabilities?.length > 0 && (
                       <div className="agent-run-tools">{task.allowed_capabilities.map((tool) => <button type="button" key={tool} disabled={busy} onClick={() => invokeAgentTool(task, tool)}>{tool.replaceAll("_", " ")}</button>)}</div>
