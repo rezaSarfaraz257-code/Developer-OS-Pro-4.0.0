@@ -85,9 +85,10 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   deny /sys/kernel/security/** rwklx,
 
   # Bubblewrap sets no_new_privs before exec. Stack the workload policy
-  # onto every child exec relative to this profile, matching the upstream
-  # Bubblewrap/AppArmor confinement pattern. This only reduces permissions.
-  allow pix /** -> &developer-os-runner-workload,
+  # only onto the shell entrypoints used by the Runner; keep this transition
+  # path-scoped so it cannot conflict with bwrap's inherit-exec rule.
+  allow pix /usr/bin/bash -> &developer-os-runner-workload,
+  allow pix /bin/bash -> &developer-os-runner-workload,
 }
 
 profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
