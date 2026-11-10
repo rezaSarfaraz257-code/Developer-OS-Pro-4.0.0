@@ -108,7 +108,9 @@ def ai_chat_api_recovery(request):
     try:
         answer, provider_error = _call_provider(message, context, history)
     except Exception as exc:
-        logger.exception("AI provider execution failed")
+        # Avoid logging provider-controlled exception text, which may echo
+        # prompt fragments or request data.
+        logger.warning("AI provider execution failed error_type=%s", type(exc).__name__)
         answer = ""
         provider_error = '{"code":"AI_INTERNAL_PROVIDER_ERROR","message":"The AI provider could not complete the request."}'
 
