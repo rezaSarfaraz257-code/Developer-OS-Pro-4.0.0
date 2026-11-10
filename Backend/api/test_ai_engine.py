@@ -146,6 +146,10 @@ class AIEngineUnitTests(TestCase):
                     ".env.production": "PASSWORD=another-secret",
                     ".npmrc": "//registry.npmjs.org/:_authToken=npm-private-token-value",
                     ".terraform/credentials.tfrc.json": "token=terraform-private-token",
+                    ".config/gh/hosts.yml": "oauth_token: github-cli-private-token",
+                    ".config/gcloud/application_default_credentials.json": "{\\"refresh_token\\": \\"gcloud-private-refresh-token\\"}",
+                    ".config/azure/accessTokens.json": "[{\\"accessToken\\": \\"azure-private-access-token\\"}]",
+                    ".config/rclone/rclone.conf": "token = {\\"access_token\\":\\"rclone-private-token\\"}",
                     "terraform.tfstate": "private state snapshot",
                     ".ssh/id_ed25519": "PRIVATE KEY MATERIAL",
                     "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
@@ -177,6 +181,20 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("another-secret", serialized)
         self.assertNotIn("npm-private-token-value", serialized)
         self.assertNotIn("terraform-private-token", serialized)
+        for private_value in (
+            "github-cli-private-token",
+            "gcloud-private-refresh-token",
+            "azure-private-access-token",
+            "rclone-private-token",
+        ):
+            self.assertNotIn(private_value, serialized)
+        for private_path in (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/rclone/rclone.conf",
+        ):
+            self.assertNotIn(private_path, sanitized["workspace"]["files"])
         self.assertNotIn(".env.production", sanitized["workspace"]["files"])
         self.assertNotIn(".npmrc", sanitized["workspace"]["files"])
         self.assertNotIn(".terraform/credentials.tfrc.json", sanitized["workspace"]["files"])
