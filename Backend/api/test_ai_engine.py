@@ -375,6 +375,14 @@ class AIEngineUnitTests(TestCase):
 
     def test_provider_context_redacts_complete_cookie_headers_and_cookie_fields(self):
         context = {
+            "workspace": {
+                "files": {
+                    "src/headers.txt": (
+                        "Cookie: session=opaque-file-cookie; csrf=opaque-file-csrf; preference=dark\\n"
+                        "Set-Cookie: session=opaque-file-set-cookie; HttpOnly; Secure\\n"
+                    ),
+                },
+            },
             "http": {
                 "Cookie": "session=opaque-session-cookie; csrf=opaque-csrf-cookie; preference=dark",
                 "Set-Cookie": "session=opaque-set-cookie; HttpOnly; Secure; SameSite=Lax",
@@ -397,6 +405,10 @@ class AIEngineUnitTests(TestCase):
             "opaque-set-cookie",
             "opaque-xsrf-header-token",
             "opaque-session-id",
+            "opaque-file-cookie",
+            "opaque-file-csrf",
+            "opaque-file-set-cookie",
+            "preference=dark",
         ):
             with self.subTest(secret=secret):
                 self.assertNotIn(secret, serialized)
@@ -405,6 +417,7 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(sanitized["http"]["X-CSRF-Token"], "[REDACTED]")
         self.assertEqual(sanitized["metadata"]["session_id"], "[REDACTED]")
         self.assertEqual(sanitized["http"]["safe_header"], "application/json")
+        self.assertIn("[REDACTED_COOKIE_HEADER]", sanitized["workspace"]["files"]["src/headers.txt"])
         self.assertEqual(sanitized["metadata"]["safe"], "retained")
 
     def test_provider_context_redacts_unexpected_object_string_representations(self):
