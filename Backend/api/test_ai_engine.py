@@ -205,6 +205,59 @@ class AIEngineUnitTests(TestCase):
         self.assertIn("[REDACTED]", payload)
 
 
+    def test_provider_context_redacts_prefixed_secret_keys_and_excludes_secret_like_paths(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "config/prod.env": "API_KEY=path-secret-one",
+                    ".envrc": "TOKEN=path-secret-two",
+                    "config/secrets-prod.yaml": "PASSWORD=path-secret-three",
+                    "config/prod-credentials.json": "TOKEN=path-secret-four",
+                    "src/settings.py": (
+                        "AWS_SECRET_ACCESS_KEY='aws-secret-value-123456789'\\n"
+                        "AWS_SESSION_TOKEN='aws-session-value-123456789'\\n"
+                        "GITHUB_TOKEN='github-env-token-123456789'\\n"
+                        "STRIPE_SECRET_KEY='stripe-env-secret-123456789'\\n"
+                    ),
+                },
+            },
+        }
+
+        serialized = json.dumps(_sanitize_provider_context(context))
+        for secret in (
+            "path-secret-one",
+            "path-secret-two",
+            "path-secret-three",
+            "path-secret-four",
+            "aws-secret-value-123456789",
+            "aws-session-value-123456789",
+            "github-env-token-123456789",
+            "stripe-env-secret-123456789",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("src/settings.py", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+    def test_provider_context_enforces_depth_and_metadata_node_budgets(self):
+        deep = {"value": "deep-context-secret"}
+        cursor = deep
+        for _ in range(40):
+            cursor["child"] = {}
+            cursor = cursor["child"]
+        cursor["value"] = "must-not-reach-provider"
+
+        context = {
+            "metadata": {f"field_{index}": f"value_{index}" for index in range(1_200)},
+            "nested": deep,
+        }
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertLessEqual(len(sanitized["metadata"]), 1_000)
+        self.assertNotIn("must-not-reach-provider", serialized)
+        self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
+
 class AIHealthAPITests(TestCase):
     def setUp(self):
         # DRF throttle cache is external to TestCase database rollback.
