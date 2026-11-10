@@ -343,6 +343,36 @@ class AIEngineUnitTests(TestCase):
         self.assertIn("src/settings.py", serialized)
         self.assertIn("[REDACTED]", serialized)
 
+    def test_provider_context_redacts_opaque_credential_containers_and_auth_headers(self):
+        context = {
+            "metadata": {
+                "credentials": {
+                    "vendor_specific": "opaque-credential-container-secret",
+                },
+                "cloud_credential": "opaque-single-credential-secret",
+                "AuthorizationHeader": "opaque-authorization-header-secret",
+                "http_auth_header": "opaque-auth-header-secret",
+                "safe_metadata": "retained",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-credential-container-secret",
+            "opaque-single-credential-secret",
+            "opaque-authorization-header-secret",
+            "opaque-auth-header-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["metadata"]["credentials"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["cloud_credential"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["AuthorizationHeader"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["http_auth_header"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["safe_metadata"], "retained")
+
     def test_provider_context_redacts_unexpected_object_string_representations(self):
         class SecretValue:
             def __str__(self):
