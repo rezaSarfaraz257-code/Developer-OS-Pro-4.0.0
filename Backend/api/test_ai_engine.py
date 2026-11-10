@@ -380,6 +380,8 @@ class AIEngineUnitTests(TestCase):
                     "src/headers.txt": (
                         "Cookie: session=opaque-file-cookie; csrf=opaque-file-csrf; preference=dark\n"
                         "Set-Cookie: session=opaque-file-set-cookie; HttpOnly; Secure\n"
+                        "cookie=opaque-file-cookie-assignment; another=opaque-cookie-pair\n"
+                        "SESSION_ID=opaque-file-session-id\n"
                     ),
                 },
             },
@@ -408,6 +410,9 @@ class AIEngineUnitTests(TestCase):
             "opaque-file-cookie",
             "opaque-file-csrf",
             "opaque-file-set-cookie",
+            "opaque-file-cookie-assignment",
+            "opaque-cookie-pair",
+            "opaque-file-session-id",
             "preference=dark",
         ):
             with self.subTest(secret=secret):
@@ -419,6 +424,8 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(sanitized["http"]["safe_header"], "application/json")
         file_headers = sanitized["workspace"]["files"]["src/headers.txt"]
         self.assertEqual(file_headers.count("[REDACTED_COOKIE_HEADER]"), 2)
+        self.assertIn("[REDACTED_COOKIE_VALUE]", file_headers)
+        self.assertIn("[REDACTED_SESSION_ID]", file_headers)
         self.assertNotIn("preference=dark", file_headers)
         self.assertEqual(sanitized["metadata"]["safe"], "retained")
 
