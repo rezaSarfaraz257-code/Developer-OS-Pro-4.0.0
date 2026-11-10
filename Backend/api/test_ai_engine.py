@@ -7,7 +7,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider, _safe_provider_detail, _provider_error
+from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider, _safe_provider_detail, _provider_error, _run
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -653,6 +653,40 @@ class AIEngineUnitTests(TestCase):
         serialized = json.dumps(payload)
         self.assertNotIn(echoed_secret, serialized)
         self.assertNotIn("detail", payload)
+
+    def test_provider_context_redacts_opaque_access_key_id_fields(self):
+        context = {
+            "provider_config": {
+                "aws_access_key_id": "opaque-access-key-id-secret",
+                "access_key": "opaque-access-key-secret",
+            },
+            "workspace": {
+                "files": {
+                    "src/cloud.py": "AWS_ACCESS_KEY_ID='opaque-source-access-key-id-secret'\\n",
+                },
+            },
+        }
+        serialized = json.dumps(_sanitize_provider_context(context))
+        for secret in (
+            "opaque-access-key-id-secret",
+            "opaque-access-key-secret",
+            "opaque-source-access-key-id-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+
+    @patch("api.ai_engine._call_provider")
+    @patch("api.ai_engine._conversation", return_value=None)
+    def test_project_scoped_ai_request_fails_closed_without_project_access(self, _conversation, provider):
+        request = Mock()
+        request.data = {"project": 987654}
+        request.user = Mock()
+
+        response = _run(request, "inspect this project")
+
+        self.assertEqual(response.status_code, 404)
+        provider.assert_not_called()
+
 
     def test_provider_error_keeps_only_stable_public_fields(self):
         payload = json.loads(_provider_error(
