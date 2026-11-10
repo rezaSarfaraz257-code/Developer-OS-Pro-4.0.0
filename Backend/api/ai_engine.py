@@ -80,10 +80,11 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
     remaining_bytes = 2_000_000
     remaining_files = 500
     remaining_nodes = 10_000
+    remaining_context_chars = MAX_CONTEXT_CHARS
     max_depth = 16
 
     def sanitize(value: Any, key: str = "", depth: int = 0) -> Any:
-        nonlocal remaining_bytes, remaining_files, remaining_nodes
+        nonlocal remaining_bytes, remaining_files, remaining_nodes, remaining_context_chars
         if depth > max_depth:
             return "[TRUNCATED_CONTEXT_DEPTH]"
         if remaining_nodes <= 0:
@@ -108,7 +109,9 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                             continue
                         if not isinstance(source, str) or len(source) > 256_000:
                             continue
-                        safe_source = _redact_provider_file_content(source)
+                        if remaining_context_chars <= 0:
+                            break
+                        safe_source = _redact_provider_file_content(source)[:remaining_context_chars]
                         try:
                             size = len(safe_source.encode("utf-8"))
                         except UnicodeEncodeError:
@@ -117,6 +120,7 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                             continue
                         safe_files[path] = safe_source
                         remaining_bytes -= size
+                        remaining_context_chars -= len(safe_source)
                         remaining_files -= 1
                     result[child_key] = safe_files
                 else:
@@ -130,7 +134,11 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                 bounded.append("[TRUNCATED_CONTEXT_LIST]")
             return bounded
         if isinstance(value, str):
-            return _redact_provider_file_content(value[:60_000])
+            if remaining_context_chars <= 0:
+                return ""
+            safe_value = _redact_provider_file_content(value)[:remaining_context_chars]
+            remaining_context_chars -= len(safe_value)
+            return safe_value
         return value
 
     return sanitize(context)
