@@ -552,7 +552,10 @@ test("IDE workspace load failures expose an accessible retry action", () => {
   assert.match(ide, /role=\{workspaceLoadError\?"alert":"status"\}/);
   assert.match(ide, /workspaceLoadError&&<button type="button" className="dos-status-retry" onClick=\{\(\)=>void load\(ws\|\|workspaces\[0\]\)\}/);
   assert.ok(ide.includes('setWorkspaceLoadError("");setWorkspaceLoading(true);setStatus("Loading workspace…")'));
-  assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\(""\);setStatus\("Explorer synced/);
+  assert.match(ide, /saveWorkspaceRecoverySnapshot\(/);
+  assert.match(ide, /saveWorkspaceRecoverySnapshotFallbackSync\(/);
+  assert.match(ide, /loadWorkspaceRecoverySnapshot\(item\.id\)/);
+  assert.match(ide, /setDirty\(recoveredPaths\.length>0\);setWorkspaceLoadError\(""\);setStatus\(recoveredPaths\.length\?/);
 });
 
 
@@ -561,7 +564,9 @@ test("IDE workspace loads reject malformed file maps instead of showing a false 
   const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
 
   assert.match(load, /if\(!d\.files\|\|typeof d\.files!=="object"\|\|Array\.isArray\(d\.files\)\)throw Error\("Workspace response did not include a valid file map\."\)/);
-  assert.match(load, /const f=d\.files;/);
+  assert.match(load, /const serverFiles=d\.files;/);
+  assert.match(load, /const f=recoveredPaths\.length\?\(\{\.\.\.serverFiles,\.\.\.recovery\.files\}\):serverFiles;/);
+  assert.match(load, /dirtyPathsRef\.current=new Set\(recoveredPaths\)/);
   assert.match(load, /r\.json\(\)\.catch\(\(\)=>\(\{\}\)\)/);
   assert.match(load, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
   assert.doesNotMatch(load, /const f=d\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
@@ -1336,4 +1341,10 @@ test("Web IDE does not request unused CRDT history that its client cannot apply"
     ide,
     /socket\.send\(JSON\.stringify\(\{\s*type:\s*["']crdt-sync["']/
   );
+});
+
+
+test("workspace recovery warns that browser storage is not encrypted", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes("Browser recovery storage is not encrypted; avoid secrets in recovered files."));
 });
