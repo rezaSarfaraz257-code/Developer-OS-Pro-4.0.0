@@ -165,7 +165,19 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
             safe_value = _redact_provider_file_content(value)[:remaining_context_chars]
             remaining_context_chars -= len(safe_value)
             return safe_value
-        return value
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        # Context normally contains JSON primitives, but do not let an
+        # unexpected object bypass redaction through json.dumps(default=str).
+        try:
+            rendered = str(value)
+        except Exception:
+            return "[UNSUPPORTED_CONTEXT_VALUE]"
+        if remaining_context_chars <= 0:
+            return ""
+        safe_value = _redact_provider_file_content(rendered)[:remaining_context_chars]
+        remaining_context_chars -= len(safe_value)
+        return safe_value
 
     sanitized = sanitize(context)
     # Enforce the final serialized context budget, including JSON punctuation,
