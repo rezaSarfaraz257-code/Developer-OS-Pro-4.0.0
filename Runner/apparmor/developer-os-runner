@@ -23,9 +23,19 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   capability setgid,
   capability sys_chroot,
   file,
-  mount,
-  umount,
-  pivot_root,
+
+  # Bubblewrap constructs its private root under /newroot, pivots into it,
+  # then detaches the old root. Keep mount permissions scoped to that tree.
+  mount options=(rw rbind) -> /newroot/{,**},
+  mount options=(rw silent make-rslave) /,
+  mount options=(rw silent make-rprivate) /oldroot/,
+  mount fstype=proc options=(rw nosuid nodev noexec) proc -> /newroot/@{PROC}/,
+  mount fstype=tmpfs options=(rw nosuid nodev) tmpfs -> /newroot/{,**},
+  mount fstype=devpts options=(rw nosuid noexec) devpts -> /newroot/dev/pts/,
+  remount /newroot/{,**},
+  umount /,
+  umount /oldroot/,
+  pivot_root oldroot=/newroot/ /newroot/,
   userns,
 
   signal (receive) peer=unconfined,
