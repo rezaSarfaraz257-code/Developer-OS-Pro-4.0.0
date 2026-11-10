@@ -251,10 +251,12 @@ class AIEngineUnitTests(TestCase):
             "metadata": {f"field_{index}": f"value_{index}" for index in range(1_200)},
             "nested": deep,
         }
+        context["metadata"]["credential_note"] = "AWS_SECRET_ACCESS_KEY=metadata-secret-value-123456"
         sanitized = _sanitize_provider_context(context)
         serialized = json.dumps(sanitized)
 
         self.assertLessEqual(len(sanitized["metadata"]), 1_000)
+        self.assertNotIn("metadata-secret-value-123456", serialized)
         self.assertNotIn("must-not-reach-provider", serialized)
         self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
 
