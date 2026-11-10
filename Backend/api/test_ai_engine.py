@@ -1,5 +1,7 @@
 import json
-from unittest.mock import patch
+
+import requests
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -7,7 +9,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import _agent_parse_patch, _provider_config
+from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider, _safe_provider_detail, _provider_error, _run
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -137,6 +139,631 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(cfg["protocol"], "responses")
 
 
+    def test_provider_context_excludes_secret_paths_and_redacts_inline_credentials(self):
+        context = {
+            "workspace": {
+                "id": 7,
+                "files": {
+                    ".env": "API_KEY=must-never-leave-server",
+                    ".env.production": "PASSWORD=another-secret",
+                    ".npmrc": "//registry.npmjs.org/:_authToken=npm-private-token-value",
+                    ".terraform/credentials.tfrc.json": "token=terraform-private-token",
+                    ".config/gh/hosts.yml": "oauth_token: github-cli-private-token",
+                    ".config/gcloud/application_default_credentials.json": "refresh_token: gcloud-private-refresh-token",
+                    ".config/azure/accessTokens.json": "accessToken: azure-private-access-token",
+                    ".config/rclone/rclone.conf": "access_token: rclone-private-token",
+                    "terraform.tfstate": "private state snapshot",
+                    ".ssh/id_ed25519": "PRIVATE KEY MATERIAL",
+                    "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
+                    "secrets/service.json": "API_KEY=directory-secret-value",
+                    "private/identity.json": "PRIVATE_KEY=private-directory-secret",
+                    "src/main.py": (
+                        "API_KEY='inline-secret-value-123456'\\n"
+                        "DATABASE_URL=postgres://app:database-password-value@db.example.test/app\\n"
+                        "github='ghp_abcdefghijklmnopqrstuvwxyz123456'\\n"
+                        "aws='AKIAABCDEFGHIJKLMNOP'\\n"
+                    ),
+                    "src/ghp_abcdefghijklmnopqrstuvwxyz123456/main.py": "print('safe content')\\n",
+                    ".env.example": "API_URL=https://example.invalid\\n",
+                },
+            },
+            "agent_evidence": {
+                "workspace": {
+                    "files": {
+                        ".env": "NESTED_SECRET=must-not-leave",
+                        "src/worker.py": "password='nested-password-value'\\n",
+                    },
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("must-never-leave-server", serialized)
+        self.assertNotIn("another-secret", serialized)
+        self.assertNotIn("npm-private-token-value", serialized)
+        self.assertNotIn("terraform-private-token", serialized)
+        for private_value in (
+            "github-cli-private-token",
+            "gcloud-private-refresh-token",
+            "azure-private-access-token",
+            "rclone-private-token",
+        ):
+            self.assertNotIn(private_value, serialized)
+        for private_path in (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/rclone/rclone.conf",
+        ):
+            self.assertNotIn(private_path, sanitized["workspace"]["files"])
+        self.assertNotIn(".env.production", sanitized["workspace"]["files"])
+        self.assertNotIn(".npmrc", sanitized["workspace"]["files"])
+        self.assertNotIn(".terraform/credentials.tfrc.json", sanitized["workspace"]["files"])
+        self.assertNotIn("terraform.tfstate", sanitized["workspace"]["files"])
+        self.assertNotIn("PRIVATE KEY MATERIAL", serialized)
+        self.assertNotIn("private-material", serialized)
+        self.assertNotIn("directory-secret-value", serialized)
+        self.assertNotIn("private-directory-secret", serialized)
+        self.assertNotIn("inline-secret-value-123456", serialized)
+        self.assertNotIn("database-password-value", serialized)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", serialized)
+        self.assertNotIn("AKIAABCDEFGHIJKLMNOP", serialized)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456/main.py", serialized)
+        self.assertNotIn("NESTED_SECRET=must-not-leave", serialized)
+        self.assertNotIn("nested-password-value", serialized)
+        self.assertIn(".env.example", serialized)
+        self.assertIn("[REDACTED]", serialized)
+        # Sanitization must not mutate the durable workspace snapshot in memory.
+        self.assertEqual(context["workspace"]["files"][".env"], "API_KEY=must-never-leave-server")
+
+    def test_provider_input_uses_sanitized_context_and_redacted_history(self):
+        context = {
+            "workspace": {
+                "files": {
+                    ".env": "API_KEY=hidden-provider-secret",
+                    "app.py": "TOKEN='source-token-value-123456'\\n",
+                },
+            },
+        }
+        history = [{"role": "user", "content": "password='history-password-value'"}]
+        payload = json.dumps(_build_input("Inspect safely API_KEY='current-request-secret-123456'", context, history), ensure_ascii=False)
+
+        self.assertNotIn("current-request-secret-123456", payload)
+        self.assertNotIn("hidden-provider-secret", payload)
+        self.assertNotIn("source-token-value-123456", payload)
+        self.assertNotIn("history-password-value", payload)
+        self.assertIn("[REDACTED]", payload)
+
+
+
+    @patch("api.ai_engine.requests.post")
+    @patch("api.ai_engine._provider_config", return_value={
+        "key": "provider-test-key",
+        "base": "https://api.example.test/v1",
+        "model": "test-model",
+        "protocol": "responses",
+    })
+    def test_call_provider_never_sends_workspace_history_or_request_secrets(self, _config, post):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"output_text": "Safe response"}
+        post.return_value = response
+
+        context = {
+            "workspace": {
+                "files": {
+                    ".env": "API_KEY=workspace-env-secret-123456",
+                    "src/settings.py": "DATABASE_PASSWORD='workspace-inline-secret-123456'\\n",
+                },
+            },
+            "provider_config": {
+                "shared_access_signature": "opaque-azure-sas-secret-123456",
+            },
+        }
+        history = [{
+            "role": "user",
+            "content": "TOKEN='history-token-secret-123456'",
+        }]
+        answer, error = _call_provider(
+            "Please inspect API_KEY='request-secret-123456'",
+            context,
+            history,
+            action="project analysis",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(answer, "Safe response")
+        post.assert_called_once()
+        kwargs = post.call_args.kwargs
+        outbound = json.dumps(kwargs["json"], ensure_ascii=False)
+        for secret in (
+            "workspace-env-secret-123456",
+            "workspace-inline-secret-123456",
+            "opaque-azure-sas-secret-123456",
+            "history-token-secret-123456",
+            "request-secret-123456",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, outbound)
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer provider-test-key")
+
+    def test_provider_context_filters_nested_cli_stores_and_case_insensitive_file_maps(self):
+        context = {
+            "agent_evidence": {
+                "workspace": {
+                    "FiLeS": {
+                        "project/.config/gh/hosts.yml": "opaque-gh-hosts-secret-value",
+                        "project/.config/azure/accessTokens.json": "opaque-azure-token-store-secret",
+                        "src/main.py": "print('safe source')",
+                    },
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+        files = sanitized["agent_evidence"]["workspace"]["FiLeS"]
+
+        self.assertEqual(set(files), {"src/main.py"})
+        self.assertNotIn("opaque-gh-hosts-secret-value", serialized)
+        self.assertNotIn("opaque-azure-token-store-secret", serialized)
+        self.assertIn("print('safe source')", serialized)
+
+    def test_provider_context_redacts_prefixed_secret_keys_and_excludes_secret_like_paths(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "config/prod.env": "API_KEY=path-secret-one",
+                    ".envrc": "TOKEN=path-secret-two",
+                    "config/secrets-prod.yaml": "PASSWORD=path-secret-three",
+                    "config/prod-credentials.json": "TOKEN=path-secret-four",
+                    "src/settings.py": (
+                        "AWS_SECRET_ACCESS_KEY='aws-secret-value-123456789'\\n"
+                        "AWS_SESSION_TOKEN='aws-session-value-123456789'\\n"
+                        "GITHUB_TOKEN='github-env-token-123456789'\\n"
+                        "STRIPE_SECRET_KEY='stripe-env-secret-123456789'\\n"
+                    ),
+                },
+            },
+        }
+
+        serialized = json.dumps(_sanitize_provider_context(context))
+        for secret in (
+            "path-secret-one",
+            "path-secret-two",
+            "path-secret-three",
+            "path-secret-four",
+            "aws-secret-value-123456789",
+            "aws-session-value-123456789",
+            "github-env-token-123456789",
+            "stripe-env-secret-123456789",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("src/settings.py", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+    def test_provider_context_redacts_opaque_credential_containers_and_auth_headers(self):
+        context = {
+            "metadata": {
+                "credentials": {
+                    "vendor_specific": "opaque-credential-container-secret",
+                },
+                "cloud_credential": "opaque-single-credential-secret",
+                "AuthorizationHeader": "opaque-authorization-header-secret",
+                "http_auth_header": "opaque-auth-header-secret",
+                "safe_metadata": "retained",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-credential-container-secret",
+            "opaque-single-credential-secret",
+            "opaque-authorization-header-secret",
+            "opaque-auth-header-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["metadata"]["credentials"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["cloud_credential"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["AuthorizationHeader"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["http_auth_header"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["safe_metadata"], "retained")
+
+    def test_provider_context_redacts_complete_cookie_headers_and_cookie_fields(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/headers.txt": (
+                        "Cookie: session=opaque-file-cookie; csrf=opaque-file-csrf; preference=dark\n"
+                        "Set-Cookie: session=opaque-file-set-cookie; HttpOnly; Secure\n"
+                        "cookie=opaque-file-cookie-assignment; another=opaque-cookie-pair\n"
+                        "SESSION_ID=opaque-file-session-id\n"
+                        "Authorization: Basic b3BhcXVlLWJhc2ljLXNlY3JldA==\n"
+                        "Proxy-Authorization: Digest username=opaque-digest-user, response=opaque-digest-response\n"
+                        '{"api_key": "opaque-json-api-key", "mode": "safe"}\n'
+                        '{"Authorization": "Basic opaque-json-basic-auth"}\n'
+                    ),
+                },
+            },
+            "http": {
+                "Cookie": "session=opaque-session-cookie; csrf=opaque-csrf-cookie; preference=dark",
+                "Set-Cookie": "session=opaque-set-cookie; HttpOnly; Secure; SameSite=Lax",
+                "X-CSRF-Token": "opaque-xsrf-header-token",
+                "safe_header": "application/json",
+            },
+            "metadata": {
+                "session_id": "opaque-session-id",
+                "safe": "retained",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-session-cookie",
+            "opaque-csrf-cookie",
+            "preference=dark",
+            "opaque-set-cookie",
+            "opaque-xsrf-header-token",
+            "opaque-session-id",
+            "opaque-file-cookie",
+            "opaque-file-csrf",
+            "opaque-file-set-cookie",
+            "opaque-file-cookie-assignment",
+            "opaque-cookie-pair",
+            "opaque-file-session-id",
+            "b3BhcXVlLWJhc2ljLXNlY3JldA==",
+            "opaque-digest-user",
+            "opaque-digest-response",
+            "opaque-json-api-key",
+            "opaque-json-basic-auth",
+            "preference=dark",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["http"]["Cookie"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["Set-Cookie"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["X-CSRF-Token"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["session_id"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["safe_header"], "application/json")
+        file_headers = sanitized["workspace"]["files"]["src/headers.txt"]
+        self.assertEqual(file_headers.count("[REDACTED_COOKIE_HEADER]"), 2)
+        self.assertIn("[REDACTED_COOKIE_VALUE]", file_headers)
+        self.assertIn("[REDACTED_SESSION_ID]", file_headers)
+        self.assertIn("Authorization: [REDACTED]", file_headers)
+        self.assertIn("Proxy-Authorization: [REDACTED]", file_headers)
+        self.assertIn("[REDACTED_JSON_CREDENTIAL]", file_headers)
+        self.assertIn('"mode": "safe"', file_headers)
+        self.assertNotIn("preference=dark", file_headers)
+        self.assertEqual(sanitized["metadata"]["safe"], "retained")
+
+    def test_provider_context_redacts_unexpected_object_string_representations(self):
+        class SecretValue:
+            def __str__(self):
+                return "API_KEY=opaque-object-secret-value"
+
+        sanitized = _sanitize_provider_context({"metadata": {"custom": SecretValue()}})
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("opaque-object-secret-value", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+    def test_provider_context_enforces_final_serialized_budget_including_paths_and_keys(self):
+        long_path_files = {
+            (f"module_{index:03d}_" + ("x" * 380)): "print('safe')"
+            for index in range(220)
+        }
+        context = {
+            "workspace": {"files": long_path_files},
+            "metadata_" + ("m" * 110): {"field_" + ("k" * 110): "value"},
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized, ensure_ascii=False)
+
+        self.assertLessEqual(len(serialized), MAX_CONTEXT_CHARS)
+        self.assertTrue(sanitized.get("context_truncated"))
+        self.assertIn("context_keys", sanitized)
+        self.assertNotIn("print('safe')", serialized)
+
+    def test_provider_context_enforces_depth_and_metadata_node_budgets(self):
+        deep = {"value": "deep-context-secret"}
+        cursor = deep
+        for _ in range(40):
+            cursor["child"] = {}
+            cursor = cursor["child"]
+        cursor["value"] = "must-not-reach-provider"
+
+        context = {
+            "metadata": {
+                "credential_note": "AWS_SECRET_ACCESS_KEY=metadata-secret-value-123456",
+                "AWS_SECRET_ACCESS_KEY=metadata-key-secret-123456": "non-sensitive-value",
+            },
+            "large_metadata": {f"field_{index}": f"value_{index}" for index in range(1_200)},
+            "nested": deep,
+        }
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertLessEqual(len(sanitized["large_metadata"]), 1_000)
+        self.assertNotIn("metadata-secret-value-123456", serialized)
+        self.assertNotIn("metadata-key-secret-123456", serialized)
+        self.assertNotIn("must-not-reach-provider", serialized)
+        self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
+
+    def test_provider_context_redacts_structured_credentials_with_unknown_formats(self):
+        context = {
+            "workspace": {
+                "file_samples": {
+                    ".env.production": "API_KEY=sample-env-secret",
+                    ".ssh/id_ed25519": "PRIVATE_KEY=sample-private-key-secret",
+                    "src/app.py": "print('safe sample')",
+                },
+            },
+            "provider_config": {
+                "api_key": "opaque-api-secret-not-matching-known-prefix",
+                "accountKey": "opaque-account-key-value",
+                "connection_string": "opaque-connection-string-value",
+                "clientSecret": "opaque-client-secret-value",
+                "refresh_token": "opaque-refresh-token-value",
+                "AWS_SECRET_ACCESS_KEY": "opaque-aws-secret-value",
+                "database": {
+                    "password": "opaque-database-password",
+                    "token_count": 12,
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-api-secret-not-matching-known-prefix",
+            "opaque-account-key-value",
+            "opaque-connection-string-value",
+            "opaque-client-secret-value",
+            "opaque-refresh-token-value",
+            "opaque-aws-secret-value",
+            "opaque-database-password",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["provider_config"]["database"]["token_count"], 12)
+        self.assertNotIn(".env.production", sanitized["workspace"]["file_samples"])
+        self.assertNotIn(".ssh/id_ed25519", sanitized["workspace"]["file_samples"])
+        self.assertIn("src/app.py", sanitized["workspace"]["file_samples"])
+
+    def test_provider_context_enforces_global_character_budget(self):
+        sanitized = _sanitize_provider_context({
+            "first": "A" * 60_000,
+            "second": "B" * 60_000,
+        })
+
+        total_value_chars = len(sanitized["first"]) + len(sanitized["second"])
+        self.assertLessEqual(total_value_chars, 60_000)
+        self.assertNotIn("B" * 100, json.dumps(sanitized))
+
+    def test_provider_redaction_preserves_safe_query_parameters_after_credentials(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/client.py": (
+                        "url = 'https://service.example/api?token=opaque-query-token"
+                        "&mode=fast&region=west'\n"
+                    ),
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("opaque-query-token", serialized)
+        self.assertIn("mode=fast", serialized)
+        self.assertIn("region=west", serialized)
+
+    def test_provider_context_redacts_signed_cloud_urls_and_uri_userinfo(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/storage.py": (
+                        "s3 = 'https://bucket.s3.example.test/object?X-Amz-Credential=aws-access-id-secret"
+                        "&X-Amz-Security-Token=aws-session-token-secret"
+                        "&X-Amz-Signature=aws-signature-secret&response-content-type=text%2Fplain'\n"
+                        "gcs = 'https://storage.example.test/object?X-Goog-Credential=gcp-credential-secret"
+                        "&X-Goog-Signature=gcp-signature-secret&page=2'\n"
+                        "db = 'https://deploy-user:deploy-password-secret@internal.example.test/api'\n"
+                    ),
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "aws-access-id-secret",
+            "aws-session-token-secret",
+            "aws-signature-secret",
+            "gcp-credential-secret",
+            "gcp-signature-secret",
+            "deploy-user",
+            "deploy-password-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("bucket.s3.example.test", serialized)
+        self.assertIn("internal.example.test", serialized)
+        self.assertIn("response-content-type=text%2Fplain", serialized)
+        self.assertIn("page=2", serialized)
+
+    def test_provider_context_redacts_azure_shared_access_credentials(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/azure_client.py": (
+                        "SharedAccessSignature sr=resource&sig=azure-sas-signature-secret&se=expiry\n"
+                        "SharedAccessKey=azure-shared-access-key-secret\n"
+                        "Authorization: SharedAccessSignature sr=namespace&sig=azure-auth-sas-secret&se=expiry\n"
+                    ),
+                },
+            },
+            "provider_config": {
+                "shared_access_signature": "opaque-shared-access-signature-secret",
+                "shared_access_key": "opaque-shared-access-key-secret",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "azure-sas-signature-secret",
+            "azure-shared-access-key-secret",
+            "azure-auth-sas-secret",
+            "sr=namespace",
+            "opaque-shared-access-signature-secret",
+            "opaque-shared-access-key-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("src/azure_client.py", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+
+    def test_provider_error_does_not_echo_provider_controlled_content(self):
+        echoed_secret = "workspace-private-credential-echo-987654"
+        response = Mock()
+        response.json.return_value = {
+            "error": {"message": f"Invalid request; received prompt fragment {echoed_secret}"}
+        }
+
+        self.assertEqual(_safe_provider_detail(response), "")
+        payload = json.loads(_provider_error(
+            "AI_REQUEST_ERROR",
+            "The AI provider rejected the request.",
+            status=400,
+            detail=f"provider echoed {echoed_secret}",
+        ))
+        serialized = json.dumps(payload)
+        self.assertNotIn(echoed_secret, serialized)
+        self.assertNotIn("detail", payload)
+
+    @patch("api.ai_engine.requests.post")
+    @patch("api.ai_engine._provider_config", return_value={
+        "key": "server-side-test-provider-key",
+        "base": "https://provider.example.test/v1",
+        "model": "test-model",
+        "protocol": "chat",
+    })
+    def test_provider_http_error_does_not_echo_prompt_or_credentials(self, _config, post):
+        echoed_secret = "private-workspace-secret-echo-123456"
+        upstream = Mock()
+        upstream.status_code = 400
+        upstream.json.return_value = {
+            "error": {"message": f"Rejected payload included {echoed_secret}"}
+        }
+        upstream.raise_for_status.side_effect = requests.HTTPError(
+            "upstream rejected request",
+            response=upstream,
+        )
+        post.return_value = upstream
+
+        with self.assertLogs("developer_os.ai", level="WARNING") as captured:
+            answer, error = _call_provider("Review the project.", {}, [])
+
+        self.assertEqual(answer, "")
+        self.assertNotIn(echoed_secret, error)
+        self.assertNotIn(echoed_secret, "\n".join(captured.output))
+        self.assertNotIn("detail", json.loads(error))
+
+
+    def test_provider_context_filters_sensitive_file_inventory_and_active_paths(self):
+        context = {
+            "workspace": {
+                "file_inventory": [
+                    ".config/gh/hosts.yml",
+                    ".aws/credentials",
+                    "config/.env.production",
+                    "../outside.py",
+                    "C:\\Users\\developer\\.ssh\\id_ed25519",
+                    "src/main.py",
+                ],
+                "active_file": ".env.production",
+                "file_samples": {
+                    "src/main.py": "print('safe source')",
+                    ".config/gh/hosts.yml": "opaque-gh-token",
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        workspace = sanitized["workspace"]
+
+        self.assertEqual(workspace["file_inventory"], ["src/main.py"])
+        self.assertEqual(workspace["active_file"], "[REDACTED_PATH]")
+        self.assertEqual(set(workspace["file_samples"]), {"src/main.py"})
+        serialized = json.dumps(sanitized)
+        self.assertNotIn(".config/gh/hosts.yml", serialized)
+        self.assertNotIn("opaque-gh-token", serialized)
+
+
+    def test_provider_context_redacts_opaque_access_key_id_fields(self):
+        context = {
+            "provider_config": {
+                "aws_access_key_id": "opaque-access-key-id-secret",
+                "access_key": "opaque-access-key-secret",
+            },
+            "workspace": {
+                "files": {
+                    "src/cloud.py": "AWS_ACCESS_KEY_ID='opaque-source-access-key-id-secret'\\n",
+                },
+            },
+        }
+        serialized = json.dumps(_sanitize_provider_context(context))
+        for secret in (
+            "opaque-access-key-id-secret",
+            "opaque-access-key-secret",
+            "opaque-source-access-key-id-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+
+    @patch("api.ai_engine._call_provider")
+    @patch("api.ai_engine._conversation", return_value=None)
+    def test_project_scoped_ai_request_fails_closed_without_project_access(self, _conversation, provider):
+        request = Mock()
+        request.data = {"project": 987654}
+        request.user = Mock()
+
+        response = _run(request, "inspect this project")
+
+        self.assertEqual(response.status_code, 404)
+        provider.assert_not_called()
+
+
+    def test_provider_error_keeps_only_stable_public_fields(self):
+        payload = json.loads(_provider_error(
+            "AI_AUTH_ERROR",
+            "OpenAI rejected the API credentials.",
+            status=401,
+            detail="Authorization: Bearer private-upstream-token-value",
+        ))
+
+        self.assertEqual(payload, {
+            "code": "AI_AUTH_ERROR",
+            "message": "OpenAI rejected the API credentials.",
+            "provider_status": 401,
+        })
+
+
 class AIHealthAPITests(TestCase):
     def setUp(self):
         # DRF throttle cache is external to TestCase database rollback.
@@ -158,6 +785,53 @@ class AIHealthAPITests(TestCase):
         response = self.client.get("/api/ai/health/")
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("secret-key", json.dumps(response.json()))
+
+    @patch.dict("os.environ", {
+        "AI_API_URL": "https://provider.example.test/v1",
+        "AI_API_KEY": "provider-test-key",
+        "AI_MODEL": "test-model",
+    }, clear=False)
+    @patch("api.views.requests.post")
+    def test_legacy_assistant_provider_redacts_prompt_and_summary_secrets(self, post):
+        from .models import Project
+
+        Project.objects.create(owner=self.user, title="API_KEY=project-summary-secret-123456")
+        provider_response = Mock()
+        provider_response.raise_for_status.return_value = None
+        provider_response.json.return_value = {
+            "choices": [{"message": {"content": "safe provider response"}}]
+        }
+        post.return_value = provider_response
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            "/api/assistant/",
+            {"message": "Review this value: API_KEY=assistant-prompt-secret-123456"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["mode"], "provider")
+        outbound = json.dumps(post.call_args.kwargs["json"])
+        self.assertNotIn("assistant-prompt-secret-123456", outbound)
+        self.assertNotIn("project-summary-secret-123456", outbound)
+        self.assertIn("[REDACTED]", outbound)
+
+
+    @patch("api.ai_engine._call_provider")
+    @patch("api.ai_engine._conversation", return_value=None)
+    @patch("api.views._consume_usage", return_value=(True, 0, 100, "free"))
+    def test_ai_chat_recovery_fails_closed_for_inaccessible_project(self, _usage, _conversation, provider):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            "/api/ai/chat/",
+            {"message": "Inspect the selected project.", "project": 987654},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        provider.assert_not_called()
 
 
 class AIAgentApprovalTests(TestCase):

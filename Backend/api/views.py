@@ -1948,12 +1948,18 @@ def assistant_api(request):
     provider_model = os.environ.get("AI_MODEL", "")
     if provider_url and provider_key and provider_model:
         try:
+            # This legacy but active /assistant/ route has its own provider call.
+            # Apply the same server-side secret boundary used by the central AI engine.
+            from .ai_engine import _redact_provider_file_content, _sanitize_provider_context
+
+            provider_context = _sanitize_provider_context(context)
+            provider_prompt = _redact_provider_file_content(prompt)
             upstream = requests.post(
                 f"{provider_url}/chat/completions",
                 headers={"Authorization": f"Bearer {provider_key}", "Content-Type": "application/json"},
                 json={"model": provider_model, "temperature": 0.2, "messages": [
                     {"role": "system", "content": "You are DeveloperOS, a concise software project copilot. Use only the supplied workspace context. Give practical next actions and never invent project facts."},
-                    {"role": "user", "content": f"Workspace context: {context}\nUser request: {prompt}"},
+                    {"role": "user", "content": "Workspace context: " + json.dumps(provider_context, ensure_ascii=False) + "\nUser request: " + provider_prompt},
                 ]}, timeout=25,
             )
             upstream.raise_for_status()
