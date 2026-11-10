@@ -107,15 +107,34 @@ function openDatabase() {
   if (!globalThis.indexedDB) return Promise.reject(new Error("IndexedDB is unavailable."));
   return new Promise((resolve, reject) => {
     const request = globalThis.indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains(STORE_NAME)) {
         database.createObjectStore(STORE_NAME, { keyPath: "workspace_id" });
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Could not open workspace recovery storage."));
-    request.onblocked = () => reject(new Error("Workspace recovery storage is blocked by another tab."));
+    request.onsuccess = () => {
+      // A blocked open may later succeed after another tab releases its
+      // connection. Once the caller has fallen back, that late connection
+      // must be closed instead of leaking an IndexedDB handle.
+      if (settled) {
+        request.result?.close?.();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(request.error || new Error("Could not open workspace recovery storage."));
+    };
+    request.onblocked = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Workspace recovery storage is blocked by another tab."));
+    };
   });
 }
 

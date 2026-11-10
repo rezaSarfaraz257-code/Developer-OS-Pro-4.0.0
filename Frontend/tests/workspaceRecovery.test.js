@@ -240,6 +240,46 @@ test("IndexedDB is the primary recovery store and supports save, load, and delet
   }
 });
 
+test("closes an IndexedDB connection that opens after a blocked request fell back", async () => {
+  const previousIndexedDB = globalThis.indexedDB;
+  const previousLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  saveWorkspaceRecoverySnapshotFallbackSync(validSnapshot());
+  let openRequest;
+  let closeCount = 0;
+  const lateDatabase = { close() { closeCount += 1; } };
+  globalThis.indexedDB = {
+    open() {
+      openRequest = {};
+      queueMicrotask(() => openRequest.onblocked?.());
+      return openRequest;
+    },
+  };
+
+  try {
+    const restored = await loadWorkspaceRecoverySnapshot("42");
+    assert.equal(restored.workspace_id, "42");
+    assert.equal(restored.files["src/main.js"], "console.log('recovered');");
+
+    openRequest.result = lateDatabase;
+    openRequest.onsuccess?.();
+    assert.equal(closeCount, 1, "late success must release the unused database connection");
+
+    // A late error after the blocked rejection must not change the settled result.
+    openRequest.error = new Error("late open error");
+    openRequest.onerror?.();
+    assert.equal(closeCount, 1);
+  } finally {
+    globalThis.indexedDB = previousIndexedDB;
+    globalThis.localStorage = previousLocalStorage;
+  }
+});
+
 test("newer local fallback wins over an older IndexedDB snapshot after an outage", async () => {
   const previousIndexedDB = globalThis.indexedDB;
   const previousLocalStorage = globalThis.localStorage;
