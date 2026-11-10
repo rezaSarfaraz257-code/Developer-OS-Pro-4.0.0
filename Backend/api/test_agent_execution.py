@@ -329,8 +329,10 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
 class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
     @patch("api.views._runner_request")
     def test_runner_call_occurs_outside_database_transaction(self, runner_request):
+        baseline_atomic_depth = len(connection.atomic_blocks)
+
         def runner_side_effect(*args, **kwargs):
-            self.assertEqual(len(connection.atomic_blocks), 1)
+            self.assertEqual(len(connection.atomic_blocks), baseline_atomic_depth)
             return {
                 "job_id": "runner-outside-tx-001", "status": "completed",
                 "exit_code": 0, "duration_ms": 20, "stdout": "not persisted",
