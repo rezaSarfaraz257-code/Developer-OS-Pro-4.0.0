@@ -419,6 +419,40 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
 
 
 
+
+
+    @patch("api.views._runner_request")
+    def test_cancellation_during_runner_execution_preserves_cancel_and_resyncs(self, runner_request):
+        def cancel_then_return(*args, **kwargs):
+            self.run.status = "canceled"
+            self.run.save(update_fields=["status"])
+            self.task.status = "canceled"
+            self.task.save(update_fields=["status"])
+            return {
+                "job_id": "runner-canceled-001", "status": "completed",
+                "exit_code": 0, "duration_ms": 18, "stdout": "", "stderr": "",
+            }, None
+
+        runner_request.side_effect = cancel_then_return
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        result = execute_agent_task_verification(job)
+
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        self.assertEqual(result["status"], "verification_canceled")
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        resync = BackgroundJob.objects.get(pk=result["resync_job_id"])
+        self.assertEqual(resync.kind, "ai_agent_runner_sync")
+
     def test_ambiguous_runner_failure_queues_authoritative_resync(self):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
