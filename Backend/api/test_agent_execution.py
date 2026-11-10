@@ -231,3 +231,58 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
         self.assertEqual(retry.status_code, 202)
         self.assertEqual(retry.data["evidence"]["iteration"], 2)
         self.assertEqual(len(retry.data["evidence"]["history"]), 1)
+
+
+class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
+    @patch("api.views._runner_request", return_value=(
+        {"status": "failed", "exit_code": 1, "duration_ms": 8, "stdout": "", "stderr": "failure"}, None,
+    ))
+    def test_retry_loop_stops_after_four_total_iterations(self, runner_request):
+        sync_job = self.sync_job
+        for iteration in range(4):
+            response = self.client.post(self.url, {
+                "sync_job_id": sync_job.id, "revision": self.workspace.revision,
+                "profile": "python_pytest",
+            }, format="json")
+            self.assertEqual(response.status_code, 202)
+            job = BackgroundJob.objects.get(pk=response.data["job_id"])
+            job.attempts = 1
+            execute_agent_task_verification(job)
+            self.task.refresh_from_db()
+            self.assertEqual(self.task.status, "failed")
+            self.assertEqual(self.task.execution_evidence["iteration"], iteration + 1)
+            if iteration < 3:
+                self.workspace.files = {"main.py": f"print('retry {iteration + 1}')"}
+                self.workspace.save(update_fields={"files"})
+                sync_job = BackgroundJob.objects.create(
+                    kind="ai_agent_runner_sync", status="succeeded",
+                    payload={"workspace_id": self.workspace.id, "owner_id": self.user.id,
+                             "requested_revision": self.workspace.revision},
+                    result={"workspace_id": self.workspace.id, "revision": self.workspace.revision, "status": "synced"},
+                    idempotency_key=f"sync:{self.workspace.id}:{self.workspace.revision}",
+                )
+                AuditLog.objects.create(
+                    user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
+                    target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+                )
+
+        self.workspace.files = {"main.py": "print('manual review required')"}
+        self.workspace.save(update_fields={"files"})
+        final_sync = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="succeeded",
+            payload={"workspace_id": self.workspace.id, "owner_id": self.user.id,
+                     "requested_revision": self.workspace.revision},
+            result={"workspace_id": self.workspace.id, "revision": self.workspace.revision, "status": "synced"},
+            idempotency_key=f"sync:{self.workspace.id}:{self.workspace.revision}",
+        )
+        AuditLog.objects.create(
+            user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
+            target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+        )
+        exhausted = self.client.post(self.url, {
+            "sync_job_id": final_sync.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(exhausted.status_code, 409)
+        self.assertIn("four-iteration", exhausted.data["error"])
+        self.assertEqual(runner_request.call_count, 4)
