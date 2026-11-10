@@ -757,6 +757,22 @@ class AIHealthAPITests(TestCase):
         self.assertIn("[REDACTED]", outbound)
 
 
+    @patch("api.ai_engine._call_provider")
+    @patch("api.ai_engine._conversation", return_value=None)
+    @patch("api.views._consume_usage", return_value=(True, 0, 100, "free"))
+    def test_ai_chat_recovery_fails_closed_for_inaccessible_project(self, _usage, _conversation, provider):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            "/api/ai/chat/",
+            {"message": "Inspect the selected project.", "project": 987654},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        provider.assert_not_called()
+
+
 class AIAgentApprovalTests(TestCase):
     def setUp(self):
         # DRF throttle cache is external to TestCase database rollback.
