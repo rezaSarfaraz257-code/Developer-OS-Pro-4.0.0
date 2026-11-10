@@ -14,6 +14,7 @@ sudo bash Runner/prepare-host.sh
 
 The preparation script:
 - Loads the scoped `developer-os-runner` AppArmor profile.
+- Allows Bubblewrap's exact recursive bind of `/oldroot/proc/` into the sandbox `/proc/` during setup; this does not grant mount permissions to the workload profile.
 - Generates `Runner/seccomp-bwrap.json` from the Docker/Moby default seccomp allowlist pinned to commit `7b5ccfab2d6b4e0aa64c6cce401a2705788eafeb`.
 - Adds only the namespace and mount syscalls required by Bubblewrap. The AppArmor workload profile is the mandatory second layer and denies those operations after the shell transition.
 
