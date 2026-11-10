@@ -6,6 +6,7 @@ It creates no second patch format, approval token, or Runner transport.
 from __future__ import annotations
 
 from django.db import transaction
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -403,7 +404,7 @@ def fail_agent_task_verification(job):
         if actor:
             try:
                 workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
-            except Exception:
+            except Http404:
                 workspace = None
             if workspace and _workspace_write_allowed(workspace, actor):
                 resync_job = _queue_agent_runner_resync(workspace, actor, job.id)
