@@ -151,6 +151,9 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.status, "awaiting_approval")
         self.assertEqual(dependent.status, "blocked")
         self.assertEqual(self.run.status, "running")
+        job.status = "succeeded"
+        job.result = result
+        job.save(update_fields=["status", "result"])
         accepted = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
             {"accepted_criteria": self.run.plan["acceptance_criteria"]},
@@ -198,11 +201,24 @@ class AgentTaskVerificationAPITests(TestCase):
 
 
 class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
-    def test_acceptance_requires_all_exact_plan_criteria(self):
+    def _mark_task_passed_with_durable_job(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="succeeded",
+            payload={
+                "run_id": self.run.id, "task_id": self.task.id,
+                "revision": self.workspace.revision,
+            },
+            result={"status": "verification_passed_pending_acceptance"},
+            idempotency_key=f"accepted-test:{self.run.id}:{self.task.id}",
+        )
         self.task.status = "awaiting_approval"
+        self.task.execution_job = job
         self.task.execution_revision = self.workspace.revision
         self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
-        self.task.save(update_fields=["status", "execution_revision", "execution_evidence"])
+        self.task.save(update_fields=["status", "execution_job", "execution_revision", "execution_evidence"])
+
+    def test_acceptance_requires_all_exact_plan_criteria(self):
+        self._mark_task_passed_with_durable_job()
         response = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
             {"accepted_criteria": ["Feature behavior is correct"]},
@@ -213,10 +229,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
         self.assertEqual(self.task.status, "awaiting_approval")
 
     def test_acceptance_rejected_if_workspace_changes_after_verification(self):
-        self.task.status = "awaiting_approval"
-        self.task.execution_revision = self.workspace.revision
-        self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
-        self.task.save(update_fields=["status", "execution_revision", "execution_evidence"])
+        self._mark_task_passed_with_durable_job()
         self.workspace.files = {"main.py": "print('later change')"}
         self.workspace.save(update_fields={"files"})
         response = self.client.post(
