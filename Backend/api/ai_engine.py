@@ -65,7 +65,8 @@ def _redact_provider_file_content(content: str) -> str:
         (re.compile(r"\bpypi-[A-Za-z0-9_-]{50,}\b"), "[REDACTED_PYPI_TOKEN]"),
         (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), "[REDACTED_JWT]"),
         (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), "[REDACTED_SLACK_TOKEN]"),
-        (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
+        (re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
+        (re.compile(r"-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----"), "[REDACTED_PGP_PRIVATE_KEY]"),
     ]
     redacted = content
     for pattern, replacement in patterns:
@@ -421,8 +422,9 @@ def _provider_safe_context_path(path: str) -> bool:
     parts = [part.casefold() for part in path.split("/")]
     name = parts[-1]
     excluded_directories = {
-        ".aws", ".ssh", ".docker", ".kube", "private", "secrets",
-        "credentials", "private_keys", "key_material",
+        ".aws", ".ssh", ".docker", ".kube", ".azure", ".gcloud",
+        ".terraform", "private", "secrets", "credentials", "private_keys",
+        "key_material", "vault", "keyrings",
     }
     if any(part in excluded_directories for part in parts[:-1]):
         return False
@@ -430,10 +432,11 @@ def _provider_safe_context_path(path: str) -> bool:
         "service-account.json", "application_default_credentials.json",
         ".git-credentials", "credentials", "id_rsa", "id_dsa",
         "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys",
-        ".envrc",
+        ".envrc", ".npmrc", ".pypirc", ".netrc", ".pgpass", ".my.cnf",
+        "terraform.tfstate", "terraform.tfstate.backup",
     }:
         return False
-    if name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials")):
+    if name == ".env" or name.startswith(".env.") or name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials", ".tfstate", ".tfvars")):
         return False
     if re.search(r"(?:^|[._-])(?:secret|secrets|credential|credentials)(?:[._-]|$)", name):
         return False
