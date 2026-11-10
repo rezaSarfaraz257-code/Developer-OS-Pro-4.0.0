@@ -7,7 +7,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider
+from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider, _safe_provider_detail, _provider_error
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -634,6 +634,39 @@ class AIEngineUnitTests(TestCase):
                 self.assertNotIn(secret, serialized)
         self.assertIn("src/azure_client.py", serialized)
         self.assertIn("[REDACTED]", serialized)
+
+
+    def test_provider_error_does_not_echo_provider_controlled_content(self):
+        echoed_secret = "workspace-private-credential-echo-987654"
+        response = Mock()
+        response.json.return_value = {
+            "error": {"message": f"Invalid request; received prompt fragment {echoed_secret}"}
+        }
+
+        self.assertEqual(_safe_provider_detail(response), "")
+        payload = json.loads(_provider_error(
+            "AI_REQUEST_ERROR",
+            "The AI provider rejected the request.",
+            status=400,
+            detail=f"provider echoed {echoed_secret}",
+        ))
+        serialized = json.dumps(payload)
+        self.assertNotIn(echoed_secret, serialized)
+        self.assertNotIn("detail", payload)
+
+    def test_provider_error_keeps_only_stable_public_fields(self):
+        payload = json.loads(_provider_error(
+            "AI_AUTH_ERROR",
+            "OpenAI rejected the API credentials.",
+            status=401,
+            detail="Authorization: Bearer private-upstream-token-value",
+        ))
+
+        self.assertEqual(payload, {
+            "code": "AI_AUTH_ERROR",
+            "message": "OpenAI rejected the API credentials.",
+            "provider_status": 401,
+        })
 
 
 class AIHealthAPITests(TestCase):
