@@ -56,6 +56,7 @@ jobs:
       CSRF_TRUSTED_ORIGINS: http://localhost
       DATABASE_URL: postgresql://developeros:test-password@127.0.0.1:5432/developeros_test
       IDE_RUNNER_TOKEN: ci-runner-token
+      GITHUB_TOKEN_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       EMAIL_VERIFICATION_REQUIRED: "false"
       SECURE_SSL_REDIRECT: "false"
     steps:
