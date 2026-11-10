@@ -418,6 +418,41 @@ class AIEngineUnitTests(TestCase):
         self.assertLessEqual(total_value_chars, 60_000)
         self.assertNotIn("B" * 100, json.dumps(sanitized))
 
+    def test_provider_context_redacts_signed_cloud_urls_and_uri_userinfo(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/storage.py": (
+                        "s3 = 'https://bucket.s3.example.test/object?X-Amz-Credential=aws-access-id-secret"
+                        "&X-Amz-Security-Token=aws-session-token-secret"
+                        "&X-Amz-Signature=aws-signature-secret&response-content-type=text%2Fplain'\n"
+                        "gcs = 'https://storage.example.test/object?X-Goog-Credential=gcp-credential-secret"
+                        "&X-Goog-Signature=gcp-signature-secret&page=2'\n"
+                        "db = 'https://deploy-user:deploy-password-secret@internal.example.test/api'\n"
+                    ),
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "aws-access-id-secret",
+            "aws-session-token-secret",
+            "aws-signature-secret",
+            "gcp-credential-secret",
+            "gcp-signature-secret",
+            "deploy-user",
+            "deploy-password-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("bucket.s3.example.test", serialized)
+        self.assertIn("internal.example.test", serialized)
+        self.assertIn("response-content-type=text%2Fplain", serialized)
+        self.assertIn("page=2", serialized)
+
     def test_provider_context_redacts_azure_shared_access_credentials(self):
         context = {
             "workspace": {
