@@ -344,6 +344,39 @@ class AIEngineUnitTests(TestCase):
         self.assertLessEqual(total_value_chars, 60_000)
         self.assertNotIn("B" * 100, json.dumps(sanitized))
 
+    def test_provider_context_redacts_azure_shared_access_credentials(self):
+        context = {
+            "workspace": {
+                "files": {
+                    "src/azure_client.py": (
+                        "SharedAccessSignature sr=resource&sig=azure-sas-signature-secret&se=expiry\n"
+                        "SharedAccessKey=azure-shared-access-key-secret\n"
+                        "Authorization: SharedAccessSignature sr=namespace&sig=azure-auth-sas-secret&se=expiry\n"
+                    ),
+                },
+            },
+            "provider_config": {
+                "shared_access_signature": "opaque-shared-access-signature-secret",
+                "shared_access_key": "opaque-shared-access-key-secret",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "azure-sas-signature-secret",
+            "azure-shared-access-key-secret",
+            "azure-auth-sas-secret",
+            "opaque-shared-access-signature-secret",
+            "opaque-shared-access-key-secret",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertIn("src/azure_client.py", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+
 class AIHealthAPITests(TestCase):
     def setUp(self):
         # DRF throttle cache is external to TestCase database rollback.
