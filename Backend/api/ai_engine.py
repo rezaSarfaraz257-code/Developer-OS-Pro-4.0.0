@@ -120,11 +120,16 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                     result[child_key] = safe_files
                 else:
                     result[child_key] = sanitize(child, child_key, depth + 1)
+            if len(value) > 1_000:
+                result["_context_truncated"] = True
             return result
         if isinstance(value, list):
-            return [sanitize(item, key, depth + 1) for item in value[:100]]
-        if isinstance(value, str) and len(value) > 60_000:
-            return value[:60_000]
+            bounded = [sanitize(item, key, depth + 1) for item in value[:100]]
+            if len(value) > 100:
+                bounded.append("[TRUNCATED_CONTEXT_LIST]")
+            return bounded
+        if isinstance(value, str):
+            return _redact_provider_file_content(value[:60_000])
         return value
 
     return sanitize(context)
