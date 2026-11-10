@@ -11,6 +11,11 @@ from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 class AgentTaskVerificationAPITests(TestCase):
     def setUp(self):
+        # This API test targets task authorization and execution, not the
+        # shared request-rate-limit cache. Keep middleware behavior deterministic.
+        rate_limit_patcher = patch("api.security.consume_rate_limit", return_value=(True, None))
+        rate_limit_patcher.start()
+        self.addCleanup(rate_limit_patcher.stop)
         self.user = User.objects.create_user(username="agent-execution-owner", password="StrongPassword123!")
         self.other = User.objects.create_user(username="agent-execution-other", password="StrongPassword123!")
         self.workspace = CodeWorkspace.objects.create(
