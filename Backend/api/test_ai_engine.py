@@ -249,7 +249,10 @@ class AIEngineUnitTests(TestCase):
         cursor["value"] = "must-not-reach-provider"
 
         context = {
-            "metadata": {"credential_note": "AWS_SECRET_ACCESS_KEY=metadata-secret-value-123456"},
+            "metadata": {
+                "credential_note": "AWS_SECRET_ACCESS_KEY=metadata-secret-value-123456",
+                "AWS_SECRET_ACCESS_KEY=metadata-key-secret-123456": "non-sensitive-value",
+            },
             "large_metadata": {f"field_{index}": f"value_{index}" for index in range(1_200)},
             "nested": deep,
         }
@@ -258,6 +261,7 @@ class AIEngineUnitTests(TestCase):
 
         self.assertLessEqual(len(sanitized["large_metadata"]), 1_000)
         self.assertNotIn("metadata-secret-value-123456", serialized)
+        self.assertNotIn("metadata-key-secret-123456", serialized)
         self.assertNotIn("must-not-reach-provider", serialized)
         self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
 
