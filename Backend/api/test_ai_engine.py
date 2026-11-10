@@ -276,6 +276,13 @@ class AIEngineUnitTests(TestCase):
 
     def test_provider_context_redacts_structured_credentials_with_unknown_formats(self):
         context = {
+            "workspace": {
+                "file_samples": {
+                    ".env.production": "API_KEY=sample-env-secret",
+                    ".ssh/id_ed25519": "PRIVATE_KEY=sample-private-key-secret",
+                    "src/app.py": "print('safe sample')",
+                },
+            },
             "provider_config": {
                 "api_key": "opaque-api-secret-not-matching-known-prefix",
                 "clientSecret": "opaque-client-secret-value",
@@ -301,6 +308,9 @@ class AIEngineUnitTests(TestCase):
             with self.subTest(secret=secret):
                 self.assertNotIn(secret, serialized)
         self.assertEqual(sanitized["provider_config"]["database"]["token_count"], 12)
+        self.assertNotIn(".env.production", sanitized["workspace"]["file_samples"])
+        self.assertNotIn(".ssh/id_ed25519", sanitized["workspace"]["file_samples"])
+        self.assertIn("src/app.py", sanitized["workspace"]["file_samples"])
 
     def test_provider_context_enforces_global_character_budget(self):
         sanitized = _sanitize_provider_context({
