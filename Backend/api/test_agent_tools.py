@@ -22,6 +22,13 @@ class ReadOnlyAgentToolTests(TestCase):
                 "package.json": json.dumps({"dependencies": {"react": "^19.0.0"}, "devDependencies": {"vite": "^7.0.0"}}),
                 ".env": "DATABASE_URL=postgres://user:private-password@db.example.test/app",
                 "keys/private.pem": "PRIVATE KEY MATERIAL",
+                ".config/gh/hosts.yml": "oauth_token: github-cli-private-token",
+                ".config/gcloud/application_default_credentials.json": "refresh_token: gcloud-private-refresh-token",
+                ".config/azure/accessTokens.json": "accessToken: azure-private-access-token",
+                ".config/containers/auth.json": "auth: container-private-token",
+                ".config/rclone/rclone.conf": "access_token: rclone-private-token",
+                "infra/terraform.tfstate": "terraform-private-state",
+                "infra/production.tfvars": "terraform-private-variable",
             },
         )
         self.run = AgentRun.objects.create(
@@ -49,6 +56,30 @@ class ReadOnlyAgentToolTests(TestCase):
         for path in ("../secret.txt", "src/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "src//main.py", "src/./main.py", "bad\x00name.py", "", "x" * 501):
             with self.subTest(path=path):
                 self.assertFalse(_safe_path(path))
+        self.assertTrue(_safe_path("src/components/App.jsx"))
+
+    def test_safe_path_excludes_user_cli_credentials_and_infrastructure_state(self):
+        private_paths = (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/containers/auth.json",
+            ".config/rclone/rclone.conf",
+            ".config/op/config",
+            ".config/1password/credentials.json",
+            ".config/oci/config",
+            ".config/terraform/credentials.tfrc.json",
+            "infra/terraform.tfstate",
+            "infra/terraform.tfstate.backup",
+            "infra/production.tfvars",
+            "infra/production.tfvars.json",
+        )
+        for path in private_paths:
+            with self.subTest(path=path):
+                self.assertFalse(_safe_path(path))
+
+        self.assertTrue(_safe_path(".config/my-editor/settings.json"))
+        self.assertTrue(_safe_path("infra/main.tf"))
         self.assertTrue(_safe_path("src/components/App.jsx"))
 
     def test_workspace_snapshot_excludes_traversal_paths(self):
@@ -91,6 +122,28 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.data["run_status"], "approved")
         self.assertTrue(response.data["analysis_only"])
         self.assertNotIn(".env", [item["path"] for item in response.data["result"]["manifests"]])
+        inventory = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
+        inventory_json = json.dumps(inventory.data)
+        for secret_path in (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/containers/auth.json",
+            ".config/rclone/rclone.conf",
+            "infra/terraform.tfstate",
+            "infra/production.tfvars",
+        ):
+            self.assertNotIn(secret_path, inventory_json)
+        for secret_value in (
+            "github-cli-private-token",
+            "gcloud-private-refresh-token",
+            "azure-private-access-token",
+            "container-private-token",
+            "rclone-private-token",
+            "terraform-private-state",
+            "terraform-private-variable",
+        ):
+            self.assertNotIn(secret_value, inventory_json)
         self.assertTrue(response.data["result"]["read_only"])
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, before)
