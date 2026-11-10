@@ -38,6 +38,8 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   mount options=(rw silent make-rslave) /,
   mount options=(rw silent make-rprivate) /oldroot/,
   mount fstype=proc options=(rw nosuid nodev noexec) proc -> /newroot/@{PROC}/,
+  # Bubblewrap first bind-mounts the original procfs into its private mount root.
+  mount options=(rw rbind) /oldroot/proc/ -> @{PROC}/,
   mount fstype=tmpfs options=(rw nosuid nodev) tmpfs -> /newroot/{,**},
   mount fstype=tmpfs options=(rw nosuid nodev) tmpfs -> /tmp/,
   mount fstype=devpts options=(rw nosuid noexec) devpts -> /newroot/dev/pts/,
