@@ -242,6 +242,12 @@ def _instructions(action: str | None = None) -> str:
 
 
 def _build_input(message: str, context: dict[str, Any], history: list[dict[str, str]]) -> list[dict[str, Any]]:
+    context = _sanitize_provider_context(context)
+    history = [
+        {"role": item.get("role"), "content": _redact_provider_file_content(item.get("content", ""))}
+        for item in history
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
     items: list[dict[str, Any]] = []
     remaining_history_chars = MAX_HISTORY_CHARS
     bounded_history: list[dict[str, str]] = []
