@@ -324,9 +324,7 @@ def agent_task_accept_api(request, pk, task_pk):
             or accepted != criteria
         ):
             return Response({"error": "Explicit confirmation of every plan acceptance criterion is required."}, status=400)
-        workspace = CodeWorkspace.objects.select_for_update().filter(
-            pk=run.workspace_id, owner_id=request.user.id,
-        ).first()
+        workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not workspace or not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace access is no longer available."}, status=403)
         if workspace.revision != evidence.get("revision"):
