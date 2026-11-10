@@ -200,7 +200,8 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(second.data["run_status"], "approved")
         self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 2)
 
-    def test_unapproved_run_cannot_invoke_tool(self):
+    @patch("api.security.consume_rate_limit", return_value=(True, None))
+    def test_unapproved_run_cannot_invoke_tool(self, _consume_rate_limit):
         self.run.status = "awaiting_approval"
         self.run.save(update_fields=["status"])
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
