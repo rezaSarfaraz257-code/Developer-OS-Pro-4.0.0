@@ -99,7 +99,10 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                     break
                 if not isinstance(child_key, str) or not child_key or len(child_key) > 120:
                     continue
-                if child_key == "files" and isinstance(child, dict):
+                safe_key = _redact_provider_file_content(child_key)[:120]
+                if not safe_key:
+                    continue
+                if safe_key == "files" and isinstance(child, dict):
                     safe_files = {}
                     for path, source in islice(child.items(), 2_000):
                         if remaining_files <= 0 or remaining_nodes <= 0:
@@ -122,9 +125,9 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                         remaining_bytes -= size
                         remaining_context_chars -= len(safe_source)
                         remaining_files -= 1
-                    result[child_key] = safe_files
+                    result[safe_key] = safe_files
                 else:
-                    result[child_key] = sanitize(child, child_key, depth + 1)
+                    result[safe_key] = sanitize(child, safe_key, depth + 1)
             if len(value) > 1_000:
                 result["_context_truncated"] = True
             return result
