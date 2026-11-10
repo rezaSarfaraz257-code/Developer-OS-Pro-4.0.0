@@ -341,6 +341,17 @@ class AIEngineUnitTests(TestCase):
         self.assertIn("src/settings.py", serialized)
         self.assertIn("[REDACTED]", serialized)
 
+    def test_provider_context_redacts_unexpected_object_string_representations(self):
+        class SecretValue:
+            def __str__(self):
+                return "API_KEY=opaque-object-secret-value"
+
+        sanitized = _sanitize_provider_context({"metadata": {"custom": SecretValue()}})
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("opaque-object-secret-value", serialized)
+        self.assertIn("[REDACTED]", serialized)
+
     def test_provider_context_enforces_final_serialized_budget_including_paths_and_keys(self):
         long_path_files = {
             (f"module_{index:03d}_" + ("x" * 380)): "print('safe')"
