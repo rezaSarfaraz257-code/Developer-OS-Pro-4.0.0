@@ -189,7 +189,7 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:8080/health >/dev/null
-          docker exec developer-os-runner-ci sh -c 'grep -E "^(NoNewPrivs|Seccomp|CapEff):" /proc/self/status; cat /proc/sys/user/max_user_namespaces'
+          docker exec developer-os-runner-ci sh -c 'cat /proc/self/attr/current; grep -E "^(NoNewPrivs|Seccomp|CapEff):" /proc/self/status; cat /proc/sys/user/max_user_namespaces'
           docker exec developer-os-runner-ci /usr/bin/bwrap --die-with-parent --new-session --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true || true
           docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
       - name: Check Django configuration and migrate integration database
@@ -200,7 +200,22 @@ jobs:
         run: python manage.py test api.test_agent_runner_integration --verbosity 2
       - name: Collect Runner diagnostics on failure
         if: failure()
-        run: docker logs developer-os-runner-ci || true
+        run: |
+          docker logs developer-os-runner-ci || true
+          # Diagnostic only: run the trusted /bin/true Bubblewrap probe with
+          # seccomp relaxed to distinguish Docker seccomp from AppArmor denial.
+          # This never executes workspace code and is not a runtime fallback.
+          docker run --rm --read-only \
+            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
+            --tmpfs /run:size=16m,noexec,nosuid,nodev \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --security-opt apparmor=developer-os-runner \
+            --security-opt seccomp=unconfined \
+            --env RUNNER_SECURITY_LEVEL=strict \
+            --env RUNNER_SANDBOX_MODE=bwrap \
+            developer-os-runner-ci:agent-loop \
+            /opt/venv/bin/python -c "import main; print('bwrap_probe_with_default_seccomp_disabled=', main._bwrap_runtime_available())" || true
       - name: Stop strict Runner
         if: always()
         run: docker rm -f developer-os-runner-ci || true
