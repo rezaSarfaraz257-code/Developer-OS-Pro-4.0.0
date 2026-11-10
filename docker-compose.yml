@@ -131,6 +131,7 @@ services:
       # On Ubuntu 24.04+, load Runner/apparmor/developer-os-runner on the host
       # and set RUNNER_APPARMOR_PROFILE=developer-os-runner in the Compose env.
       - apparmor:${RUNNER_APPARMOR_PROFILE:-docker-default}
+      - seccomp:./Runner/seccomp-bwrap.json
     cap_drop:
       - ALL
     read_only: true
