@@ -436,7 +436,34 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
 
 
     @patch("api.views._runner_request")
-    def test_cancellation_during_runner_execution_preserves_cancel_and_resyncs(self, runner_request):
+
+
+    def test_failed_job_finalization_invalidates_uncommitted_pass_evidence(self):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "failed"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+        self.task.status = "awaiting_approval"
+        self.task.execution_evidence = {
+            "state": "passed", "revision": self.workspace.revision,
+            "runner_job_id": "runner-finished-before-worker-crash",
+            "iteration": 1, "history": [],
+        }
+        self.task.save(update_fields=["status", "execution_evidence"])
+
+        fail_agent_task_verification(job)
+
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.task.execution_evidence["state"], "finalization_failed")
+        self.assertNotIn("human_acceptance", self.task.execution_evidence)
+        self.assertTrue(self.task.execution_evidence.get("resync_job_id"))
+
+        def test_cancellation_during_runner_execution_preserves_cancel_and_resyncs(self, runner_request):
         def cancel_then_return(*args, **kwargs):
             self.run.status = "canceled"
             self.run.save(update_fields=["status"])
