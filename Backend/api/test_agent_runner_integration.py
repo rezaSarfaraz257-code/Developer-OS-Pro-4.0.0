@@ -12,7 +12,6 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .agent_execution import execute_agent_task_verification
 from .management.commands.worker import execute as execute_background_job
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
@@ -32,10 +31,19 @@ class AgentRunnerIntegrationTests(TestCase):
             name="Real Runner integration workspace",
             files={
                 "test_feature.py": (
+                    "import socket\n"
                     "import unittest\n\n"
                     "class FeatureTests(unittest.TestCase):\n"
                     "    def test_runner_executes_the_synced_revision(self):\n"
-                    "        self.assertEqual(6 * 7, 42)\n"
+                    "        self.assertEqual(6 * 7, 42)\n\n"
+                    "    def test_runner_network_namespace_cannot_reach_runner_api(self):\n"
+                    "        probe = socket.socket()\n"
+                    "        probe.settimeout(1)\n"
+                    "        try:\n"
+                    "            with self.assertRaises(OSError):\n"
+                    "                probe.connect(('127.0.0.1', 8080))\n"
+                    "        finally:\n"
+                    "            probe.close()\n"
                 ),
             },
         )
@@ -62,10 +70,19 @@ class AgentRunnerIntegrationTests(TestCase):
         # authoritative workspace at a newer revision.
         self.workspace.files = {
             "test_feature.py": (
+                "import socket\n"
                 "import unittest\n\n"
                 "class FeatureTests(unittest.TestCase):\n"
                 "    def test_runner_executes_the_synced_revision(self):\n"
-                "        self.assertEqual(6 * 7, 42)\n"
+                "        self.assertEqual(6 * 7, 42)\n\n"
+                "    def test_runner_network_namespace_cannot_reach_runner_api(self):\n"
+                "        probe = socket.socket()\n"
+                "        probe.settimeout(1)\n"
+                "        try:\n"
+                "            with self.assertRaises(OSError):\n"
+                "                probe.connect(('127.0.0.1', 8080))\n"
+                "        finally:\n"
+                "            probe.close()\n"
             ),
             "README.md": "Runner integration revision two\n",
         }
@@ -128,7 +145,7 @@ class AgentRunnerIntegrationTests(TestCase):
 
         # This call reaches the actual Runner /exec endpoint. The Runner uses
         # strict Bubblewrap isolation and returns its real execution job ID.
-        result = execute_agent_task_verification(verification_job)
+        result = execute_background_job(verification_job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.assertTrue(result["evidence"]["runner_job_id"])
         self.assertEqual(result["evidence"]["runner_status"], "completed")
