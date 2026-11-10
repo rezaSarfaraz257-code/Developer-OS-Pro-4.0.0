@@ -84,10 +84,10 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   deny /sys/firmware/** rwklx,
   deny /sys/kernel/security/** rwklx,
 
-  # Bubblewrap launches this shell only after namespaces and mounts are set up.
-  # The child profile removes the permissions needed to create another sandbox.
-  allow px /usr/bin/bash -> &developer-os-runner-workload,
-  allow px /bin/bash -> &developer-os-runner-workload,
+  # Bubblewrap sets no_new_privs before exec. Stack the workload policy
+  # onto every child exec relative to this profile, matching the upstream
+  # Bubblewrap/AppArmor confinement pattern. This only reduces permissions.
+  allow pix /** -> &developer-os-runner-workload,
 }
 
 profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
