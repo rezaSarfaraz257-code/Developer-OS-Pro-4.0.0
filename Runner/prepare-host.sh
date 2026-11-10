@@ -27,10 +27,16 @@ jq -e '
 # syscalls needed by Bubblewrap. AppArmor is the second mandatory layer:
 # the trusted Runner profile can use them; the workload profile cannot.
 jq '
-  .syscalls = (
+  # Docker default denies clone/clone3 namespace flags when CAP_SYS_ADMIN is
+  # absent. Replace only those rules; keep the rest of the default allowlist.
+  .syscalls |= map(select(
+    ((.names // []) | index("clone")) == null
+    and ((.names // []) | index("clone3")) == null
+  ))
+  | .syscalls = (
     [{
       "names": [
-        "clone", "clone3", "unshare",
+        "clone", "clone3", "unshare", "setns",
         "mount", "mount_setattr", "open_tree", "move_mount",
         "fsopen", "fsconfig", "fsmount", "fspick",
         "umount", "umount2", "pivot_root",
