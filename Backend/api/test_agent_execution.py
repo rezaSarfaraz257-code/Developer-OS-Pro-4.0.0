@@ -136,6 +136,7 @@ class AgentTaskVerificationAPITests(TestCase):
             runner_request.call_args.args[2]["command"],
             VERIFICATION_PROFILES["python_pytest"],
         )
+        self.assertEqual(VERIFICATION_PROFILES["node_test"], "npm test")
 
     @patch("api.views._runner_request", return_value=(
         {"status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}, None,
