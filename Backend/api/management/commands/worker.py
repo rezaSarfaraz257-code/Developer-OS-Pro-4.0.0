@@ -78,6 +78,9 @@ def recover_stale_jobs():
                     pk=locked.payload.get("export_id"),
                     user_id=locked.payload.get("user_id"),
                 ).exclude(status__in=["ready", "expired"]).update(status="failed")
+            if locked.status == "failed" and locked.kind == "ai_agent_task_verify":
+                from api.agent_execution import fail_agent_task_verification
+                fail_agent_task_verification(locked)
 
 
 def refresh_job_lease(job_id, worker):
@@ -250,6 +253,9 @@ def execute(job):
     if job.kind == "ai_agent_plan":
         from api.agent_runtime import build_agent_plan
         return build_agent_plan(job.payload["run_id"])
+    if job.kind == "ai_agent_task_verify":
+        from api.agent_execution import execute_agent_task_verification
+        return execute_agent_task_verification(job)
     if job.kind == "email":
         _require_real_email_transport()
         payload = job.payload
@@ -357,6 +363,9 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
+                if job.status == "failed" and job.kind == "ai_agent_task_verify":
+                    from api.agent_execution import fail_agent_task_verification
+                    fail_agent_task_verification(job)
             finally:
                 lease_stop.set()
                 lease_thread.join(timeout=2)
