@@ -1,0 +1,119 @@
+# Dedicated AppArmor policy for the Developer OS Runner.
+# The service profile cannot create namespaces or mount filesystems.
+# Only /usr/bin/bwrap transitions to the setup profile. Bubblewrap then
+# transitions the workload shell into a profile with neither userns nor mount
+# permission. Container capabilities remain dropped and no-new-privileges stays on.
+abi <abi/4.0>,
+#include <tunables/global>
+
+profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  deny network raw,
+  deny network packet,
+  deny network alg,
+
+  capability,
+  file,
+  umount,
+
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (send,receive) peer=developer-os-runner,
+  signal (send,receive) peer=developer-os-runner-bwrap,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/mem rwklx,
+  deny @{PROC}/kmem rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  # No mount permission in the control-plane Runner process.
+  deny mount,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  /usr/bin/bwrap Px -> developer-os-runner-bwrap,
+}
+
+profile developer-os-runner-bwrap flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  deny network raw,
+  deny network packet,
+  deny network alg,
+
+  capability sys_admin,
+  capability setuid,
+  capability setgid,
+  file,
+  mount,
+  umount,
+  userns,
+
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (send,receive) peer=developer-os-runner,
+  signal (send,receive) peer=developer-os-runner-bwrap,
+  signal (send,receive) peer=developer-os-runner-workload,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/mem rwklx,
+  deny @{PROC}/kmem rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # The workload shell must drop into a profile with no userns or mount rule.
+  /usr/bin/bash Px -> developer-os-runner-workload,
+  /bin/bash Px -> developer-os-runner-workload,
+}
+
+profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  deny network raw,
+  deny network packet,
+  deny network alg,
+
+  file,
+  umount,
+
+  signal (send,receive) peer=developer-os-runner-workload,
+  signal (send,receive) peer=developer-os-runner-bwrap,
+  signal (send,receive) peer=developer-os-runner,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/mem rwklx,
+  deny @{PROC}/kmem rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny mount,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+}
