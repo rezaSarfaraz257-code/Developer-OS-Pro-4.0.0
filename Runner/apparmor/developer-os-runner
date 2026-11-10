@@ -23,7 +23,13 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   capability setgid,
   capability sys_chroot,
   capability setpcap,
+  # Bubblewrap uses ptrace while preparing its PID namespace.
+  capability sys_ptrace,
   file,
+
+  # The launcher must remain in this setup profile. Its shell is stacked
+  # with the workload profile below; NNP forbids a relaxing profile transition.
+  /usr/bin/bwrap ix,
 
   # Bubblewrap's private root and mount operations are confined to its
   # temporary root trees. The workload profile below cannot mount or pivot.
@@ -80,8 +86,8 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
 
   # Bubblewrap launches this shell only after namespaces and mounts are set up.
   # The child profile removes the permissions needed to create another sandbox.
-  /usr/bin/bash Px -> developer-os-runner-workload,
-  /bin/bash Px -> developer-os-runner-workload,
+  /usr/bin/bash px -> &developer-os-runner-workload,
+  /bin/bash px -> &developer-os-runner-workload,
 }
 
 profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
@@ -93,6 +99,13 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   deny network alg,
 
   file,
+
+  # This profile is stacked with developer-os-runner after Bubblewrap setup.
+  # The intersection removes setup-only privileges from every workload child.
+  deny capability,
+  deny mount,
+  deny umount,
+  deny pivot_root,
 
   signal (receive) peer=developer-os-runner,
   signal (send,receive) peer=developer-os-runner-workload,
