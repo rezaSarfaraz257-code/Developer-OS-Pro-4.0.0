@@ -274,6 +274,34 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("must-not-reach-provider", serialized)
         self.assertIn("TRUNCATED_CONTEXT_DEPTH", serialized)
 
+    def test_provider_context_redacts_structured_credentials_with_unknown_formats(self):
+        context = {
+            "provider_config": {
+                "api_key": "opaque-api-secret-not-matching-known-prefix",
+                "clientSecret": "opaque-client-secret-value",
+                "refresh_token": "opaque-refresh-token-value",
+                "AWS_SECRET_ACCESS_KEY": "opaque-aws-secret-value",
+                "database": {
+                    "password": "opaque-database-password",
+                    "token_count": 12,
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-api-secret-not-matching-known-prefix",
+            "opaque-client-secret-value",
+            "opaque-refresh-token-value",
+            "opaque-aws-secret-value",
+            "opaque-database-password",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["provider_config"]["database"]["token_count"], 12)
+
     def test_provider_context_enforces_global_character_budget(self):
         sanitized = _sanitize_provider_context({
             "first": "A" * 60_000,
