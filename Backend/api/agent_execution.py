@@ -82,6 +82,10 @@ def agent_task_verification_start_api(request, pk, task_pk):
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
+        # Status is not a substitute for DAG integrity: never execute a task
+        # while any declared dependency is incomplete, even if stale state says ready.
+        if task.depends_on.exclude(status="succeeded").exists():
+            return Response({"error": "Complete every dependent task before Runner verification."}, status=409)
         if run.status not in {"approved", "running", "failed"}:
             return Response({"error": "Approve the Agent plan before verifying task execution."}, status=409)
         if (
@@ -492,6 +496,8 @@ def agent_task_accept_api(request, pk, task_pk):
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
+        if task.depends_on.exclude(status="succeeded").exists():
+            return Response({"error": "Complete every dependent task before accepting this task."}, status=409)
         if task.status == "succeeded":
             acceptance = (task.execution_evidence or {}).get("human_acceptance", {})
             if acceptance.get("user_id") == request.user.id:
