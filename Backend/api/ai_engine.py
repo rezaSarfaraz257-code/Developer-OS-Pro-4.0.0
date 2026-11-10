@@ -60,7 +60,7 @@ def _redact_provider_file_content(content: str) -> str:
         # Redact signed-cloud-URL credentials and generic URI userinfo before prompt construction.
         (re.compile(r"""(?i)([?&;](?:x-amz-signature|x-amz-security-token|x-amz-credential|x-goog-signature|x-goog-credential|signature|client_secret|client_assertion|access_token|refresh_token|security_token|session_token|api_key|apikey|access_key|secret_key|password|passwd|token|authorization)=)[^&#;\s\x22\x27<>]+"""), r"\1[REDACTED_URL_CREDENTIAL]"),
         (re.compile(r"""(?i)([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^/@\s]+)@"""), r"\1[REDACTED]@"),
-        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r"\1[REDACTED]"),
+        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&]+|[^\s,;&]+)"""), r"\1[REDACTED]"),
         (re.compile(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}"), r"\1[REDACTED_BEARER_TOKEN]"),
         (re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^:/@\s]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
         (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[REDACTED_AWS_KEY]"),
@@ -100,7 +100,10 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
     remaining_bytes = 2_000_000
     remaining_files = 500
     remaining_nodes = 10_000
-    remaining_context_chars = MAX_CONTEXT_CHARS
+    # Reserve room for JSON keys, separators, escaping, and nested structure.
+    # The final serialized-size check remains authoritative for unusually large metadata.
+    structural_reserve = min(4096, max(128, MAX_CONTEXT_CHARS // 16))
+    remaining_context_chars = max(0, MAX_CONTEXT_CHARS - structural_reserve)
     max_depth = 16
 
     def sanitize(value: Any, key: str = "", depth: int = 0) -> Any:
