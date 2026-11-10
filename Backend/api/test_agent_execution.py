@@ -43,7 +43,11 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         AuditLog.objects.create(
             user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
-            target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+            target_id=str(self.workspace.id), metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
         )
         AuditLog.objects.create(
             user=self.user, action="ai_agent.runner_workspace_synced",
@@ -69,6 +73,19 @@ class AgentTaskVerificationAPITests(TestCase):
             "profile": "python_pytest",
         }, format="json")
         self.assertEqual(response.status_code, 403)
+
+
+
+    def test_rejects_patch_audit_without_signed_revision_chain(self):
+        AuditLog.objects.filter(action="ai_agent.patch_applied").update(
+            metadata={"revision": self.workspace.revision},
+        )
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
     def test_requires_exact_successfully_synced_revision(self):
         self.sync_job.result = {"revision": self.workspace.revision - 1}
@@ -248,7 +265,11 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
         )
         AuditLog.objects.create(
             user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
-            target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+            target_id=str(self.workspace.id), metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
         )
         retry = self.client.post(self.url, {
             "sync_job_id": new_sync.id, "revision": self.workspace.revision,
@@ -296,7 +317,11 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
                 )
                 AuditLog.objects.create(
                     user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
-                    target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+                    target_id=str(self.workspace.id), metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
                 )
 
         self.workspace.files = {"main.py": "print('manual review required')"}
@@ -315,7 +340,11 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
         )
         AuditLog.objects.create(
             user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
-            target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+            target_id=str(self.workspace.id), metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
         )
         exhausted = self.client.post(self.url, {
             "sync_job_id": final_sync.id, "revision": self.workspace.revision,
@@ -422,7 +451,11 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         AuditLog.objects.create(
             user=self.user, action="ai_agent.patch_applied",
             target_type="CodeWorkspace", target_id=str(workspace.id),
-            metadata={"revision": workspace.revision},
+            metadata={
+                "previous_revision": workspace.revision - 1,
+                "revision": workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
         )
         url = f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/verify/"
         queued = self.client.post(url, {
