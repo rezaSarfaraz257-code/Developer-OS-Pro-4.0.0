@@ -91,7 +91,8 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
         remaining_nodes -= 1
         if isinstance(value, dict):
             result = {}
-            for child_key, child in islice(value.items(), 1_000):
+            child_limit = 999 if len(value) > 1_000 else 1_000
+            for child_key, child in islice(value.items(), child_limit):
                 if remaining_nodes <= 0:
                     result["_context_truncated"] = True
                     break
