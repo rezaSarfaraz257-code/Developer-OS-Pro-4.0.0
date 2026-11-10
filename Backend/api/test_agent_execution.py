@@ -188,3 +188,46 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
         self.assertEqual(response.status_code, 409)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "awaiting_approval")
+
+
+class AgentTaskRetryTests(AgentTaskVerificationAPITests):
+    @patch("api.views._runner_request", return_value=(
+        {"status": "failed", "exit_code": 1, "duration_ms": 12, "stdout": "", "stderr": "failure"}, None,
+    ))
+    def test_failed_task_can_retry_only_after_new_approved_synced_revision(self, runner_request):
+        first = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        first_job = BackgroundJob.objects.get(pk=first.data["job_id"])
+        first_job.attempts = 1
+        execute_agent_task_verification(first_job)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "failed")
+
+        same_revision = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(same_revision.status_code, 409)
+
+        self.workspace.files = {"main.py": "print('retry')"}
+        self.workspace.save(update_fields={"files"})
+        new_sync = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="succeeded",
+            payload={"workspace_id": self.workspace.id, "owner_id": self.user.id,
+                     "requested_revision": self.workspace.revision},
+            result={"workspace_id": self.workspace.id, "revision": self.workspace.revision, "status": "synced"},
+            idempotency_key=f"sync:{self.workspace.id}:{self.workspace.revision}",
+        )
+        AuditLog.objects.create(
+            user=self.user, action="ai_agent.patch_applied", target_type="CodeWorkspace",
+            target_id=str(self.workspace.id), metadata={"revision": self.workspace.revision},
+        )
+        retry = self.client.post(self.url, {
+            "sync_job_id": new_sync.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(retry.status_code, 202)
+        self.assertEqual(retry.data["evidence"]["iteration"], 2)
+        self.assertEqual(len(retry.data["evidence"]["history"]), 1)
