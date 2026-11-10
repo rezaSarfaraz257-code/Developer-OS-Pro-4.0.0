@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import os
 import sys
+import threading
 from unittest.mock import Mock, patch
 from pathlib import Path
 from fastapi import HTTPException
@@ -183,10 +184,760 @@ class RunnerSecurityTests(unittest.TestCase):
             self.assertEqual(ctx.exception.status_code, 503)
             self.assertIn("cannot create the required isolated namespaces", ctx.exception.detail)
 
-    def test_installer_can_request_network_without_disabling_bwrap_network_policy(self):
-        with patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
+    def test_installer_can_request_network_only_with_development_operator_opt_in(self):
+        with patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development", "RENDER": "", "RENDER_SERVICE_ID": "", "RENDER_GIT_COMMIT": "", "RENDER_EXTERNAL_URL": ""}, clear=False), patch("main.SANDBOX_MODE", "bwrap"), patch("main.shutil.which", return_value="/usr/bin/bwrap"), patch("main._bwrap_runtime_available", return_value=True):
             command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
             self.assertNotIn("--unshare-net", command)
+
+    def test_capability_manifest_is_machine_readable(self):
+        from main import _capability_manifest
+        manifest = _capability_manifest()
+        self.assertEqual(manifest["api_version"], "1")
+        self.assertIn("runtimes", manifest)
+        self.assertIn("limits", manifest)
+        self.assertIn("operations", manifest)
+        self.assertIn("network_enforcement", manifest["sandbox"])
+        self.assertIn("execution_available", manifest["sandbox"])
+
+    def test_strict_shared_container_reports_execution_unavailable(self):
+        from main import _capability_manifest
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "strict"):
+            manifest = _capability_manifest()
+        self.assertFalse(manifest["sandbox"]["execution_available"])
+        self.assertEqual(manifest["sandbox"]["mode"], "unavailable")
+        self.assertFalse(manifest["operations"]["execute"])
+        self.assertFalse(manifest["operations"]["process"])
+        self.assertFalse(manifest["operations"]["install"])
+        self.assertFalse(manifest["operations"]["debug"])
+
+    def test_runtime_info_has_stable_capability_shape(self):
+        info = _runtime_info()
+        for name in ("python", "node", "npm", "git", "bash"):
+            self.assertIn(name, info)
+            self.assertIn("available", info[name])
+            self.assertIn("version", info[name])
+
+    def test_command_policy_blocks_known_escape_commands(self):
+        for command in ("docker ps", "nsenter -t 1 -m", "kill 1", "curl https://example.com"):
+            with self.assertRaises(HTTPException):
+                run_command(Path("/tmp"), command)
+
+    def test_symbol_engine_static_analysis_and_rename_preview(self):
+        from symbol_engine import index, references, rename_preview
+        root = Path("/tmp/runner-symbol-test")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("def greet(name):\n    value = name\n    return value\nprint(greet('x'))\n")
+        (root / "app.js").write_text("const greet = () => 1;\nconsole.log(greet());\n")
+        symbols = index(root)
+        self.assertTrue(any(s["name"] == "greet" and s["kind"] == "function" for s in symbols))
+        refs = references(root, "greet")
+        self.assertGreaterEqual(len(refs), 2)
+        preview = rename_preview(root, "greet", "welcome")
+        self.assertEqual(preview["new"], "welcome")
+        self.assertTrue(preview["changes"])
+
+    def test_symbol_engine_p1_definitions_hover_completion(self):
+        from symbol_engine import definitions, hover, completion
+        root = Path("/tmp/runner-symbol-p1")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("def greet(name):\n    return name\n")
+        defs = definitions(root, "greet")
+        self.assertTrue(defs)
+        self.assertEqual(defs[0]["kind"], "function")
+        info = hover(root, "greet")
+        self.assertEqual(info["path"], "main.py")
+        self.assertIn("greet", info["signature"])
+        items = completion(root, "gre")
+        self.assertTrue(any(x["label"] == "greet" for x in items))
+
+    def test_symbol_engine_diagnostics(self):
+        from symbol_engine import diagnostics
+        root = Path("/tmp/runner-symbol-diagnostics")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "bad.py").write_text("def broken(:\n")
+        result = diagnostics(root, "bad.py")
+        self.assertTrue(result)
+        self.assertEqual(result[0]["severity"], "error")
+        self.assertEqual(result[0]["code"], "PY001")
+
+    def test_symbol_engine_rename_diff(self):
+        from symbol_engine import rename_diff
+        root = Path("/tmp/runner-symbol-rename")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "a.py").write_text("def greet():\n    return greet\n")
+        result = rename_diff(root, "greet", "hello")
+        self.assertEqual(result["references"], 2)
+        self.assertTrue(result["changes"])
+        self.assertIn("-def greet()", result["changes"][0]["diff"])
+        self.assertIn("+def hello()", result["changes"][0]["diff"])
+
+    def test_symbol_engine_rejects_invalid_rename(self):
+        from symbol_engine import rename_preview
+        root = Path("/tmp/runner-symbol-invalid")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("value = 1\\n")
+        with self.assertRaises(ValueError):
+            rename_preview(root, "value", "not valid")
+
+    def test_debug_capability_requires_live_runtime(self):
+        from debug_engine import capability
+        cap = capability()
+        self.assertIn(cap["mode"], {"live-dap", "unavailable"})
+        self.assertEqual(cap["protocol"], "DAP" if cap["available"] else None)
+
+    def test_debug_session_has_bounded_lifecycle(self):
+        from debug_engine import SESSION_TTL, SESSIONS
+        self.assertGreaterEqual(SESSION_TTL, 300)
+        self.assertIsInstance(SESSIONS, dict)
+
+    def test_debug_start_requires_explicit_target(self):
+        from debug_engine import handle
+        with self.assertRaises(ValueError):
+            handle("start", root="/tmp")
+
+    def test_debug_target_stays_inside_workspace(self):
+        from debug_engine import Session
+        root = Path("/tmp/runner-debug-test")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text("x = 1\\n")
+        session = Session(root, "../main.py", 1)
+        with self.assertRaises(RuntimeError):
+            session.start()
+
+    def test_workspace_path_is_rejected_before_filesystem_access(self):
+        for path in ("../x", "/tmp/x", "C:/x", ".git/config"):
+            with self.assertRaises(ValueError):
+                safe_rel(path)
+
+    def test_python_command_is_normalized_when_only_python3_exists(self):
+        import main
+        with patch("main.shutil.which", side_effect=lambda name: "/usr/bin/python3" if name == "python3" else None):
+            self.assertEqual(main._normalize_command("python3 main.py"), "python3 main.py")
+
+    def test_execute_and_process_payloads_use_workspace_lock(self):
+        import main
+        self.assertTrue(hasattr(main, "_workspace_lock"))
+
+    def test_python_execution_uses_submitted_workspace_source_and_returns_exact_stdout(self):
+        root = Path(tempfile.mkdtemp(prefix="developer-os-exec-"))
+        (root / "main.py").write_text("print('runner-source-ok')\n", encoding="utf-8")
+        # This is a trusted unit-test harness for process semantics, not a
+        # sandbox validation. Select the explicit compatibility container
+        # backend so the test does not depend on host Bubblewrap namespaces.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+            result = run_command(root, "python3 main.py")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"].strip(), "runner-source-ok")
+        self.assertNotIn("Hello, Developer OS", result["stdout"])
+
+
+    def test_process_state_exposes_completion_metadata(self):
+        import main
+        self.assertGreater(main.PROCESS_RETENTION_SECONDS, 0)
+        self.assertGreater(main.PROCESS_TAIL_BYTES, 0)
+
+    def test_preview_port_is_within_safe_range(self):
+        import main
+        port = main._workspace_preview_port(42)
+        self.assertGreaterEqual(port, 1024)
+        self.assertLessEqual(port, 65535)
+
+    def test_rejects_oversized_commands(self):
+        with self.assertRaises(HTTPException):
+            run_command(Path("/tmp"), "x" * (MAX_COMMAND + 1))
+
+    def test_interactive_process_input_and_stop_contract(self):
+        import main
+        root = Path(tempfile.mkdtemp(prefix="developer-os-process-"))
+        # Exercise stdin/stop behavior independently from Bubblewrap; strict
+        # isolation has dedicated fail-closed and container integration tests.
+        with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+            process_id = main._start_process(root, "python -c \"import sys; print(sys.stdin.readline().strip(), flush=True)\"")
+        try:
+            with main.PROCESS_LOCK:
+                proc = main.PROCESSES[process_id]["popen"]
+            proc.stdin.write("hello\n")
+            proc.stdin.flush()
+            proc.wait(timeout=5)
+            state = main._process_state(process_id)
+            self.assertEqual(state["status"], "success")
+            self.assertIn("hello", state["stdout"])
+        finally:
+            try:
+                main._stop_process(process_id)
+            except Exception:
+                pass
+
+
+class RunnerGlobalProcessCapacityTests(unittest.TestCase):
+    def test_global_process_cap_applies_across_workspaces(self):
+        roots = [Path(tempfile.mkdtemp(prefix="dos-runner-cap-a-")),
+                 Path(tempfile.mkdtemp(prefix="dos-runner-cap-b-"))]
+        process_id = None
+        with patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main.MAX_TOTAL_PROCESSES", 1):
+            try:
+                process_id = main._start_process(
+                    roots[0], "python -c \"import time; time.sleep(30)\""
+                )
+                with patch("main._create_command_script") as create_script:
+                    with self.assertRaises(HTTPException) as ctx:
+                        main._start_process(
+                            roots[1], "python -c \"import time; time.sleep(30)\""
+                        )
+                    create_script.assert_not_called()
+                self.assertEqual(ctx.exception.status_code, 429)
+                self.assertEqual(ctx.exception.detail, "Runner process capacity reached.")
+            finally:
+                if process_id is not None:
+                    try:
+                        main._stop_process(process_id)
+                    except Exception:
+                        pass
+                    with main.PROCESS_LOCK:
+                        item = main.PROCESSES.pop(process_id, None)
+                    if item:
+                        main._remove_command_script(item.get("command_file"))
+                for root in roots:
+                    import shutil
+                    shutil.rmtree(root, ignore_errors=True)
+
+
+    def test_global_capacity_reservation_blocks_concurrent_starts(self):
+        root = Path(tempfile.mkdtemp(prefix="dos-runner-reservation-"))
+        other_root = Path(tempfile.mkdtemp(prefix="dos-runner-reservation-other-"))
+        reserved = threading.Event()
+        release = threading.Event()
+        first_result = {}
+        original_sandbox = main._sandbox_command
+
+        def pause_after_reservation(*args, **kwargs):
+            reserved.set()
+            if not release.wait(5):
+                raise RuntimeError("test reservation gate timed out")
+            return original_sandbox(*args, **kwargs)
+
+        def start_first():
+            try:
+                first_result["id"] = main._start_process(
+                    root, "python -c \"import time; time.sleep(30)\""
+                )
+            except Exception as exc:
+                first_result["error"] = exc
+
+        with patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main.MAX_TOTAL_PROCESSES", 1), \
+             patch("main._sandbox_command", side_effect=pause_after_reservation):
+            worker = threading.Thread(target=start_first)
+            try:
+                worker.start()
+                self.assertTrue(reserved.wait(3), "first request did not reserve capacity")
+                with self.assertRaises(HTTPException) as ctx:
+                    main._start_process(
+                        other_root,
+                        "python -c \"import time; time.sleep(30)\""
+                    )
+                self.assertEqual(ctx.exception.status_code, 429)
+            finally:
+                release.set()
+                worker.join(8)
+                process_id = first_result.get("id")
+                if process_id:
+                    try:
+                        main._stop_process(process_id)
+                    except Exception:
+                        pass
+                    with main.PROCESS_LOCK:
+                        item = main.PROCESSES.pop(process_id, None)
+                    if item:
+                        main._remove_command_script(item.get("command_file"))
+                with main.PROCESS_LOCK:
+                    self.assertFalse(main.PROCESS_STARTING)
+                import shutil
+                shutil.rmtree(root, ignore_errors=True)
+                shutil.rmtree(other_root, ignore_errors=True)
+        self.assertFalse(worker.is_alive(), "first process start thread leaked")
+        self.assertNotIn("error", first_result, repr(first_result.get("error")))
+
+    
+    def test_metrics_report_reserved_and_available_process_capacity(self):
+        with patch("main.MAX_TOTAL_PROCESSES", 3), \
+             patch.dict("main.PROCESS_STARTING", {"reserved-1": "workspace-a"}):
+            metrics = main._metrics_snapshot()
+        self.assertEqual(metrics["process_capacity"], 3)
+        self.assertEqual(metrics["starting_processes"], 1)
+        self.assertEqual(
+            metrics["available_process_slots"],
+            max(0, 3 - metrics["active_processes"] - 1),
+        )
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+def test_job_is_cancelled_helper_handles_missing_and_cancelled_jobs():
+    assert main._job_is_cancelled("missing-job") is False
+    job_id = main._new_job("cancel-helper")
+    assert main._job_is_cancelled(job_id) is False
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    assert main._job_is_cancelled(job_id) is True
+
+
+def test_job_state_machine_rejects_invalid_terminal_transitions():
+    job_id = main._new_job("state-machine")
+    assert main._set_job(job_id, status="running") is True
+    assert main._set_job(job_id, status="completed", finished_at=time.time()) is True
+    assert main._set_job(job_id, status="cancelled") is False
+    assert main._job_snapshot(job_id)["status"] == "completed"
+
+
+def test_job_state_machine_rejects_cancelled_to_running():
+    job_id = main._new_job("state-machine-cancelled")
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    assert main._set_job(job_id, status="running") is False
+    assert main._job_snapshot(job_id)["status"] == "cancelled"
+
+
+def test_queued_cancel_clears_scheduler_waiter():
+    job_id = main._new_job("queued-cancel")
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING[job_id] = {
+            "workspace_id": "queued-cancel",
+            "queued_at": time.monotonic(),
+        }
+    main._scheduler_metric("queued")
+    result = main._cancel_job(job_id)
+    assert result["status"] == "cancelled"
+    with main.SCHEDULER_LOCK:
+        assert job_id not in main.SCHEDULER_WAITING
+        assert main.SCHEDULER_METRICS["queued"] >= 0
+
+
+def test_terminal_job_cancel_is_idempotent():
+    job_id = main._new_job("terminal-cancel")
+    assert main._set_job(job_id, status="cancelled", finished_at=time.time()) is True
+    result = main._cancel_job(job_id)
+    assert result["status"] == "cancelled"
+    assert main._set_job(job_id, status="completed") is False
+
+
+def test_job_lifecycle_helpers():
+    job_id = main._new_job("test-workspace")
+    snapshot = main._job_snapshot(job_id)
+    assert snapshot["status"] == "queued"
+    assert snapshot["workspace_id"] == "test-workspace"
+    assert snapshot["attempt"] == 0
+    main._set_job(job_id, status="running", attempt=1)
+    snapshot = main._job_snapshot(job_id)
+    assert snapshot["status"] == "running"
+    assert snapshot["attempt"] == 1
+    cancelled = main._cancel_job(job_id)
+    assert cancelled["status"] in ("running", "cancelled")
+
+
+def test_retry_policy_is_bounded():
+    assert main.JOB_MAX_RETRIES >= 0
+    assert main.JOB_MAX_RETRIES <= 3
+    assert main._retry_delay(1) <= 10
+    assert main._retry_delay(2) >= main._retry_delay(1)
+
+
+def test_incremental_job_output_cursor():
+    job_id = main._new_job("stream-workspace")
+    main._append_job_output(job_id, "hello\\n")
+    chunk, cursor = main._job_output_slice(job_id, 0)
+    assert chunk == "hello\\n"
+    assert cursor == len("hello\\n")
+    chunk2, cursor2 = main._job_output_slice(job_id, cursor)
+    assert chunk2 == ""
+    assert cursor2 == cursor
+    main._append_job_output(job_id, "world\\n")
+    chunk3, cursor3 = main._job_output_slice(job_id, cursor)
+    assert chunk3 == "world\\n"
+    assert cursor3 == len("hello\\nworld\\n")
+
+
+def test_stream_wait_is_bounded():
+    assert 0.1 <= main.STREAM_WAIT_SECONDS <= 5.0
+
+
+def test_job_output_is_bounded():
+    job_id = main._new_job("bounded-output")
+    main._append_job_output(job_id, "x" * (main.JOB_OUTPUT_MAX_BYTES + 1024))
+    output = main._job_output_snapshot(job_id)
+    assert len(output) <= main.JOB_OUTPUT_MAX_BYTES
+
+
+def test_output_buffer_cleanup_for_finished_job():
+    job_id = main._new_job("cleanup-workspace")
+    main._append_job_output(job_id, "finished output")
+    main._set_job(job_id, status="completed", finished_at=time.time())
+    assert main._job_snapshot(job_id)["status"] == "completed"
+    # Finished jobs may be retained for inspection, but their live output
+    # buffer must remain bounded and independently addressable.
+    assert len(main._job_output_snapshot(job_id)) <= main.JOB_OUTPUT_MAX_BYTES
+
+
+def test_expired_job_cleanup_also_releases_output_buffer():
+    job_id = main._new_job("expired-cleanup")
+    main._append_job_output(job_id, "stale output")
+    expired_at = time.time() - main.JOB_RETENTION_SECONDS - 1
+    assert main._set_job(job_id, status="completed", finished_at=expired_at) is True
+    main._cleanup_jobs()
+    assert main._job_snapshot(job_id) is None
+    assert main._job_output_snapshot(job_id) == ""
+
+
+def test_retry_delay_is_bounded():
+    assert main._retry_delay(1) <= 10
+    assert main._retry_delay(100) <= 10
+
+
+def test_stream_terminal_status_includes_timeout():
+    assert main.TERMINAL_JOB_STATES == {"completed", "failed", "timeout", "cancelled"}
+
+
+def test_timeout_job_stream_reports_done():
+    job_id = main._new_job("stream-timeout")
+    assert main._set_job(job_id, status="running") is True
+    assert main._set_job(job_id, status="timeout", finished_at=time.time(), exit_code=124) is True
+    with patch("main.TOKEN", "test-token"):
+        result = main.job_output_stream(job_id, workspace_id="stream-timeout", cursor=0, authorization="Bearer test-token")
+    assert result["done"] is True
+    assert result["status"] == "timeout"
+
+
+def test_timeout_execution_persists_partial_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
+
+
+def test_timeout_execution_decodes_byte_output_for_streaming_clients():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
+        result = main.run_command(root, "python -c 'print(1)'")
+    assert result["status"] == "timeout"
+    assert result["stdout"] == "partial output"
+    streamed = main._job_output_snapshot(result["job_id"])
+    assert "partial output" in streamed
+    assert "Execution timed out after" in streamed
+
+
+def test_job_endpoints_hide_foreign_workspace_jobs():
+    job_id = main._new_job("workspace-owner")
+    assert main._set_job(job_id, status="running", started_at=time.time()) is True
+    with patch("main.TOKEN", "test-token"):
+        endpoints = (
+            lambda: main.job_status(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+            lambda: main.job_output(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.job_output_stream(job_id, workspace_id="workspace-other", cursor=0, authorization="Bearer test-token"),
+            lambda: main.cancel_job(job_id, workspace_id="workspace-other", authorization="Bearer test-token"),
+        )
+        for endpoint in endpoints:
+            try:
+                endpoint()
+            except HTTPException as exc:
+                assert exc.status_code == 404
+            else:
+                raise AssertionError("A foreign workspace must not access another workspace's job")
+    assert main._job_snapshot(job_id)["status"] == "running"
+
+
+def test_process_stop_and_cancel_terminate_entire_process_group():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"test-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-process-group",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+
+        def terminate_group(proc, grace_seconds=None):
+            proc.poll.return_value = 0
+
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch(
+                "main._terminate_process_group", side_effect=terminate_group
+            ) as terminate:
+                result = getattr(main, endpoint_name)(
+                    process_id,
+                    "workspace-process-group",
+                    "Bearer runner-test-token",
+                )
+            terminate.assert_called_once_with(popen)
+            assert result["status"] == "success"
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
+
+
+def test_process_stop_and_cancel_hide_foreign_workspace_processes():
+    for endpoint_name in ("process_stop", "process_cancel"):
+        process_id = f"foreign-{endpoint_name}"
+        popen = Mock()
+        popen.poll.return_value = None
+        with main.PROCESS_LOCK:
+            main.PROCESSES[process_id] = {
+                "id": process_id,
+                "workspace_id": "workspace-owner",
+                "command": "test-command",
+                "popen": popen,
+                "stdout": "",
+                "stderr": "",
+                "started_at": time.time(),
+                "kind": "process",
+            }
+        try:
+            with patch("main.TOKEN", "runner-test-token"), patch("main._terminate_process_group") as terminate:
+                try:
+                    getattr(main, endpoint_name)(
+                        process_id,
+                        "workspace-other",
+                        "Bearer runner-test-token",
+                    )
+                except HTTPException as exc:
+                    assert exc.status_code == 404
+                else:
+                    raise AssertionError("A foreign workspace must not control this process")
+                terminate.assert_not_called()
+                assert popen.poll() is None
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(process_id, None)
+
+
+def test_process_stop_route_is_registered_once():
+    stop_routes = [
+        route.path
+        for route in main.app.routes
+        if "POST" in getattr(route, "methods", set())
+        and route.path in {"/process/{process_id}/stop", "/process/{pid}/stop"}
+    ]
+    assert stop_routes == ["/process/{process_id}/stop"]
+
+
+def test_write_snapshot_writes_nested_and_root_files_safely():
+    with tempfile.TemporaryDirectory() as root_tmp:
+        root = Path(root_tmp)
+        main.write_snapshot(root, {
+            "src/main.py": "print('safe')\n",
+            "README.md": "workspace",
+        })
+        assert (root / "src" / "main.py").read_text(encoding="utf-8") == "print('safe')\n"
+        assert (root / "README.md").read_text(encoding="utf-8") == "workspace"
+
+
+def test_write_snapshot_rejects_symlink_before_creating_external_directories():
+    with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+        root = Path(root_tmp)
+        outside_target = Path(outside_tmp) / "should-not-be-created"
+        (root / "escape").symlink_to(outside_target, target_is_directory=True)
+
+        try:
+            main.write_snapshot(root, {"escape/file.txt": "must not escape"})
+        except ValueError as exc:
+            assert "unsafe path" in str(exc)
+        else:
+            raise AssertionError("A symlinked workspace parent must be rejected")
+
+        assert not outside_target.exists()
+
+
+def test_concurrent_workspace_limits():
+    assert main.MAX_CONCURRENT_EXECUTIONS >= 1
+    assert main.MAX_CONCURRENT_PROCESSES >= 1
+    assert main.MAX_WORKSPACE_CONCURRENT >= 1
+
+
+def test_resource_limits_are_bounded():
+    assert 128 <= main.RUNNER_MEMORY_MB <= 2048
+    assert main.MAX_OUTPUT_BYTES > 0
+    assert main.MAX_PROCESS_DURATION > 0
+
+
+def test_multiple_jobs_have_isolated_output():
+    first = main._new_job("pressure-a")
+    second = main._new_job("pressure-b")
+    main._append_job_output(first, "A")
+    main._append_job_output(second, "B")
+    assert main._job_output_snapshot(first) == "A"
+    assert main._job_output_snapshot(second) == "B"
+
+
+def test_fair_scheduler_isolates_workspaces():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("workspace-a") is True
+    assert scheduler.acquire("workspace-a") is False
+    assert scheduler.acquire("workspace-b") is True
+    assert scheduler.active("workspace-a") == 1
+    assert scheduler.active("workspace-b") == 1
+    scheduler.release("workspace-a")
+    assert scheduler.acquire("workspace-a") is True
+
+
+def test_fair_scheduler_release_is_idempotent():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    scheduler.acquire("workspace-a")
+    scheduler.release("workspace-a")
+    scheduler.release("workspace-a")
+    assert scheduler.active("workspace-a") == 0
+
+
+def test_fair_scheduler_snapshot_is_safe():
+    scheduler = main.FairScheduler(max_per_workspace=2)
+    scheduler.acquire("workspace-a")
+    snapshot = scheduler.snapshot()
+    assert snapshot["max_per_workspace"] == 2
+    assert snapshot["active"]["workspace-a"] == 1
+
+
+def test_scheduler_runtime_bridge():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("runtime-a") is True
+    assert scheduler.acquire("runtime-a") is False
+    assert scheduler.acquire("runtime-b") is True
+    scheduler.release("runtime-a")
+    assert scheduler.acquire("runtime-a") is True
+    scheduler.release("runtime-a")
+    scheduler.release("runtime-b")
+    assert scheduler.snapshot()["active"] == {}
+
+
+def test_scheduler_runtime_timeout_is_bounded():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("busy") is True
+    started = time.monotonic()
+    acquired = False
+    while time.monotonic() - started < 0.15:
+        if scheduler.acquire("busy"):
+            acquired = True
+            break
+        time.sleep(0.01)
+    assert acquired is False
+    scheduler.release("busy")
+
+
+def test_scheduler_metrics_snapshot_contract():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    scheduler.acquire("metrics-a")
+    snapshot = scheduler.snapshot()
+    assert snapshot["max_per_workspace"] == 1
+    assert snapshot["active"]["metrics-a"] == 1
+    scheduler.release("metrics-a")
+    assert scheduler.snapshot()["active"] == {}
+
+
+def test_scheduler_runtime_snapshot_uses_locked_public_snapshot():
+    scheduler = main.FairScheduler(max_per_workspace=2)
+    scheduler.acquire("snapshot-a")
+    scheduler.acquire("snapshot-b")
+    with patch.object(main, "FAIR_SCHEDULER", scheduler):
+        snapshot = main._scheduler_snapshot()
+    assert snapshot["active"] == 2
+    assert snapshot["workspaces"] == {"snapshot-a": 1, "snapshot-b": 1}
+    scheduler.release("snapshot-a")
+    scheduler.release("snapshot-b")
+
+
+def test_scheduler_metrics_fields_are_numeric():
+    snapshot = main._scheduler_snapshot()
+    for key in ("queued", "active", "rejected", "completed", "total_wait_ms"):
+        assert isinstance(snapshot[key], int)
+        assert snapshot[key] >= 0
+
+
+def test_fair_scheduler_round_robin_prevents_idle_workspace_starvation():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("a") is True
+    assert scheduler.acquire("b") is True
+    assert scheduler.acquire("a") is False
+    scheduler.release("a")
+    assert scheduler.acquire("a") is True
+    scheduler.release("b")
+    scheduler.release("a")
+
+
+def test_fair_scheduler_keeps_turn_order_deterministic():
+    scheduler = main.FairScheduler(max_per_workspace=1)
+    assert scheduler.acquire("a") is True
+    scheduler.release("a")
+    assert scheduler.acquire("b") is True
+    scheduler.release("b")
+    assert scheduler.acquire("a") is True
+    scheduler.release("a")
+
+
+def test_scheduler_queue_position_tracks_waiters():
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+        now = time.monotonic()
+        main.SCHEDULER_WAITING.update({"a": now, "b": now + 0.01, "c": now + 0.02})
+    assert main._scheduler_queue_position("a") == 1
+    assert main._scheduler_queue_position("b") == 2
+    assert main._scheduler_queue_position("c") == 3
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+
+
+def test_scheduler_queue_position_disappears_after_release():
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.clear()
+        main.SCHEDULER_WAITING["busy"] = time.monotonic()
+    assert main._scheduler_queue_position("busy") == 1
+    with main.SCHEDULER_LOCK:
+        main.SCHEDULER_WAITING.pop("busy", None)
+    assert main._scheduler_queue_position("busy") == 0
+
+
+    def test_request_cannot_enable_network_without_operator_opt_in(self):
+        with (
+            patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "false"}, clear=False),
+            patch("main.SANDBOX_MODE", "bwrap"),
+            patch("main.shutil.which", return_value="/usr/bin/bwrap"),
+            patch("main._bwrap_runtime_available", return_value=True),
+        ):
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
+        self.assertIn("--unshare-net", command)
+
+    def test_network_requires_explicit_operator_opt_in_outside_production(self):
+        env = {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}
+        self.assertTrue(main._network_access_allowed(True, env))
+        self.assertFalse(main._network_access_allowed(False, env))
+
+    def test_bwrap_egress_requires_both_request_and_development_operator_opt_in(self):
+        with (
+            patch.dict(os.environ, {"RUNNER_ALLOW_NETWORK": "true", "ENVIRONMENT": "development"}, clear=False),
+            patch("main.SANDBOX_MODE", "bwrap"),
+            patch("main.shutil.which", return_value="/usr/bin/bwrap"),
+            patch("main._bwrap_runtime_available", return_value=True),
+        ):
+            command = _sandbox_command(Path("/tmp"), Path("/tmp/.runner-runtime/command-00000000000000000000000000000000.sh"), allow_network=True)
+        self.assertNotIn("--unshare-net", command)
+
+    def test_managed_production_never_allows_unrestricted_runner_egress(self):
+        for marker in ({"ENVIRONMENT": "production"}, {"RENDER": "true"}, {"RENDER_SERVICE_ID": "srv-test"}):
+            env = {"RUNNER_ALLOW_NETWORK": "true", **marker}
+            with self.subTest(marker=marker):
+                self.assertFalse(main._network_access_allowed(True, env))
 
     def test_capability_manifest_is_machine_readable(self):
         from main import _capability_manifest
@@ -802,7 +1553,6 @@ def test_scheduler_queue_position_disappears_after_release():
         main.SCHEDULER_WAITING.pop("busy", None)
     assert main._scheduler_queue_position("busy") == 0
 
-
 class WorkspaceSnapshotReconciliationTests(unittest.TestCase):
     def test_replaces_stale_source_and_preserves_runtime_directories(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1204,3 +1954,135 @@ class RunnerGlobalMemoryCeilingTests(unittest.TestCase):
         ]
         self.assertEqual(len(as_calls), 1)
         self.assertEqual(as_calls[0].args[1], (256 * 1024 * 1024, 256 * 1024 * 1024))
+
+
+class RunnerJobOutputByteBudgetTests(unittest.TestCase):
+    def setUp(self):
+        with main.JOB_OUTPUT_LOCK:
+            main.JOB_OUTPUT.clear()
+
+    def tearDown(self):
+        with main.JOB_OUTPUT_LOCK:
+            main.JOB_OUTPUT.clear()
+
+    def test_job_output_is_bounded_by_utf8_bytes_not_character_count(self):
+        job_id = "utf8-byte-budget"
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 128):
+            main._append_job_output(job_id, "🙂" * 100)
+            output = main._job_output_snapshot(job_id)
+        self.assertLessEqual(len(output.encode("utf-8")), 128)
+        self.assertTrue(output.endswith("🙂" * 32))
+
+    def test_job_output_keeps_newest_tail_after_mixed_unicode_chunks(self):
+        job_id = "utf8-tail-budget"
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 64):
+            main._append_job_output(job_id, "A" * 40)
+            main._append_job_output(job_id, "界" * 20)
+            output = main._job_output_snapshot(job_id)
+        self.assertLessEqual(len(output.encode("utf-8")), 64)
+        self.assertTrue(output.endswith("界" * 16))
+        self.assertEqual(output.encode("utf-8").decode("utf-8"), output)
+
+
+    def test_job_output_reader_uses_fixed_size_reads_for_untrusted_lines(self):
+        job_id = "bounded-stream-read"
+        stdout_done = threading.Event()
+        stderr_done = threading.Event()
+        stdout = Mock()
+        stderr = Mock()
+        stdout.read.side_effect = ["x" * 8192, ""]
+        stderr.read.side_effect = [""]
+        stdout.close.side_effect = stdout_done.set
+        stderr.close.side_effect = stderr_done.set
+        process = Mock(stdout=stdout, stderr=stderr)
+
+        with patch("main.JOB_OUTPUT_MAX_BYTES", 16384):
+            main._capture_process_output(job_id, process)
+            self.assertTrue(stdout_done.wait(2))
+            self.assertTrue(stderr_done.wait(2))
+            output = main._job_output_snapshot(job_id)
+
+        self.assertEqual(stdout.read.call_args_list[0].args, (8192,))
+        self.assertEqual(stderr.read.call_args_list[0].args, (8192,))
+        self.assertEqual(len(output.encode("utf-8")), 8192)
+
+
+    def test_utf8_truncation_never_exceeds_cap_at_codepoint_boundaries(self):
+        job_id = "utf8-boundary-budget"
+        for limit in range(1, 17):
+            with main.JOB_OUTPUT_LOCK:
+                main.JOB_OUTPUT.clear()
+            with patch("main.JOB_OUTPUT_MAX_BYTES", limit):
+                main._append_job_output(job_id, "🙂" * 20)
+                output = main._job_output_snapshot(job_id)
+            encoded = output.encode("utf-8")
+            self.assertLessEqual(len(encoded), limit)
+            self.assertEqual(encoded.decode("utf-8"), output)
+
+
+class RunnerProcessOutputReadBoundsTests(unittest.TestCase):
+    def test_process_output_reader_limits_each_read_for_untrusted_long_lines(self):
+        pid = "bounded-process-output"
+        stream = Mock()
+        stream.readline.side_effect = ["x" * 8192, "y" * 8192, ""]
+        stream.close = Mock()
+        with main.PROCESS_LOCK:
+            main.PROCESSES[pid] = {"stdout": "", "stderr": ""}
+        try:
+            main._process_output_reader(pid, "stdout", stream)
+            self.assertEqual(
+                [call.args for call in stream.readline.call_args_list],
+                [(8192,), (8192,), (8192,)],
+            )
+            self.assertEqual(len(main.PROCESSES[pid]["stdout"]), min(16384, main.MAX_PROCESS_OUTPUT))
+        finally:
+            with main.PROCESS_LOCK:
+                main.PROCESSES.pop(pid, None)
+        stream.close.assert_called_once()
+
+
+class RunnerProcessOutputUtf8BudgetTests(unittest.TestCase):
+    def setUp(self):
+        with main.PROCESS_LOCK:
+            main.PROCESSES.pop("utf8-process-output", None)
+
+    def tearDown(self):
+        with main.PROCESS_LOCK:
+            main.PROCESSES.pop("utf8-process-output", None)
+
+    def test_process_output_is_bounded_by_utf8_bytes(self):
+        pid = "utf8-process-output"
+        stream = Mock()
+        stream.readline.side_effect = ["🙂" * 8192, ""]
+        stream.close = Mock()
+        with main.PROCESS_LOCK:
+            main.PROCESSES[pid] = {"stdout": "", "stderr": ""}
+        with patch("main.MAX_PROCESS_OUTPUT", 128):
+            main._process_output_reader(pid, "stdout", stream)
+            output = main.PROCESSES[pid]["stdout"]
+        self.assertLessEqual(len(output.encode("utf-8")), 128)
+        self.assertEqual(output.encode("utf-8").decode("utf-8"), output)
+        self.assertTrue(output.endswith("🙂" * 32))
+        stream.close.assert_called_once()
+
+    def test_process_output_utf8_tail_respects_every_small_byte_limit(self):
+        original_limit = main.MAX_PROCESS_OUTPUT
+        try:
+            for limit in range(1, 17):
+                with patch("main.MAX_PROCESS_OUTPUT", limit):
+                    output = main._bounded_process_output_tail("", "🙂" * 8)
+                encoded = output.encode("utf-8")
+                self.assertLessEqual(len(encoded), limit)
+                self.assertEqual(encoded.decode("utf-8"), output)
+        finally:
+            main.MAX_PROCESS_OUTPUT = original_limit
+
+    def test_process_output_tail_stays_valid_across_mixed_unicode_chunks(self):
+        with patch("main.MAX_PROCESS_OUTPUT", 31):
+            output = ""
+            for chunk in ("start-", "🙂" * 5, "-middle-", "界" * 8, "-end"):
+                output = main._bounded_process_output_tail(output, chunk)
+        encoded = output.encode("utf-8")
+        self.assertLessEqual(len(encoded), 31)
+        self.assertEqual(encoded.decode("utf-8"), output)
+        self.assertTrue(output.endswith("-end"))

@@ -57,7 +57,20 @@ RUNNER_MEMORY_MB = _bounded_int_env("RUNNER_MEMORY_MB", 768, 128, 2048)
 MAX_OUTPUT_BYTES = MAX_OUTPUT
 MAX_PROCESS_DURATION = TIMEOUT
 PROCESS_TTL = _bounded_int_env("RUNNER_PROCESS_TTL_SECONDS", 3600, 300, 86400)
-ALLOW_NETWORK = os.environ.get("RUNNER_ALLOW_NETWORK", "false").lower() in {"1", "true", "yes", "on"}
+def _network_access_allowed(requested, environ=None):
+    """Allow egress only as an explicit non-production operator opt-in.
+
+    Request payloads cannot enable network access on their own. Managed production
+    always stays network-isolated until a registry-restricted egress proxy exists.
+    """
+    env = os.environ if environ is None else environ
+    managed_production = (
+        str(env.get("ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+        or str(env.get("RENDER", "")).strip().lower() == "true"
+        or any(env.get(name) for name in ("RENDER_SERVICE_ID", "RENDER_GIT_COMMIT", "RENDER_EXTERNAL_URL"))
+    )
+    operator_opt_in = str(env.get("RUNNER_ALLOW_NETWORK", "false")).strip().lower() in {"1", "true", "yes", "on"}
+    return bool(requested) and operator_opt_in and not managed_production
 # A shared container is NOT a tenant sandbox. Production must use a runtime
 # isolation backend (currently bubblewrap) rather than relying on regex blocks.
 def _effective_runner_security_level(environ=None):
@@ -170,9 +183,14 @@ STREAM_WAIT_SECONDS = _bounded_float_env("RUNNER_STREAM_WAIT_SECONDS", 0.5, 0.1,
 def _capture_process_output(job_id, proc):
     def reader(stream):
         try:
-            for line in iter(stream.readline, ""):
-                if line:
-                    _append_job_output(job_id, line)
+            # Fixed-size reads are essential here: readline() can return an
+            # arbitrarily large attacker-controlled line with no newline.
+            # Keep each transient chunk bounded before it reaches the tail buffer.
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                _append_job_output(job_id, chunk)
         finally:
             try:
                 stream.close()
@@ -183,12 +201,28 @@ def _capture_process_output(job_id, proc):
             threading.Thread(target=reader, args=(stream,), daemon=True).start()
 
 def _append_job_output(job_id, chunk):
+    """Append job output while enforcing a true UTF-8 byte budget.
+
+    Python string slicing limits code points, not encoded bytes. A stream of
+    multi-byte characters could therefore exceed the configured memory bound.
+    Keep the newest byte tail and decode with replacement if the cut crosses
+    a UTF-8 code-point boundary.
+    """
     if not chunk:
         return
     data = str(chunk)
     with JOB_OUTPUT_LOCK:
         current = JOB_OUTPUT.get(job_id, "")
-        JOB_OUTPUT[job_id] = (current + data)[-JOB_OUTPUT_MAX_BYTES:]
+        encoded = (current + data).encode("utf-8", errors="replace")
+        if len(encoded) > JOB_OUTPUT_MAX_BYTES:
+            encoded = encoded[-JOB_OUTPUT_MAX_BYTES:]
+            # Drop a partial leading UTF-8 code point instead of decoding it
+            # with U+FFFD, whose three encoded bytes could exceed the byte cap.
+            start = 0
+            while start < len(encoded) and encoded[start] & 0xC0 == 0x80:
+                start += 1
+            encoded = encoded[start:]
+        JOB_OUTPUT[job_id] = encoded.decode("utf-8")
 
 def _job_output_slice(job_id, cursor=0):
     with JOB_OUTPUT_LOCK:
@@ -794,7 +828,7 @@ def _sandbox_command(root, command_file, allow_network=False):
         "--chdir", "/workspace", "--proc", "/proc", "--dev", "/dev",
         "--tmpfs", "/tmp", "--clearenv",
     ]
-    if not allow_network and not ALLOW_NETWORK:
+    if not _network_access_allowed(allow_network):
         args.append("--unshare-net")
     args.extend([
         "--setenv", "PATH", "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -1047,7 +1081,7 @@ def _capability_manifest():
             "execution_available": sandbox_available,
             "unavailable_reason": sandbox_unavailable_reason,
             "process_boundary": True,
-            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not ALLOW_NETWORK else "provisioning-network")),
+            "network_enforcement": ("delegated-to-container-runtime" if container_native else ("isolated" if not _network_access_allowed(True) else "provisioning-network")),
         },
         "runtimes": _runtime_info(),
         "limits": {
@@ -1243,7 +1277,7 @@ def health():
         "sandbox": "container-native" if SANDBOX_MODE == "container" else "bubblewrap",
         "sandbox_backend": SANDBOX_MODE,
         "bubblewrap_available": bool(shutil.which("bwrap")),
-        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not ALLOW_NETWORK else "provisioning-network")),
+        "network_policy": ("container-runtime-policy" if SANDBOX_MODE == "container" else ("isolated-by-default" if not _network_access_allowed(True) else "provisioning-network")),
         "concurrency": {"max": MAX_CONCURRENT, "timeout_seconds": TIMEOUT},
         "runtimes": _runtime_info(),
         "capabilities_version": "1",
@@ -1370,9 +1404,16 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
 PROCESS_LOCK = threading.RLock()
 PROCESSES = {}
 PROCESS_SEQ = 0
+# Reservations close the race between concurrent start requests and Popen registration.
+PROCESS_STARTING = {}
 PREVIEW_PORT_BASE = _bounded_int_env("IDE_PREVIEW_PORT_BASE", 10000, 1024, 65535)
 PREVIEW_PORT_SPAN = _bounded_int_env("IDE_PREVIEW_PORT_SPAN", 1000, 1, 10000)
 MAX_PROCESSES_PER_WORKSPACE = 4
+# Bound aggregate long-running processes across all tenants/workspaces. Per-workspace
+# quotas alone do not prevent many workspaces from exhausting the shared Runner.
+MAX_TOTAL_PROCESSES = _bounded_int_env(
+    "RUNNER_MAX_TOTAL_PROCESSES", max(4, MAX_CONCURRENT * 4), 1, 256
+)
 MAX_PROCESS_OUTPUT = 200_000
 PROCESS_TAIL_BYTES = 16_384
 PROCESS_RETENTION_SECONDS = _bounded_int_env("RUNNER_PROCESS_RETENTION_SECONDS", 1800, 300, 86400)
@@ -1390,24 +1431,65 @@ def _metric(name, amount=1):
 
 def _metrics_snapshot():
     with METRICS_LOCK:
-        data=dict(METRICS)
-    uptime=max(0.0, time.time()-data["started_at"])
-    data["uptime_seconds"]=round(uptime, 3)
-    data["active_processes"]=sum(1 for item in PROCESSES.values() if item["popen"].poll() is None)
-    data["active_previews"]=sum(1 for item in PREVIEWS.values() if item["popen"].poll() is None)
+        data = dict(METRICS)
+    uptime = max(0.0, time.time() - data["started_at"])
+    data["uptime_seconds"] = round(uptime, 3)
+    # Snapshot each registry under its owning lock. Report reservations as
+    # occupied capacity so operators can distinguish startup pressure from
+    # already-running processes without exposing workspace identifiers.
+    with PROCESS_LOCK:
+        active_processes = sum(
+            1 for item in PROCESSES.values() if item["popen"].poll() is None
+        )
+        starting_processes = len(PROCESS_STARTING)
+    with PREVIEW_LOCK:
+        active_previews = sum(
+            1 for item in PREVIEWS.values()
+            if item.get("popen") and item["popen"].poll() is None
+        )
+    data["active_processes"] = active_processes
+    data["starting_processes"] = starting_processes
+    data["process_capacity"] = MAX_TOTAL_PROCESSES
+    data["available_process_slots"] = max(
+        0, MAX_TOTAL_PROCESSES - active_processes - starting_processes
+    )
+    data["active_previews"] = active_previews
     return data
 
 
+def _bounded_process_output_tail(current, chunk):
+    """Keep a valid UTF-8 tail within the configured process-output byte budget."""
+    encoded = (current + chunk).encode("utf-8")
+    if len(encoded) > MAX_PROCESS_OUTPUT:
+        encoded = encoded[-MAX_PROCESS_OUTPUT:]
+        # A byte-tail may start inside a multi-byte code point. Drop only
+        # continuation bytes so the retained text is valid UTF-8 and remains
+        # strictly within the byte budget.
+        while encoded and (encoded[0] & 0xC0) == 0x80:
+            encoded = encoded[1:]
+    return encoded.decode("utf-8")
+
+
 def _process_output_reader(pid, stream_name, stream):
+    """Drain untrusted process output with bounded reads and UTF-8 byte storage.
+
+    TextIO.readline() without a size limit can allocate an arbitrarily large
+    string when a child emits data without newline characters. Bounded reads
+    limit transient allocations; the retained tail is separately byte-bounded.
+    """
+    read_chunk_chars = 8192
     try:
-        for line in iter(stream.readline, ""):
-            if not line:
+        while True:
+            chunk = stream.readline(read_chunk_chars)
+            if not chunk:
                 break
             with PROCESS_LOCK:
                 item = PROCESSES.get(pid)
                 if not item:
                     break
-                item[stream_name] = (item.get(stream_name, "") + line)[-MAX_PROCESS_OUTPUT:]
+                item[stream_name] = _bounded_process_output_tail(
+                    item.get(stream_name, ""), chunk
+                )
     finally:
         try:
             stream.close()
@@ -1421,14 +1503,8 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         raise HTTPException(status_code=400, detail="Invalid process command.")
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
-    with PROCESS_LOCK:
-        active = [p for p in PROCESSES.values() if p["workspace_id"] == root.name and p["popen"].poll() is None]
-        policy = _entitlement_policy({"entitlement": entitlement or {}})
-        process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
-        if len(active) >= process_limit:
-            raise HTTPException(status_code=429, detail="Workspace process limit reached.")
-        PROCESS_SEQ += 1
-        process_id = str(PROCESS_SEQ)
+
+    policy = _entitlement_policy({"entitlement": entitlement or {}})
     env = {
         "PATH": f"{root / '.venv' / 'bin'}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(root / ".home"),
@@ -1444,21 +1520,52 @@ def _start_process(root, command, *, allow_network=False, env_extra=None, entitl
         "npm_config_update_notifier": "false",
     }
     _safe_process_env(env, env_extra)
-    (root / ".home").mkdir(exist_ok=True)
-    command_file = _create_command_script(root, command)
+
+    # Reserve capacity under the same lock used to register live processes.
+    # Without a reservation, concurrent requests can all pass the quota check
+    # before any of their Popen children are inserted into PROCESSES.
+    process_id = None
+    command_file = None
     try:
+        with PROCESS_LOCK:
+            active = [p for p in PROCESSES.values() if p["popen"].poll() is None]
+            starting_workspaces = list(PROCESS_STARTING.values())
+            if len(active) + len(PROCESS_STARTING) >= MAX_TOTAL_PROCESSES:
+                raise HTTPException(status_code=429, detail="Runner process capacity reached.")
+            workspace_active = sum(1 for p in active if p["workspace_id"] == root.name)
+            workspace_starting = sum(1 for workspace_id in starting_workspaces if workspace_id == root.name)
+            process_limit = min(MAX_PROCESSES_PER_WORKSPACE, int(policy["max_processes"]))
+            if workspace_active + workspace_starting >= process_limit:
+                raise HTTPException(status_code=429, detail="Workspace process limit reached.")
+            PROCESS_SEQ += 1
+            process_id = str(PROCESS_SEQ)
+            PROCESS_STARTING[process_id] = root.name
+
+        # Do not touch the workspace filesystem until capacity is reserved.
+        (root / ".home").mkdir(exist_ok=True)
+        command_file = _create_command_script(root, command)
         argv = _sandbox_command(root, command_file, allow_network=allow_network)
         proc = subprocess.Popen(
             argv, shell=False, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, start_new_session=True, preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
         )
     except HTTPException:
-        _remove_command_script(command_file)
+        if process_id is not None:
+            with PROCESS_LOCK:
+                PROCESS_STARTING.pop(process_id, None)
+        if command_file:
+            _remove_command_script(command_file)
         raise
     except Exception as exc:
-        _remove_command_script(command_file)
+        if process_id is not None:
+            with PROCESS_LOCK:
+                PROCESS_STARTING.pop(process_id, None)
+        if command_file:
+            _remove_command_script(command_file)
         raise HTTPException(status_code=500, detail=f"Process start failed: {exc.__class__.__name__}")
+
     with PROCESS_LOCK:
+        PROCESS_STARTING.pop(process_id, None)
         PROCESSES[process_id] = {
             "id": process_id, "workspace_id": root.name, "command": command,
             "command_file": command_file, "popen": proc, "stdout": "", "stderr": "", "started_at": time.time(),
