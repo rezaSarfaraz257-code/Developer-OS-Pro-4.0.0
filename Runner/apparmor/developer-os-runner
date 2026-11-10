@@ -2,7 +2,7 @@
 # The trusted Runner/bwrap control process may create its own unprivileged
 # namespaces. The executed shell is stacked with a workload profile that
 # removes userns, mount, and capability permissions without relaxing NNP.
-abi <abi/4.0>,
+abi <abi/5.0>,
 #include <tunables/global>
 
 profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
@@ -86,8 +86,8 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
 
   # Bubblewrap launches this shell only after namespaces and mounts are set up.
   # The child profile removes the permissions needed to create another sandbox.
-  /usr/bin/bash px -> &developer-os-runner-workload,
-  /bin/bash px -> &developer-os-runner-workload,
+  allow px /usr/bin/bash -> &developer-os-runner-workload,
+  allow px /bin/bash -> &developer-os-runner-workload,
 }
 
 profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
