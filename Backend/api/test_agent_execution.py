@@ -439,3 +439,37 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.assertEqual(task.status, "awaiting_approval")
         runner_request.assert_called_once()
+
+
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {}}, None))
+    def test_runner_sync_worker_honors_project_collaborator_access(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace_owner = User.objects.create_user(
+            username="sync-workspace-owner", password="StrongPassword123!",
+        )
+        project = Project.objects.create(owner=workspace_owner, title="Sync collaborator project")
+        project.collaborators.add(self.user)
+        workspace = CodeWorkspace.objects.create(
+            owner=workspace_owner, project=project, name="Sync collaborator workspace",
+            files={"main.py": "print('shared')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync:{workspace.id}:{workspace.revision}",
+        )
+
+        result = execute_background_job(sync_job)
+
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(result["revision"], workspace.revision)
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.user, action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id, metadata__revision=workspace.revision,
+        ).exists())
+        runner_request.assert_called_once()
