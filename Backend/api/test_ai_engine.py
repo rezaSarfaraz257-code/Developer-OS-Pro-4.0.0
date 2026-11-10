@@ -1,4 +1,6 @@
 import json
+
+import requests
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
@@ -653,6 +655,35 @@ class AIEngineUnitTests(TestCase):
         serialized = json.dumps(payload)
         self.assertNotIn(echoed_secret, serialized)
         self.assertNotIn("detail", payload)
+
+    @patch("api.ai_engine.requests.post")
+    @patch("api.ai_engine._provider_config", return_value={
+        "key": "server-side-test-provider-key",
+        "base": "https://provider.example.test/v1",
+        "model": "test-model",
+        "protocol": "chat",
+    })
+    def test_provider_http_error_does_not_echo_prompt_or_credentials(self, _config, post):
+        echoed_secret = "private-workspace-secret-echo-123456"
+        upstream = Mock()
+        upstream.status_code = 400
+        upstream.json.return_value = {
+            "error": {"message": f"Rejected payload included {echoed_secret}"}
+        }
+        upstream.raise_for_status.side_effect = requests.HTTPError(
+            "upstream rejected request",
+            response=upstream,
+        )
+        post.return_value = upstream
+
+        with self.assertLogs("developer_os.ai", level="WARNING") as captured:
+            answer, error = _call_provider("Review the project.", {}, [])
+
+        self.assertEqual(answer, "")
+        self.assertNotIn(echoed_secret, error)
+        self.assertNotIn(echoed_secret, "\n".join(captured.output))
+        self.assertNotIn("detail", json.loads(error))
+
 
     def test_provider_context_redacts_opaque_access_key_id_fields(self):
         context = {
