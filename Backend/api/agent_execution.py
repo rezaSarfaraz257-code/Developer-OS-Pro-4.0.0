@@ -298,12 +298,31 @@ def execute_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
-        if (
-            not current_job or current_job.status != "running"
-            or not run or not task or run.status == "canceled"
-            or task.status != "running" or task.execution_job_id != job.id
-        ):
+        if not current_job or current_job.status != "running" or not run or not task:
             return {"status": "verification_superseded", "task_id": payload.get("task_id")}
+        if run.status == "canceled" or task.status == "canceled":
+            resync_job = None
+            try:
+                canceled_workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+            except Http404:
+                canceled_workspace = None
+            if canceled_workspace and _workspace_write_allowed(canceled_workspace, actor):
+                resync_job = _queue_agent_runner_resync(canceled_workspace, actor, current_job.id)
+                AuditLog.objects.create(
+                    user=actor, action="agent_task.runner_resync_after_cancel",
+                    target_type="AgentTask", target_id=str(task.id),
+                    metadata={
+                        "run_id": run.id, "verification_job_id": current_job.id,
+                        "resync_job_id": resync_job.id,
+                        "revision": canceled_workspace.revision,
+                    },
+                )
+            return {
+                "status": "verification_canceled", "task_id": task.id,
+                "resync_job_id": resync_job.id if resync_job else None,
+            }
+        if task.status != "running" or task.execution_job_id != job.id:
+            return {"status": "verification_superseded", "task_id": task.id}
 
         workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
         if not _workspace_write_allowed(workspace, actor):
