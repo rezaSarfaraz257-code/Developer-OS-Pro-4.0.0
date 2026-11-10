@@ -142,6 +142,28 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                 if _provider_sensitive_context_key(child_key):
                     result[safe_key] = "[REDACTED]"
                     continue
+                normalized_child_key = child_key.casefold().replace("-", "_")
+                if normalized_child_key in {
+                    "file_inventory", "file_paths", "workspace_file_paths", "files_list",
+                } and isinstance(child, list):
+                    safe_paths = []
+                    for path in child[:500]:
+                        if (
+                            isinstance(path, str)
+                            and _provider_safe_context_path(path)
+                            and _redact_provider_file_content(path) == path
+                        ):
+                            safe_paths.append(path)
+                    result[safe_key] = safe_paths
+                    continue
+                if normalized_child_key in {
+                    "active_file", "current_file", "selected_file", "file_path", "filepath",
+                } and isinstance(child, str):
+                    if not _provider_safe_context_path(child) or _redact_provider_file_content(child) != child:
+                        result[safe_key] = "[REDACTED_PATH]"
+                    else:
+                        result[safe_key] = sanitize(child, safe_key, depth + 1)
+                    continue
                 if child_key.casefold() in {"files", "file_samples"} and isinstance(child, dict):
                     safe_files = {}
                     for path, source in islice(child.items(), 2_000):
