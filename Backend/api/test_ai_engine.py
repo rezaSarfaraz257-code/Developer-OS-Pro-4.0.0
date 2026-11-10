@@ -146,6 +146,8 @@ class AIEngineUnitTests(TestCase):
                     ".env.production": "PASSWORD=another-secret",
                     ".ssh/id_ed25519": "PRIVATE KEY MATERIAL",
                     "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
+                    "secrets/service.json": "API_KEY=directory-secret-value",
+                    "private/identity.json": "PRIVATE_KEY=private-directory-secret",
                     "src/main.py": (
                         "API_KEY='inline-secret-value-123456'\\n"
                         "DATABASE_URL=postgres://app:database-password-value@db.example.test/app\\n"
@@ -172,6 +174,8 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("another-secret", serialized)
         self.assertNotIn("PRIVATE KEY MATERIAL", serialized)
         self.assertNotIn("private-material", serialized)
+        self.assertNotIn("directory-secret-value", serialized)
+        self.assertNotIn("private-directory-secret", serialized)
         self.assertNotIn("inline-secret-value-123456", serialized)
         self.assertNotIn("database-password-value", serialized)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", serialized)
