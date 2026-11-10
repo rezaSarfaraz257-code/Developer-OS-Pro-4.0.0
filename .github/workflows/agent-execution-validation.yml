@@ -184,6 +184,8 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:8080/health >/dev/null
+          docker exec developer-os-runner-ci sh -c 'grep -E "^(NoNewPrivs|Seccomp|CapEff):" /proc/self/status; cat /proc/sys/user/max_user_namespaces'
+          docker exec developer-os-runner-ci /usr/bin/bwrap --die-with-parent --new-session --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true || true
           docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
       - name: Check Django configuration and migrate integration database
         run: |
