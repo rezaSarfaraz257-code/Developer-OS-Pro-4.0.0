@@ -82,7 +82,10 @@ class AgentRunnerIntegrationTests(TestCase):
         # authoritative workspace at a newer revision.
         self.workspace.files = {
             "test_feature.py": (
-                "import socket\n"
+                "import ctypes\n"
+                    "import errno\n"
+                    "import socket\n"
+                    "import tempfile\n"
                 "import unittest\n\n"
                 "class FeatureTests(unittest.TestCase):\n"
                 "    def test_runner_executes_the_synced_revision(self):\n"
@@ -98,7 +101,7 @@ class AgentRunnerIntegrationTests(TestCase):
                     "    def test_workload_profile_has_no_capabilities_or_namespace_privilege(self):\n"
                     "        with open('/proc/self/attr/current', encoding='utf-8') as stream:\n"
                     "            profile = stream.read()\n"
-                    "        self.assertIn('developer-os-runner-workload', profile)\n"
+                    "        self.assertIn('developer-os-runner//&developer-os-runner-workload', profile)\n"
                     "        status = {}\n"
                     "        with open('/proc/self/status', encoding='utf-8') as stream:\n"
                     "            for line in stream:\n"
@@ -107,6 +110,25 @@ class AgentRunnerIntegrationTests(TestCase):
                     "                    status[key] = value.strip()\n"
                     "        self.assertEqual(status.get('CapEff'), '0000000000000000')\n"
                     "        self.assertEqual(status.get('NoNewPrivs'), '1')\n"
+                    "    def test_workload_cannot_create_nested_user_namespace(self):\n"
+                    "        libc = ctypes.CDLL(None, use_errno=True)\n"
+                    "        libc.unshare.argtypes = [ctypes.c_int]\n"
+                    "        libc.unshare.restype = ctypes.c_int\n"
+                    "        result = libc.unshare(0x10000000)  # CLONE_NEWUSER\n"
+                    "        self.assertEqual(result, -1)\n"
+                    "        self.assertIn(ctypes.get_errno(), (errno.EPERM, errno.EACCES))\n\n"
+                    "    def test_workload_cannot_mount_tmpfs(self):\n"
+                    "        libc = ctypes.CDLL(None, use_errno=True)\n"
+                    "        libc.mount.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_ulong, ctypes.c_void_p]\n"
+                    "        libc.mount.restype = ctypes.c_int\n"
+                    "        libc.umount2.argtypes = [ctypes.c_char_p, ctypes.c_int]\n"
+                    "        libc.umount2.restype = ctypes.c_int\n"
+                    "        with tempfile.TemporaryDirectory() as target:\n"
+                    "            result = libc.mount(b'tmpfs', target.encode(), b'tmpfs', 0, None)\n"
+                    "            if result == 0:\n"
+                    "                libc.umount2(target.encode(), 0)\n"
+                    "            self.assertEqual(result, -1)\n"
+                    "            self.assertIn(ctypes.get_errno(), (errno.EPERM, errno.EACCES))\n"
             ),
             "README.md": "Runner integration revision two\n",
         }
