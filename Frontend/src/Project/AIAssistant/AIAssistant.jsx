@@ -283,7 +283,7 @@ export default function AIAssistantPage({ setPage }) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(`${errorText(data, "Unable to start Agent workflow.")} · HTTP ${response.status}`);
         setAgentRun(data); setAgentToolResult("");
- setVerificationStatus(null);
+        setVerificationStatus(null); setPatchTaskId(null);
         if (data.workspace) setWorkspace(String(data.workspace));
         setConversation(data.conversation ? { id: data.conversation } : conversation);
         setEvidence(null); setApprovalToken(null); setApplyResult(null); setToolCalls([]);
