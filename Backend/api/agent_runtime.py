@@ -454,6 +454,20 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
         allowed = AGENT_SPECIALIST_CAPABILITIES.get(task.agent_role, [])
         if tool_name not in allowed:
             return Response({"error": "This specialist role is not permitted to use that tool."}, status=403)
+        # A task may gather different kinds of evidence, but the same
+        # deterministic tool must not be replayed for that task. The audit
+        # record is persisted in this transaction and the task row is locked,
+        # making this guard effective for concurrent retries as well.
+        if AuditLog.objects.filter(
+            user=request.user,
+            action="agent_task.readonly_tool_invoked",
+            target_id=str(task.id),
+            metadata__tool=tool_name,
+        ).exists():
+            return Response({
+                "error": "This analysis tool has already been invoked for this task.",
+                "code": "agent_tool_replay",
+            }, status=409)
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace access is no longer available."}, status=403)
@@ -474,23 +488,12 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
                 status=400,
             )
 
-        # Persist bounded tool evidence and advance the dependency graph in the
-        # same transaction as the task transition. A retry cannot execute a
-        # completed task twice because only ready tasks are accepted.
-        task.status = "succeeded"
-        task.save(update_fields=["status", "updated_at"])
+        # A read-only inspection is evidence, not completion of the engineering
+        # task. Keep the task ready and the approved run open until a future,
+        # separately authorized implementation/verification workflow records
+        # actual completion. In particular, static analysis must never unlock
+        # dependent tasks or mark an AgentRun succeeded.
         newly_ready = []
-        for dependent in task.dependents.select_for_update().filter(status="blocked"):
-            if all(dependency.status == "succeeded" for dependency in dependent.depends_on.all()):
-                dependent.status = "ready"
-                dependent.save(update_fields=["status", "updated_at"])
-                newly_ready.append(dependent.key)
-
-        remaining = run.tasks.exclude(status="succeeded").exists()
-        run.status = "running" if remaining else "succeeded"
-        run.started_at = run.started_at or timezone.now()
-        run.finished_at = None if remaining else timezone.now()
-        run.save(update_fields=["status", "started_at", "finished_at", "updated_at"])
 
         if run.conversation_id:
             AIMessage.objects.create(
@@ -531,6 +534,7 @@ def agent_task_tool_api(request, pk, task_pk, tool_name):
             "run_status": run.status,
             "newly_ready_tasks": newly_ready,
             "execution_state": "read_only_analysis_no_workspace_mutations",
+            "analysis_only": True,
         })
 
 

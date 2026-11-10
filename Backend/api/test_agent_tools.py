@@ -22,6 +22,13 @@ class ReadOnlyAgentToolTests(TestCase):
                 "package.json": json.dumps({"dependencies": {"react": "^19.0.0"}, "devDependencies": {"vite": "^7.0.0"}}),
                 ".env": "DATABASE_URL=postgres://user:private-password@db.example.test/app",
                 "keys/private.pem": "PRIVATE KEY MATERIAL",
+                ".config/gh/hosts.yml": "oauth_token: github-cli-private-token",
+                ".config/gcloud/application_default_credentials.json": "refresh_token: gcloud-private-refresh-token",
+                ".config/azure/accessTokens.json": "accessToken: azure-private-access-token",
+                ".config/containers/auth.json": "auth: container-private-token",
+                ".config/rclone/rclone.conf": "access_token: rclone-private-token",
+                "infra/terraform.tfstate": "terraform-private-state",
+                "infra/production.tfvars": "terraform-private-variable",
             },
         )
         self.run = AgentRun.objects.create(
@@ -49,6 +56,30 @@ class ReadOnlyAgentToolTests(TestCase):
         for path in ("../secret.txt", "src/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "src//main.py", "src/./main.py", "bad\x00name.py", "", "x" * 501):
             with self.subTest(path=path):
                 self.assertFalse(_safe_path(path))
+        self.assertTrue(_safe_path("src/components/App.jsx"))
+
+    def test_safe_path_excludes_user_cli_credentials_and_infrastructure_state(self):
+        private_paths = (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/containers/auth.json",
+            ".config/rclone/rclone.conf",
+            ".config/op/config",
+            ".config/1password/credentials.json",
+            ".config/oci/config",
+            ".config/terraform/credentials.tfrc.json",
+            "infra/terraform.tfstate",
+            "infra/terraform.tfstate.backup",
+            "infra/production.tfvars",
+            "infra/production.tfvars.json",
+        )
+        for path in private_paths:
+            with self.subTest(path=path):
+                self.assertFalse(_safe_path(path))
+
+        self.assertTrue(_safe_path(".config/my-editor/settings.json"))
+        self.assertTrue(_safe_path("infra/main.tf"))
         self.assertTrue(_safe_path("src/components/App.jsx"))
 
     def test_workspace_snapshot_excludes_traversal_paths(self):
@@ -87,9 +118,32 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_state"], "read_only_analysis_no_workspace_mutations")
         self.assertEqual(response.data["result"]["dependency_count"], 2)
-        self.assertEqual(response.data["task_status"], "succeeded")
-        self.assertEqual(response.data["run_status"], "succeeded")
+        self.assertEqual(response.data["task_status"], "ready")
+        self.assertEqual(response.data["run_status"], "approved")
+        self.assertTrue(response.data["analysis_only"])
         self.assertNotIn(".env", [item["path"] for item in response.data["result"]["manifests"]])
+        inventory = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
+        inventory_json = json.dumps(inventory.data)
+        for secret_path in (
+            ".config/gh/hosts.yml",
+            ".config/gcloud/application_default_credentials.json",
+            ".config/azure/accessTokens.json",
+            ".config/containers/auth.json",
+            ".config/rclone/rclone.conf",
+            "infra/terraform.tfstate",
+            "infra/production.tfvars",
+        ):
+            self.assertNotIn(secret_path, inventory_json)
+        for secret_value in (
+            "github-cli-private-token",
+            "gcloud-private-refresh-token",
+            "azure-private-access-token",
+            "container-private-token",
+            "rclone-private-token",
+            "terraform-private-state",
+            "terraform-private-variable",
+        ):
+            self.assertNotIn(secret_value, inventory_json)
         self.assertTrue(response.data["result"]["read_only"])
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, before)
@@ -100,14 +154,14 @@ class ReadOnlyAgentToolTests(TestCase):
             metadata__tool="analyze_dependencies",
         ).exists())
 
-    def test_read_only_task_completion_persists_evidence_and_unlocks_dag(self):
+    def test_read_only_analysis_persists_evidence_without_completing_tasks_or_unlocking_dag(self):
         conversation = AIConversation.objects.create(owner=self.user, title="Agent evidence")
         self.run.conversation = conversation
         self.run.save(update_fields=["conversation"])
         dependent = AgentTask.objects.create(
             run=self.run,
             key="follow_up",
-            title="Inspect after dependency analysis",
+            title="Implement after dependency analysis",
             agent_role="architect",
             status="blocked",
             sequence=1,
@@ -116,27 +170,38 @@ class ReadOnlyAgentToolTests(TestCase):
 
         first = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.data["run_status"], "running")
-        self.assertEqual(first.data["newly_ready_tasks"], ["follow_up"])
+        self.assertEqual(first.data["run_status"], "approved")
+        self.assertEqual(first.data["task_status"], "ready")
+        self.assertEqual(first.data["newly_ready_tasks"], [])
+        self.assertTrue(first.data["analysis_only"])
         dependent.refresh_from_db()
-        self.assertEqual(dependent.status, "ready")
+        self.assertEqual(dependent.status, "blocked")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "ready")
+        self.assertEqual(self.run.status, "approved")
         self.assertTrue(AIMessage.objects.filter(
             conversation=conversation,
             role="tool",
             context__agent_task_id=self.task.id,
         ).exists())
 
-        second = self.client.post(
+        blocked = self.client.post(
             self.tool_url("analyze_dependencies", task=dependent), {}, format="json"
         )
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 1)
+
+        # A task may collect more than one independent read-only evidence item;
+        # repeating analysis still cannot change task/run completion state.
+        second = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(second.data["run_status"], "succeeded")
+        self.assertEqual(second.data["task_status"], "ready")
+        self.assertEqual(second.data["run_status"], "approved")
         self.assertEqual(AIMessage.objects.filter(conversation=conversation, role="tool").count(), 2)
 
-        replay = self.client.post(self.tool_url("analyze_dependencies"), {}, format="json")
-        self.assertEqual(replay.status_code, 409)
-
-    def test_unapproved_run_cannot_invoke_tool(self):
+    @patch("api.security.consume_rate_limit", return_value=(True, None))
+    def test_unapproved_run_cannot_invoke_tool(self, _consume_rate_limit):
         self.run.status = "awaiting_approval"
         self.run.save(update_fields=["status"])
         response = self.client.post(self.tool_url("inspect_workspace"), {}, format="json")

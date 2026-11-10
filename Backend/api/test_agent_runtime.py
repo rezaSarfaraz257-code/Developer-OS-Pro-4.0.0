@@ -297,15 +297,16 @@ class AgentRunLifecycleTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["task_status"], "succeeded")
-        self.assertEqual(response.data["run_status"], "succeeded")
+        self.assertEqual(response.data["task_status"], "ready")
+        self.assertEqual(response.data["run_status"], "approved")
         self.assertEqual(response.data["execution_state"], "read_only_analysis_no_workspace_mutations")
+        self.assertTrue(response.data["analysis_only"])
         execute_tool.assert_called_once_with("inspect_workspace", self.workspace)
         task.refresh_from_db()
         run.refresh_from_db()
-        self.assertEqual(task.status, "succeeded")
-        self.assertEqual(run.status, "succeeded")
-        self.assertIsNotNone(run.finished_at)
+        self.assertEqual(task.status, "ready")
+        self.assertEqual(run.status, "approved")
+        self.assertIsNone(run.finished_at)
         self.assertTrue(AIMessage.objects.filter(
             conversation=conversation,
             role="tool",
