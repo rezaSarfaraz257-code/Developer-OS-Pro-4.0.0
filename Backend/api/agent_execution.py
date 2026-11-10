@@ -18,7 +18,7 @@ from .models import AgentRun, AgentTask, AuditLog, BackgroundJob
 VERIFICATION_PROFILES = {
     "python_pytest": "python -m pytest -q",
     "python_unittest": "python -m unittest discover -v",
-    "node_test": "npm test -- --run",
+    "node_test": "npm test",
     "node_build": "npm run build",
     "node_lint": "npm run lint",
 }
