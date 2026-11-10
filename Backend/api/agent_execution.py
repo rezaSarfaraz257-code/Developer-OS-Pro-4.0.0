@@ -24,6 +24,25 @@ VERIFICATION_PROFILES = {
 }
 
 
+def _queue_agent_runner_resync(workspace, actor, verification_job_id):
+    """Queue an authoritative snapshot after an execution may have changed Runner state."""
+    key = f"agent-runner-resync:{workspace.id}:{workspace.revision}:{verification_job_id}"
+    job, _ = BackgroundJob.objects.get_or_create(
+        kind="ai_agent_runner_sync",
+        idempotency_key=key,
+        defaults={
+            "payload": {
+                "workspace_id": workspace.id,
+                "owner_id": actor.id,
+                "requested_revision": workspace.revision,
+                "reason": "agent_verification_reconciliation",
+            },
+            "max_attempts": 8,
+        },
+    )
+    return job
+
+
 def _task_status_payload(task, job=None):
     return {
         "run_id": task.run_id,
@@ -306,12 +325,14 @@ def execute_agent_task_verification(job):
         # If the workspace moved while Runner was executing the immutable
         # snapshot, the result is stale and must never unlock dependent tasks.
         if workspace.revision != revision:
+            resync_job = _queue_agent_runner_resync(workspace, actor, current_job.id)
             evidence.update({
                 "state": "stale_workspace",
                 "current_revision": workspace.revision,
+                "resync_job_id": resync_job.id,
             })
             task.execution_evidence = evidence
-            task.execution_error = "Workspace changed during Runner verification. Synchronize the latest revision and create a new approved patch."
+            task.execution_error = "Workspace changed during Runner verification. Runner is being resynchronized to the latest revision; create a new approved patch before retrying."
             task.status = "failed"
             task.save(update_fields=["execution_evidence", "execution_error", "status", "updated_at"])
             run.status = "failed"
@@ -326,6 +347,7 @@ def execute_agent_task_verification(job):
                     "verification_job_id": current_job.id,
                     "sync_job_id": payload.get("sync_job_id"),
                     "runner_job_id": runner_job_id,
+                    "resync_job_id": resync_job.id,
                 },
             )
             return {"status": "verification_stale", "task_id": task.id, "evidence": evidence}
@@ -359,7 +381,10 @@ def execute_agent_task_verification(job):
 
 
 def fail_agent_task_verification(job):
-    """Finalize a task if its single safe Runner request cannot be completed."""
+    """Finalize an ambiguous Runner request and reconcile the authoritative snapshot."""
+    from django.contrib.auth import get_user_model
+    from .views import _workspace_for_user, _workspace_write_allowed
+
     payload = job.payload if isinstance(job.payload, dict) else {}
     with transaction.atomic():
         run = AgentRun.objects.select_for_update().filter(
@@ -372,6 +397,17 @@ def fail_agent_task_verification(job):
         ).first()
         if not task or task.status != "running":
             return
+
+        actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
+        resync_job = None
+        if actor:
+            try:
+                workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+            except Exception:
+                workspace = None
+            if workspace and _workspace_write_allowed(workspace, actor):
+                resync_job = _queue_agent_runner_resync(workspace, actor, job.id)
+
         task.status = "failed"
         task.execution_attempts = job.attempts
         task.execution_error = "Runner verification could not be completed safely after its single request."
@@ -379,6 +415,7 @@ def fail_agent_task_verification(job):
         task.execution_evidence = {
             "state": "infrastructure_failed", "revision": payload.get("revision"),
             "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
+            "resync_job_id": resync_job.id if resync_job else None,
             "attempts": job.attempts,
             "iteration": previous_evidence.get("iteration", 1),
             "history": previous_evidence.get("history", []),
@@ -392,7 +429,12 @@ def fail_agent_task_verification(job):
         AuditLog.objects.create(
             user_id=payload.get("owner_id"), action="agent_task.runner_verification_exhausted",
             target_type="AgentTask", target_id=str(task.id),
-            metadata={"run_id": run.id, "job_id": job.id, "attempts": job.attempts},
+            metadata={
+                "run_id": run.id, "verification_job_id": job.id,
+                "sync_job_id": payload.get("sync_job_id"),
+                "resync_job_id": resync_job.id if resync_job else None,
+                "attempts": job.attempts,
+            },
         )
 
 
