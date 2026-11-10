@@ -62,7 +62,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
-        if run.status not in {"approved", "running"}:
+        if run.status not in {"approved", "running", "failed"}:
             return Response({"error": "Approve the Agent plan before verifying task execution."}, status=409)
         if (
             task.status == "running"
@@ -72,8 +72,20 @@ def agent_task_verification_start_api(request, pk, task_pk):
         ):
             existing_job = task.execution_job
             return Response({**_task_status_payload(task, existing_job), "job_id": existing_job.id}, status=200)
-        if task.status != "ready":
-            return Response({"error": "Only a ready task can enter Runner verification."}, status=409)
+        if task.status not in {"ready", "failed"}:
+            return Response({"error": "Only a ready or failed task can enter Runner verification."}, status=409)
+        if run.status == "failed" and task.status != "failed":
+            return Response({"error": "A failed run can only resume by retrying one of its failed tasks."}, status=409)
+        if task.status == "failed" and task.execution_revision is not None and revision <= task.execution_revision:
+            return Response({"error": "A retry requires a newly approved and synchronized workspace revision."}, status=409)
+        previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+        history = list(previous_evidence.get("history") or [])
+        if task.status == "failed":
+            if len(history) >= 3:
+                return Response({"error": "The task reached its four-iteration verification limit; manual intervention is required."}, status=409)
+            history.append({key: value for key, value in previous_evidence.items() if key != "history"})
+        iteration = len(history) + 1
+        history = history[-3:]
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace write permission is required."}, status=403)
@@ -123,7 +135,10 @@ def agent_task_verification_start_api(request, pk, task_pk):
         task.execution_revision = revision
         task.execution_profile = profile
         task.execution_attempts = 0
-        task.execution_evidence = {"state": "queued", "sync_job_id": sync_job.id}
+        task.execution_evidence = {
+            "state": "queued", "sync_job_id": sync_job.id,
+            "iteration": iteration, "history": history,
+        }
         task.execution_error = ""
         task.save(update_fields=[
             "status", "execution_job", "execution_revision", "execution_profile",
@@ -205,22 +220,22 @@ def execute_agent_task_verification(job):
         runner_status = str(result.get("status") or "").lower()
         exit_code = result.get("exit_code")
         passed = runner_status in {"completed", "success", "passed"} and exit_code == 0
+        queued_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         evidence = {
             "state": "passed" if passed else "failed",
             "profile": profile, "revision": revision,
+            "iteration": queued_evidence.get("iteration", 1),
+            "history": queued_evidence.get("history", []),
             "runner_status": runner_status or "unknown", "exit_code": exit_code,
             "duration_ms": result.get("duration_ms") if isinstance(result.get("duration_ms"), int) else None,
             "verified_at": timezone.now().isoformat(), "output_persisted": False,
         }
         task.execution_evidence = evidence
         task.execution_error = "" if passed else "Runner verification did not pass. Review the result and create a new approved patch."
-        task.status = "succeeded" if passed else "failed"
+        # A passing generic profile is evidence only; the task remains pending
+        # until a human explicitly confirms every run-level acceptance criterion.
+        task.status = "awaiting_approval" if passed else "failed"
         task.save(update_fields=["execution_evidence", "execution_error", "status", "updated_at"])
-        if passed:
-            for dependent in task.dependents.select_for_update().filter(status="blocked"):
-                if all(dependency.status == "succeeded" for dependency in dependent.depends_on.all()):
-                    dependent.status = "ready"
-                    dependent.save(update_fields=["status", "updated_at"])
         remaining = run.tasks.exclude(status="succeeded").exists()
         any_failed = run.tasks.filter(status="failed").exists()
         run.status = "failed" if any_failed else ("running" if remaining else "succeeded")
@@ -235,7 +250,7 @@ def execute_agent_task_verification(job):
         )
     if not passed:
         return {"status": "verification_failed", "task_id": task.id, "evidence": evidence}
-    return {"status": "verified", "task_id": task.id, "evidence": evidence}
+    return {"status": "verification_passed_pending_acceptance", "task_id": task.id, "evidence": evidence}
 
 
 def fail_agent_task_verification(job):
@@ -255,9 +270,12 @@ def fail_agent_task_verification(job):
         task.status = "failed"
         task.execution_attempts = job.attempts
         task.execution_error = "Runner verification could not be completed safely after its single request."
+        previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         task.execution_evidence = {
             "state": "infrastructure_failed", "revision": payload.get("revision"),
             "attempts": job.attempts,
+            "iteration": previous_evidence.get("iteration", 1),
+            "history": previous_evidence.get("history", []),
         }
         task.save(update_fields=[
             "status", "execution_attempts", "execution_error", "execution_evidence", "updated_at",
@@ -270,3 +288,81 @@ def fail_agent_task_verification(job):
             target_type="AgentTask", target_id=str(task.id),
             metadata={"run_id": run.id, "job_id": job.id, "attempts": job.attempts},
         )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def agent_task_accept_api(request, pk, task_pk):
+    """Record explicit human acceptance after Runner evidence and criteria review."""
+    from .models import CodeWorkspace
+    from .views import _workspace_write_allowed
+
+    with transaction.atomic():
+        run = get_object_or_404(
+            AgentRun.objects.select_for_update().select_related("workspace"),
+            pk=pk, owner=request.user,
+        )
+        task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
+        if task.status == "succeeded":
+            acceptance = (task.execution_evidence or {}).get("human_acceptance", {})
+            if acceptance.get("user_id") == request.user.id:
+                return Response(_task_status_payload(task, task.execution_job), status=200)
+            return Response({"error": "This task has already been accepted."}, status=409)
+        if task.status != "awaiting_approval":
+            return Response({"error": "Runner verification must pass before human acceptance."}, status=409)
+        evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+        if evidence.get("state") != "passed" or not evidence.get("revision"):
+            return Response({"error": "No successful Runner evidence is available for this task."}, status=409)
+        criteria = run.plan.get("acceptance_criteria", []) if isinstance(run.plan, dict) else []
+        if not isinstance(criteria, list) or not criteria:
+            return Response({"error": "The Agent plan has no acceptance criteria; this task cannot be accepted automatically."}, status=409)
+        accepted = request.data.get("accepted_criteria")
+        if (
+            not isinstance(accepted, list)
+            or len(accepted) != len(criteria)
+            or any(not isinstance(item, str) for item in accepted)
+            or accepted != criteria
+        ):
+            return Response({"error": "Explicit confirmation of every plan acceptance criterion is required."}, status=400)
+        workspace = CodeWorkspace.objects.select_for_update().filter(
+            pk=run.workspace_id, owner_id=request.user.id,
+        ).first()
+        if not workspace or not _workspace_write_allowed(workspace, request.user):
+            return Response({"error": "Workspace access is no longer available."}, status=403)
+        if workspace.revision != evidence.get("revision"):
+            return Response({"error": "Workspace changed after verification; create and verify a new approved patch."}, status=409)
+
+        evidence["human_acceptance"] = {
+            "user_id": request.user.id,
+            "accepted_at": timezone.now().isoformat(),
+            "accepted_criteria": accepted,
+            "criteria_scope": "agent_run",
+        }
+        task.execution_evidence = evidence
+        task.status = "succeeded"
+        task.execution_error = ""
+        task.save(update_fields=["execution_evidence", "status", "execution_error", "updated_at"])
+
+        for dependent in task.dependents.select_for_update().filter(status="blocked"):
+            if all(dependency.status == "succeeded" for dependency in dependent.depends_on.all()):
+                dependent.status = "ready"
+                dependent.save(update_fields=["status", "updated_at"])
+
+        any_failed = run.tasks.filter(status="failed").exists()
+        remaining = run.tasks.exclude(status="succeeded").exists()
+        run.status = "failed" if any_failed else ("running" if remaining else "succeeded")
+        run.finished_at = timezone.now() if run.status in {"failed", "succeeded"} else None
+        run.save(update_fields=["status", "finished_at", "updated_at"])
+        AuditLog.objects.create(
+            user=request.user,
+            action="agent_task.human_acceptance_recorded",
+            target_type="AgentTask",
+            target_id=str(task.id),
+            metadata={
+                "run_id": run.id,
+                "revision": evidence["revision"],
+                "accepted_criteria": accepted,
+                "iteration": evidence.get("iteration", 1),
+            },
+        )
+    return Response(_task_status_payload(task, task.execution_job), status=200)
