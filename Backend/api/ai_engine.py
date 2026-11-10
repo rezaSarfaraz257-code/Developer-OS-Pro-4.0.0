@@ -167,7 +167,34 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
             return safe_value
         return value
 
-    return sanitize(context)
+    sanitized = sanitize(context)
+    # Enforce the final serialized context budget, including JSON punctuation,
+    # escaped characters, and path/metadata keys. Value-only accounting above
+    # is not sufficient for adversarial maps containing many long keys.
+    try:
+        serialized_size = len(json.dumps(sanitized, default=str, ensure_ascii=False))
+    except (TypeError, ValueError, OverflowError):
+        serialized_size = MAX_CONTEXT_CHARS + 1
+    if serialized_size <= MAX_CONTEXT_CHARS:
+        return sanitized
+
+    safe_context_keys = []
+    for key in list(context.keys())[:40]:
+        if not isinstance(key, str) or not key or _provider_sensitive_context_key(key):
+            continue
+        safe_key = _redact_provider_file_content(key)[:80]
+        if safe_key:
+            safe_context_keys.append(safe_key)
+    fallback = {
+        "context_truncated": True,
+        "_context_note": "Project context exceeded the serialized provider limit; only safe context keys were retained.",
+        "context_keys": safe_context_keys,
+    }
+    while safe_context_keys and len(json.dumps(fallback, ensure_ascii=False)) > MAX_CONTEXT_CHARS:
+        safe_context_keys.pop()
+    if len(json.dumps(fallback, ensure_ascii=False)) <= MAX_CONTEXT_CHARS:
+        return fallback
+    return {}
 
 
 def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
