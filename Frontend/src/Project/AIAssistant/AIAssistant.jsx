@@ -164,6 +164,9 @@ export default function AIAssistantPage({ setPage }) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(errorText(data, "Unable to queue Runner verification."));
       setVerificationStatus(data);
+      // A failed iteration must not leave the previous revision's sync receipt
+      // available as if it authorized a second execution.
+      setApplyResult(null);
       await refreshAgentRun(agentRun.id);
     } catch (err) {
       setError(err.message || "Runner verification could not be queued.");
