@@ -415,7 +415,11 @@ def fail_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run, execution_job_id=job.id,
         ).first()
-        if not task or task.status != "running":
+        if not task or task.status not in {"running", "awaiting_approval"}:
+            return
+        finalization_interrupted = task.status == "awaiting_approval"
+        previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+        if finalization_interrupted and previous_evidence.get("state") != "passed":
             return
 
         actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
@@ -430,16 +434,28 @@ def fail_agent_task_verification(job):
 
         task.status = "failed"
         task.execution_attempts = job.attempts
-        task.execution_error = "Runner verification could not be completed safely after its single request."
-        previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
-        task.execution_evidence = {
-            "state": "infrastructure_failed", "revision": payload.get("revision"),
-            "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
-            "resync_job_id": resync_job.id if resync_job else None,
-            "attempts": job.attempts,
-            "iteration": previous_evidence.get("iteration", 1),
-            "history": previous_evidence.get("history", []),
-        }
+        task.execution_error = (
+            "Runner completed but the durable job result could not be finalized. "
+            "A new approved revision is required."
+            if finalization_interrupted
+            else "Runner verification could not be completed safely after its single request."
+        )
+        if finalization_interrupted:
+            task.execution_evidence = {
+                **previous_evidence,
+                "state": "finalization_failed",
+                "resync_job_id": resync_job.id if resync_job else None,
+                "finalization_error": "background_job_result_not_persisted",
+            }
+        else:
+            task.execution_evidence = {
+                "state": "infrastructure_failed", "revision": payload.get("revision"),
+                "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
+                "resync_job_id": resync_job.id if resync_job else None,
+                "attempts": job.attempts,
+                "iteration": previous_evidence.get("iteration", 1),
+                "history": previous_evidence.get("history", []),
+            }
         task.save(update_fields=[
             "status", "execution_attempts", "execution_error", "execution_evidence", "updated_at",
         ])
@@ -447,13 +463,19 @@ def fail_agent_task_verification(job):
         run.finished_at = timezone.now()
         run.save(update_fields=["status", "finished_at", "updated_at"])
         AuditLog.objects.create(
-            user_id=payload.get("owner_id"), action="agent_task.runner_verification_exhausted",
+            user_id=payload.get("owner_id"),
+            action=(
+                "agent_task.runner_job_finalization_failed"
+                if finalization_interrupted
+                else "agent_task.runner_verification_exhausted"
+            ),
             target_type="AgentTask", target_id=str(task.id),
             metadata={
                 "run_id": run.id, "verification_job_id": job.id,
                 "sync_job_id": payload.get("sync_job_id"),
                 "resync_job_id": resync_job.id if resync_job else None,
                 "attempts": job.attempts,
+                "finalization_interrupted": finalization_interrupted,
             },
         )
 
