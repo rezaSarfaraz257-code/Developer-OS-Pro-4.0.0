@@ -1959,7 +1959,7 @@ def assistant_api(request):
                 headers={"Authorization": f"Bearer {provider_key}", "Content-Type": "application/json"},
                 json={"model": provider_model, "temperature": 0.2, "messages": [
                     {"role": "system", "content": "You are DeveloperOS, a concise software project copilot. Use only the supplied workspace context. Give practical next actions and never invent project facts."},
-                    {"role": "user", "content": "Workspace context: " + json.dumps(provider_context, ensure_ascii=False) + "\\nUser request: " + provider_prompt},
+                    {"role": "user", "content": "Workspace context: " + json.dumps(provider_context, ensure_ascii=False) + "\nUser request: " + provider_prompt},
                 ]}, timeout=25,
             )
             upstream.raise_for_status()
