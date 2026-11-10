@@ -285,6 +285,8 @@ class AIEngineUnitTests(TestCase):
             },
             "provider_config": {
                 "api_key": "opaque-api-secret-not-matching-known-prefix",
+                "accountKey": "opaque-account-key-value",
+                "connection_string": "opaque-connection-string-value",
                 "clientSecret": "opaque-client-secret-value",
                 "refresh_token": "opaque-refresh-token-value",
                 "AWS_SECRET_ACCESS_KEY": "opaque-aws-secret-value",
@@ -300,6 +302,8 @@ class AIEngineUnitTests(TestCase):
 
         for secret in (
             "opaque-api-secret-not-matching-known-prefix",
+            "opaque-account-key-value",
+            "opaque-connection-string-value",
             "opaque-client-secret-value",
             "opaque-refresh-token-value",
             "opaque-aws-secret-value",
