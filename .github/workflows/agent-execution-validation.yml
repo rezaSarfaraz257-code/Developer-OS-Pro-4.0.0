@@ -160,6 +160,10 @@ jobs:
         env:
           RUNNER_WORKSPACE_VOLUME: ${{ runner.temp }}/agent-runner-workspaces
         run: |
+          sudo apt-get update
+          sudo apt-get install -y apparmor apparmor-utils
+          sudo apparmor_parser -r -W ../Runner/apparmor/developer-os-runner
+          sudo aa-status | grep developer-os-runner
           mkdir -p "$RUNNER_WORKSPACE_VOLUME"
           sudo chown 10001:10001 "$RUNNER_WORKSPACE_VOLUME"
           docker run -d --name developer-os-runner-ci \
@@ -170,6 +174,7 @@ jobs:
             --mount "type=bind,src=$RUNNER_WORKSPACE_VOLUME,dst=/workspaces" \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
+            --security-opt apparmor=developer-os-runner \
             --pids-limit 128 --memory 1g --cpus 2 \
             --env IDE_RUNNER_TOKEN="$IDE_RUNNER_TOKEN" \
             --env RUNNER_SECURITY_LEVEL=strict \
