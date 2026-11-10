@@ -117,7 +117,7 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                 if _provider_sensitive_context_key(child_key):
                     result[safe_key] = "[REDACTED]"
                     continue
-                if safe_key == "files" and isinstance(child, dict):
+                if child_key in {"files", "file_samples"} and isinstance(child, dict):
                     safe_files = {}
                     for path, source in islice(child.items(), 2_000):
                         if remaining_files <= 0 or remaining_nodes <= 0:
