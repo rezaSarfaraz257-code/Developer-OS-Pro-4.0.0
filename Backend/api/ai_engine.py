@@ -450,7 +450,7 @@ def _provider_safe_context_path(path: str) -> bool:
         "terraform.tfstate", "terraform.tfstate.backup",
     }:
         return False
-    if name == ".env" or name.startswith(".env.") or name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials", ".tfstate", ".tfvars")):
+    if (name != ".env.example" and (name == ".env" or name.startswith(".env."))) or name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials", ".tfstate", ".tfvars", ".tfvars.json")):
         return False
     if re.search(r"(?:^|[._-])(?:secret|secrets|credential|credentials)(?:[._-]|$)", name):
         return False
