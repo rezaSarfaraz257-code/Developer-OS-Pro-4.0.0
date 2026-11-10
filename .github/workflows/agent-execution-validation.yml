@@ -161,9 +161,8 @@ jobs:
           RUNNER_WORKSPACE_VOLUME: ${{ runner.temp }}/agent-runner-workspaces
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor apparmor-utils
-          sudo apparmor_parser -r -W ../Runner/apparmor/developer-os-runner
-          sudo aa-status | grep developer-os-runner
+          sudo apt-get install -y apparmor apparmor-utils jq curl
+          sudo bash ../Runner/prepare-host.sh
           mkdir -p "$RUNNER_WORKSPACE_VOLUME"
           sudo chown 10001:10001 "$RUNNER_WORKSPACE_VOLUME"
           docker run -d --name developer-os-runner-ci \
@@ -175,6 +174,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --security-opt apparmor=developer-os-runner \
+            --security-opt seccomp=../Runner/seccomp-bwrap.json \
             --pids-limit 128 --memory 1g --cpus 2 \
             --env IDE_RUNNER_TOKEN="$IDE_RUNNER_TOKEN" \
             --env RUNNER_SECURITY_LEVEL=strict \
@@ -202,20 +202,7 @@ jobs:
         if: failure()
         run: |
           docker logs developer-os-runner-ci || true
-          # Diagnostic only: run the trusted /bin/true Bubblewrap probe with
-          # seccomp relaxed to distinguish Docker seccomp from AppArmor denial.
-          # This never executes workspace code and is not a runtime fallback.
-          docker run --rm --read-only \
-            --tmpfs /tmp:size=64m,noexec,nosuid,nodev \
-            --tmpfs /run:size=16m,noexec,nosuid,nodev \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --security-opt apparmor=developer-os-runner \
-            --security-opt seccomp=unconfined \
-            --env RUNNER_SECURITY_LEVEL=strict \
-            --env RUNNER_SANDBOX_MODE=bwrap \
-            developer-os-runner-ci:agent-loop \
-            /opt/venv/bin/python -c "import main; print('bwrap_probe_with_default_seccomp_disabled=', main._bwrap_runtime_available())" || true
+          sudo aa-status | grep -E 'developer-os-runner|docker-default' || true
       - name: Stop strict Runner
         if: always()
         run: docker rm -f developer-os-runner-ci || true
