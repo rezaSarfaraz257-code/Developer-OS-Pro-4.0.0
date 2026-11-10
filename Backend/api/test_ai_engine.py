@@ -7,7 +7,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input
+from .ai_engine import _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -232,6 +232,58 @@ class AIEngineUnitTests(TestCase):
         self.assertNotIn("history-password-value", payload)
         self.assertIn("[REDACTED]", payload)
 
+
+
+    @patch("api.ai_engine.requests.post")
+    @patch("api.ai_engine._provider_config", return_value={
+        "key": "provider-test-key",
+        "base": "https://api.example.test/v1",
+        "model": "test-model",
+        "protocol": "responses",
+    })
+    def test_call_provider_never_sends_workspace_history_or_request_secrets(self, _config, post):
+        response = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"output_text": "Safe response"}
+        post.return_value = response
+
+        context = {
+            "workspace": {
+                "files": {
+                    ".env": "API_KEY=workspace-env-secret-123456",
+                    "src/settings.py": "DATABASE_PASSWORD='workspace-inline-secret-123456'\\n",
+                },
+            },
+            "provider_config": {
+                "shared_access_signature": "opaque-azure-sas-secret-123456",
+            },
+        }
+        history = [{
+            "role": "user",
+            "content": "My token is history-token-secret-123456",
+        }]
+        answer, error = _call_provider(
+            "Please inspect; current request secret is request-secret-123456",
+            context,
+            history,
+            action="project analysis",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(answer, "Safe response")
+        post.assert_called_once()
+        kwargs = post.call_args.kwargs
+        outbound = json.dumps(kwargs["json"], ensure_ascii=False)
+        for secret in (
+            "workspace-env-secret-123456",
+            "workspace-inline-secret-123456",
+            "opaque-azure-sas-secret-123456",
+            "history-token-secret-123456",
+            "request-secret-123456",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, outbound)
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer provider-test-key")
 
     def test_provider_context_redacts_prefixed_secret_keys_and_excludes_secret_like_paths(self):
         context = {
