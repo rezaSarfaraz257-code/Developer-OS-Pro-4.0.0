@@ -478,8 +478,20 @@ def agent_task_accept_api(request, pk, task_pk):
         if task.status != "awaiting_approval":
             return Response({"error": "Runner verification must pass before human acceptance."}, status=409)
         evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
-        if evidence.get("state") != "passed" or not evidence.get("revision"):
-            return Response({"error": "No successful Runner evidence is available for this task."}, status=409)
+        verification_job = task.execution_job
+        job_result = verification_job.result if verification_job and isinstance(verification_job.result, dict) else {}
+        job_payload = verification_job.payload if verification_job and isinstance(verification_job.payload, dict) else {}
+        if (
+            not verification_job or verification_job.kind != "ai_agent_task_verify"
+            or verification_job.status != "succeeded"
+            or job_payload.get("run_id") != run.id
+            or job_payload.get("task_id") != task.id
+            or job_payload.get("revision") != evidence.get("revision")
+            or job_result.get("status") != "verification_passed_pending_acceptance"
+            or evidence.get("state") != "passed"
+            or not evidence.get("revision")
+        ):
+            return Response({"error": "Runner verification has not been durably completed successfully."}, status=409)
         criteria = run.plan.get("acceptance_criteria", []) if isinstance(run.plan, dict) else []
         if not isinstance(criteria, list) or not criteria:
             return Response({"error": "The Agent plan has no acceptance criteria; this task cannot be accepted automatically."}, status=409)
