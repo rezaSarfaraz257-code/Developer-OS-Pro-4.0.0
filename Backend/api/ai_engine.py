@@ -136,6 +136,11 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                         remaining_nodes -= 1
                         if not isinstance(path, str) or not _provider_safe_context_path(path):
                             continue
+                        # File paths are provider-bound metadata too. A credential
+                        # accidentally embedded in a filename must not bypass the
+                        # content redactor simply because the source is safe.
+                        if _redact_provider_file_content(path) != path:
+                            continue
                         if not isinstance(source, str) or len(source) > 256_000:
                             continue
                         if remaining_context_chars <= 0:
