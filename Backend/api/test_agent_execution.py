@@ -435,9 +435,6 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
 
 
 
-    @patch("api.views._runner_request")
-
-
     def test_failed_job_finalization_invalidates_uncommitted_pass_evidence(self):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -463,7 +460,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertNotIn("human_acceptance", self.task.execution_evidence)
         self.assertTrue(self.task.execution_evidence.get("resync_job_id"))
 
-        def test_cancellation_during_runner_execution_preserves_cancel_and_resyncs(self, runner_request):
+    @patch("api.views._runner_request")
+    def test_cancellation_during_runner_execution_preserves_cancel_and_resyncs(self, runner_request):
         def cancel_then_return(*args, **kwargs):
             self.run.status = "canceled"
             self.run.save(update_fields=["status"])
