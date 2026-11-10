@@ -53,7 +53,7 @@ def _provider_config() -> dict[str, str]:
 def _redact_provider_file_content(content: str) -> str:
     """Mask common credential values before workspace source reaches an AI provider."""
     patterns = [
-        (re.compile(r"""(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret(?:[_-]?key)?|password|passwd|authorization|private[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r"\1[REDACTED]"),
+        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|token|client[_-]?secret|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r"\1[REDACTED]"),
         (re.compile(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}"), r"\1[REDACTED_BEARER_TOKEN]"),
         (re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^:/@\s]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
         (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[REDACTED_AWS_KEY]"),
@@ -74,22 +74,35 @@ def _redact_provider_file_content(content: str) -> str:
 
 
 def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
-    """Copy, filter, and redact workspace file maps before any provider request."""
+    """Copy, filter, redact, and structurally bound provider-bound context."""
     if not isinstance(context, dict):
         return {}
     remaining_bytes = 2_000_000
     remaining_files = 500
+    remaining_nodes = 10_000
+    max_depth = 16
 
-    def sanitize(value: Any, key: str = "") -> Any:
-        nonlocal remaining_bytes, remaining_files
+    def sanitize(value: Any, key: str = "", depth: int = 0) -> Any:
+        nonlocal remaining_bytes, remaining_files, remaining_nodes
+        if depth > max_depth:
+            return "[TRUNCATED_CONTEXT_DEPTH]"
+        if remaining_nodes <= 0:
+            return "[TRUNCATED_CONTEXT_BUDGET]"
+        remaining_nodes -= 1
         if isinstance(value, dict):
             result = {}
-            for child_key, child in value.items():
+            for child_key, child in islice(value.items(), 1_000):
+                if remaining_nodes <= 0:
+                    result["_context_truncated"] = True
+                    break
+                if not isinstance(child_key, str) or not child_key or len(child_key) > 120:
+                    continue
                 if child_key == "files" and isinstance(child, dict):
                     safe_files = {}
                     for path, source in islice(child.items(), 2_000):
-                        if remaining_files <= 0:
+                        if remaining_files <= 0 or remaining_nodes <= 0:
                             break
+                        remaining_nodes -= 1
                         if not isinstance(path, str) or not _provider_safe_context_path(path):
                             continue
                         if not isinstance(source, str) or len(source) > 256_000:
@@ -106,10 +119,12 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                         remaining_files -= 1
                     result[child_key] = safe_files
                 else:
-                    result[child_key] = sanitize(child, child_key)
+                    result[child_key] = sanitize(child, child_key, depth + 1)
             return result
         if isinstance(value, list):
-            return [sanitize(item, key) for item in value[:100]]
+            return [sanitize(item, key, depth + 1) for item in value[:100]]
+        if isinstance(value, str) and len(value) > 60_000:
+            return value[:60_000]
         return value
 
     return sanitize(context)
@@ -388,13 +403,24 @@ def _provider_safe_context_path(path: str) -> bool:
         return False
     parts = [part.casefold() for part in path.split("/")]
     name = parts[-1]
-    if any(part in {".aws", ".ssh", ".docker", ".kube", "private", "secrets", "credentials"} for part in parts[:-1]):
+    excluded_directories = {
+        ".aws", ".ssh", ".docker", ".kube", "private", "secrets",
+        "credentials", "private_keys", "key_material",
+    }
+    if any(part in excluded_directories for part in parts[:-1]):
         return False
-    if name in {"service-account.json", "application_default_credentials.json", ".git-credentials", "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys"}:
+    if name in {
+        "service-account.json", "application_default_credentials.json",
+        ".git-credentials", "credentials", "id_rsa", "id_dsa",
+        "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys",
+        ".envrc",
+    }:
         return False
-    if name.startswith(("credentials.", "secret.", "secrets.")):
+    if name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials")):
         return False
-    if name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")):
+    if re.search(r"(?:^|[._-])(?:secret|secrets|credential|credentials)(?:[._-]|$)", name):
+        return False
+    if name.endswith((".pem", ".key", ".p8", ".p12", ".pfx", ".keystore", ".jks", ".der", ".asc")):
         return False
     return True
 
