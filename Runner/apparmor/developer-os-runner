@@ -2,7 +2,7 @@
 # The trusted Runner/bwrap control process may create its own unprivileged
 # namespaces. The executed shell is stacked with a workload profile that
 # removes userns, mount, and capability permissions without relaxing NNP.
-abi <abi/5.0>,
+abi <abi/4.0>,
 #include <tunables/global>
 
 profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
