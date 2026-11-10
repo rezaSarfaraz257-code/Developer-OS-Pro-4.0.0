@@ -205,6 +205,13 @@ export default function AIAssistantPage({ setPage }) {
     }
     setBusy(true); setError("");
     try {
+      const statusResponse = await apiFetch("/ai/agent/runs/" + agentRun.id + "/tasks/" + task.id + "/verification/");
+      const verification = await statusResponse.json().catch(() => ({}));
+      if (!statusResponse.ok) throw new Error(errorText(verification, "Task verification status is unavailable."));
+      setVerificationStatus(verification);
+      if (verification.job?.status !== "succeeded" || verification.evidence?.state !== "passed") {
+        throw new Error("Runner verification is still finalizing. Accept the task after its durable job succeeds.");
+      }
       const response = await apiFetch("/ai/agent/runs/" + agentRun.id + "/tasks/" + task.id + "/accept/", {
         method: "POST",
         body: JSON.stringify({ accepted_criteria: criteria }),
