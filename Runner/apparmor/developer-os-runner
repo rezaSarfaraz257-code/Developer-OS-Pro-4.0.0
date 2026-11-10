@@ -25,6 +25,7 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   file,
   mount,
   umount,
+  pivot_root,
   userns,
 
   signal (receive) peer=unconfined,
@@ -75,6 +76,7 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   deny @{PROC}/kcore rwklx,
 
   deny mount,
+  deny pivot_root,
 
   deny /sys/[^f]*/** wklx,
   deny /sys/f[^s]*/** wklx,
