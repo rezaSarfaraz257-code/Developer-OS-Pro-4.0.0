@@ -368,6 +368,7 @@ class AIEngineUnitTests(TestCase):
             "azure-sas-signature-secret",
             "azure-shared-access-key-secret",
             "azure-auth-sas-secret",
+            "sr=namespace",
             "opaque-shared-access-signature-secret",
             "opaque-shared-access-key-secret",
         ):
