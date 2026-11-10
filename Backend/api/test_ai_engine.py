@@ -7,7 +7,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider
+from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -340,6 +340,24 @@ class AIEngineUnitTests(TestCase):
                 self.assertNotIn(secret, serialized)
         self.assertIn("src/settings.py", serialized)
         self.assertIn("[REDACTED]", serialized)
+
+    def test_provider_context_enforces_final_serialized_budget_including_paths_and_keys(self):
+        long_path_files = {
+            (f"module_{index:03d}_" + ("x" * 380)): "print('safe')"
+            for index in range(220)
+        }
+        context = {
+            "workspace": {"files": long_path_files},
+            "metadata_" + ("m" * 110): {"field_" + ("k" * 110): "value"},
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized, ensure_ascii=False)
+
+        self.assertLessEqual(len(serialized), MAX_CONTEXT_CHARS)
+        self.assertTrue(sanitized.get("context_truncated"))
+        self.assertIn("context_keys", sanitized)
+        self.assertNotIn("print('safe')", serialized)
 
     def test_provider_context_enforces_depth_and_metadata_node_budgets(self):
         deep = {"value": "deep-context-secret"}
