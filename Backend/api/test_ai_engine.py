@@ -260,10 +260,10 @@ class AIEngineUnitTests(TestCase):
         }
         history = [{
             "role": "user",
-            "content": "My token is history-token-secret-123456",
+            "content": "TOKEN='history-token-secret-123456'",
         }]
         answer, error = _call_provider(
-            "Please inspect; current request secret is request-secret-123456",
+            "Please inspect API_KEY='request-secret-123456'",
             context,
             history,
             action="project analysis",
