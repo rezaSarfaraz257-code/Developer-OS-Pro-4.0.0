@@ -294,8 +294,7 @@ def fail_agent_task_verification(job):
 @permission_classes([IsAuthenticated])
 def agent_task_accept_api(request, pk, task_pk):
     """Record explicit human acceptance after Runner evidence and criteria review."""
-    from .models import CodeWorkspace
-    from .views import _workspace_write_allowed
+    from .views import _workspace_for_user, _workspace_write_allowed
 
     with transaction.atomic():
         run = get_object_or_404(
