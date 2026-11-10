@@ -285,6 +285,28 @@ class AIEngineUnitTests(TestCase):
                 self.assertNotIn(secret, outbound)
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer provider-test-key")
 
+    def test_provider_context_filters_nested_cli_stores_and_case_insensitive_file_maps(self):
+        context = {
+            "agent_evidence": {
+                "workspace": {
+                    "FiLeS": {
+                        "project/.config/gh/hosts.yml": "opaque-gh-hosts-secret-value",
+                        "project/.config/azure/accessTokens.json": "opaque-azure-token-store-secret",
+                        "src/main.py": "print('safe source')",
+                    },
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+        files = sanitized["agent_evidence"]["workspace"]["FiLeS"]
+
+        self.assertEqual(set(files), {"src/main.py"})
+        self.assertNotIn("opaque-gh-hosts-secret-value", serialized)
+        self.assertNotIn("opaque-azure-token-store-secret", serialized)
+        self.assertIn("print('safe source')", serialized)
+
     def test_provider_context_redacts_prefixed_secret_keys_and_excludes_secret_like_paths(self):
         context = {
             "workspace": {
