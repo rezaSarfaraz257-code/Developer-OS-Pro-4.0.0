@@ -151,7 +151,10 @@ def agent_task_verification_start_api(request, pk, task_pk):
         AuditLog.objects.create(
             user=request.user, action="agent_task.runner_verification_queued",
             target_type="AgentTask", target_id=str(task.id),
-            metadata={"run_id": run.id, "revision": revision, "profile": profile, "job_id": job.id},
+            metadata={
+                "run_id": run.id, "revision": revision, "profile": profile,
+                "job_id": job.id, "sync_job_id": sync_job.id, "iteration": iteration,
+            },
         )
     return Response({**_task_status_payload(task, job), "job_id": job.id}, status=202)
 
@@ -224,6 +227,9 @@ def execute_agent_task_verification(job):
         evidence = {
             "state": "passed" if passed else "failed",
             "profile": profile, "revision": revision,
+            "verification_job_id": job.id,
+            "sync_job_id": payload.get("sync_job_id"),
+            "runner_job_id": str(result.get("job_id") or "")[:80],
             "iteration": queued_evidence.get("iteration", 1),
             "history": queued_evidence.get("history", []),
             "runner_status": runner_status or "unknown", "exit_code": exit_code,
@@ -245,8 +251,13 @@ def execute_agent_task_verification(job):
             user_id=payload["owner_id"],
             action="agent_task.runner_verification_passed" if passed else "agent_task.runner_verification_failed",
             target_type="AgentTask", target_id=str(task.id),
-            metadata={"run_id": run.id, "revision": revision, "profile": profile,
-                      "runner_status": evidence["runner_status"], "exit_code": exit_code},
+            metadata={
+                "run_id": run.id, "revision": revision, "profile": profile,
+                "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
+                "runner_job_id": evidence["runner_job_id"],
+                "runner_status": evidence["runner_status"], "exit_code": exit_code,
+                "iteration": evidence["iteration"],
+            },
         )
     if not passed:
         return {"status": "verification_failed", "task_id": task.id, "evidence": evidence}
@@ -273,6 +284,7 @@ def fail_agent_task_verification(job):
         previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         task.execution_evidence = {
             "state": "infrastructure_failed", "revision": payload.get("revision"),
+            "verification_job_id": job.id, "sync_job_id": payload.get("sync_job_id"),
             "attempts": job.attempts,
             "iteration": previous_evidence.get("iteration", 1),
             "history": previous_evidence.get("history", []),
