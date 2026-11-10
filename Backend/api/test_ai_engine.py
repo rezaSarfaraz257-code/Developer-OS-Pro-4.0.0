@@ -7,7 +7,7 @@ from django.core import signing
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .ai_engine import _agent_parse_patch, _provider_config
+from .ai_engine import _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input
 from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
 
 
@@ -135,6 +135,70 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(cfg["key"], "test-key")
         self.assertEqual(cfg["model"], "test-model")
         self.assertEqual(cfg["protocol"], "responses")
+
+
+    def test_provider_context_excludes_secret_paths_and_redacts_inline_credentials(self):
+        context = {
+            "workspace": {
+                "id": 7,
+                "files": {
+                    ".env": "API_KEY=must-never-leave-server",
+                    ".env.production": "PASSWORD=another-secret",
+                    ".ssh/id_ed25519": "PRIVATE KEY MATERIAL",
+                    "certs/server.pem": "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
+                    "src/main.py": (
+                        "API_KEY='inline-secret-value-123456'\\n"
+                        "DATABASE_URL=postgres://app:database-password-value@db.example.test/app\\n"
+                        "github='ghp_abcdefghijklmnopqrstuvwxyz123456'\\n"
+                        "aws='AKIAABCDEFGHIJKLMNOP'\\n"
+                    ),
+                    ".env.example": "API_URL=https://example.invalid\\n",
+                },
+            },
+            "agent_evidence": {
+                "workspace": {
+                    "files": {
+                        ".env": "NESTED_SECRET=must-not-leave",
+                        "src/worker.py": "password='nested-password-value'\\n",
+                    },
+                },
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        self.assertNotIn("must-never-leave-server", serialized)
+        self.assertNotIn("another-secret", serialized)
+        self.assertNotIn("PRIVATE KEY MATERIAL", serialized)
+        self.assertNotIn("private-material", serialized)
+        self.assertNotIn("inline-secret-value-123456", serialized)
+        self.assertNotIn("database-password-value", serialized)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", serialized)
+        self.assertNotIn("AKIAABCDEFGHIJKLMNOP", serialized)
+        self.assertNotIn("NESTED_SECRET=must-not-leave", serialized)
+        self.assertNotIn("nested-password-value", serialized)
+        self.assertIn(".env.example", serialized)
+        self.assertIn("[REDACTED]", serialized)
+        # Sanitization must not mutate the durable workspace snapshot in memory.
+        self.assertEqual(context["workspace"]["files"][".env"], "API_KEY=must-never-leave-server")
+
+    def test_provider_input_uses_sanitized_context_and_redacted_history(self):
+        context = {
+            "workspace": {
+                "files": {
+                    ".env": "API_KEY=hidden-provider-secret",
+                    "app.py": "TOKEN='source-token-value-123456'\\n",
+                },
+            },
+        }
+        history = [{"role": "user", "content": "password='history-password-value'"}]
+        payload = json.dumps(_build_input("Inspect safely", context, history), ensure_ascii=False)
+
+        self.assertNotIn("hidden-provider-secret", payload)
+        self.assertNotIn("source-token-value-123456", payload)
+        self.assertNotIn("history-password-value", payload)
+        self.assertIn("[REDACTED]", payload)
 
 
 class AIHealthAPITests(TestCase):
