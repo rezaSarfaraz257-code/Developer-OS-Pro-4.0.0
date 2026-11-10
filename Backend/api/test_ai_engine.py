@@ -384,6 +384,8 @@ class AIEngineUnitTests(TestCase):
                         "SESSION_ID=opaque-file-session-id\n"
                         "Authorization: Basic b3BhcXVlLWJhc2ljLXNlY3JldA==\n"
                         "Proxy-Authorization: Digest username=opaque-digest-user, response=opaque-digest-response\n"
+                        '{"api_key": "opaque-json-api-key", "mode": "safe"}\n'
+                        '{"Authorization": "Basic opaque-json-basic-auth"}\n'
                     ),
                 },
             },
@@ -418,6 +420,8 @@ class AIEngineUnitTests(TestCase):
             "b3BhcXVlLWJhc2ljLXNlY3JldA==",
             "opaque-digest-user",
             "opaque-digest-response",
+            "opaque-json-api-key",
+            "opaque-json-basic-auth",
             "preference=dark",
         ):
             with self.subTest(secret=secret):
@@ -432,6 +436,8 @@ class AIEngineUnitTests(TestCase):
         self.assertIn("[REDACTED_COOKIE_VALUE]", file_headers)
         self.assertIn("[REDACTED_SESSION_ID]", file_headers)
         self.assertEqual(file_headers.count("[REDACTED_AUTH_HEADER]"), 2)
+        self.assertIn("[REDACTED_JSON_CREDENTIAL]", file_headers)
+        self.assertIn('"mode": "safe"', file_headers)
         self.assertNotIn("preference=dark", file_headers)
         self.assertEqual(sanitized["metadata"]["safe"], "retained")
 
