@@ -211,7 +211,6 @@ def execute(job):
         # Serialize the snapshot read and Runner write against workspace edits.
         # If several revisions queued, an older job coalesces to the newest
         # authoritative database snapshot instead of overwriting Runner backwards.
-        from api.models import CodeWorkspace
         from api.views import (
             _runner_request, _workspace_for_user, _workspace_payload,
             _workspace_write_allowed,
