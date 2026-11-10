@@ -557,6 +557,37 @@ class AIHealthAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("secret-key", json.dumps(response.json()))
 
+    @patch.dict("os.environ", {
+        "AI_API_URL": "https://provider.example.test/v1",
+        "AI_API_KEY": "provider-test-key",
+        "AI_MODEL": "test-model",
+    }, clear=False)
+    @patch("api.views.requests.post")
+    def test_legacy_assistant_provider_redacts_prompt_and_summary_secrets(self, post):
+        from .models import Project
+
+        Project.objects.create(owner=self.user, title="API_KEY=project-summary-secret-123456")
+        provider_response = Mock()
+        provider_response.raise_for_status.return_value = None
+        provider_response.json.return_value = {
+            "choices": [{"message": {"content": "safe provider response"}}]
+        }
+        post.return_value = provider_response
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            "/api/assistant/",
+            {"message": "Review this value: API_KEY=assistant-prompt-secret-123456"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["mode"], "provider")
+        outbound = json.dumps(post.call_args.kwargs["json"])
+        self.assertNotIn("assistant-prompt-secret-123456", outbound)
+        self.assertNotIn("project-summary-secret-123456", outbound)
+        self.assertIn("[REDACTED]", outbound)
+
 
 class AIAgentApprovalTests(TestCase):
     def setUp(self):
