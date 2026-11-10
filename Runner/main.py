@@ -672,7 +672,7 @@ def _bwrap_runtime_available():
         return False
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        "--unshare-pid", "--unshare-uts", "--unshare-ipc", "--unshare-net",
+        "--unshare-user", "--unshare-pid", "--unshare-uts", "--unshare-ipc", "--unshare-net",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
         "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
@@ -794,7 +794,7 @@ def _sandbox_command(root, command_file, allow_network=False):
         )
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        "--unshare-pid", "--unshare-uts", "--unshare-ipc",
+        "--unshare-user", "--unshare-pid", "--unshare-uts", "--unshare-ipc",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
         "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
