@@ -462,7 +462,7 @@ export default function AIAssistantPage({ setPage }) {
                       <button type="button" className="agent-run-verify" disabled={busy || patchTaskId !== task.id || applyResult?.sync?.status !== "succeeded"} onClick={() => verifyAgentTask(task)}>VERIFY APPROVED PATCH WITH RUNNER</button>
                     )}
                     {["approved", "running", "failed"].includes(agentRun.status) && ["ready", "failed"].includes(task.status) && (
-                      <button type="button" className="agent-run-generate" disabled={busy} onClick={() => generateAgentTaskPatch(task)}>{task.status === "failed" ? "GENERATE RETRY PATCH →" : "GENERATE TASK PATCH →"}</button>
+                      <button type="button" className="agent-run-generate" disabled={busy || ["queued", "running"].includes(verificationStatus?.job?.status)} onClick={() => generateAgentTaskPatch(task)}>{task.status === "failed" ? "GENERATE RETRY PATCH →" : "GENERATE TASK PATCH →"}</button>
                     )}
                     {task.status === "awaiting_approval" && (
                       <div className="agent-run-human-acceptance">
