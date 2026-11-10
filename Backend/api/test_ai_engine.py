@@ -197,8 +197,9 @@ class AIEngineUnitTests(TestCase):
             },
         }
         history = [{"role": "user", "content": "password='history-password-value'"}]
-        payload = json.dumps(_build_input("Inspect safely", context, history), ensure_ascii=False)
+        payload = json.dumps(_build_input("Inspect safely API_KEY='current-request-secret-123456'", context, history), ensure_ascii=False)
 
+        self.assertNotIn("current-request-secret-123456", payload)
         self.assertNotIn("hidden-provider-secret", payload)
         self.assertNotIn("source-token-value-123456", payload)
         self.assertNotIn("history-password-value", payload)
