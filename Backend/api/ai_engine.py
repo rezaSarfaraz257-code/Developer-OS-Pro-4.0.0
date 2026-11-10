@@ -61,7 +61,7 @@ def _redact_provider_file_content(content: str) -> str:
         (re.compile(r"(?im)(\b(?:proxy-authorization|authorization)\s*:\s*)[^\r\n]+"), r"\1[REDACTED_AUTH_HEADER]"),
         # User prompts and history are plain text, so also recognize quoted JSON
         # credential keys (for example, "api_key": "...") before generic matching.
-        (re.compile(r"""(?i)(["']?[A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|cookie|session[_-]?id)["']\s*:\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&}]+|[^\s,;&}]+)"""), r"\1[REDACTED_JSON_CREDENTIAL]"),
+        (re.compile(r"""(?i)(["'][A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|cookie|session[_-]?id)["']\s*:\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&}]+|[^\s,;&}]+)"""), r"\1[REDACTED_JSON_CREDENTIAL]"),
         # Session identifiers and cookie assignments also occur outside HTTP headers.
         (re.compile(r"(?im)(\bcookie\s*=\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_VALUE]"),
         (re.compile(r"""(?i)(\b(?:session[_-]?id|sessionid)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)"""), r"\1[REDACTED_SESSION_ID]"),
