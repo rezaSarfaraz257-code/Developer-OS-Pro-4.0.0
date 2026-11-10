@@ -49,6 +49,71 @@ def _provider_config() -> dict[str, str]:
     return {"key": key, "base": base, "model": model, "protocol": protocol}
 
 
+def _redact_provider_file_content(content: str) -> str:
+    """Mask common credential values before workspace source reaches an AI provider."""
+    patterns = [
+        (re.compile(r"""(?i)(\\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret(?:[_-]?key)?|password|passwd|authorization|private[_-]?key)\\b\\s*[:=]\\s*)(?:"[^"]*"|'[^']*'|Bearer\\s+[^\\s,;]+|[^\\s,;]+)"""), r"\\1[REDACTED]"),
+        (re.compile(r"(?i)\\b(Bearer\\s+)[A-Za-z0-9._~+/-]{12,}"), r"\\1[REDACTED_BEARER_TOKEN]"),
+        (re.compile(r"(?i)\\b((?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis)://[^:/@\\s]+:)[^@\\s]+(@)"), r"\\1[REDACTED]\\2"),
+        (re.compile(r"\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"), "[REDACTED_AWS_KEY]"),
+        (re.compile(r"\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\\b"), "[REDACTED_GITHUB_TOKEN]"),
+        (re.compile(r"\\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|(?:rk|sk)_(?:live|test)_[A-Za-z0-9]{16,})\\b"), "[REDACTED_PROVIDER_KEY]"),
+        (re.compile(r"\\bAIza[0-9A-Za-z_-]{30,}\\b"), "[REDACTED_GOOGLE_KEY]"),
+        (re.compile(r"\\bglpat-[A-Za-z0-9_-]{20,}\\b"), "[REDACTED_GITLAB_TOKEN]"),
+        (re.compile(r"\\bnpm_[A-Za-z0-9]{30,}\\b"), "[REDACTED_NPM_TOKEN]"),
+        (re.compile(r"\\bpypi-[A-Za-z0-9_-]{50,}\\b"), "[REDACTED_PYPI_TOKEN]"),
+        (re.compile(r"\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b"), "[REDACTED_JWT]"),
+        (re.compile(r"\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b"), "[REDACTED_SLACK_TOKEN]"),
+        (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\\s\\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
+    ]
+    redacted = content
+    for pattern, replacement in patterns:
+        redacted = pattern.sub(replacement, redacted)
+    return redacted
+
+
+def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Copy, filter, and redact workspace file maps before any provider request."""
+    if not isinstance(context, dict):
+        return {}
+    remaining_bytes = 2_000_000
+    remaining_files = 500
+
+    def sanitize(value: Any, key: str = "") -> Any:
+        nonlocal remaining_bytes, remaining_files
+        if isinstance(value, dict):
+            result = {}
+            for child_key, child in value.items():
+                if child_key == "files" and isinstance(child, dict):
+                    safe_files = {}
+                    for path, source in list(child.items()):
+                        if remaining_files <= 0:
+                            break
+                        if not isinstance(path, str) or not _agent_safe_patch_path(path):
+                            continue
+                        if not isinstance(source, str) or len(source) > 256_000:
+                            continue
+                        safe_source = _redact_provider_file_content(source)
+                        try:
+                            size = len(safe_source.encode("utf-8"))
+                        except UnicodeEncodeError:
+                            continue
+                        if size > 256_000 or size > remaining_bytes:
+                            continue
+                        safe_files[path] = safe_source
+                        remaining_bytes -= size
+                        remaining_files -= 1
+                    result[child_key] = safe_files
+                else:
+                    result[child_key] = sanitize(child, child_key)
+            return result
+        if isinstance(value, list):
+            return [sanitize(item, key) for item in value[:100]]
+        return value
+
+    return sanitize(context)
+
+
 def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
     """Bound AI context defensively; malformed optional context must not crash chat."""
     if not isinstance(context, dict):
@@ -389,6 +454,14 @@ def _safe_provider_detail(response: requests.Response | None) -> str:
 
 
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
+    # Treat repository content and stored conversation history as untrusted data.
+    # Sanitize before prompt construction and before any model tool can inspect evidence.
+    context = _sanitize_provider_context(context)
+    history = [
+        {"role": item.get("role"), "content": _redact_provider_file_content(item.get("content", ""))}
+        for item in history
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
     cfg = _provider_config()
     if not cfg["key"]:
         return "", _provider_error(
