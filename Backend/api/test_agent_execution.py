@@ -69,6 +69,39 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
+    def test_dag_dependencies_are_enforced_even_if_task_status_is_stale(self):
+        dependency = AgentTask.objects.create(
+            run=self.run, key="prerequisite", title="Prerequisite", status="ready",
+        )
+        self.task.depends_on.add(dependency)
+
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="succeeded",
+            payload={"run_id": self.run.id, "task_id": self.task.id, "revision": self.workspace.revision},
+            result={"status": "verification_passed_pending_acceptance"},
+            idempotency_key="agent-task-dag-guard-001",
+        )
+        self.task.status = "awaiting_approval"
+        self.task.execution_job = verification_job
+        self.task.execution_revision = self.workspace.revision
+        self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
+        self.task.save(update_fields=[
+            "status", "execution_job", "execution_revision", "execution_evidence", "updated_at",
+        ])
+        accepted = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            format="json",
+        )
+        self.assertEqual(accepted.status_code, 409)
+
     def test_requires_human_patch_approval_audit(self):
         AuditLog.objects.filter(action="ai_agent.patch_applied").delete()
         response = self.client.post(self.url, {
