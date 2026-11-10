@@ -26,6 +26,32 @@ def _safe_path(path):
         return False
     lowered = [part.lower() for part in parts]
     name = lowered[-1]
+    # Exclude well-known user-level CLI credential stores. These files often
+    # contain opaque tokens that cannot be reliably detected by content regexes.
+    private_store_prefixes = (
+        (".config", "gh"),
+        (".config", "gcloud"),
+        (".config", "azure"),
+        (".config", "containers"),
+        (".config", "rclone"),
+        (".config", "op"),
+        (".config", "1password"),
+        (".config", "oci"),
+        (".config", "terraform"),
+    )
+    private_state_file = (
+        name.endswith((".tfstate", ".tfstate.backup", ".tfvars", ".tfvars.json"))
+        or name in {
+            "application_default_credentials.json",
+            "accesstokens.json",
+            "hosts.yml",
+            "hosts.yaml",
+            "config.json",
+        } and any(
+            tuple(lowered[:len(prefix)]) == prefix
+            for prefix in private_store_prefixes
+        )
+    )
     return not (
         name == ".env"
         or name.startswith(".env.")
@@ -33,6 +59,8 @@ def _safe_path(path):
         or name.startswith(("credentials.", "secret.", "secrets."))
         or name.endswith((".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"))
         or any(part in {".aws", ".ssh", "secrets", "credentials"} for part in lowered[:-1])
+        or any(tuple(lowered[:len(prefix)]) == prefix for prefix in private_store_prefixes)
+        or private_state_file
     )
 
 
