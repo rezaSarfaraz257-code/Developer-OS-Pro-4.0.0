@@ -53,7 +53,7 @@ def _provider_config() -> dict[str, str]:
 def _redact_provider_file_content(content: str) -> str:
     """Mask common credential values before workspace source reaches an AI provider."""
     patterns = [
-        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|token|client[_-]?secret|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r"\1[REDACTED]"),
+        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|auth[_-]?key|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)"""), r"\1[REDACTED]"),
         (re.compile(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}"), r"\1[REDACTED_BEARER_TOKEN]"),
         (re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^:/@\s]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
         (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[REDACTED_AWS_KEY]"),
@@ -78,10 +78,11 @@ def _provider_sensitive_context_key(key: str) -> bool:
     """Identify structured credential fields even when values use unknown formats."""
     normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
     return normalized.endswith((
-        "apikey", "accesstoken", "refreshtoken", "sessiontoken", "authtoken",
-        "token", "clientsecret", "secret", "secretkey", "secretaccesskey",
-        "password", "passwd", "authorization", "privatekey", "signingkey",
-        "encryptionkey",
+        "apikey", "accountkey", "authkey", "accesstoken", "refreshtoken",
+        "sessiontoken", "authtoken", "sastoken", "token", "clientsecret",
+        "clientassertion", "webhooksecret", "connectionstring", "secret",
+        "secretkey", "secretaccesskey", "password", "passwd", "authorization",
+        "privatekey", "signingkey", "encryptionkey",
     ))
 
 
