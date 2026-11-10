@@ -19,11 +19,10 @@ Then set the following in the host's Compose environment (or `.env`):
 RUNNER_APPARMOR_PROFILE=developer-os-runner
 ```
 
-The profile has three transitions:
+The profile has two security domains:
 
-- `developer-os-runner`: control-plane process; no user namespace or mount permission.
-- `developer-os-runner-bwrap`: only the Bubblewrap launcher; permits namespace and mount setup.
-- `developer-os-runner-workload`: the executed shell and its descendants; no user namespace, mount, or capability grant.
+- `developer-os-runner`: trusted control-plane and Bubblewrap setup process. It can create the unprivileged namespaces and mounts required to construct the sandbox; Docker still drops every container capability and keeps no-new-privileges enabled.
+- `developer-os-runner-workload`: the executed shell and all descendants. The shell transitions here after Bubblewrap setup; this profile has no user-namespace, mount, or capability permission.
 
 Keep Docker `cap_drop: ALL`, `no-new-privileges:true`, read-only root filesystem,
 resource limits, and Bubblewrap network isolation enabled. If the profile cannot
