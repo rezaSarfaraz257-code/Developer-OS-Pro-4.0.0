@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math, logging
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -17,6 +17,7 @@ from recovery_engine import checkpoint as recovery_checkpoint, recover as recove
 from extension_engine import manifest as extension_manifest
 from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
+logger = logging.getLogger("developer_os.runner.security")
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path(os.environ.get("RUNNER_ROOT", "/workspaces"))
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -680,11 +681,18 @@ def _bwrap_runtime_available():
     try:
         result = subprocess.run(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=3, check=False,
+            stderr=subprocess.PIPE, text=True, timeout=3, check=False,
             env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
         )
+        if result.returncode != 0:
+            diagnostic = (result.stderr or "Bubblewrap exited without a diagnostic.")[:500]
+            logger.error(
+                "Strict Bubblewrap capability probe failed (exit=%s): %s",
+                result.returncode, diagnostic,
+            )
         return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.error("Strict Bubblewrap capability probe could not run: %s", str(exc)[:300])
         return False
 
 
