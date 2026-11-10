@@ -382,6 +382,8 @@ class AIEngineUnitTests(TestCase):
                         "Set-Cookie: session=opaque-file-set-cookie; HttpOnly; Secure\n"
                         "cookie=opaque-file-cookie-assignment; another=opaque-cookie-pair\n"
                         "SESSION_ID=opaque-file-session-id\n"
+                        "Authorization: Basic b3BhcXVlLWJhc2ljLXNlY3JldA==\n"
+                        "Proxy-Authorization: Digest username=opaque-digest-user, response=opaque-digest-response\n"
                     ),
                 },
             },
@@ -413,6 +415,9 @@ class AIEngineUnitTests(TestCase):
             "opaque-file-cookie-assignment",
             "opaque-cookie-pair",
             "opaque-file-session-id",
+            "b3BhcXVlLWJhc2ljLXNlY3JldA==",
+            "opaque-digest-user",
+            "opaque-digest-response",
             "preference=dark",
         ):
             with self.subTest(secret=secret):
@@ -426,6 +431,7 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(file_headers.count("[REDACTED_COOKIE_HEADER]"), 2)
         self.assertIn("[REDACTED_COOKIE_VALUE]", file_headers)
         self.assertIn("[REDACTED_SESSION_ID]", file_headers)
+        self.assertEqual(file_headers.count("[REDACTED_AUTH_HEADER]"), 2)
         self.assertNotIn("preference=dark", file_headers)
         self.assertEqual(sanitized["metadata"]["safe"], "retained")
 
