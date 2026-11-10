@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import logging
 
+from django.db import DatabaseError
+from django.http import Http404
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -25,16 +28,6 @@ from .ai_engine import (
 
 logger = logging.getLogger("developer_os.ai.recovery")
 MAX_HISTORY_MESSAGES = 16
-
-
-def _safe_conversation(request, project_id=None, conversation_id=None):
-    """Conversation persistence is optional; never make it a prerequisite for chat."""
-    try:
-        from .ai_engine import _conversation
-        return _conversation(request, project_id, conversation_id)
-    except Exception:
-        logger.exception("AI conversation setup failed; continuing stateless")
-        return None
 
 
 def _safe_history(conversation):
@@ -75,10 +68,27 @@ def ai_chat_api_recovery(request):
     except Exception:
         logger.exception("AI usage preflight failed; continuing without metering")
 
-    conversation = _safe_conversation(request, project_id, conversation_id)
-    if conversation_id and conversation is None:
-        # A stale conversation ID should not prevent a new stateless response.
-        conversation_id = None
+    # A scoped request must prove project/conversation access before any
+    # workspace context is collected or sent to a provider. Stateless fallback
+    # is allowed only when the caller did not name a private resource.
+    try:
+        from .ai_engine import _conversation
+        conversation = _conversation(request, project_id, conversation_id)
+    except Http404:
+        return Response({"error": "Project or conversation not found or unavailable."}, status=404)
+    except DatabaseError:
+        logger.warning("AI conversation access check unavailable error_type=DatabaseError")
+        if project_id or conversation_id:
+            return Response({"error": "Project or conversation access could not be verified."}, status=503)
+        conversation = None
+    except Exception as exc:
+        logger.warning("AI conversation setup failed error_type=%s", type(exc).__name__)
+        if project_id or conversation_id:
+            return Response({"error": "Project or conversation access could not be verified."}, status=503)
+        conversation = None
+
+    if conversation is None and (project_id or conversation_id):
+        return Response({"error": "Project or conversation not found or unavailable."}, status=404)
 
     try:
         context = _compact_context(
