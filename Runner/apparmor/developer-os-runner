@@ -9,11 +9,16 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
   network,
-  deny network raw,
+  # Bubblewrap needs NETLINK_ROUTE while preparing its isolated network namespace.
+  # Keep raw IP and packet sockets denied; workload profile denies all raw sockets.
+  network netlink raw,
+  deny network inet raw,
+  deny network inet6 raw,
   deny network packet,
   deny network alg,
 
   capability sys_admin,
+  capability net_admin,
   capability setuid,
   capability setgid,
   capability sys_chroot,
