@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -242,7 +242,7 @@ class AIEngineUnitTests(TestCase):
         "protocol": "responses",
     })
     def test_call_provider_never_sends_workspace_history_or_request_secrets(self, _config, post):
-        response = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+        response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"output_text": "Safe response"}
         post.return_value = response
