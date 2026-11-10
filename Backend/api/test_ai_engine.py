@@ -373,6 +373,40 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(sanitized["metadata"]["http_auth_header"], "[REDACTED]")
         self.assertEqual(sanitized["metadata"]["safe_metadata"], "retained")
 
+    def test_provider_context_redacts_complete_cookie_headers_and_cookie_fields(self):
+        context = {
+            "http": {
+                "Cookie": "session=opaque-session-cookie; csrf=opaque-csrf-cookie; preference=dark",
+                "Set-Cookie": "session=opaque-set-cookie; HttpOnly; Secure; SameSite=Lax",
+                "X-CSRF-Token": "opaque-xsrf-header-token",
+                "safe_header": "application/json",
+            },
+            "metadata": {
+                "session_id": "opaque-session-id",
+                "safe": "retained",
+            },
+        }
+
+        sanitized = _sanitize_provider_context(context)
+        serialized = json.dumps(sanitized)
+
+        for secret in (
+            "opaque-session-cookie",
+            "opaque-csrf-cookie",
+            "preference=dark",
+            "opaque-set-cookie",
+            "opaque-xsrf-header-token",
+            "opaque-session-id",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, serialized)
+        self.assertEqual(sanitized["http"]["Cookie"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["Set-Cookie"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["X-CSRF-Token"], "[REDACTED]")
+        self.assertEqual(sanitized["metadata"]["session_id"], "[REDACTED]")
+        self.assertEqual(sanitized["http"]["safe_header"], "application/json")
+        self.assertEqual(sanitized["metadata"]["safe"], "retained")
+
     def test_provider_context_redacts_unexpected_object_string_representations(self):
         class SecretValue:
             def __str__(self):
