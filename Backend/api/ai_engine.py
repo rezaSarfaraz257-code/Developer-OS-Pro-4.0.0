@@ -55,7 +55,7 @@ def _redact_provider_file_content(content: str) -> str:
     patterns = [
         # Cookie headers may contain several semicolon-delimited credentials;
         # redact the entire header line rather than only its first pair.
-        (re.compile(r"(?im)(\\b(?:set-cookie|cookie)\\s*:\\s*)[^\\r\\n]+"), r"\\1[REDACTED_COOKIE_HEADER]"),
+        (re.compile(r"(?im)(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_HEADER]"),
         # Azure Shared Access Signatures may appear as Authorization values rather
         # than a field named token; redact the complete SAS payload including sig=.
         (re.compile(r"""(?i)(\bSharedAccessSignature\b\s*(?:[:=]\s*|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s,;\"']+)"""), r"\1[REDACTED_AZURE_SAS]"),
