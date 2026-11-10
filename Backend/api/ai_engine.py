@@ -122,7 +122,7 @@ def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
                 if _provider_sensitive_context_key(child_key):
                     result[safe_key] = "[REDACTED]"
                     continue
-                if child_key in {"files", "file_samples"} and isinstance(child, dict):
+                if child_key.casefold() in {"files", "file_samples"} and isinstance(child, dict):
                     safe_files = {}
                     for path, source in islice(child.items(), 2_000):
                         if remaining_files <= 0 or remaining_nodes <= 0:
@@ -448,15 +448,16 @@ def _provider_safe_context_path(path: str) -> bool:
     # Common user-level CLI credential stores are not always named
     # "credentials" and can contain opaque tokens that regex redaction
     # cannot reliably identify (for example GitHub CLI hosts.yml).
-    excluded_config_stores = {
-        ".config/gcloud", ".config/gh", ".config/azure",
-        ".config/containers", ".config/rclone", ".config/op",
-        ".config/1password", ".config/oci", ".config/terraform",
+    excluded_config_store_names = {
+        "gcloud", "gh", "azure", "containers", "rclone",
+        "op", "1password", "oci", "terraform",
     }
-    normalized_path = "/".join(parts)
+    # A workspace may contain a copied home-directory tree (for example
+    # project/.config/gh/hosts.yml), so match the config-store pair anywhere
+    # in the normalized path rather than only at its root.
     if any(
-        normalized_path == prefix or normalized_path.startswith(prefix + "/")
-        for prefix in excluded_config_stores
+        parts[index] == ".config" and parts[index + 1] in excluded_config_store_names
+        for index in range(len(parts) - 1)
     ):
         return False
     if any(part in excluded_directories for part in parts[:-1]):
