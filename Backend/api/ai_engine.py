@@ -87,8 +87,9 @@ def _provider_sensitive_context_key(key: str) -> bool:
     return normalized.endswith((
         "apikey", "accountkey", "sharedaccesskey", "sharedaccesssignature", "authkey", "accesstoken", "refreshtoken",
         "sessiontoken", "authtoken", "sastoken", "token", "clientsecret",
-        "clientassertion", "webhooksecret", "connectionstring", "secret",
-        "secretkey", "secretaccesskey", "password", "passwd", "authorization",
+        "clientassertion", "webhooksecret", "connectionstring", "credentials",
+        "credential", "secret", "secretkey", "secretaccesskey", "password",
+        "passwd", "authorizationheader", "authheader", "authorization",
         "privatekey", "signingkey", "encryptionkey",
     ))
 
