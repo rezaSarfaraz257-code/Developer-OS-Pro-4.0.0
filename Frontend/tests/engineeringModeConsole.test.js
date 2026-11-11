@@ -83,6 +83,8 @@ test("Hybrid handoff restores the originating Agent run workspace in the Web IDE
   assert.match(consoleSource, /openWorkspaceInIde\(run\.workspace\)/);
   assert.match(consoleSource, /mode === "hybrid" && run\?\.status === "approved"/);
   assert.match(consoleSource, /Continue in originating workspace/);
+  assert.match(consoleSource, /The Web IDE opens this exact workspace automatically/);
+  assert.match(consoleSource, /cc-mode-manual-detail[\\s\\S]*?error && <p className="cc-agent-message is-error" role="alert">/);
   assert.match(consoleSource, /onClick=\{\(\) => openWorkspaceInIde\(run\.workspace\)\}/);
   assert.match(consoleSource, /sessionStorage\.setItem\("dos:requested-ide-workspace", String\(targetWorkspaceId\)\)/);
   assert.match(consoleSource, /workspace handoff could not be saved in this browser session/);
@@ -103,6 +105,7 @@ test("engineering mode console styling is responsive and motion-safe", () => {
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /\.cc-mode-card:focus-visible/);
+  assert.match(css, /\.cc-mode-manual-detail > \.cc-agent-message/);
   assert.match(css, /\.cc-agent-run-actions > button:focus-visible/);
   assert.match(css, /\.cc-hybrid-next > button:focus-visible/);
   assert.match(component, /NO WORKSPACE SELECTED/);
