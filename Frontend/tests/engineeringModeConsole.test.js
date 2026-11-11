@@ -54,7 +54,11 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
-  assert.match(source, /latest \? 2200 : 3500/);
+  assert.match(source, /let consecutiveFailures = 0/);
+  assert.match(source, /consecutiveFailures = 0/);
+  assert.match(source, /consecutiveFailures \+= 1/);
+  assert.match(source, /Math\.min\(15000, 3500 \* \(2 \*\* Math\.min\(consecutiveFailures - 1, 2\)\)\)/);
+  assert.match(source, /latest \? 2200 :/);
 });
 
 test("Agent approval is not presented as code execution or workspace mutation", () => {
