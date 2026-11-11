@@ -29,6 +29,7 @@ export default function EngineeringModeConsole({ go }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const pendingRequestRef = useRef(null);
+  const mutationLockRef = useRef(false);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
     if (!id) return null;
@@ -109,7 +110,8 @@ export default function EngineeringModeConsole({ go }) {
   const createPlan = async (event) => {
     event.preventDefault();
     const cleanGoal = goal.trim();
-    if (!cleanGoal || !workspaceId || busy) return;
+    if (!cleanGoal || !workspaceId || mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -148,12 +150,14 @@ export default function EngineeringModeConsole({ go }) {
     } catch (requestError) {
       setError(requestError?.message || "The engineering plan could not be created.");
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   };
 
   const approvePlan = async () => {
-    if (!run?.id || busy || run.status !== "awaiting_approval") return;
+    if (!run?.id || mutationLockRef.current || run.status !== "awaiting_approval") return;
+    mutationLockRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -171,12 +175,14 @@ export default function EngineeringModeConsole({ go }) {
       setError(requestError?.message || "The plan could not be approved.");
       if (requestError?.code === "stale_workspace") setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   };
 
   const cancelRun = async () => {
-    if (!run?.id || busy || !ACTIVE_STATUSES.has(run.status)) return;
+    if (!run?.id || mutationLockRef.current || !ACTIVE_STATUSES.has(run.status)) return;
+    mutationLockRef.current = true;
     setBusy(true);
     setError("");
     try {
@@ -188,6 +194,7 @@ export default function EngineeringModeConsole({ go }) {
     } catch (requestError) {
       setError(requestError?.message || "The agent run could not be canceled.");
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   };
@@ -241,8 +248,8 @@ export default function EngineeringModeConsole({ go }) {
             {run && <span className={`cc-agent-status is-${status}`}><i />{STATUS_LABELS[status] || status}</span>}
           </div>
           <form className="cc-agent-create-form" onSubmit={createPlan}>
-            <label className="cc-agent-field"><span>WORKSPACE</span><select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} disabled={loadingWorkspaces || !workspaces.length}><option value="">{loadingWorkspaces ? "Loading workspaces…" : "Select a workspace"}</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || `Workspace #${workspace.id}`}</option>)}</select></label>
-            <label className="cc-agent-field cc-agent-goal"><span>ENGINEERING GOAL</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={12000} rows={3} placeholder="Example: Review the project architecture, identify the highest-risk frontend issues, and prepare a safe implementation plan." /></label>
+            <label className="cc-agent-field"><span>WORKSPACE</span><select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} disabled={busy || loadingWorkspaces || !workspaces.length}><option value="">{loadingWorkspaces ? "Loading workspaces…" : "Select a workspace"}</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || `Workspace #${workspace.id}`}</option>)}</select></label>
+            <label className="cc-agent-field cc-agent-goal"><span>ENGINEERING GOAL</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} disabled={busy} maxLength={12000} rows={3} placeholder="Example: Review the project architecture, identify the highest-risk frontend issues, and prepare a safe implementation plan." /></label>
             <div className="cc-agent-form-actions"><small>{goal.length.toLocaleString()} / 12,000 characters</small><button type="submit" className="cc-mode-primary" disabled={busy || loadingWorkspaces || !workspaceId || !goal.trim()}>{busy ? "Submitting…" : "Generate plan"} <span>✳</span></button></div>
           </form>
           {!loadingWorkspaces && !workspaces.length && <div className="cc-agent-message">No workspace is available yet. Create one in the Web IDE before requesting an agent plan. <button type="button" className="cc-agent-inline-link" onClick={() => go("/ide")}>Open Web IDE ↗</button></div>}
@@ -252,7 +259,7 @@ export default function EngineeringModeConsole({ go }) {
             <div className="cc-agent-run" aria-live="polite">
               <div className="cc-agent-run-head"><div><span className="cc-mode-detail-label">LIVE AGENT RUN · #{run.id}</span><strong>{run.goal}</strong><small>Workspace revision {run.workspace_revision} · {run.execution_state === "plan_only_no_workspace_mutations" ? "Plan-only · no file mutations" : "Execution state reported by server"}</small></div><div className="cc-agent-run-actions"><button type="button" onClick={() => refreshRun(run.id)} disabled={busy}>Refresh</button>{ACTIVE_STATUSES.has(run.status) && <button type="button" onClick={cancelRun} disabled={busy}>Cancel</button>}{run.status === "awaiting_approval" && <button type="button" className="cc-mode-primary" onClick={approvePlan} disabled={busy}>Review & approve</button>}{run.status === "approved" && mode === "hybrid" && <button type="button" className="cc-mode-primary" onClick={openWorkspaceInIde}>Continue in IDE <span>↗</span></button>}</div></div>
               {run.error && <p className="cc-agent-message is-error" role="alert">{run.error}</p>}
-              {tasks.length > 0 ? <ol className="cc-agent-task-list">{tasks.map((task) => <li key={task.id}><span className={`cc-agent-task-state is-${task.status}`} /><div><strong>{task.title}</strong><small>{task.agent_role.replaceAll("_", " ")} · {task.status}{task.depends_on?.length ? ` · depends on ${task.depends_on.join(", ")}` : ""}</small></div></li>)}</ol> : <p className="cc-agent-empty">{ACTIVE_STATUSES.has(run.status) ? "The planning worker is preparing the task graph…" : "No task graph has been returned for this run."}</p>}
+              {tasks.length > 0 ? <ol className="cc-agent-task-list">{tasks.map((task, index) => <li key={task.id ?? `task-${index}`}><span className={`cc-agent-task-state is-${String(task.status || "pending").replace(/[^a-z0-9_-]/gi, "")}`} /><div><strong>{task.title || `Task ${index + 1}`}</strong><small>{String(task.agent_role || "engineering").replaceAll("_", " ")} · {task.status || "pending"}{Array.isArray(task.depends_on) && task.depends_on.length ? ` · depends on ${task.depends_on.join(", ")}` : ""}</small></div></li>)}</ol> : <p className="cc-agent-empty">{ACTIVE_STATUSES.has(run.status) ? "The planning worker is preparing the task graph…" : "No task graph has been returned for this run."}</p>}
               {run.status === "approved" && <p className="cc-agent-message">Approval is recorded. Task execution remains unavailable in this runtime; no work is represented as completed.</p>}
             </div>
           )}
