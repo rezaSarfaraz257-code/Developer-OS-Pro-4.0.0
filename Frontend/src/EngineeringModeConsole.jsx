@@ -217,6 +217,7 @@ export default function EngineeringModeConsole({ go }) {
             <label className="cc-agent-field cc-agent-goal"><span>ENGINEERING GOAL</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={12000} rows={3} placeholder="Example: Review the project architecture, identify the highest-risk frontend issues, and prepare a safe implementation plan." /></label>
             <div className="cc-agent-form-actions"><small>{goal.length.toLocaleString()} / 12,000 characters</small><button type="submit" className="cc-mode-primary" disabled={busy || loadingWorkspaces || !workspaceId || !goal.trim()}>{busy ? "Submitting…" : "Generate plan"} <span>✳</span></button></div>
           </form>
+          {!loadingWorkspaces && !workspaces.length && <div className="cc-agent-message">No workspace is available yet. Create one in the Web IDE before requesting an agent plan. <button type="button" className="cc-agent-inline-link" onClick={() => go("/ide")}>Open Web IDE ↗</button></div>}
           {error && <p className="cc-agent-message is-error" role="alert">{error}</p>}
           {notice && <p className="cc-agent-message" role="status">{notice}</p>}
           {run && (
