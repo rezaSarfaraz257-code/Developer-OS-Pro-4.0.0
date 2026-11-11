@@ -101,3 +101,9 @@
 
 .cc-agent-inline-link { margin-left:6px; padding:0; border:0; color:#8beaff; background:none; font:inherit; font-weight:750; cursor:pointer; }
 .cc-agent-inline-link:hover { text-decoration:underline; }
+
+/* Workspace state is data-driven; never imply readiness while loading or empty. */
+.cc-mode-workspace-state i { background:#91a9bd; box-shadow:none; }
+.cc-mode-workspace-state.is-ready i { background:#55dfb0; box-shadow:0 0 12px rgba(85,223,176,.65); }
+.cc-mode-workspace-state.is-loading i { background:#65d9f0; box-shadow:0 0 10px rgba(101,217,240,.45); animation:cc-agent-pulse 1.5s infinite; }
+.cc-mode-workspace-state.is-empty i { background:#e9c16e; box-shadow:none; }
