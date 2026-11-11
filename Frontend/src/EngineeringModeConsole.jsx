@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
 import "./EngineeringModeConsole.css";
 
@@ -141,7 +141,7 @@ export default function EngineeringModeConsole({ go }) {
       setNotice("Plan approval recorded. This approval does not execute tasks or modify workspace files.");
     } catch (requestError) {
       setError(requestError?.message || "The plan could not be approved.");
-      if (requestError?.code === "stale_workspace") setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
+      if (requestError?.message?.includes("stale_workspace")) setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
     } finally {
       setBusy(false);
     }
