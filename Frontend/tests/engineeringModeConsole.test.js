@@ -98,6 +98,22 @@ test("Hybrid handoff restores the originating Agent run workspace in the Web IDE
   assert.match(ide, /load\(preferred\|\|workspaces\[0\]\)/);
 });
 
+test("workspace loading failures are recoverable and not mislabeled as an empty workspace", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  const css = read("EngineeringModeConsole.css");
+
+  assert.match(source, /workspaceLoadAttempt, setWorkspaceLoadAttempt/);
+  assert.match(source, /useEffect\(\(\) => \{[\s\S]*?setLoadingWorkspaces\(true\);[\s\S]*?setWorkspaceLoadError\(""\);[\s\S]*?\}, \[workspaceLoadAttempt\]\)/);
+  assert.match(source, /setWorkspaceLoadError\(requestError\?\.message \|\| "Workspaces could not be loaded\."\)/);
+  assert.match(source, /WORKSPACE LOAD FAILED/);
+  assert.match(source, /Retry workspace connection/);
+  assert.match(source, /setWorkspaceLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(source, /!loadingWorkspaces && !workspaceLoadError && !workspaces\.length/);
+  assert.match(source, /cc-workspace-load-error/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-error i/);
+  assert.match(css, /\.cc-workspace-load-error \{ display:flex/);
+});
+
 test("engineering mode console styling is responsive and motion-safe", () => {
   const component = read("EngineeringModeConsole.jsx");
   const css = read("EngineeringModeConsole.css");
