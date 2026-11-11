@@ -85,6 +85,10 @@ test("Agent run normalizer rejects malformed envelopes and sanitizes task data",
   assert.equal(normalizeAgentRun([]), null);
   assert.equal(normalizeAgentRun({ id: " " }), null);
   assert.equal(normalizeAgentRun({ id: {} }), null);
+  assert.equal(normalizeAgentRun({ id: "run-7" }), null);
+  assert.equal(normalizeAgentRun({ id: "0" }), null);
+  assert.equal(normalizeAgentRun({ id: Number.MAX_SAFE_INTEGER + 1 }), null);
+  assert.equal(normalizeAgentRun({ id: -1 }), null);
 
   const normalized = normalizeAgentRun({
     id: "7",
