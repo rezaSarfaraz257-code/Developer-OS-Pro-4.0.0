@@ -36,6 +36,8 @@ export default function EngineeringModeConsole({ go }) {
   const [goal, setGoal] = useState("");
   const [run, setRun] = useState(null);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [workspaceLoadError, setWorkspaceLoadError] = useState("");
+  const [workspaceLoadAttempt, setWorkspaceLoadAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -68,6 +70,8 @@ export default function EngineeringModeConsole({ go }) {
 
   useEffect(() => {
     let active = true;
+    setLoadingWorkspaces(true);
+    setWorkspaceLoadError("");
     apiFetch("/ide/workspaces/")
       .then(async (response) => {
         const payload = await response.json().catch(() => []);
@@ -77,16 +81,17 @@ export default function EngineeringModeConsole({ go }) {
       .then((items) => {
         if (!active) return;
         setWorkspaces(items);
+        setWorkspaceLoadError("");
         if (items.length) setWorkspaceId((current) => current || String(items[0].id));
       })
       .catch((requestError) => {
-        if (active) setError(requestError?.message || "Workspaces could not be loaded.");
+        if (active) setWorkspaceLoadError(requestError?.message || "Workspaces could not be loaded.");
       })
       .finally(() => {
         if (active) setLoadingWorkspaces(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [workspaceLoadAttempt]);
 
   // Resolve restored workspace IDs only after the owned workspace list is ready.
   // This handles either network response order without selecting deleted/inaccessible IDs.
@@ -298,9 +303,10 @@ export default function EngineeringModeConsole({ go }) {
           <h2 id="cc-engineering-modes-title">Choose how to build</h2>
           <p>One workspace, three ways to move from intent to implementation.</p>
         </div>
-        <span className={`cc-mode-workspace-state ${loadingWorkspaces ? "is-loading" : workspaceId ? "is-ready" : "is-empty"}`} role="status" aria-live="polite">
-          <i aria-hidden="true" />{loadingWorkspaces ? "LOADING WORKSPACES" : workspaceId ? "WORKSPACE READY" : "NO WORKSPACE SELECTED"}
+        <span className={`cc-mode-workspace-state ${loadingWorkspaces ? "is-loading" : workspaceLoadError ? "is-error" : workspaceId ? "is-ready" : "is-empty"}`} role="status" aria-live="polite">
+          <i aria-hidden="true" />{loadingWorkspaces ? "LOADING WORKSPACES" : workspaceLoadError ? "WORKSPACE LOAD FAILED" : workspaceId ? "WORKSPACE READY" : "NO WORKSPACE SELECTED"}
         </span>
+        {workspaceLoadError && <p className="cc-agent-message is-error cc-workspace-load-error" role="alert">{workspaceLoadError} <button type="button" className="cc-agent-inline-link" onClick={() => setWorkspaceLoadAttempt((attempt) => attempt + 1)} disabled={loadingWorkspaces}>Retry workspace connection</button></p>}
       </div>
 
       <div className="cc-mode-grid" role="group" aria-label="Build mode">
@@ -339,7 +345,7 @@ export default function EngineeringModeConsole({ go }) {
             <label className="cc-agent-field cc-agent-goal"><span>ENGINEERING GOAL</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} disabled={busy} maxLength={12000} rows={3} placeholder="Example: Review the project architecture, identify the highest-risk frontend issues, and prepare a safe implementation plan." /></label>
             <div className="cc-agent-form-actions"><small>{goal.length.toLocaleString()} / 12,000 characters</small><button type="submit" className="cc-mode-primary" disabled={busy || loadingWorkspaces || !workspaceId || !goal.trim()}>{busy ? "Submitting…" : "Generate plan"} <span>✳</span></button></div>
           </form>
-          {!loadingWorkspaces && !workspaces.length && <div className="cc-agent-message">No workspace is available yet. Create one in the Web IDE before requesting an agent plan. <button type="button" className="cc-agent-inline-link" onClick={() => go("/ide")}>Open Web IDE ↗</button></div>}
+          {!loadingWorkspaces && !workspaceLoadError && !workspaces.length && <div className="cc-agent-message">No workspace is available yet. Create one in the Web IDE before requesting an agent plan. <button type="button" className="cc-agent-inline-link" onClick={() => go("/ide")}>Open Web IDE ↗</button></div>}
           {error && <p className="cc-agent-message is-error" role="alert">{error}</p>}
           {notice && <p className="cc-agent-message" role="status">{notice}</p>}
           {run && (
