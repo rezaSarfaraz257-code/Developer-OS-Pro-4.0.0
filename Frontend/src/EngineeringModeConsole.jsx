@@ -306,8 +306,8 @@ export default function EngineeringModeConsole({ go }) {
         <span className={`cc-mode-workspace-state ${loadingWorkspaces ? "is-loading" : workspaceLoadError ? "is-error" : workspaceId ? "is-ready" : "is-empty"}`} role="status" aria-live="polite">
           <i aria-hidden="true" />{loadingWorkspaces ? "LOADING WORKSPACES" : workspaceLoadError ? "WORKSPACE LOAD FAILED" : workspaceId ? "WORKSPACE READY" : "NO WORKSPACE SELECTED"}
         </span>
-        {workspaceLoadError && <p className="cc-agent-message is-error cc-workspace-load-error" role="alert">{workspaceLoadError} <button type="button" className="cc-agent-inline-link" onClick={() => setWorkspaceLoadAttempt((attempt) => attempt + 1)} disabled={loadingWorkspaces}>Retry workspace connection</button></p>}
       </div>
+      {workspaceLoadError && <p className="cc-agent-message is-error cc-workspace-load-error" role="alert">{workspaceLoadError} <button type="button" className="cc-agent-inline-link" onClick={() => setWorkspaceLoadAttempt((attempt) => attempt + 1)} disabled={loadingWorkspaces}>Retry workspace connection</button></p>}
 
       <div className="cc-mode-grid" role="group" aria-label="Build mode">
         <button type="button" className={`cc-mode-card ${mode === "manual" ? "is-selected" : ""}`} aria-pressed={mode === "manual"} onClick={() => setMode("manual")}>
