@@ -12,6 +12,8 @@ sudo apt-get install -y apparmor apparmor-utils jq curl
 sudo bash Runner/prepare-host.sh
 ```
 
+The Runner image builds Bubblewrap 0.13.1 from the upstream signed release source archive, verifies its SHA-256 digest, and installs the non-setuid binary. This avoids relying on the older 0.8.0 package shipped by Debian Bookworm. The image build also checks the installed version and rejects a setuid bit.
+
 The preparation script:
 - Loads the scoped `developer-os-runner` AppArmor profile.
 - Allows Bubblewrap's exact recursive bind of `/oldroot/proc/` into the sandbox `/proc/` during setup; this does not grant mount permissions to the workload profile.
