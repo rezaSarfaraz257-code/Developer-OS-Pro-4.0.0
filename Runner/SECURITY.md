@@ -29,7 +29,7 @@ RUNNER_APPARMOR_PROFILE=developer-os-runner
 The policy uses two profiles:
 
 - `developer-os-runner`: trusted control-plane and Bubblewrap setup process. It has only the namespace, mount, and setup capabilities required to construct the sandbox; Docker still drops every container capability and keeps no-new-privileges enabled.
-- `developer-os-runner-workload`: stacked with the setup profile when Bubblewrap executes the workspace shell. AppArmor enforces the intersection of both profiles, so the child cannot inherit the setup-only capabilities or mount, unmount, or pivot-root permissions. The child profile grants no user-namespace permission.
+- `developer-os-runner-workload`: stacked with the setup profile when Bubblewrap executes the workspace shell. AppArmor enforces the intersection of both profiles, so the child cannot inherit the setup-only capabilities or mount, unmount, or pivot-root permissions. The child profile explicitly applies `deny userns`, so the workload cannot create nested user namespaces even though the trusted Bubblewrap setup profile is permitted to create the namespaces needed for isolation.
 
 Bubblewrap sets `no_new_privs` before executing the workspace command, which prevents a normal AppArmor profile transition. The explicit path-scoped `allow pix` rules for `/usr/bin/bash` and `/bin/bash` use an AppArmor stack instead: it only adds restrictions, so `no_new_privs` remains enabled throughout execution. The profile pins AppArmor ABI 4.0 for supported Ubuntu LTS hosts. The workspace command environment is cleared by Bubblewrap before the shell starts.
 
