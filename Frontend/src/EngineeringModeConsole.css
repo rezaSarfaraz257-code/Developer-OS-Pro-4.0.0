@@ -98,3 +98,6 @@
 .cc-manual-agent-signal > strong { min-width:0; overflow:hidden; color:#b9ccdc; font-size:.73rem; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
 .cc-manual-agent-signal > button { border:0; color:#8beaff; background:none; font-size:.72rem; font-weight:750; cursor:pointer; white-space:nowrap; }
 @media(max-width:600px) { .cc-manual-agent-signal { grid-template-columns:1fr; } .cc-manual-agent-signal > strong { white-space:normal; } }
+
+.cc-agent-inline-link { margin-left:6px; padding:0; border:0; color:#8beaff; background:none; font:inherit; font-weight:750; cursor:pointer; }
+.cc-agent-inline-link:hover { text-decoration:underline; }
