@@ -321,8 +321,10 @@ def execute_agent_task_verification(job):
     stderr = result.get("stderr", "")
     if not isinstance(stdout, str) or not isinstance(stderr, str):
         raise RuntimeError("Runner returned malformed execution output.")
-    # Runner caps stdout and stderr individually. Enforce the combined UTF-8
-    # response budget again at the control plane before hashing untrusted data.
+    # Reject oversized fields before allocating encoded copies, then enforce
+    # the combined UTF-8 response budget at the control plane as well.
+    if len(stdout) > 50_000 or len(stderr) > 50_000:
+        raise RuntimeError("Runner execution output exceeded the control-plane limit.")
     stdout_bytes = stdout.encode("utf-8")
     stderr_bytes = stderr.encode("utf-8")
     if len(stdout_bytes) + len(stderr_bytes) > 50_000:
