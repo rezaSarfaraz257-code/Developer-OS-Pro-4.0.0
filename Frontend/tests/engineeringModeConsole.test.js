@@ -68,7 +68,7 @@ test("Agent approval is not presented as code execution or workspace mutation", 
   assert.match(source, /Task execution remains unavailable in this runtime/);
 });
 
-test("Hybrid handoff restores the selected workspace in the Web IDE", () => {
+test("Hybrid handoff restores the originating Agent run workspace in the Web IDE", () => {
   const consoleSource = read("EngineeringModeConsole.jsx");
   const ide = read("ProIDE.jsx");
 
