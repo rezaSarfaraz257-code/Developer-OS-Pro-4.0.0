@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import "./AutonomousCommandCenter2026.css";
 import "./ExploreModern.css";
 import "./PublicProjects.css";
 import "./NavigationPolish.css";
