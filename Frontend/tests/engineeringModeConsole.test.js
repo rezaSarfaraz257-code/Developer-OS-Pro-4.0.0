@@ -74,6 +74,8 @@ test("Hybrid handoff restores the selected workspace in the Web IDE", () => {
 
   assert.match(consoleSource, /dos:requested-ide-workspace/);
   assert.match(consoleSource, /const openWorkspaceInIde = \(targetWorkspaceId = workspaceId\) =>/);
+  assert.match(consoleSource, /workspaces\.some\(\(workspace\) => String\(workspace\.id\) === String\(targetWorkspaceId\)\)/);
+  assert.match(consoleSource, /workspace associated with this run is no longer available/);
   assert.match(consoleSource, /openWorkspaceInIde\(run\.workspace\)/);
   assert.match(consoleSource, /sessionStorage\.setItem\("dos:requested-ide-workspace", String\(targetWorkspaceId\)\)/);
   assert.match(ide, /dos:requested-ide-workspace/);
