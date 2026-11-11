@@ -19,6 +19,15 @@ function responseError(payload, fallback) {
   return formatApiError(payload, fallback);
 }
 
+function matchesRunIdentity(run, expectedId) {
+  return Boolean(run && normalizeRunId(expectedId) === run.id);
+}
+
+function matchesWorkspace(run, expectedWorkspaceId) {
+  return run?.workspace !== null && run?.workspace !== undefined
+    && String(run.workspace) === String(expectedWorkspaceId);
+}
+
 export default function EngineeringModeConsole({ go }) {
   const [mode, setMode] = useState("manual");
   const [workspaces, setWorkspaces] = useState([]);
@@ -42,7 +51,9 @@ export default function EngineeringModeConsole({ go }) {
       const response = await apiFetch(`/ai/agent/runs/${safeRunId}/`);
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !normalized) throw new Error(responseError(payload, "Agent run status is unavailable or malformed."));
+      if (!response.ok || !matchesRunIdentity(normalized, safeRunId)) {
+        throw new Error(responseError(payload, "Agent run status is unavailable, malformed, or belongs to a different run."));
+      }
       if (requestSequence !== runRequestSequenceRef.current || mutationLockRef.current) return null;
       setRun(normalized);
       setError("");
@@ -157,7 +168,9 @@ export default function EngineeringModeConsole({ go }) {
       });
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !normalized) throw new Error(responseError(payload, "The engineering plan could not be created or returned a valid run."));
+      if (!response.ok || !normalized || !matchesWorkspace(normalized, workspaceId)) {
+        throw new Error(responseError(payload, "The engineering plan could not be created or returned a valid run for the selected workspace."));
+      }
       setRun(normalized);
       setGoal("");
       pendingRequestRef.current = null;
@@ -175,18 +188,24 @@ export default function EngineeringModeConsole({ go }) {
   };
 
   const approvePlan = async () => {
-    if (!run?.id || mutationLockRef.current || run.status !== "awaiting_approval") return;
+    const safeRunId = normalizeRunId(run?.id);
+    if (safeRunId === null || mutationLockRef.current || run.status !== "awaiting_approval" || !matchesWorkspace(run, workspaceId)) {
+      if (run?.status === "awaiting_approval" && !matchesWorkspace(run, workspaceId)) {
+        setError("Select the workspace used to create this plan before approving it.");
+      }
+      return;
+    }
     mutationLockRef.current = true;
     runRequestSequenceRef.current += 1;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const response = await apiFetch(`/ai/agent/runs/${run.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
+      const response = await apiFetch(`/ai/agent/runs/${safeRunId}/approve/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !normalized) {
-        const approvalError = new Error(responseError(payload, "The plan could not be approved or returned a valid run."));
+      if (!response.ok || !matchesRunIdentity(normalized, safeRunId)) {
+        const approvalError = new Error(responseError(payload, "The plan could not be approved or returned a valid state for this run."));
         approvalError.code = payload?.code;
         throw approvalError;
       }
@@ -202,16 +221,19 @@ export default function EngineeringModeConsole({ go }) {
   };
 
   const cancelRun = async () => {
-    if (!run?.id || mutationLockRef.current || !ACTIVE_STATUSES.has(run.status)) return;
+    const safeRunId = normalizeRunId(run?.id);
+    if (safeRunId === null || mutationLockRef.current || !ACTIVE_STATUSES.has(run.status)) return;
     mutationLockRef.current = true;
     runRequestSequenceRef.current += 1;
     setBusy(true);
     setError("");
     try {
-      const response = await apiFetch(`/ai/agent/runs/${run.id}/cancel/`, { method: "POST", body: JSON.stringify({}) });
+      const response = await apiFetch(`/ai/agent/runs/${safeRunId}/cancel/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !normalized) throw new Error(responseError(payload, "The agent run could not be canceled or returned a valid run state."));
+      if (!response.ok || !matchesRunIdentity(normalized, safeRunId)) {
+        throw new Error(responseError(payload, "The agent run could not be canceled or returned a valid state for this run."));
+      }
       setRun(normalized);
       setNotice("Agent planning run canceled.");
     } catch (requestError) {
