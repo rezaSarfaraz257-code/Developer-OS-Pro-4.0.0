@@ -1,3 +1,4 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -10,6 +11,7 @@ from .agent_execution import (
     VERIFICATION_PROFILES, execute_agent_task_verification,
     fail_agent_task_verification,
 )
+from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
 
@@ -291,6 +293,34 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.status, "failed")
         self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
         runner_request.assert_called_once()
+
+    def test_expired_verification_lease_is_failed_and_workspace_resynced(self):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_at = timezone.now() - timedelta(minutes=11)
+        job.locked_by = "worker-that-crashed"
+        job.save(update_fields=["status", "attempts", "locked_at", "locked_by"])
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
+        self.assertIsNotNone(self.task.execution_evidence["resync_job_id"])
+        self.assertEqual(self.run.status, "failed")
+        self.assertEqual(
+            BackgroundJob.objects.get(pk=self.task.execution_evidence["resync_job_id"]).kind,
+            "ai_agent_runner_sync",
+        )
 
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
