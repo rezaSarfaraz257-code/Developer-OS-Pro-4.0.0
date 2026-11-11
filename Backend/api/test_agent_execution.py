@@ -271,7 +271,7 @@ class AgentTaskVerificationAPITests(TestCase):
 
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 1, "stdout": "x" * 50_001, "stderr": ""}, None,
+         "duration_ms": 1, "stdout": "x" * 30_000, "stderr": "y" * 30_000}, None,
     ))
     def test_oversized_runner_output_fails_closed_and_reconciles(self, runner_request):
         response = self.client.post(self.url, {
