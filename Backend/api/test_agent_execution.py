@@ -343,6 +343,44 @@ class AgentTaskVerificationAPITests(TestCase):
         )
 
     @patch("api.views._runner_request", return_value=(
+        {"job_id": "runner-\u00e9", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": "", "stderr": ""}, None,
+    ))
+    def test_runner_rejects_non_ascii_job_identifiers(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        with self.assertRaisesRegex(RuntimeError, "invalid execution job reference"):
+            execute_agent_task_verification(job)
+
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=(
+        {"job_id": "runner-invalid-status", "status": {"unexpected": "object"},
+         "exit_code": 0, "duration_ms": 1, "stdout": "", "stderr": ""}, None,
+    ))
+    def test_runner_rejects_non_string_execution_status(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        with self.assertRaisesRegex(RuntimeError, "invalid execution status"):
+            execute_agent_task_verification(job)
+
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
          "duration_ms": 1, "stdout": None, "stderr": ""}, None,
     ))
