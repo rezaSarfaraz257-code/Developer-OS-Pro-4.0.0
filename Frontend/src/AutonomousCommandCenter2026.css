@@ -1,0 +1,188 @@
+/* Autonomous Software Universe — Command Center visual system.
+   Additive presentation layer: no routes, API contracts, or workspace state are changed. */
+.os-shell {
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse at 72% -14%, rgba(36, 151, 190, .13), transparent 43%),
+    radial-gradient(ellipse at 8% 88%, rgba(76, 78, 168, .09), transparent 38%),
+    #05070c;
+}
+.os-main { min-width: 0; }
+.os-main .topbar {
+  min-height: 66px;
+  border-bottom-color: rgba(124, 190, 218, .13);
+  background: rgba(5, 9, 16, .82);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+}
+.os-main .crumb { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.os-main .crumb strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-main .top-actions { min-width: 0; }
+.os-main .global-search {
+  border-radius: 10px;
+  background: rgba(8, 16, 27, .86);
+  border-color: rgba(119, 174, 203, .18);
+}
+.os-main .global-search:focus-within,
+.os-main .global-search.is-command-active {
+  border-color: rgba(94, 225, 247, .58);
+  box-shadow: 0 0 0 3px rgba(67, 214, 239, .09), 0 12px 34px rgba(0,0,0,.2);
+}
+.os-main .icon-btn,
+.os-main .logout-btn {
+  border-radius: 10px;
+  transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
+}
+.os-main .icon-btn:hover,
+.os-main .logout-btn:hover {
+  color: #dff8ff;
+  border-color: rgba(94, 225, 247, .34);
+  background: rgba(25, 52, 72, .55);
+}
+.os-content {
+  padding: clamp(14px, 2vw, 28px) clamp(12px, 2.2vw, 32px);
+}
+.os-content > .page { width: min(100%, 1680px); margin-inline: auto; }
+.os-content :where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid rgba(104, 225, 247, .9);
+  outline-offset: 3px;
+}
+.os-content :where(.panel, .stat-card, .project-card, .plan, .cc-surface) {
+  min-width: 0;
+  border-color: rgba(125, 177, 207, .16);
+}
+.command-center-page { display: grid; gap: 18px; }
+.command-center-page .cc-hero-v2 {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 390px;
+  padding: clamp(24px, 4vw, 54px);
+  border: 1px solid rgba(111, 207, 231, .22);
+  border-radius: 24px;
+  background:
+    radial-gradient(ellipse at 78% 44%, rgba(34, 211, 238, .17), transparent 32%),
+    radial-gradient(ellipse at 93% 100%, rgba(129, 140, 248, .15), transparent 42%),
+    linear-gradient(128deg, #080f1d, #0b1729 54%, #09111f);
+  box-shadow: 0 28px 84px rgba(0,0,0,.25), inset 0 1px rgba(255,255,255,.035);
+}
+.command-center-page .cc-hero-copy { position: relative; z-index: 2; max-width: 700px; }
+.command-center-page .cc-hero-v2 h1 { text-wrap: balance; }
+.command-center-page .cc-hero-description { max-width: 58ch; }
+.command-center-page .cc-hero-actions { flex-wrap: wrap; gap: 10px; }
+.command-center-page .cc-hero-actions :where(button) { min-height: 44px; border-radius: 10px; }
+.command-center-page .cc-hero-visual-v2 { pointer-events: none; }
+.command-center-page .cc-hero-bottomline {
+  border-top-color: rgba(144, 194, 220, .16);
+  color: #829bb3;
+}
+.command-center-page .cc-command-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 15px;
+  border: 1px solid rgba(125, 177, 207, .15);
+  border-radius: 16px;
+  background: linear-gradient(110deg, rgba(13, 25, 41, .94), rgba(8, 15, 26, .96));
+}
+.command-center-page .cc-command-shortcuts { min-width: 0; flex: 1; }
+.command-center-page .cc-command-shortcuts button {
+  min-height: 40px;
+  border-radius: 9px;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.command-center-page .cc-command-shortcuts button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(105, 220, 242, .24);
+  background: rgba(43, 105, 130, .12);
+}
+.command-center-page .cc-focus-toggle {
+  min-height: 40px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+}
+.command-center-page .cc-metrics { gap: 12px; margin-bottom: 2px; }
+.command-center-page .cc-metric-card {
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(16, 29, 47, .96), rgba(8, 15, 27, .98));
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.command-center-page .cc-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(104, 220, 243, .3);
+  box-shadow: 0 18px 42px rgba(0,0,0,.22);
+}
+.command-center-page .cc-main-grid { gap: 14px; }
+.command-center-page .cc-surface,
+.command-center-page .cc-mission-card,
+.command-center-page .cc-create-panel { border-radius: 18px; }
+.command-center-page .cc-trajectory-row { border-radius: 10px; }
+.command-center-page .cc-trajectory-row:hover { background: rgba(68, 157, 186, .07); }
+.command-center-page .cc-mission-card { min-height: 218px; }
+.command-center-page .cc-mission-card:focus-visible { outline-offset: 4px; }
+.command-center-page .cc-create-panel {
+  gap: 18px;
+  border-color: rgba(103, 210, 234, .2);
+  background:
+    radial-gradient(ellipse at 0% 50%, rgba(67, 232, 255, .08), transparent 48%),
+    linear-gradient(120deg, rgba(13, 24, 40, .97), rgba(7, 13, 23, .98));
+}
+.command-center-page .cc-create-form { min-width: min(100%, 420px); }
+.command-center-page .cc-create-form input {
+  min-height: 46px;
+  border-radius: 10px;
+}
+.command-center-page .cc-create-form button { min-height: 46px; border-radius: 10px; }
+.command-center-page .cc-error { border-radius: 12px; }
+@media (max-width: 1120px) {
+  .command-center-page .cc-hero-v2 { min-height: 350px; }
+  .command-center-page .cc-hero-visual-v2 { opacity: .72; transform: scale(.88); transform-origin: center right; }
+  .command-center-page .cc-command-strip { flex-wrap: wrap; }
+  .command-center-page .cc-command-shortcuts { flex-basis: 100%; order: 3; }
+}
+@media (max-width: 820px) {
+  .os-main .topbar { gap: 10px; padding-inline: 14px; }
+  .os-content { padding: 14px 12px; }
+  .command-center-page .cc-hero-v2 { min-height: 0; padding: 26px 22px 62px; }
+  .command-center-page .cc-hero-visual-v2 { opacity: .28; transform: scale(.72); }
+  .command-center-page .cc-metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .command-center-page .cc-main-grid { grid-template-columns: minmax(0,1fr); }
+  .command-center-page .cc-mission-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 560px) {
+  .os-main .topbar { min-height: 58px; }
+  .os-main .top-actions { gap: 6px; }
+  .os-main .global-search { min-width: 0; }
+  .os-main .global-search input { font-size: 10px; }
+  .os-main .profile-shortcut { display: none !important; }
+  .os-content { padding: 10px 8px; }
+  .command-center-page { gap: 12px; }
+  .command-center-page .cc-hero-v2 { padding: 22px 17px 58px; border-radius: 17px; }
+  .command-center-page .cc-hero-v2 h1 { font-size: clamp(2.25rem, 11vw, 3.2rem); }
+  .command-center-page .cc-hero-visual-v2 { display: none; }
+  .command-center-page .cc-overline { flex-wrap: wrap; gap: 6px; }
+  .command-center-page .cc-hero-actions { align-items: stretch; }
+  .command-center-page .cc-hero-actions button { flex: 1 1 auto; }
+  .command-center-page .cc-command-strip { padding: 12px; gap: 10px; }
+  .command-center-page .cc-command-shortcuts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+  .command-center-page .cc-command-shortcuts button { justify-content: flex-start; padding-inline: 9px; }
+  .command-center-page .cc-metrics { gap: 8px; }
+  .command-center-page .cc-metric-card { padding: 14px; }
+  .command-center-page .cc-metric-top { font-size: .56rem; }
+  .command-center-page .cc-mission-grid { grid-template-columns: minmax(0,1fr); gap: 9px; }
+  .command-center-page .cc-mission-card { min-height: 190px; }
+  .command-center-page .cc-create-panel { padding: 16px; }
+  .command-center-page .cc-create-form { display: flex; flex-wrap: wrap; gap: 8px; }
+  .command-center-page .cc-create-form input { flex: 1 1 100%; min-width: 0; }
+  .command-center-page .cc-create-form button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .command-center-page *,
+  .command-center-page *::before,
+  .command-center-page *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .001ms !important;
+  }
+}
