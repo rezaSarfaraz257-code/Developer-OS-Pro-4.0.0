@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeAgentRun } from "../src/agentRunPayload.js";
+import { normalizeAgentRun, resolveWorkspaceId } from "../src/agentRunPayload.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -34,7 +34,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /String\(task\.agent_role \|\| ["']engineering["']\)/);
   assert.match(source, /pendingRequestRef\.current = pendingRequest/);
   assert.match(source, /window\.sessionStorage\.removeItem\("dos:pending-agent-request"\)/);
-  assert.match(source, /setWorkspaceId\(\(current\) => current \|\| String\(items\[0\]\.id\)\)/);
+  assert.match(source, /resolveWorkspaceId\(workspaces, current\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/approve\//);
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
@@ -77,7 +77,6 @@ test("engineering mode console styling is responsive and motion-safe", () => {
   assert.match(css, /\.cc-mode-workspace-state\.is-loading i/);
 });
 
-
 test("Agent run normalizer rejects malformed envelopes and sanitizes task data", () => {
   assert.equal(normalizeAgentRun(null), null);
   assert.equal(normalizeAgentRun([]), null);
@@ -98,4 +97,13 @@ test("Agent run normalizer rejects malformed envelopes and sanitizes task data",
   assert.equal(normalized.tasks.length, 1);
   assert.equal(normalized.tasks[0].status, "runscript");
   assert.deepEqual(normalized.tasks[0].depends_on, ["task-1", "2"]);
+});
+
+test("restored workspace selection cannot point to a deleted or inaccessible workspace", () => {
+  const workspaces = [{ id: 11 }, { id: 22 }];
+  assert.equal(resolveWorkspaceId(workspaces, "22"), "22");
+  assert.equal(resolveWorkspaceId(workspaces, 999), "11");
+  assert.equal(resolveWorkspaceId(workspaces, null), "11");
+  assert.equal(resolveWorkspaceId([{ name: "broken" }, null], "999"), "");
+  assert.equal(resolveWorkspaceId([], "22"), "");
 });
