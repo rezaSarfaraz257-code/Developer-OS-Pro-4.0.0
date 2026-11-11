@@ -23,6 +23,7 @@ export default function EngineeringModeConsole({ go }) {
   const [mode, setMode] = useState("manual");
   const [workspaces, setWorkspaces] = useState([]);
   const [workspaceId, setWorkspaceId] = useState("");
+  const [restoredWorkspaceCandidate, setRestoredWorkspaceCandidate] = useState(null);
   const [goal, setGoal] = useState("");
   const [run, setRun] = useState(null);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
@@ -74,13 +75,16 @@ export default function EngineeringModeConsole({ go }) {
     return () => { active = false; };
   }, []);
 
-  // A restored run may reference a workspace that was deleted or is no longer
-  // accessible. Keep the selector and subsequent create/handoff actions valid.
+  // Resolve restored workspace IDs only after the owned workspace list is ready.
+  // This handles either network response order without selecting deleted/inaccessible IDs.
   useEffect(() => {
-    if (!loadingWorkspaces) {
-      setWorkspaceId((current) => resolveWorkspaceId(workspaces, current));
-    }
-  }, [loadingWorkspaces, workspaces]);
+    if (loadingWorkspaces) return;
+    setWorkspaceId((current) => resolveWorkspaceId(
+      workspaces,
+      restoredWorkspaceCandidate ?? current,
+    ));
+    if (restoredWorkspaceCandidate !== null) setRestoredWorkspaceCandidate(null);
+  }, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +94,7 @@ export default function EngineeringModeConsole({ go }) {
         refreshRun(savedId, { quiet: true }).then((payload) => {
           if (!active) return;
           if (payload?.workspace !== null && payload?.workspace !== undefined) {
-            setWorkspaceId(String(payload.workspace));
+            setRestoredWorkspaceCandidate(String(payload.workspace));
           } else {
             try { window.sessionStorage.removeItem("dos:last-agent-run"); } catch { /* optional persistence */ }
           }
