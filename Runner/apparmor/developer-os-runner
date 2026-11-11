@@ -110,6 +110,7 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   # This profile is stacked with developer-os-runner after Bubblewrap setup.
   # The intersection removes setup-only privileges from every workload child.
   deny capability,
+  deny userns,
   deny mount,
   deny umount,
   deny pivot_root,
