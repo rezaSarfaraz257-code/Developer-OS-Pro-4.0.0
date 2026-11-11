@@ -160,12 +160,16 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${run.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(responseError(payload, "The plan could not be approved."));
+      if (!response.ok) {
+        const approvalError = new Error(responseError(payload, "The plan could not be approved."));
+        approvalError.code = payload?.code;
+        throw approvalError;
+      }
       setRun(payload);
       setNotice("Plan approval recorded. This approval does not execute tasks or modify workspace files.");
     } catch (requestError) {
       setError(requestError?.message || "The plan could not be approved.");
-      if (requestError?.message?.includes("stale_workspace")) setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
+      if (requestError?.code === "stale_workspace") setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
     } finally {
       setBusy(false);
     }
