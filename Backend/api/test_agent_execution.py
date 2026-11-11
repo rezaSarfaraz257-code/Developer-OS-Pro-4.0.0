@@ -270,6 +270,29 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(VERIFICATION_PROFILES["node_test"], "npm test")
 
     @patch("api.views._runner_request", return_value=(
+        {"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": "x" * 50_001, "stderr": ""}, None,
+    ))
+    def test_oversized_runner_output_fails_closed_and_reconciles(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        with self.assertRaisesRegex(RuntimeError, "output exceeded the control-plane limit"):
+            execute_agent_task_verification(job)
+
+        fail_agent_task_verification(job)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
          "duration_ms": 1, "stdout": None, "stderr": ""}, None,
     ))
