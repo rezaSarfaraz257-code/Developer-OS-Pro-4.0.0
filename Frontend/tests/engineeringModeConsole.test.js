@@ -36,8 +36,8 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /window\.sessionStorage\.removeItem\("dos:pending-agent-request"\)/);
   assert.match(source, /resolveWorkspaceId\(workspaces, current\)/);
   assert.match(source, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
-  assert.match(source, /restoredWorkspaceCandidate \\?\\? current/);
-  assert.match(source, /if \\(loadingWorkspaces\\) return/);
+  assert.match(source, /restoredWorkspaceCandidate \?\? current/);
+  assert.match(source, /if \(loadingWorkspaces\) return/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/approve\//);
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
