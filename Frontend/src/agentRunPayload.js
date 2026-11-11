@@ -54,7 +54,9 @@ export function normalizeWorkspaces(payload) {
   });
 }
 
-export function getAgentPollDelay(latest, consecutiveFailures) {
+export function getAgentPollDelay(latest, consecutiveFailures, isVisible = true) {
+  // Background tabs do not need foreground-level status freshness.
+  if (!isVisible) return 15000;
   if (latest) return 2200;
   const failures = Number.isFinite(consecutiveFailures)
     ? Math.max(1, Math.floor(consecutiveFailures))
