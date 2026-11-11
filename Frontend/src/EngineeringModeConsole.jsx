@@ -268,8 +268,12 @@ export default function EngineeringModeConsole({ go }) {
   };
 
   const status = run?.status || "idle";
-  const openWorkspaceInIde = (targetWorkspaceId = workspaceId) => {
+  const openWorkspaceInIde = (targetWorkspaceId = workspaceId, requireTarget = false) => {
     const hasTarget = targetWorkspaceId !== null && targetWorkspaceId !== undefined && targetWorkspaceId !== "";
+    if (requireTarget && !hasTarget) {
+      setError("This agent run has no valid originating workspace. Create a new plan from an available workspace before continuing.");
+      return;
+    }
     if (hasTarget && !workspaces.some((workspace) => String(workspace.id) === String(targetWorkspaceId))) {
       setError("The workspace associated with this run is no longer available to your account. Choose an available workspace before continuing.");
       return;
@@ -340,13 +344,13 @@ export default function EngineeringModeConsole({ go }) {
           {notice && <p className="cc-agent-message" role="status">{notice}</p>}
           {run && (
             <div className="cc-agent-run" aria-live="polite">
-              <div className="cc-agent-run-head"><div><span className="cc-mode-detail-label">LIVE AGENT RUN · #{run.id}</span><strong>{run.goal}</strong><small>Workspace revision {run.workspace_revision ?? "unknown"} · {run.execution_state === "plan_only_no_workspace_mutations" ? "Plan-only · no file mutations" : "Execution state reported by server"}</small></div><div className="cc-agent-run-actions"><button type="button" onClick={() => refreshRun(run.id)} disabled={busy}>Refresh</button>{ACTIVE_STATUSES.has(run.status) && <button type="button" onClick={cancelRun} disabled={busy}>Cancel</button>}{run.status === "awaiting_approval" && <button type="button" className="cc-mode-primary" onClick={approvePlan} disabled={busy || !matchesWorkspace(run, workspaceId)} title={!matchesWorkspace(run, workspaceId) ? "Select the workspace used to create this plan before approving it." : undefined}>Review & approve</button>}{run.status === "approved" && mode === "hybrid" && <button type="button" className="cc-mode-primary" onClick={() => openWorkspaceInIde(run.workspace)}>Continue in IDE <span>↗</span></button>}</div></div>
+              <div className="cc-agent-run-head"><div><span className="cc-mode-detail-label">LIVE AGENT RUN · #{run.id}</span><strong>{run.goal}</strong><small>Workspace revision {run.workspace_revision ?? "unknown"} · {run.execution_state === "plan_only_no_workspace_mutations" ? "Plan-only · no file mutations" : "Execution state reported by server"}</small></div><div className="cc-agent-run-actions"><button type="button" onClick={() => refreshRun(run.id)} disabled={busy}>Refresh</button>{ACTIVE_STATUSES.has(run.status) && <button type="button" onClick={cancelRun} disabled={busy}>Cancel</button>}{run.status === "awaiting_approval" && <button type="button" className="cc-mode-primary" onClick={approvePlan} disabled={busy || !matchesWorkspace(run, workspaceId)} title={!matchesWorkspace(run, workspaceId) ? "Select the workspace used to create this plan before approving it." : undefined}>Review & approve</button>}{run.status === "approved" && mode === "hybrid" && <button type="button" className="cc-mode-primary" onClick={() => openWorkspaceInIde(run.workspace, true)}>Continue in IDE <span>↗</span></button>}</div></div>
               {run.error && <p className="cc-agent-message is-error" role="alert">{run.error}</p>}
               {tasks.length > 0 ? <ol className="cc-agent-task-list">{tasks.map((task, index) => <li key={`${task.id ?? "task"}-${index}`}><span className={`cc-agent-task-state is-${String(task.status || "pending").replace(/[^a-z0-9_-]/gi, "")}`} /><div><strong>{task.title || `Task ${index + 1}`}</strong><small>{String(task.agent_role || "engineering").replaceAll("_", " ")} · {task.status || "pending"}{Array.isArray(task.depends_on) && task.depends_on.length ? ` · depends on ${task.depends_on.join(", ")}` : ""}</small></div></li>)}</ol> : <p className="cc-agent-empty">{ACTIVE_STATUSES.has(run.status) ? "The planning worker is preparing the task graph…" : "No task graph has been returned for this run."}</p>}
               {run.status === "approved" && <p className="cc-agent-message">Approval is recorded. Task execution remains unavailable in this runtime; no work is represented as completed.</p>}
             </div>
           )}
-          {mode === "hybrid" && run?.status === "approved" && <div className="cc-hybrid-next"><span>HUMAN-LED IMPLEMENTATION</span><button type="button" onClick={() => openWorkspaceInIde(run.workspace)}>Continue in originating workspace ↗</button></div>}
+          {mode === "hybrid" && run?.status === "approved" && <div className="cc-hybrid-next"><span>HUMAN-LED IMPLEMENTATION</span><button type="button" onClick={() => openWorkspaceInIde(run.workspace, true)}>Continue in originating workspace ↗</button></div>}
         </div>
       )}
     </section>
