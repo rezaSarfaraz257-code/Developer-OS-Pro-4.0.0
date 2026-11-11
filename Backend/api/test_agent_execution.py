@@ -287,6 +287,27 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
         self.task.execution_evidence = {"state": "passed", "revision": self.workspace.revision}
         self.task.save(update_fields=["status", "execution_job", "execution_revision", "execution_evidence"])
 
+    def test_acceptance_cannot_resurrect_canceled_run_or_task(self):
+        self._mark_task_passed_with_durable_job()
+        self.run.status = "canceled"
+        self.run.save(update_fields=["status"])
+        self.task.status = "canceled"
+        self.task.save(update_fields=["status"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("canceled", response.data["error"])
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        self.assertNotIn("human_acceptance", self.task.execution_evidence)
+
     def test_acceptance_requires_all_exact_plan_criteria(self):
         self._mark_task_passed_with_durable_job()
         response = self.client.post(
