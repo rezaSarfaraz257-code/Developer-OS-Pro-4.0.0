@@ -222,6 +222,32 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(VERIFICATION_PROFILES["node_test"], "npm test")
 
     @patch("api.views._runner_request", return_value=(
+        {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": None, "stderr": ""}, None,
+    ))
+    def test_malformed_runner_output_fails_closed_and_reconciles(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        with self.assertRaisesRegex(RuntimeError, "malformed execution output"):
+            execute_agent_task_verification(job)
+
+        fail_agent_task_verification(job)
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
+        self.assertIsNotNone(self.task.execution_evidence["resync_job_id"])
+        self.assertEqual(self.run.status, "failed")
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}, None,
     ))
     def test_failed_runner_verification_is_terminal_evidence_not_success(self, runner_request):
