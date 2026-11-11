@@ -26,6 +26,8 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /\/ai\/agent\/runs\/\$\{id\}\//);
   assert.match(source, /dos:pending-agent-request/);
   assert.match(source, /mutationLockRef\.current/);
+  assert.match(source, /runRequestSequenceRef\.current/);
+  assert.match(source, /requestSequence !== runRequestSequenceRef\.current/);
   assert.match(source, /if \(!response\.ok \|\| !payload\?\.id\)/);
   assert.match(source, /disabled=\{busy \|\| loadingWorkspaces \|\| !workspaces\.length\}/);
   assert.match(source, /String\(task\.agent_role \|\| ["']engineering["']\)/);
