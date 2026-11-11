@@ -314,10 +314,13 @@ def execute_agent_task_verification(job):
         not isinstance(runner_job_id, str)
         or not runner_job_id
         or len(runner_job_id) > 80
+        or not runner_job_id.isascii()
         or not all(char.isalnum() or char in "-_" for char in runner_job_id)
     ):
         raise RuntimeError("Runner returned an invalid execution job reference.")
-    if runner_status not in {"completed", "failed", "timeout", "cancelled"}:
+    if not isinstance(runner_status, str) or runner_status not in {
+        "completed", "failed", "timeout", "cancelled",
+    }:
         raise RuntimeError("Runner returned an invalid execution status.")
     stdout = result.get("stdout", "")
     stderr = result.get("stderr", "")
