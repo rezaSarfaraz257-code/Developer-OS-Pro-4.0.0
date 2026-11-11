@@ -919,6 +919,14 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
                     pass
             for reader in readers:
                 reader.join(timeout=1)
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None and not stream.closed:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            for reader in readers:
+                reader.join(timeout=0.2)
             stdout, stderr = captured()
             raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
 
