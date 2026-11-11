@@ -2,7 +2,7 @@ const RUN_STATUSES = new Set(["queued", "planning", "awaiting_approval", "approv
 
 export function normalizeAgentRun(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  if (!((typeof payload.id === "string" && payload.id.trim()) || (typeof payload.id === "number" && Number.isFinite(payload.id)))) return null;
+  const runId = typeof payload.id === "number" ? payload.id\n    : typeof payload.id === "string" && /^\\d+$/.test(payload.id.trim()) ? Number(payload.id.trim()) : NaN;\n  if (!Number.isSafeInteger(runId) || runId < 1) return null;
   const safeText = (value, fallback = "") => typeof value === "string" ? value : fallback;
   const safeScalar = (value) => typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? value : null;
   const tasks = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => task && typeof task === "object" && !Array.isArray(task)).map((task, index) => ({
@@ -14,7 +14,7 @@ export function normalizeAgentRun(payload) {
   })) : [];
   return {
     ...payload,
-    id: payload.id,
+    id: runId,
     goal: safeText(payload.goal, "Engineering plan"),
     status: RUN_STATUSES.has(payload.status) ? payload.status : "unknown",
     workspace: safeScalar(payload.workspace),
