@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
-import { normalizeAgentRun, resolveWorkspaceId } from "./agentRunPayload";
+import { normalizeAgentRun, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
 const ACTIVE_STATUSES = new Set(["queued", "planning"]);
@@ -59,7 +59,7 @@ export default function EngineeringModeConsole({ go }) {
       .then(async (response) => {
         const payload = await response.json().catch(() => []);
         if (!response.ok) throw new Error(responseError(payload, "Workspaces could not be loaded."));
-        return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : [];
+        return normalizeWorkspaces(payload);
       })
       .then((items) => {
         if (!active) return;
