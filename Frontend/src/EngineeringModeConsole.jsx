@@ -89,8 +89,8 @@ export default function EngineeringModeConsole({ go }) {
     let timer;
     const poll = async () => {
       const latest = await refreshRun(run.id, { quiet: true });
-      if (active && latest && ACTIVE_STATUSES.has(latest.status)) {
-        timer = window.setTimeout(poll, 2200);
+      if (active && (!latest || ACTIVE_STATUSES.has(latest.status))) {
+        timer = window.setTimeout(poll, latest ? 2200 : 3500);
       }
     };
     timer = window.setTimeout(poll, 1100);
