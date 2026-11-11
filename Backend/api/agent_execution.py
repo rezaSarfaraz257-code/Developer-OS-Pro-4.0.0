@@ -302,16 +302,29 @@ def execute_agent_task_verification(job):
     if error or not isinstance(result, dict):
         raise RuntimeError("Isolated Runner verification request failed.")
 
-    runner_job_id = str(result.get("job_id") or "").strip()[:80]
-    runner_status = str(result.get("status") or "").lower()
+    runner_job_id = result.get("job_id")
+    runner_status = result.get("status")
+    if isinstance(runner_status, str):
+        runner_status = runner_status.lower()
     exit_code = result.get("exit_code")
     duration_ms = result.get("duration_ms")
-    if not runner_job_id:
-        raise RuntimeError("Runner did not return an execution job reference.")
+    if (
+        not isinstance(runner_job_id, str)
+        or not runner_job_id
+        or len(runner_job_id) > 80
+        or not all(char.isalnum() or char in "-_" for char in runner_job_id)
+    ):
+        raise RuntimeError("Runner returned an invalid execution job reference.")
+    if runner_status not in {"completed", "failed", "timeout", "cancelled"}:
+        raise RuntimeError("Runner returned an invalid execution status.")
     stdout = result.get("stdout", "")
     stderr = result.get("stderr", "")
     if not isinstance(stdout, str) or not isinstance(stderr, str):
         raise RuntimeError("Runner returned malformed execution output.")
+    # Runner's public output cap is 50 KB. Enforce the same boundary again
+    # at the control plane before hashing or retaining untrusted response data.
+    if len(stdout) > 50_000 or len(stderr) > 50_000:
+        raise RuntimeError("Runner execution output exceeded the control-plane limit.")
     # Persist integrity fingerprints, not raw process output: test output can
     # contain user data or secrets. These stable digests support later
     # comparisons without copying that content into long-lived DB evidence.
