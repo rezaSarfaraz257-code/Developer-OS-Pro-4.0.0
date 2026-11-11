@@ -40,7 +40,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /resolveWorkspaceId\(\s*workspaces,\s*workspaceSelectionTouchedRef\.current \? current : restoredWorkspaceCandidate \?\? current,?\s*\)/);
   assert.match(source, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
   assert.match(source, /restoredWorkspaceCandidate \?\? current/);
-  assert.match(source, /if \(loadingWorkspaces\) return/);
+  assert.match(source, /if \(loadingWorkspaces \|\| workspaceLoadError\) return/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/approve\//);
   assert.match(source, /matchesRunIdentity\(normalized, safeRunId\)/);
   assert.match(source, /matchesWorkspace\(normalized, workspaceId\)/);
