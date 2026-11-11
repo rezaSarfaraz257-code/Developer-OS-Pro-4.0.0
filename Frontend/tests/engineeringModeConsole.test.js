@@ -34,7 +34,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /String\(task\.agent_role \|\| ["']engineering["']\)/);
   assert.match(source, /pendingRequestRef\.current = pendingRequest/);
   assert.match(source, /window\.sessionStorage\.removeItem\("dos:pending-agent-request"\)/);
-  assert.match(source, /resolveWorkspaceId\(workspaces, current\)/);
+  assert.match(source, /resolveWorkspaceId\(workspaces,\s*restoredWorkspaceCandidate \?\? current\)/);
   assert.match(source, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
   assert.match(source, /restoredWorkspaceCandidate \?\? current/);
   assert.match(source, /if \(loadingWorkspaces\) return/);
