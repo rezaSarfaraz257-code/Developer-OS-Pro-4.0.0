@@ -102,6 +102,31 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         self.assertEqual(accepted.status_code, 409)
 
+    @patch("api.views._runner_request")
+    def test_worker_rechecks_dependencies_after_job_was_queued(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        # Simulate a prerequisite becoming incomplete while the verification
+        # job is waiting in the durable worker queue.
+        dependency = AgentTask.objects.create(
+            run=self.run, key="late-prerequisite", title="Late prerequisite",
+            status="failed",
+        )
+        self.task.depends_on.add(dependency)
+
+        with self.assertRaisesRegex(RuntimeError, "dependencies are no longer satisfied"):
+            execute_agent_task_verification(job)
+
+        runner_request.assert_not_called()
+
     def test_requires_human_patch_approval_audit(self):
         AuditLog.objects.filter(action="ai_agent.patch_applied").delete()
         response = self.client.post(self.url, {
