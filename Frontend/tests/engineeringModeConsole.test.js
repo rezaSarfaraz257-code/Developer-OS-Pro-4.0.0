@@ -54,6 +54,10 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
+  assert.match(source, /const ACTIVE_STATUSES = new Set\(\["queued", "planning", "running"\]\)/);
+  assert.match(source, /const CANCELLABLE_STATUSES = new Set\(\["queued", "planning", "approved", "running"\]\)/);
+  assert.match(source, /!CANCELLABLE_STATUSES\.has\(run\.status\)/);
+  assert.match(source, /\{CANCELLABLE_STATUSES\.has\(run\.status\) && <button type="button" onClick=\{cancelRun\}/);
   assert.match(source, /let consecutiveFailures = 0/);
   assert.match(source, /consecutiveFailures = 0/);
   assert.match(source, /consecutiveFailures \+= 1/);
