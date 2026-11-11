@@ -2,7 +2,7 @@ const RUN_STATUSES = new Set(["queued", "planning", "awaiting_approval", "approv
 
 export function normalizeRunId(value) {
   const id = typeof value === "number" ? value
-    : typeof value === "string" && /^\\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+    : typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
