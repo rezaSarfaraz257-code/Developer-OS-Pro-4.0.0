@@ -214,7 +214,8 @@ export default function EngineeringModeConsole({ go }) {
       setNotice("Plan approval recorded. This approval does not execute tasks or modify workspace files.");
     } catch (requestError) {
       setError(requestError?.message || "The plan could not be approved.");
-      if (requestError?.code === "stale_workspace") setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
+      const staleWorkspace = requestError?.code === "stale_workspace" || /\bstale_workspace\b/i.test(requestError?.message || "");
+      if (staleWorkspace) setNotice("The workspace changed after planning. Generate a fresh plan before approval.");
     } finally {
       mutationLockRef.current = false;
       setBusy(false);
