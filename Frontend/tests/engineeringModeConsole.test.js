@@ -114,6 +114,19 @@ test("workspace loading failures are recoverable and not mislabeled as an empty 
   assert.match(css, /\.cc-workspace-load-error \{ display:flex/);
 });
 
+test("Web IDE workspace discovery remains available when the framework catalog fails", () => {
+  const source = read("ProIDE.jsx");
+
+  assert.match(source, /Promise\.allSettled\(\[apiFetch\("\/ide\/workspaces\/"\),apiFetch\("\/ide\/frameworks\/"\)\]\)/);
+  assert.match(source, /setWorkspaces\(items\);setWorkspaceListError\("")/);
+  assert.match(source, /setFrameworks\(items\)/);
+  assert.match(source, /Framework catalog unavailable[^"]*workspace access remains available/);
+  assert.match(source, /Workspace list returned an invalid response/);
+  assert.match(source, /if\(off\)return;if\(response\.ok\)/);
+  assert.match(source, /workspaceListRetry\]\)/);
+  assert.match(source, /Retry workspaces/);
+});
+
 test("engineering mode console styling is responsive and motion-safe", () => {
   const component = read("EngineeringModeConsole.jsx");
   const css = read("EngineeringModeConsole.css");
