@@ -68,6 +68,13 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /if \(!active \|\| pollInFlight\) return/);
 });
 
+test("live Agent updates announce only the changing status, not the entire task list", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  assert.match(source, /className="cc-agent-run">/);
+  assert.doesNotMatch(source, /className="cc-agent-run" aria-live=/);
+  assert.match(source, /className={`cc-agent-status is-\$\{status\}`} role="status" aria-live="polite" aria-atomic="true"/);
+});
+
 test("Agent approval is not presented as code execution or workspace mutation", () => {
   const source = read("EngineeringModeConsole.jsx");
 
