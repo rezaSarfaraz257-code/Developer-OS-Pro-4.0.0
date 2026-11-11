@@ -53,3 +53,11 @@ export function normalizeWorkspaces(payload) {
     return [{ id, name: typeof workspace.name === "string" && workspace.name.trim() ? workspace.name.trim() : `Workspace #${id}` }];
   });
 }
+
+export function getAgentPollDelay(latest, consecutiveFailures) {
+  if (latest) return 2200;
+  const failures = Number.isFinite(consecutiveFailures)
+    ? Math.max(1, Math.floor(consecutiveFailures))
+    : 1;
+  return Math.min(15000, 3500 * (2 ** Math.min(failures - 1, 2)));
+}
