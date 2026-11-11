@@ -79,6 +79,10 @@ def recover_stale_jobs():
                     user_id=locked.payload.get("user_id"),
                 ).exclude(status__in=["ready", "expired"]).update(status="failed")
             if locked.status == "failed" and locked.kind == "ai_agent_task_verify":
+                # Verification POSTs are deliberately single-attempt: after a
+                # worker lease expires, the Runner may already have executed.
+                # Never replay that POST; reconcile the authoritative workspace
+                # and terminalize the task through the same failure path.
                 from api.agent_execution import fail_agent_task_verification
                 fail_agent_task_verification(locked)
 
