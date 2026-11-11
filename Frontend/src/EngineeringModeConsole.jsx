@@ -123,10 +123,19 @@ export default function EngineeringModeConsole({ go }) {
     if (!run?.id || !ACTIVE_STATUSES.has(run.status)) return undefined;
     let active = true;
     let timer;
+    let consecutiveFailures = 0;
     const poll = async () => {
       const latest = await refreshRun(run.id, { quiet: true });
-      if (active && (!latest || ACTIVE_STATUSES.has(latest.status))) {
-        timer = window.setTimeout(poll, latest ? 2200 : 3500);
+      if (!active) return;
+      if (latest) consecutiveFailures = 0;
+      else consecutiveFailures += 1;
+      if (!latest || ACTIVE_STATUSES.has(latest.status)) {
+        // Keep healthy runs responsive, but back off during API/network failures
+        // so an unavailable service is not hammered indefinitely.
+        const delay = latest
+          ? 2200
+          : Math.min(15000, 3500 * (2 ** Math.min(consecutiveFailures - 1, 2)));
+        timer = window.setTimeout(poll, delay);
       }
     };
     timer = window.setTimeout(poll, 1100);
