@@ -206,8 +206,13 @@ class AgentTaskVerificationAPITests(TestCase):
             self.task.execution_evidence["stdout_sha256"],
             "13adcc097b3297fc79ab2dbc73cd64852c39c5e3c209ae67e72b01af8d2d6288",
         )
+        self.assertEqual(
+            self.task.execution_evidence["stderr_sha256"],
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
         self.assertEqual(self.task.execution_evidence["stdout_bytes"], 13)
         self.assertEqual(self.task.execution_evidence["stderr_bytes"], 0)
+        self.assertFalse(self.task.execution_evidence["output_persisted"])
         self.assertNotIn("stdout", self.task.execution_evidence)
         runner_request.assert_called_once()
         self.assertEqual(
