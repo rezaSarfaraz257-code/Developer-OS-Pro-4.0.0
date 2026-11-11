@@ -96,7 +96,7 @@ export default function EngineeringModeConsole({ go }) {
   // Resolve restored workspace IDs only after the owned workspace list is ready.
   // This handles either network response order without selecting deleted/inaccessible IDs.
   useEffect(() => {
-    if (loadingWorkspaces) return;
+    if (loadingWorkspaces || workspaceLoadError) return;
     setWorkspaceId((current) => resolveWorkspaceId(
       workspaces,
       workspaceSelectionTouchedRef.current ? current : restoredWorkspaceCandidate ?? current,
@@ -113,9 +113,9 @@ export default function EngineeringModeConsole({ go }) {
           if (!active) return;
           if (payload?.workspace !== null && payload?.workspace !== undefined) {
             setRestoredWorkspaceCandidate(String(payload.workspace));
-          } else {
-            try { window.sessionStorage.removeItem("dos:last-agent-run"); } catch { /* optional persistence */ }
           }
+          // A failed or incomplete restore must not erase the saved run ID.
+          // Keep it available for a later reload when the API is reachable again.
         });
       }
     } catch {
