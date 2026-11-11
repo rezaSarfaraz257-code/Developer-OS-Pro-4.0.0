@@ -49,6 +49,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /Select the workspace used to create this plan before approving it/);
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
+  assert.ok(source.includes('|| /\\bstale_workspace\\b/i.test(requestError?.message || "")'), "API diagnostic code must survive apiFetch Error wrapping");
   assert.match(source, /normalizeAgentRun\(payload\)/);
   assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/cancel\//);
