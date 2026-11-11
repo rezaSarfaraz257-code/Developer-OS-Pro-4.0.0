@@ -196,6 +196,10 @@ jobs:
           done
           sudo aa-status | grep -E 'developer-os-runner|docker-default' || true
           docker inspect --format 'Runner security options: {{json .HostConfig.SecurityOpt}}' developer-os-runner-ci
+          # Read-only runtime inspection: identify masked procfs paths without changing container security.
+          docker inspect --format 'Runner masked paths: {{json .HostConfig.MaskedPaths}}' developer-os-runner-ci
+          docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
+          docker exec developer-os-runner-ci sh -c 'grep -E " /proc([ /]|$)" /proc/self/mountinfo || true; for path in /proc/kcore /proc/keys /proc/timer_list /proc/sysrq-trigger /proc/sys; do if [ -e "$path" ]; then stat -c "%n %F %a" "$path" 2>/dev/null || true; else printf "%s=absent\\n" "$path"; fi; done'
           # Match the Runner's real capability probe exactly; never ignore a failure.
           docker exec developer-os-runner-ci /usr/bin/bwrap --die-with-parent --new-session --unshare-user --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true
           docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
