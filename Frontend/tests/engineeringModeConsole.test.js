@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeAgentRun } from "../src/agentRunPayload.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -37,10 +38,9 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/approve\//);
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
-  assert.match(source, /function normalizeRun\(payload\)/);
+  assert.match(source, /normalizeAgentRun\(payload\)/);
   assert.match(source, /const normalized = normalizeRun\(payload\)/);
   assert.match(source, /payload\.tasks\.filter\(\(task\) => task && typeof task === ["']object["']/);
-  assert.match(source, /depends_on: Array\.isArray\(task\.depends_on\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
   assert.match(source, /latest \? 2200 : 3500/);
@@ -76,4 +76,27 @@ test("engineering mode console styling is responsive and motion-safe", () => {
   assert.match(component, /run\.workspace_revision \?\? ["']unknown["']/);
   assert.match(css, /\.cc-mode-workspace-state\.is-empty i/);
   assert.match(css, /\.cc-mode-workspace-state\.is-loading i/);
+});
+
+
+test("Agent run normalizer rejects malformed envelopes and sanitizes task data", () => {
+  assert.equal(normalizeAgentRun(null), null);
+  assert.equal(normalizeAgentRun([]), null);
+  assert.equal(normalizeAgentRun({ id: " " }), null);
+  assert.equal(normalizeAgentRun({ id: {} }), null);
+
+  const normalized = normalizeAgentRun({
+    id: "run-7",
+    status: "unexpected <script>",
+    workspace: 42,
+    workspace_revision: null,
+    tasks: [null, "invalid", { id: 3, title: "Build", status: "run<script>", depends_on: ["task-1", {}, 2] }],
+  });
+  assert.equal(normalized.id, "run-7");
+  assert.equal(normalized.status, "unknown");
+  assert.equal(normalized.workspace, 42);
+  assert.equal(normalized.workspace_revision, null);
+  assert.equal(normalized.tasks.length, 1);
+  assert.equal(normalized.tasks[0].status, "runscript");
+  assert.deepEqual(normalized.tasks[0].depends_on, ["task-1", "2"]);
 });
