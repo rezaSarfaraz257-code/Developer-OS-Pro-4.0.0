@@ -119,6 +119,13 @@ test("Agent run normalizer rejects malformed envelopes and sanitizes task data",
   assert.deepEqual(normalized.tasks[0].depends_on, ["task-1", "2"]);
 });
 
+test("late session restoration never overrides an explicit workspace selection", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  assert.match(source, /workspaceSelectionTouchedRef = useRef\(false\)/);
+  assert.match(source, /workspaceSelectionTouchedRef\.current \? current : restoredWorkspaceCandidate \?\? current/);
+  assert.match(source, /workspaceSelectionTouchedRef\.current = true; setWorkspaceId\(event\.target\.value\)/);
+});
+
 test("restored workspace selection cannot point to a deleted or inaccessible workspace", () => {
   const workspaces = [{ id: 11 }, { id: 22 }];
   assert.equal(resolveWorkspaceId(workspaces, "22"), "22");
