@@ -204,7 +204,7 @@ export default function EngineeringModeConsole({ go }) {
       const response = await apiFetch(`/ai/agent/runs/${safeRunId}/approve/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !matchesRunIdentity(normalized, safeRunId)) {
+      if (!response.ok || !matchesRunIdentity(normalized, safeRunId) || !matchesWorkspace(normalized, run.workspace)) {
         const approvalError = new Error(responseError(payload, "The plan could not be approved or returned a valid state for this run."));
         approvalError.code = payload?.code;
         throw approvalError;
@@ -231,7 +231,7 @@ export default function EngineeringModeConsole({ go }) {
       const response = await apiFetch(`/ai/agent/runs/${safeRunId}/cancel/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
-      if (!response.ok || !matchesRunIdentity(normalized, safeRunId)) {
+      if (!response.ok || !matchesRunIdentity(normalized, safeRunId) || !matchesWorkspace(normalized, run.workspace)) {
         throw new Error(responseError(payload, "The agent run could not be canceled or returned a valid state for this run."));
       }
       setRun(normalized);
