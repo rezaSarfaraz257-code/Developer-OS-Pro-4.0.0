@@ -154,6 +154,17 @@ jobs:
           cache-dependency-path: Backend/requirements.txt
       - name: Install backend dependencies
         run: python -m pip install -r requirements.txt
+      - name: Validate AppArmor namespace boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup_profile="$(awk '/^profile developer-os-runner flags=/,/^}/' ../Runner/apparmor/developer-os-runner)"
+          workload_profile="$(awk '/^profile developer-os-runner-workload flags=/,/^}/' ../Runner/apparmor/developer-os-runner)"
+          grep -Eq '^[[:space:]]*userns,' <<<"$setup_profile"
+          grep -Eq '^[[:space:]]*deny userns,' <<<"$workload_profile"
+          grep -Eq '^[[:space:]]*deny capability,' <<<"$workload_profile"
+          grep -Eq '^[[:space:]]*deny mount,' <<<"$workload_profile"
+          echo "AppArmor control/workload namespace boundary is explicitly present."
       - name: Build strict Runner image
         run: docker build --pull -t developer-os-runner-ci:agent-loop ../Runner
       - name: Start strict isolated Runner
