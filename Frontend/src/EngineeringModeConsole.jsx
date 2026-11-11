@@ -30,17 +30,21 @@ export default function EngineeringModeConsole({ go }) {
   const [notice, setNotice] = useState("");
   const pendingRequestRef = useRef(null);
   const mutationLockRef = useRef(false);
+  const runRequestSequenceRef = useRef(0);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
     if (!id) return null;
+    const requestSequence = ++runRequestSequenceRef.current;
     try {
       const response = await apiFetch(`/ai/agent/runs/${id}/`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(responseError(payload, "Agent run status is unavailable."));
+      if (requestSequence !== runRequestSequenceRef.current) return null;
       setRun(payload);
       setError("");
       return payload;
     } catch (requestError) {
+      if (requestSequence !== runRequestSequenceRef.current) return null;
       if (!quiet) setError(requestError?.message || "Could not refresh agent status.");
       return null;
     }
@@ -112,6 +116,7 @@ export default function EngineeringModeConsole({ go }) {
     const cleanGoal = goal.trim();
     if (!cleanGoal || !workspaceId || mutationLockRef.current) return;
     mutationLockRef.current = true;
+    runRequestSequenceRef.current += 1;
     setBusy(true);
     setError("");
     setNotice("");
@@ -158,6 +163,7 @@ export default function EngineeringModeConsole({ go }) {
   const approvePlan = async () => {
     if (!run?.id || mutationLockRef.current || run.status !== "awaiting_approval") return;
     mutationLockRef.current = true;
+    runRequestSequenceRef.current += 1;
     setBusy(true);
     setError("");
     setNotice("");
@@ -183,6 +189,7 @@ export default function EngineeringModeConsole({ go }) {
   const cancelRun = async () => {
     if (!run?.id || mutationLockRef.current || !ACTIVE_STATUSES.has(run.status)) return;
     mutationLockRef.current = true;
+    runRequestSequenceRef.current += 1;
     setBusy(true);
     setError("");
     try {
