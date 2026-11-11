@@ -1173,6 +1173,25 @@ def test_process_output_capture_is_bounded_per_stream():
     assert result.stderr.endswith("B" * 128)
 
 
+def test_successful_execution_kills_background_descendants():
+    with tempfile.TemporaryDirectory(prefix="runner-success-group-") as tmp:
+        root = Path(tmp)
+        marker = root / "descendant-survived"
+        child_code = "import time; time.sleep(0.4); open('descendant-survived', 'w').write('alive')"
+        parent_code = (
+            "import subprocess,sys; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}])"
+        )
+        result = main._run_process_with_timeout(
+            [sys.executable, "-c", parent_code], cwd=root,
+            env={"PATH": os.environ.get("PATH", "")}, timeout=5,
+            preexec_fn=lambda: None,
+        )
+        time.sleep(0.7)
+        assert result.returncode == 0
+        assert not marker.exists(), "A background descendant survived successful execution"
+
+
 def test_execution_timeout_kills_descendant_processes():
     with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:
         root = Path(tmp)
