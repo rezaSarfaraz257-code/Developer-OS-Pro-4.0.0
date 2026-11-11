@@ -40,7 +40,7 @@ export function normalizeWorkspaces(payload) {
   return rows.flatMap((workspace) => {
     if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return [];
     const id = typeof workspace.id === "number" ? workspace.id
-      : typeof workspace.id === "string" && /^\\d+$/.test(workspace.id.trim()) ? Number(workspace.id.trim()) : NaN;
+      : typeof workspace.id === "string" && /^\d+$/.test(workspace.id.trim()) ? Number(workspace.id.trim()) : NaN;
     if (!Number.isSafeInteger(id) || id < 1 || seen.has(id)) return [];
     seen.add(id);
     return [{ id, name: typeof workspace.name === "string" && workspace.name.trim() ? workspace.name.trim() : `Workspace #${id}` }];
