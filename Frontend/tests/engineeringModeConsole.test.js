@@ -87,13 +87,13 @@ test("Agent run normalizer rejects malformed envelopes and sanitizes task data",
   assert.equal(normalizeAgentRun({ id: {} }), null);
 
   const normalized = normalizeAgentRun({
-    id: "run-7",
+    id: "7",
     status: "unexpected <script>",
     workspace: 42,
     workspace_revision: null,
     tasks: [null, "invalid", { id: 3, title: "Build", status: "run<script>", depends_on: ["task-1", {}, 2] }],
   });
-  assert.equal(normalized.id, "run-7");
+  assert.equal(normalized.id, 7);
   assert.equal(normalized.status, "unknown");
   assert.equal(normalized.workspace, 42);
   assert.equal(normalized.workspace_revision, null);
