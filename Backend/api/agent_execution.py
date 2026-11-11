@@ -294,13 +294,15 @@ def execute_agent_task_verification(job):
     if not isinstance(stdout, str) or not isinstance(stderr, str):
         raise RuntimeError("Runner returned malformed execution output.")
     # Persist integrity fingerprints, not raw process output: test output can
-    # contain user data or secrets. The hashes make the captured result
-    # tamper-evident without copying that content into long-lived DB evidence.
+    # contain user data or secrets. These stable digests support later
+    # comparisons without copying that content into long-lived DB evidence.
+    stdout_bytes = stdout.encode("utf-8")
+    stderr_bytes = stderr.encode("utf-8")
     output_fingerprints = {
-        "stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
-        "stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
-        "stdout_bytes": len(stdout.encode("utf-8")),
-        "stderr_bytes": len(stderr.encode("utf-8")),
+        "stdout_sha256": hashlib.sha256(stdout_bytes).hexdigest(),
+        "stderr_sha256": hashlib.sha256(stderr_bytes).hexdigest(),
+        "stdout_bytes": len(stdout_bytes),
+        "stderr_bytes": len(stderr_bytes),
     }
     if type(exit_code) is not int:
         raise RuntimeError("Runner returned an invalid execution exit code.")
