@@ -122,6 +122,17 @@ class AgentTaskVerificationAPITests(TestCase):
             target_type="CodeWorkspace", target_id=str(self.workspace.id),
             metadata__revision=self.workspace.revision,
         ).delete()
+        # A replacement audit with identical metadata must not inherit the
+        # queued job's authorization; it was not the record bound at queue time.
+        AuditLog.objects.create(
+            user=self.user, action="ai_agent.patch_applied",
+            target_type="CodeWorkspace", target_id=str(self.workspace.id),
+            metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+            },
+        )
 
         with self.assertRaisesRegex(RuntimeError, "signed approval.*no longer valid"):
             execute_agent_task_verification(job)
@@ -205,6 +216,11 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(kind="ai_agent_task_verify")
         self.assertEqual(job.max_attempts, 1)
         self.assertEqual(job.payload["profile"], "python_pytest")
+        self.assertIsNotNone(job.payload["patch_audit_id"])
+        self.assertEqual(
+            AuditLog.objects.get(pk=job.payload["patch_audit_id"]).action,
+            "ai_agent.patch_applied",
+        )
         second = self.client.post(self.url, payload, format="json")
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data["job_id"], job.id)
@@ -252,6 +268,10 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
         self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
         self.assertEqual(self.task.execution_evidence["sync_job_id"], self.sync_job.id)
+        self.assertEqual(
+            self.task.execution_evidence["patch_audit_id"],
+            job.payload["patch_audit_id"],
+        )
         self.assertEqual(
             self.task.execution_evidence["stdout_sha256"],
             "13adcc097b3297fc79ab2dbc73cd64852c39c5e3c209ae67e72b01af8d2d6288",
