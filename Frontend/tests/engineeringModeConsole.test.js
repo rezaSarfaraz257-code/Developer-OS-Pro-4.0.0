@@ -71,4 +71,9 @@ test("engineering mode console styling is responsive and motion-safe", () => {
   assert.match(css, /@media\(max-width:600px\)/);
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /:focus-visible/);
+  assert.match(component, /NO WORKSPACE SELECTED/);
+  assert.match(component, /WORKSPACE READY/);
+  assert.match(component, /run\.workspace_revision \?\? ["']unknown["']/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-empty i/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-loading i/);
 });
