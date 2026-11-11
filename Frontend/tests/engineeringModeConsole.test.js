@@ -44,6 +44,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/approve\//);
   assert.match(source, /matchesRunIdentity\(normalized, safeRunId\)/);
   assert.match(source, /matchesWorkspace\(normalized, workspaceId\)/);
+  assert.match(source, /matchesWorkspace\(normalized, run\.workspace\)/);
   assert.match(source, /matchesWorkspace\(run, workspaceId\)/);
   assert.match(source, /Select the workspace used to create this plan before approving it/);
   assert.match(source, /approvalError\.code = payload\?\.code/);
