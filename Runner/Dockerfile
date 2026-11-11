@@ -46,7 +46,7 @@ FROM node:26-bookworm-slim
 # Keep Debian security packages current, then remove package metadata/cache.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends python3 git curl ca-certificates bubblewrap tini \
+    && apt-get install -y --no-install-recommends python3 git curl ca-certificates tini \
     && apt-get upgrade -y \
     && dpkg-query -W -f='${binary:Package}\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' | xargs -r apt-get purge -y \
     && ! dpkg-query -W -f='${binary:Package}\n' | grep -E '^python3-(pip|pip-whl|setuptools|setuptools-whl|urllib3|msgpack)(:|$)' \
