@@ -81,6 +81,9 @@ test("Hybrid handoff restores the originating Agent run workspace in the Web IDE
   assert.match(consoleSource, /workspaces\.some\(\(workspace\) => String\(workspace\.id\) === String\(targetWorkspaceId\)\)/);
   assert.match(consoleSource, /workspace associated with this run is no longer available/);
   assert.match(consoleSource, /openWorkspaceInIde\(run\.workspace\)/);
+  assert.match(consoleSource, /mode === "hybrid" && run\?\.status === "approved"/);
+  assert.match(consoleSource, /Continue in originating workspace/);
+  assert.match(consoleSource, /onClick=\{\(\) => openWorkspaceInIde\(run\.workspace\)\}/);
   assert.match(consoleSource, /sessionStorage\.setItem\("dos:requested-ide-workspace", String\(targetWorkspaceId\)\)/);
   assert.match(ide, /dos:requested-ide-workspace/);
   assert.match(ide, /load\(preferred\|\|workspaces\[0\]\)/);
