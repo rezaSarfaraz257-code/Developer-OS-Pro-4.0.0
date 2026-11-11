@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
-import { normalizeAgentRun } from "./agentRunPayload";
+import { normalizeAgentRun, resolveWorkspaceId } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
 const ACTIVE_STATUSES = new Set(["queued", "planning"]);
@@ -19,7 +19,6 @@ function responseError(payload, fallback) {
   return formatApiError(payload, fallback);
 }
 
-
 export default function EngineeringModeConsole({ go }) {
   const [mode, setMode] = useState("manual");
   const [workspaces, setWorkspaces] = useState([]);
@@ -35,14 +34,14 @@ export default function EngineeringModeConsole({ go }) {
   const runRequestSequenceRef = useRef(0);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
-    if (!id) return null;
+    if (!id || mutationLockRef.current) return null;
     const requestSequence = ++runRequestSequenceRef.current;
     try {
       const response = await apiFetch(`/ai/agent/runs/${id}/`);
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) throw new Error(responseError(payload, "Agent run status is unavailable or malformed."));
-      if (requestSequence !== runRequestSequenceRef.current) return null;
+      if (requestSequence !== runRequestSequenceRef.current || mutationLockRef.current) return null;
       setRun(normalized);
       setError("");
       return normalized;
@@ -64,8 +63,6 @@ export default function EngineeringModeConsole({ go }) {
       .then((items) => {
         if (!active) return;
         setWorkspaces(items);
-        // Select a safe default immediately; a restored run can then override it
-        // with its own workspace once the owner-scoped detail request completes.
         if (items.length) setWorkspaceId((current) => current || String(items[0].id));
       })
       .catch((requestError) => {
@@ -76,6 +73,14 @@ export default function EngineeringModeConsole({ go }) {
       });
     return () => { active = false; };
   }, []);
+
+  // A restored run may reference a workspace that was deleted or is no longer
+  // accessible. Keep the selector and subsequent create/handoff actions valid.
+  useEffect(() => {
+    if (!loadingWorkspaces) {
+      setWorkspaceId((current) => resolveWorkspaceId(workspaces, current));
+    }
+  }, [loadingWorkspaces, workspaces]);
 
   useEffect(() => {
     let active = true;
