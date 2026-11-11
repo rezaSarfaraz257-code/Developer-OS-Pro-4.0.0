@@ -37,6 +37,10 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   mount options=(rw rbind) /tmp/newroot/ -> /tmp/newroot/,
   mount options=(rw silent make-rslave) /,
   mount options=(rw silent make-rprivate) /oldroot/,
+  # Bubblewrap mounts procfs at this exact private-root destination. Do not
+  # constrain the kernel-reported source/options: they vary across supported
+  # kernels, while the filesystem type and destination remain tightly scoped.
+  mount fstype=proc -> /newroot/@{PROC}/,
   mount fstype=proc options=(rw nosuid nodev noexec) proc -> /newroot/@{PROC}/,
   # Bubblewrap first bind-mounts the original procfs into its private mount root.
   mount options=(rw rbind) /oldroot/proc/ -> @{PROC}/,
