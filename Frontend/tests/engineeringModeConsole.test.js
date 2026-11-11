@@ -124,7 +124,7 @@ test("late session restoration never overrides an explicit workspace selection",
   assert.match(source, /workspaceSelectionTouchedRef = useRef\(false\)/);
   assert.match(source, /workspaceSelectionTouchedRef\.current \? current : restoredWorkspaceCandidate \?\? current/);
   assert.match(source, /workspaceSelectionTouchedRef\.current = true; setWorkspaceId\(event\.target\.value\)/);
-  assert.match(source, /key=\{\`\$\{task\.id \?\? ["']task["']\}-\$\{index\}\`\}/);
+  assert.match(source, /key=\{`\$\{task\.id \?\? ["']task["']\}-\$\{index\}`\}/);
 });
 
 test("restored workspace selection cannot point to a deleted or inaccessible workspace", () => {
