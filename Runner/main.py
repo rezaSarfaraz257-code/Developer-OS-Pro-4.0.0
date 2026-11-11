@@ -861,7 +861,33 @@ def _normalize_command(command):
     return command
 
 def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
-    """Run a fixed-argv script in its own process group and terminate descendants on timeout."""
+    """Run in a process group while retaining only a bounded tail of each output stream."""
+    proc = None
+    readers = []
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    buffer_lock = threading.Lock()
+
+    def drain(name, stream):
+        try:
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                with buffer_lock:
+                    target = buffers[name]
+                    target.extend(chunk)
+                    if len(target) > MAX_OUTPUT:
+                        del target[:-MAX_OUTPUT]
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    def captured():
+        with buffer_lock:
+            return bytes(buffers["stdout"]), bytes(buffers["stderr"])
+
     try:
         proc = subprocess.Popen(
             argv,
@@ -871,26 +897,48 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             start_new_session=True,
             preexec_fn=preexec_fn,
         )
+        for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            reader = threading.Thread(target=drain, args=(name, stream), daemon=True)
+            reader.start()
+            readers.append(reader)
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
-                stdout, stderr = proc.communicate(timeout=1)
+                proc.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 _terminate_process_group(proc, grace_seconds=0.1)
                 try:
-                    stdout, stderr = proc.communicate(timeout=1)
+                    proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:
-                    stdout, stderr = exc.output or "", exc.stderr or ""
-            stdout = stdout or exc.output or ""
-            stderr = stderr or exc.stderr or ""
+                    pass
+            for reader in readers:
+                reader.join(timeout=1)
+            stdout, stderr = captured()
             raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
-        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+        # A descendant retaining an inherited pipe must not pin the worker.
+        for reader in readers:
+            reader.join(timeout=1)
+        for stream in (proc.stdout, proc.stderr):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        for reader in readers:
+            reader.join(timeout=0.2)
+        stdout, stderr = captured()
+        return subprocess.CompletedProcess(
+            argv, proc.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
     finally:
         _remove_command_script(cleanup_path)
 
