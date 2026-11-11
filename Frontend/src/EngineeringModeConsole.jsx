@@ -42,6 +42,7 @@ export default function EngineeringModeConsole({ go }) {
   const pendingRequestRef = useRef(null);
   const mutationLockRef = useRef(false);
   const runRequestSequenceRef = useRef(0);
+  const workspaceSelectionTouchedRef = useRef(false);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
     const safeRunId = normalizeRunId(id);
@@ -93,7 +94,7 @@ export default function EngineeringModeConsole({ go }) {
     if (loadingWorkspaces) return;
     setWorkspaceId((current) => resolveWorkspaceId(
       workspaces,
-      restoredWorkspaceCandidate ?? current,
+      workspaceSelectionTouchedRef.current ? current : restoredWorkspaceCandidate ?? current,
     ));
     if (restoredWorkspaceCandidate !== null) setRestoredWorkspaceCandidate(null);
   }, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);
@@ -295,7 +296,7 @@ export default function EngineeringModeConsole({ go }) {
             {run && <span className={`cc-agent-status is-${status}`}><i />{STATUS_LABELS[status] || status}</span>}
           </div>
           <form className="cc-agent-create-form" onSubmit={createPlan}>
-            <label className="cc-agent-field"><span>WORKSPACE</span><select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} disabled={busy || loadingWorkspaces || !workspaces.length}><option value="">{loadingWorkspaces ? "Loading workspaces…" : "Select a workspace"}</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || `Workspace #${workspace.id}`}</option>)}</select></label>
+            <label className="cc-agent-field"><span>WORKSPACE</span><select value={workspaceId} onChange={(event) => { workspaceSelectionTouchedRef.current = true; setWorkspaceId(event.target.value); }} disabled={busy || loadingWorkspaces || !workspaces.length}><option value="">{loadingWorkspaces ? "Loading workspaces…" : "Select a workspace"}</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || `Workspace #${workspace.id}`}</option>)}</select></label>
             <label className="cc-agent-field cc-agent-goal"><span>ENGINEERING GOAL</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} disabled={busy} maxLength={12000} rows={3} placeholder="Example: Review the project architecture, identify the highest-risk frontend issues, and prepare a safe implementation plan." /></label>
             <div className="cc-agent-form-actions"><small>{goal.length.toLocaleString()} / 12,000 characters</small><button type="submit" className="cc-mode-primary" disabled={busy || loadingWorkspaces || !workspaceId || !goal.trim()}>{busy ? "Submitting…" : "Generate plan"} <span>✳</span></button></div>
           </form>
