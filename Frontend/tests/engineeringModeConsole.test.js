@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
+import { getAgentPollDelay, normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -156,4 +156,15 @@ test("workspace list normalization rejects malformed, duplicate and unsafe IDs",
     { id: 8, name: "Workspace #8" },
   ]);
   assert.deepEqual(normalizeWorkspaces({ results: "invalid" }), []);
+});
+
+
+test("Agent polling backoff stays responsive when healthy and bounded during failures", () => {
+  assert.equal(getAgentPollDelay({ status: "planning" }, 0), 2200);
+  assert.equal(getAgentPollDelay(null, 1), 3500);
+  assert.equal(getAgentPollDelay(null, 2), 7000);
+  assert.equal(getAgentPollDelay(null, 3), 14000);
+  assert.equal(getAgentPollDelay(null, 4), 14000);
+  assert.equal(getAgentPollDelay(null, 0), 3500);
+  assert.equal(getAgentPollDelay(null, Number.NaN), 3500);
 });
