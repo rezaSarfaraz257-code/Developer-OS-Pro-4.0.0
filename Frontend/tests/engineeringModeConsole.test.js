@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeAgentRun, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
+import { normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -24,7 +24,9 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   const source = read("EngineeringModeConsole.jsx");
 
   assert.match(source, /apiFetch\(["']\/ai\/agent\/runs\/["']/);
-  assert.match(source, /\/ai\/agent\/runs\/\$\{id\}\//);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\//);
+  assert.match(source, /normalizeRunId\(id\)/);
+  assert.match(source, /A-Za-z0-9\._:-\]\{1,128\}/);
   assert.match(source, /dos:pending-agent-request/);
   assert.match(source, /mutationLockRef\.current/);
   assert.match(source, /runRequestSequenceRef\.current/);
@@ -81,6 +83,11 @@ test("engineering mode console styling is responsive and motion-safe", () => {
 });
 
 test("Agent run normalizer rejects malformed envelopes and sanitizes task data", () => {
+  assert.equal(normalizeRunId(7), 7);
+  assert.equal(normalizeRunId(" 7 "), 7);
+  for (const invalid of ["run-7", "7/approve", "7?next=/admin", "", "0", -1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, {}]) {
+    assert.equal(normalizeRunId(invalid), null, `reject unsafe run ID: ${String(invalid)}`);
+  }
   assert.equal(normalizeAgentRun(null), null);
   assert.equal(normalizeAgentRun([]), null);
   assert.equal(normalizeAgentRun({ id: " " }), null);
