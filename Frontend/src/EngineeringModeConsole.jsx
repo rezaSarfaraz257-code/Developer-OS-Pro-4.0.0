@@ -138,7 +138,7 @@ export default function EngineeringModeConsole({ go }) {
         body: JSON.stringify({ goal: cleanGoal, workspace: Number(workspaceId), idempotency_key: idempotencyKey }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(responseError(payload, "The engineering plan could not be created."));
+      if (!response.ok || !payload?.id) throw new Error(responseError(payload, "The engineering plan could not be created or returned a valid run ID."));
       setRun(payload);
       setGoal("");
       pendingRequestRef.current = null;
@@ -164,7 +164,7 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${run.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      if (!response.ok || !payload?.id) {
         const approvalError = new Error(responseError(payload, "The plan could not be approved."));
         approvalError.code = payload?.code;
         throw approvalError;
@@ -188,7 +188,7 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${run.id}/cancel/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(responseError(payload, "The agent run could not be canceled."));
+      if (!response.ok || !payload?.id) throw new Error(responseError(payload, "The agent run could not be canceled or returned a valid run state."));
       setRun(payload);
       setNotice("Agent planning run canceled.");
     } catch (requestError) {
