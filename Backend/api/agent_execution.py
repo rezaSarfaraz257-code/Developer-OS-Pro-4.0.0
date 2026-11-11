@@ -274,6 +274,20 @@ def execute_agent_task_verification(job):
         ):
             raise RuntimeError("The verified workspace revision is not synchronized to Runner.")
 
+        # The signed-approval audit is checked again at execution time. Queueing
+        # is not a durable authorization grant: if the approval record is
+        # revoked/removed while the job waits, fail closed before contacting Runner.
+        approved_patch = AuditLog.objects.filter(
+            user=actor, action="ai_agent.patch_applied",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__previous_revision=workspace.revision - 1,
+            metadata__revision=workspace.revision,
+            metadata__approval="signed_single_use_revision_bound",
+            created_at__gte=run.approved_at,
+        ).exists()
+        if not approved_patch:
+            raise RuntimeError("The signed approval for this workspace revision is no longer valid.")
+
         revision = workspace.revision
         workspace_snapshot = _workspace_payload(workspace)
         task.execution_attempts = current_job.attempts
