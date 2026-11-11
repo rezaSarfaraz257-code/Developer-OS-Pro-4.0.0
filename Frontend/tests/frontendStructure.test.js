@@ -667,13 +667,16 @@ test("IDE rejects malformed array payloads when refreshing workspace file maps",
 });
 
 
-test("IDE workspace and framework list failures are visible and retryable", () => {
+test("IDE workspace and framework catalogs load independently and failures remain retryable", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  const initStart = ide.indexOf('Promise.all([apiFetch("/ide/workspaces/")');
-  const init = ide.slice(initStart, initStart + 1800);
-  assert.match(init, /if\(!a\.ok\)throw Error\(w\.error\|\|w\.detail\|\|`Workspace list failed \(HTTP \$\{a\.status\}\)`\)/);
-  assert.match(init, /if\(!b\.ok\)throw Error\(f\.error\|\|f\.detail\|\|`Framework list failed \(HTTP \$\{b\.status\}\)`\)/);
-  assert.match(init, /setWorkspaceListError\(error\);setStatus\(error\)/);
+  const initStart = ide.indexOf('Promise.allSettled([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")])');
+  assert.ok(initStart >= 0, "workspace and framework requests should settle independently");
+  const init = ide.slice(initStart, initStart + 5000);
+  assert.match(init, /workspaceResult\.status==="fulfilled"/);
+  assert.match(init, /workspaceError=payload\.error\|\|payload\.detail\|\|\("Workspace list failed \(HTTP "\+response\.status\+"\)"\)/);
+  assert.match(init, /frameworkResult\.status==="fulfilled"/);
+  assert.match(init, /Framework catalog unavailable[^"]*workspace access remains available/);
+  assert.match(init, /setWorkspaceListError\(workspaceError\);setStatus\(workspaceError\)/);
   assert.match(init, /\[message,workspaceListRetry\]/);
   assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
   assert.match(ide, /Retry workspaces/);
