@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
-import { normalizeAgentRun, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
+import { normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
 const ACTIVE_STATUSES = new Set(["queued", "planning"]);
@@ -35,10 +35,11 @@ export default function EngineeringModeConsole({ go }) {
   const runRequestSequenceRef = useRef(0);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
-    if (!id || mutationLockRef.current) return null;
+    const safeRunId = normalizeRunId(id);
+    if (safeRunId === null || mutationLockRef.current) return null;
     const requestSequence = ++runRequestSequenceRef.current;
     try {
-      const response = await apiFetch(`/ai/agent/runs/${id}/`);
+      const response = await apiFetch(`/ai/agent/runs/${safeRunId}/`);
       const payload = await response.json().catch(() => ({}));
       const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) throw new Error(responseError(payload, "Agent run status is unavailable or malformed."));
@@ -138,7 +139,7 @@ export default function EngineeringModeConsole({ go }) {
       if (!pendingRequest || pendingRequest.signature !== requestSignature) {
         try {
           const stored = JSON.parse(window.sessionStorage.getItem("dos:pending-agent-request") || "null");
-          if (stored?.signature === requestSignature && typeof stored.key === "string") pendingRequest = stored;
+          if (stored?.signature === requestSignature && typeof stored.key === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(stored.key)) pendingRequest = stored;
         } catch { /* storage is optional; in-memory idempotency still applies */ }
       }
       if (!pendingRequest || pendingRequest.signature !== requestSignature) {
