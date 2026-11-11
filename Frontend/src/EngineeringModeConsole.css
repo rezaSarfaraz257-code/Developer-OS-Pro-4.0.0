@@ -102,6 +102,17 @@
 .cc-agent-inline-link { margin-left:6px; padding:0; border:0; color:#8beaff; background:none; font:inherit; font-weight:750; cursor:pointer; }
 .cc-agent-inline-link:hover { text-decoration:underline; }
 
+/* Keyboard users receive the same clear interaction affordance as pointer users. */
+.cc-mode-card:focus-visible,
+.cc-mode-primary:focus-visible,
+.cc-agent-run-actions > button:focus-visible,
+.cc-hybrid-next > button:focus-visible,
+.cc-manual-agent-signal > button:focus-visible,
+.cc-agent-inline-link:focus-visible {
+  outline: 2px solid #75e5f7;
+  outline-offset: 3px;
+}
+
 /* Workspace state is data-driven; never imply readiness while loading or empty. */
 .cc-mode-workspace-state i { background:#91a9bd; box-shadow:none; }
 .cc-mode-workspace-state.is-ready i { background:#55dfb0; box-shadow:0 0 12px rgba(85,223,176,.65); }
