@@ -276,7 +276,12 @@ export default function EngineeringModeConsole({ go }) {
     }
     try {
       if (hasTarget) window.sessionStorage.setItem("dos:requested-ide-workspace", String(targetWorkspaceId));
-    } catch { /* optional handoff */ }
+    } catch {
+      if (hasTarget) {
+        setError("The workspace handoff could not be saved in this browser session. Keep this page open and retry before continuing.");
+        return;
+      }
+    }
     go("/ide");
   };
   const tasks = Array.isArray(run?.tasks) ? run.tasks : [];
