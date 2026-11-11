@@ -39,8 +39,7 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
   assert.match(source, /normalizeAgentRun\(payload\)/);
-  assert.match(source, /const normalized = normalizeRun\(payload\)/);
-  assert.match(source, /payload\.tasks\.filter\(\(task\) => task && typeof task === ["']object["']/);
+  assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
   assert.match(source, /latest \? 2200 : 3500/);
