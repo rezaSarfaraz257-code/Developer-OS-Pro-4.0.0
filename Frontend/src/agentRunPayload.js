@@ -1,10 +1,15 @@
 const RUN_STATUSES = new Set(["queued", "planning", "awaiting_approval", "approved", "running", "succeeded", "failed", "canceled"]);
 
+export function normalizeRunId(value) {
+  const id = typeof value === "number" ? value
+    : typeof value === "string" && /^\\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 export function normalizeAgentRun(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const runId = typeof payload.id === "number" ? payload.id
-    : typeof payload.id === "string" && /^\d+$/.test(payload.id.trim()) ? Number(payload.id.trim()) : NaN;
-  if (!Number.isSafeInteger(runId) || runId < 1) return null;
+  const runId = normalizeRunId(payload.id);
+  if (runId === null) return null;
   const safeText = (value, fallback = "") => typeof value === "string" ? value : fallback;
   const safeScalar = (value) => typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? value : null;
   const tasks = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => task && typeof task === "object" && !Array.isArray(task)).map((task, index) => ({
