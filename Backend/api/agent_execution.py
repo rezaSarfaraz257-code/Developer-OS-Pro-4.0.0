@@ -5,6 +5,8 @@ It creates no second patch format, approval token, or Runner transport.
 """
 from __future__ import annotations
 
+import hashlib
+
 from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -287,6 +289,19 @@ def execute_agent_task_verification(job):
     duration_ms = result.get("duration_ms")
     if not runner_job_id:
         raise RuntimeError("Runner did not return an execution job reference.")
+    stdout = result.get("stdout", "")
+    stderr = result.get("stderr", "")
+    if not isinstance(stdout, str) or not isinstance(stderr, str):
+        raise RuntimeError("Runner returned malformed execution output.")
+    # Persist integrity fingerprints, not raw process output: test output can
+    # contain user data or secrets. The hashes make the captured result
+    # tamper-evident without copying that content into long-lived DB evidence.
+    output_fingerprints = {
+        "stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+        "stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        "stdout_bytes": len(stdout.encode("utf-8")),
+        "stderr_bytes": len(stderr.encode("utf-8")),
+    }
     if type(exit_code) is not int:
         raise RuntimeError("Runner returned an invalid execution exit code.")
     if not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or not 0 <= duration_ms <= 120_000:
@@ -343,6 +358,7 @@ def execute_agent_task_verification(job):
             "history": queued_evidence.get("history", []),
             "runner_status": runner_status or "unknown", "exit_code": exit_code,
             "duration_ms": duration_ms, "verified_at": verified_at,
+            **output_fingerprints,
             "output_persisted": False,
         }
 
