@@ -340,7 +340,7 @@ export default function EngineeringModeConsole({ go }) {
               {run.status === "approved" && <p className="cc-agent-message">Approval is recorded. Task execution remains unavailable in this runtime; no work is represented as completed.</p>}
             </div>
           )}
-          {mode === "hybrid" && run?.status === "approved" && <div className="cc-hybrid-next"><span>HUMAN-LED IMPLEMENTATION</span><button type="button" onClick={openWorkspaceInIde}>Open Web IDE · selected workspace ↗</button></div>}
+          {mode === "hybrid" && run?.status === "approved" && <div className="cc-hybrid-next"><span>HUMAN-LED IMPLEMENTATION</span><button type="button" onClick={() => openWorkspaceInIde(run.workspace)}>Continue in originating workspace ↗</button></div>}
         </div>
       )}
     </section>
