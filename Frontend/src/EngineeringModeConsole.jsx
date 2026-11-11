@@ -307,7 +307,7 @@ export default function EngineeringModeConsole({ go }) {
         </button>
         <button type="button" className={`cc-mode-card cc-mode-hybrid ${mode === "hybrid" ? "is-selected" : ""}`} aria-pressed={mode === "hybrid"} onClick={() => setMode("hybrid")}>
           <span className="cc-mode-icon">⇄</span><span className="cc-mode-number">03 / HUMAN + AI</span>
-          <strong>Hybrid Build</strong><span>Use an agent plan for direction, then continue hands-on in the Web IDE. Select the same workspace in the IDE workspace selector.</span>
+          <strong>Hybrid Build</strong><span>Use an agent plan for direction, then continue hands-on in the Web IDE. The Web IDE opens this exact workspace automatically.</span>
           <em>Plan + collaborate <b>→</b></em>
         </button>
       </div>
