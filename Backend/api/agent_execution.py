@@ -514,6 +514,10 @@ def agent_task_accept_api(request, pk, task_pk):
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
+        # Cancellation is terminal: a delayed acceptance request must never
+        # resurrect a canceled task or run after verification has completed.
+        if run.status == "canceled" or task.status == "canceled":
+            return Response({"error": "A canceled Agent run or task cannot be accepted."}, status=409)
         if task.depends_on.exclude(status="succeeded").exists():
             return Response({"error": "Complete every dependent task before accepting this task."}, status=409)
         if task.status == "succeeded":
