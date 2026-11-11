@@ -321,6 +321,7 @@ export default function EngineeringModeConsole({ go }) {
         <div className="cc-mode-detail cc-mode-manual-detail">
           <div><span className="cc-mode-detail-label">MANUAL WORKSPACE</span><strong>Start with direct engineering control.</strong><p>Your files, editor, terminal, diagnostics and workspace history stay in the Web IDE.</p></div>
           <button type="button" className="cc-mode-primary" onClick={openWorkspaceInIde}>Open Web IDE <span>↗</span></button>
+          {error && <p className="cc-agent-message is-error" role="alert">{error}</p>}
           {run && <div className="cc-manual-agent-signal"><span className="cc-mode-detail-label">LAST AGENT RUN · #{run.id}</span><span className={`cc-agent-status is-${status}`}><i />{STATUS_LABELS[status] || status}</span><strong>{run.goal}</strong><button type="button" onClick={() => setMode("agent")}>View agent plan →</button></div>}
         </div>
       ) : (
