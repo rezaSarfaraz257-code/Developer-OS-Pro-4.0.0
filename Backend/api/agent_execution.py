@@ -321,15 +321,15 @@ def execute_agent_task_verification(job):
     stderr = result.get("stderr", "")
     if not isinstance(stdout, str) or not isinstance(stderr, str):
         raise RuntimeError("Runner returned malformed execution output.")
-    # Runner's public output cap is 50 KB. Enforce the same boundary again
-    # at the control plane before hashing or retaining untrusted response data.
-    if len(stdout) > 50_000 or len(stderr) > 50_000:
+    # Runner caps stdout and stderr individually. Enforce the combined UTF-8
+    # response budget again at the control plane before hashing untrusted data.
+    stdout_bytes = stdout.encode("utf-8")
+    stderr_bytes = stderr.encode("utf-8")
+    if len(stdout_bytes) + len(stderr_bytes) > 50_000:
         raise RuntimeError("Runner execution output exceeded the control-plane limit.")
     # Persist integrity fingerprints, not raw process output: test output can
     # contain user data or secrets. These stable digests support later
     # comparisons without copying that content into long-lived DB evidence.
-    stdout_bytes = stdout.encode("utf-8")
-    stderr_bytes = stderr.encode("utf-8")
     output_fingerprints = {
         "stdout_sha256": hashlib.sha256(stdout_bytes).hexdigest(),
         "stderr_sha256": hashlib.sha256(stderr_bytes).hexdigest(),
