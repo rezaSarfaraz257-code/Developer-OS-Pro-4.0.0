@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeAgentRun, resolveWorkspaceId } from "../src/agentRunPayload.js";
+import { normalizeAgentRun, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(testsDir, "../src");
@@ -109,4 +109,21 @@ test("restored workspace selection cannot point to a deleted or inaccessible wor
   assert.equal(resolveWorkspaceId(workspaces, null), "11");
   assert.equal(resolveWorkspaceId([{ name: "broken" }, null], "999"), "");
   assert.equal(resolveWorkspaceId([], "22"), "");
+});
+
+
+test("workspace list normalization rejects malformed, duplicate and unsafe IDs", () => {
+  assert.deepEqual(normalizeWorkspaces({ results: [
+    { id: 7, name: "  Main  " },
+    { id: "8", name: "" },
+    { id: "not-an-id", name: "Invalid" },
+    { id: 7, name: "Duplicate" },
+    null,
+    [],
+    { id: Number.MAX_SAFE_INTEGER + 1, name: "Unsafe" },
+  ] }), [
+    { id: 7, name: "Main" },
+    { id: 8, name: "Workspace #8" },
+  ]);
+  assert.deepEqual(normalizeWorkspaces({ results: "invalid" }), []);
 });
