@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
-import { normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
+import { getAgentPollDelay, normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
 const ACTIVE_STATUSES = new Set(["queued", "planning"]);
@@ -132,9 +132,7 @@ export default function EngineeringModeConsole({ go }) {
       if (!latest || ACTIVE_STATUSES.has(latest.status)) {
         // Keep healthy runs responsive, but back off during API/network failures
         // so an unavailable service is not hammered indefinitely.
-        const delay = latest
-          ? 2200
-          : Math.min(15000, 3500 * (2 ** Math.min(consecutiveFailures - 1, 2)));
+        const delay = getAgentPollDelay(latest, consecutiveFailures);
         timer = window.setTimeout(poll, delay);
       }
     };
