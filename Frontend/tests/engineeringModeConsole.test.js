@@ -72,7 +72,9 @@ test("live Agent updates announce only the changing status, not the entire task 
   const source = read("EngineeringModeConsole.jsx");
   assert.match(source, /className="cc-agent-run">/);
   assert.doesNotMatch(source, /className="cc-agent-run" aria-live=/);
-  assert.match(source, /className={`cc-agent-status is-\$\{status\}`} role="status" aria-live="polite" aria-atomic="true"/);
+  const focusedStatusRegion = /className={`cc-agent-status is-\$\{status}`} role="status" aria-live="polite" aria-atomic="true"/g;
+  assert.equal([...source.matchAll(focusedStatusRegion)].length, 2, "both mutually exclusive status badges should announce status changes");
+  assert.match(source, /cc-agent-form-head[\s\S]*?className={`cc-agent-status is-\$\{status}`} role="status" aria-live="polite" aria-atomic="true"/);
 });
 
 test("Agent approval is not presented as code execution or workspace mutation", () => {
