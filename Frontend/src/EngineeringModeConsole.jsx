@@ -255,10 +255,13 @@ export default function EngineeringModeConsole({ go }) {
 
   const status = run?.status || "idle";
   const openWorkspaceInIde = (targetWorkspaceId = workspaceId) => {
+    const hasTarget = targetWorkspaceId !== null && targetWorkspaceId !== undefined && targetWorkspaceId !== "";
+    if (hasTarget && !workspaces.some((workspace) => String(workspace.id) === String(targetWorkspaceId))) {
+      setError("The workspace associated with this run is no longer available to your account. Choose an available workspace before continuing.");
+      return;
+    }
     try {
-      if (targetWorkspaceId !== null && targetWorkspaceId !== undefined && targetWorkspaceId !== "") {
-        window.sessionStorage.setItem("dos:requested-ide-workspace", String(targetWorkspaceId));
-      }
+      if (hasTarget) window.sessionStorage.setItem("dos:requested-ide-workspace", String(targetWorkspaceId));
     } catch { /* optional handoff */ }
     go("/ide");
   };
