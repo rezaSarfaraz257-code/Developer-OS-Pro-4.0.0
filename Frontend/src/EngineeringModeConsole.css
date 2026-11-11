@@ -92,3 +92,9 @@
 @media(prefers-reduced-motion:reduce) {
   .cc-mode-card,.cc-mode-primary,.cc-agent-status i { animation:none!important; transition:none!important; }
 }
+
+.cc-manual-agent-signal { display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px 14px; grid-column:1/-1; padding:12px 14px; border:1px solid rgba(119,174,202,.16); border-radius:10px; background:rgba(12,24,39,.7); }
+.cc-manual-agent-signal .cc-mode-detail-label { grid-column:1/-1; }
+.cc-manual-agent-signal > strong { min-width:0; overflow:hidden; color:#b9ccdc; font-size:.73rem; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.cc-manual-agent-signal > button { border:0; color:#8beaff; background:none; font-size:.72rem; font-weight:750; cursor:pointer; white-space:nowrap; }
+@media(max-width:600px) { .cc-manual-agent-signal { grid-template-columns:1fr; } .cc-manual-agent-signal > strong { white-space:normal; } }
