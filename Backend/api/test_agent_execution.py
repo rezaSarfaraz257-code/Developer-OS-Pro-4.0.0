@@ -202,6 +202,12 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
         self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
         self.assertEqual(self.task.execution_evidence["sync_job_id"], self.sync_job.id)
+        self.assertEqual(
+            self.task.execution_evidence["stdout_sha256"],
+            "b4f3f6b9f8f6f5e4b1d4c1a8f2c4e0e4b6e8f8e7f0c1f8f4e6d4f0a8b8c0e2f1",
+        )
+        self.assertEqual(self.task.execution_evidence["stdout_bytes"], 13)
+        self.assertEqual(self.task.execution_evidence["stderr_bytes"], 0)
         self.assertNotIn("stdout", self.task.execution_evidence)
         runner_request.assert_called_once()
         self.assertEqual(
