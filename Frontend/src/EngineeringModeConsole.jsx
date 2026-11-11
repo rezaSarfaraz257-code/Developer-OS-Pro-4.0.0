@@ -29,11 +29,6 @@ export default function EngineeringModeConsole({ go }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const selectedWorkspace = useMemo(
-    () => workspaces.find((item) => String(item.id) === String(workspaceId)),
-    [workspaces, workspaceId],
-  );
-
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
     if (!id) return null;
     try {
@@ -60,7 +55,9 @@ export default function EngineeringModeConsole({ go }) {
       .then((items) => {
         if (!active) return;
         setWorkspaces(items);
-        if (items.length) setWorkspaceId(String(items[0].id));
+        let hasSavedRun = false;
+        try { hasSavedRun = Boolean(window.sessionStorage.getItem("dos:last-agent-run")); } catch { /* optional persistence */ }
+        if (items.length && !hasSavedRun) setWorkspaceId(String(items[0].id));
       })
       .catch((requestError) => {
         if (active) setError(requestError?.message || "Workspaces could not be loaded.");
@@ -73,7 +70,6 @@ export default function EngineeringModeConsole({ go }) {
 
   useEffect(() => {
     let active = true;
-    let timer;
     try {
       const savedId = window.sessionStorage.getItem("dos:last-agent-run");
       if (savedId) {
@@ -84,10 +80,7 @@ export default function EngineeringModeConsole({ go }) {
     } catch {
       // Session storage is an enhancement; the agent workflow remains usable without it.
     }
-    return () => {
-      active = false;
-      if (timer) window.clearTimeout(timer);
-    };
+    return () => { active = false; };
   }, [refreshRun]);
 
   useEffect(() => {
@@ -207,6 +200,7 @@ export default function EngineeringModeConsole({ go }) {
         <div className="cc-mode-detail cc-mode-manual-detail">
           <div><span className="cc-mode-detail-label">MANUAL WORKSPACE</span><strong>Start with direct engineering control.</strong><p>Your files, editor, terminal, diagnostics and workspace history stay in the Web IDE.</p></div>
           <button type="button" className="cc-mode-primary" onClick={() => go("/ide")}>Open Web IDE <span>↗</span></button>
+          {run && <div className="cc-manual-agent-signal"><span className="cc-mode-detail-label">LAST AGENT RUN · #{run.id}</span><span className={`cc-agent-status is-${status}`}><i />{STATUS_LABELS[status] || status}</span><strong>{run.goal}</strong><button type="button" onClick={() => setMode("agent")}>View agent plan →</button></div>}
         </div>
       ) : (
         <div className="cc-mode-detail cc-agent-detail">
