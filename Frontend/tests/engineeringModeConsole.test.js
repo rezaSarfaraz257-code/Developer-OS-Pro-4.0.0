@@ -73,6 +73,9 @@ test("Hybrid handoff restores the selected workspace in the Web IDE", () => {
   const ide = read("ProIDE.jsx");
 
   assert.match(consoleSource, /dos:requested-ide-workspace/);
+  assert.match(consoleSource, /const openWorkspaceInIde = \(targetWorkspaceId = workspaceId\) =>/);
+  assert.match(consoleSource, /openWorkspaceInIde\(run\.workspace\)/);
+  assert.match(consoleSource, /sessionStorage\.setItem\("dos:requested-ide-workspace", String\(targetWorkspaceId\)\)/);
   assert.match(ide, /dos:requested-ide-workspace/);
   assert.match(ide, /load\(preferred\|\|workspaces\[0\]\)/);
 });
