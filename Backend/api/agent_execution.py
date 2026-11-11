@@ -245,6 +245,11 @@ def execute_agent_task_verification(job):
             raise RuntimeError("Agent task verification lease is no longer current.")
         if task.status != "running" or task.execution_job_id != current_job.id:
             raise RuntimeError("Agent task verification lease is no longer current.")
+        # Re-check the dependency graph at execution time, not only when the
+        # API queues the job. A prerequisite can be canceled or otherwise
+        # leave the succeeded state while this job waits in the worker queue.
+        if task.depends_on.exclude(status="succeeded").exists():
+            raise RuntimeError("Agent task dependencies are no longer satisfied.")
 
         workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
         if not _workspace_write_allowed(workspace, actor):
