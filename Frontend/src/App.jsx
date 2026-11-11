@@ -12,6 +12,7 @@ import { normalizeProfileLink, safeProfileLink } from "./utils/profile.js";
 import Referral from "./Referral";
 import ProjectsExperience from "./Project/ProjectsExperience.jsx";
 import CommunityFeed from "./CommunityFeed.jsx";
+import EngineeringModeConsole from "./EngineeringModeConsole.jsx";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
@@ -516,6 +517,8 @@ function Dashboard({ go }) {
       </div>
       <button className={"cc-focus-toggle" + (focusMode ? " is-active" : "")} onClick={() => setFocusMode((value) => !value)} aria-pressed={focusMode}><span>◉</span>{focusMode ? "Exit focus" : "Focus mode"}</button>
     </section>
+
+    <EngineeringModeConsole go={go} />
 
     <section className="cc-metrics" aria-label="Workspace metrics">
       {metricCards.map((metric, index) => <article className={"cc-metric-card cc-tone-" + metric.tone} key={metric.label} style={{ "--cc-index": index }}>
