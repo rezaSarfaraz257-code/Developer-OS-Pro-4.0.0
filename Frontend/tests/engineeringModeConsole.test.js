@@ -223,3 +223,19 @@ test("Agent polling backoff stays responsive when healthy and bounded during fai
   assert.equal(getAgentPollDelay(null, 0), 3500);
   assert.equal(getAgentPollDelay(null, Number.NaN), 3500);
 });
+
+test("transient workspace or Agent restore failures preserve the saved recovery targets", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  const workspaceRestoreStart = source.indexOf("// Resolve restored workspace IDs only after the owned workspace list is ready.");
+  const workspaceRestoreEnd = source.indexOf("}, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);", workspaceRestoreStart);
+  const workspaceRestore = source.slice(workspaceRestoreStart, workspaceRestoreEnd);
+  assert.ok(workspaceRestoreStart >= 0 && workspaceRestoreEnd > workspaceRestoreStart, "workspace restore effect should be bounded");
+  assert.match(workspaceRestore, /if \(loadingWorkspaces \|\| workspaceLoadError\) return/);
+
+  const runRestoreStart = source.indexOf('const savedId = window.sessionStorage.getItem("dos:last-agent-run")');
+  const runRestoreEnd = source.indexOf("}, [refreshRun]);", runRestoreStart);
+  const runRestore = source.slice(runRestoreStart, runRestoreEnd);
+  assert.ok(runRestoreStart >= 0 && runRestoreEnd > runRestoreStart, "saved Agent run restore effect should be bounded");
+  assert.doesNotMatch(runRestore, /removeItem\(["']dos:last-agent-run["']\)/, "a transient restore failure must not erase the saved Agent run ID");
+  assert.match(runRestore, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
+});
