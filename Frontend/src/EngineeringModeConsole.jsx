@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
 import "./EngineeringModeConsole.css";
 
@@ -28,6 +28,7 @@ export default function EngineeringModeConsole({ go }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const pendingRequestRef = useRef(null);
 
   const refreshRun = useCallback(async (id, { quiet = false } = {}) => {
     if (!id) return null;
@@ -55,9 +56,9 @@ export default function EngineeringModeConsole({ go }) {
       .then((items) => {
         if (!active) return;
         setWorkspaces(items);
-        let hasSavedRun = false;
-        try { hasSavedRun = Boolean(window.sessionStorage.getItem("dos:last-agent-run")); } catch { /* optional persistence */ }
-        if (items.length && !hasSavedRun) setWorkspaceId(String(items[0].id));
+        // Select a safe default immediately; a restored run can then override it
+        // with its own workspace once the owner-scoped detail request completes.
+        if (items.length) setWorkspaceId((current) => current || String(items[0].id));
       })
       .catch((requestError) => {
         if (active) setError(requestError?.message || "Workspaces could not be loaded.");
@@ -74,7 +75,12 @@ export default function EngineeringModeConsole({ go }) {
       const savedId = window.sessionStorage.getItem("dos:last-agent-run");
       if (savedId) {
         refreshRun(savedId, { quiet: true }).then((payload) => {
-          if (active && payload?.workspace) setWorkspaceId(String(payload.workspace));
+          if (!active) return;
+          if (payload?.workspace) {
+            setWorkspaceId(String(payload.workspace));
+          } else {
+            try { window.sessionStorage.removeItem("dos:last-agent-run"); } catch { /* optional persistence */ }
+          }
         });
       }
     } catch {
@@ -108,8 +114,22 @@ export default function EngineeringModeConsole({ go }) {
     setError("");
     setNotice("");
     try {
-      const idempotencyKey = globalThis.crypto?.randomUUID?.()
-        || `agent-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      const requestSignature = `${workspaceId}:${cleanGoal}`;
+      let pendingRequest = pendingRequestRef.current;
+      if (!pendingRequest || pendingRequest.signature !== requestSignature) {
+        try {
+          const stored = JSON.parse(window.sessionStorage.getItem("dos:pending-agent-request") || "null");
+          if (stored?.signature === requestSignature && typeof stored.key === "string") pendingRequest = stored;
+        } catch { /* storage is optional; in-memory idempotency still applies */ }
+      }
+      if (!pendingRequest || pendingRequest.signature !== requestSignature) {
+        const key = globalThis.crypto?.randomUUID?.()
+          || `agent-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+        pendingRequest = { signature: requestSignature, key };
+      }
+      pendingRequestRef.current = pendingRequest;
+      try { window.sessionStorage.setItem("dos:pending-agent-request", JSON.stringify(pendingRequest)); } catch { /* optional retry persistence */ }
+      const idempotencyKey = pendingRequest.key;
       const response = await apiFetch("/ai/agent/runs/", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
@@ -119,7 +139,11 @@ export default function EngineeringModeConsole({ go }) {
       if (!response.ok) throw new Error(responseError(payload, "The engineering plan could not be created."));
       setRun(payload);
       setGoal("");
-      try { window.sessionStorage.setItem("dos:last-agent-run", String(payload.id)); } catch { /* optional persistence */ }
+      pendingRequestRef.current = null;
+      try {
+        window.sessionStorage.setItem("dos:last-agent-run", String(payload.id));
+        window.sessionStorage.removeItem("dos:pending-agent-request");
+      } catch { /* optional persistence */ }
       setNotice("Plan request accepted. Waiting for the planning worker.");
     } catch (requestError) {
       setError(requestError?.message || "The engineering plan could not be created.");
