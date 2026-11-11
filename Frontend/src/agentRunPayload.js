@@ -24,3 +24,12 @@ export function normalizeAgentRun(payload) {
     tasks,
   };
 }
+
+export function resolveWorkspaceId(workspaces, candidate) {
+  const available = Array.isArray(workspaces)
+    ? workspaces.filter((workspace) => workspace && (typeof workspace.id === "string" && workspace.id.trim() || typeof workspace.id === "number" && Number.isFinite(workspace.id)))
+    : [];
+  const requested = candidate === null || candidate === undefined ? "" : String(candidate);
+  if (requested && available.some((workspace) => String(workspace.id) === requested)) return requested;
+  return available.length ? String(available[0].id) : "";
+}
