@@ -57,7 +57,11 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /let consecutiveFailures = 0/);
   assert.match(source, /consecutiveFailures = 0/);
   assert.match(source, /consecutiveFailures \+= 1/);
-  assert.match(source, /getAgentPollDelay\(latest, consecutiveFailures\)/);
+  assert.match(source, /getAgentPollDelay\(latest, consecutiveFailures, isVisible\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /document\.removeEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /let pollInFlight = false/);
+  assert.match(source, /if \(!active \|\| pollInFlight\) return/);
 });
 
 test("Agent approval is not presented as code execution or workspace mutation", () => {
@@ -168,6 +172,8 @@ test("workspace list normalization rejects malformed, duplicate and unsafe IDs",
 
 test("Agent polling backoff stays responsive when healthy and bounded during failures", () => {
   assert.equal(getAgentPollDelay({ status: "planning" }, 0), 2200);
+  assert.equal(getAgentPollDelay({ status: "planning" }, 0, false), 15000);
+  assert.equal(getAgentPollDelay(null, 1, false), 15000);
   assert.equal(getAgentPollDelay(null, 1), 3500);
   assert.equal(getAgentPollDelay(null, 2), 7000);
   assert.equal(getAgentPollDelay(null, 3), 14000);
