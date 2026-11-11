@@ -907,6 +907,10 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             readers.append(reader)
         try:
             proc.wait(timeout=timeout)
+            # A successful shell can still leave background descendants holding
+            # inherited pipes or consuming resources. The execution boundary is
+            # the whole process group, not merely the shell leader.
+            _terminate_process_group(proc, grace_seconds=0.1)
         except subprocess.TimeoutExpired:
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
