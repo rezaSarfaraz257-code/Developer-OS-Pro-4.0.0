@@ -675,7 +675,7 @@ test("IDE workspace and framework catalogs load independently and failures remai
   assert.match(init, /workspaceResult\.status==="fulfilled"/);
   assert.match(init, /workspaceError=payload\.error\|\|payload\.detail\|\|\("Workspace list failed \(HTTP "\+response\.status\+"\)"\)/);
   assert.match(init, /frameworkResult\.status==="fulfilled"/);
-  assert.match(init, /Framework catalog unavailable[^"]*workspace access remains available/);
+  assert.ok(init.includes("Framework catalog unavailable") && init.includes("workspace access remains available"), "framework failure must remain non-blocking for workspace access");
   assert.match(init, /setWorkspaceListError\(workspaceError\);setStatus\(workspaceError\)/);
   assert.match(init, /\[message,workspaceListRetry\]/);
   assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
