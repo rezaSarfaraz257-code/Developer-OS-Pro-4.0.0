@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
+import { normalizeAgentRun } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
 const ACTIVE_STATUSES = new Set(["queued", "planning"]);
@@ -18,30 +19,6 @@ function responseError(payload, fallback) {
   return formatApiError(payload, fallback);
 }
 
-function normalizeRun(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  if (!(typeof payload.id === "string" || (typeof payload.id === "number" && Number.isFinite(payload.id)))) return null;
-  const safeText = (value, fallback = "") => typeof value === "string" ? value : fallback;
-  const safeScalar = (value) => typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? value : null;
-  const tasks = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => task && typeof task === "object" && !Array.isArray(task)).map((task, index) => ({
-    id: safeScalar(task.id) ?? `task-${index}`,
-    title: safeText(task.title, `Task ${index + 1}`),
-    agent_role: safeText(task.agent_role, "engineering"),
-    status: safeText(task.status, "pending"),
-    depends_on: Array.isArray(task.depends_on) ? task.depends_on.filter((dependency) => typeof dependency === "string" || (typeof dependency === "number" && Number.isFinite(dependency))).map(String) : [],
-  })) : [];
-  return {
-    ...payload,
-    id: payload.id,
-    goal: safeText(payload.goal, "Engineering plan"),
-    status: safeText(payload.status, "unknown"),
-    workspace: safeScalar(payload.workspace),
-    workspace_revision: safeScalar(payload.workspace_revision),
-    execution_state: safeText(payload.execution_state),
-    error: safeText(payload.error),
-    tasks,
-  };
-}
 
 export default function EngineeringModeConsole({ go }) {
   const [mode, setMode] = useState("manual");
@@ -63,7 +40,7 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${id}/`);
       const payload = await response.json().catch(() => ({}));
-      const normalized = normalizeRun(payload);
+      const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) throw new Error(responseError(payload, "Agent run status is unavailable or malformed."));
       if (requestSequence !== runRequestSequenceRef.current) return null;
       setRun(normalized);
@@ -169,7 +146,7 @@ export default function EngineeringModeConsole({ go }) {
         body: JSON.stringify({ goal: cleanGoal, workspace: Number(workspaceId), idempotency_key: idempotencyKey }),
       });
       const payload = await response.json().catch(() => ({}));
-      const normalized = normalizeRun(payload);
+      const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) throw new Error(responseError(payload, "The engineering plan could not be created or returned a valid run."));
       setRun(normalized);
       setGoal("");
@@ -197,7 +174,7 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${run.id}/approve/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
-      const normalized = normalizeRun(payload);
+      const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) {
         const approvalError = new Error(responseError(payload, "The plan could not be approved or returned a valid run."));
         approvalError.code = payload?.code;
@@ -223,7 +200,7 @@ export default function EngineeringModeConsole({ go }) {
     try {
       const response = await apiFetch(`/ai/agent/runs/${run.id}/cancel/`, { method: "POST", body: JSON.stringify({}) });
       const payload = await response.json().catch(() => ({}));
-      const normalized = normalizeRun(payload);
+      const normalized = normalizeAgentRun(payload);
       if (!response.ok || !normalized) throw new Error(responseError(payload, "The agent run could not be canceled or returned a valid run state."));
       setRun(normalized);
       setNotice("Agent planning run canceled.");
