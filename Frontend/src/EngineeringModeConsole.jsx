@@ -123,22 +123,36 @@ export default function EngineeringModeConsole({ go }) {
     if (!run?.id || !ACTIVE_STATUSES.has(run.status)) return undefined;
     let active = true;
     let timer;
+    let pollInFlight = false;
     let consecutiveFailures = 0;
+    const schedulePoll = (delay) => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(poll, delay);
+    };
     const poll = async () => {
+      if (!active || pollInFlight) return;
+      pollInFlight = true;
       const latest = await refreshRun(run.id, { quiet: true });
+      pollInFlight = false;
       if (!active) return;
       if (latest) consecutiveFailures = 0;
       else consecutiveFailures += 1;
       if (!latest || ACTIVE_STATUSES.has(latest.status)) {
-        // Keep healthy runs responsive, but back off during API/network failures
-        // so an unavailable service is not hammered indefinitely.
-        const delay = getAgentPollDelay(latest, consecutiveFailures);
-        timer = window.setTimeout(poll, delay);
+        // Keep foreground runs responsive, back off on API failures, and
+        // reduce background-tab traffic without overlapping status requests.
+        const isVisible = document.visibilityState !== "hidden";
+        schedulePoll(getAgentPollDelay(latest, consecutiveFailures, isVisible));
       }
     };
-    timer = window.setTimeout(poll, 1100);
+    const handleVisibilityChange = () => {
+      if (!active) return;
+      schedulePoll(document.visibilityState === "hidden" ? 15000 : 0);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    schedulePoll(document.visibilityState === "hidden" ? 15000 : 1100);
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (timer) window.clearTimeout(timer);
     };
   }, [run?.id, run?.status, refreshRun]);
