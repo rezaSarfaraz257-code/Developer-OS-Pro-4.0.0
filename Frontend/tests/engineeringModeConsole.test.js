@@ -24,6 +24,10 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
 
   assert.match(source, /apiFetch\(["']\/ai\/agent\/runs\/["']/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{id\}\//);
+  assert.match(source, /dos:pending-agent-request/);
+  assert.match(source, /pendingRequestRef\.current = pendingRequest/);
+  assert.match(source, /window\.sessionStorage\.removeItem\("dos:pending-agent-request"\)/);
+  assert.match(source, /setWorkspaceId\(\(current\) => current \|\| String\(items\[0\]\.id\)\)/);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/approve\//);
   assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
