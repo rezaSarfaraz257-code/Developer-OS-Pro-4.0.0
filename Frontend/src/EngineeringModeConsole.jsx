@@ -339,7 +339,7 @@ export default function EngineeringModeConsole({ go }) {
         <div className="cc-mode-detail cc-agent-detail">
           <div className="cc-agent-form-head">
             <div><span className="cc-mode-detail-label">{mode === "hybrid" ? "HYBRID WORKFLOW" : "AGENT PLANNING"}</span><strong>{mode === "hybrid" ? "Plan with an agent. Build with control." : "Turn an engineering goal into a reviewable plan."}</strong><p>{mode === "hybrid" ? "The agent prepares the task graph; you continue implementation in the same workspace." : "The current agent runtime creates and tracks plans. It does not yet execute code or mutate files."}</p></div>
-            {run && <span className={`cc-agent-status is-${status}`}><i />{STATUS_LABELS[status] || status}</span>}
+            {run && <span className={`cc-agent-status is-${status}`} role="status" aria-live="polite" aria-atomic="true"><i />{STATUS_LABELS[status] || status}</span>}
           </div>
           <form className="cc-agent-create-form" onSubmit={createPlan}>
             <label className="cc-agent-field"><span>WORKSPACE</span><select value={workspaceId} onChange={(event) => { workspaceSelectionTouchedRef.current = true; setWorkspaceId(event.target.value); }} disabled={busy || loadingWorkspaces || !workspaces.length}><option value="">{loadingWorkspaces ? "Loading workspaces…" : "Select a workspace"}</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || `Workspace #${workspace.id}`}</option>)}</select></label>
