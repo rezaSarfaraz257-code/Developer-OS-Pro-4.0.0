@@ -103,6 +103,29 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(accepted.status_code, 409)
 
     @patch("api.views._runner_request")
+    def test_worker_rechecks_signed_patch_approval_after_job_was_queued(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        # Simulate the approval being revoked while the durable job is queued.
+        AuditLog.objects.filter(
+            user=self.user, action="ai_agent.patch_applied",
+            target_type="CodeWorkspace", target_id=str(self.workspace.id),
+            metadata__revision=self.workspace.revision,
+        ).delete()
+
+        with self.assertRaisesRegex(RuntimeError, "signed approval.*no longer valid"):
+            execute_agent_task_verification(job)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
     def test_worker_rechecks_dependencies_after_job_was_queued(self, runner_request):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
