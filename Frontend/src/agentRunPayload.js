@@ -33,3 +33,16 @@ export function resolveWorkspaceId(workspaces, candidate) {
   if (requested && available.some((workspace) => String(workspace.id) === requested)) return requested;
   return available.length ? String(available[0].id) : "";
 }
+
+export function normalizeWorkspaces(payload) {
+  const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : [];
+  const seen = new Set();
+  return rows.flatMap((workspace) => {
+    if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return [];
+    const id = typeof workspace.id === "number" ? workspace.id
+      : typeof workspace.id === "string" && /^\\d+$/.test(workspace.id.trim()) ? Number(workspace.id.trim()) : NaN;
+    if (!Number.isSafeInteger(id) || id < 1 || seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, name: typeof workspace.name === "string" && workspace.name.trim() ? workspace.name.trim() : `Workspace #${id}` }];
+  });
+}
