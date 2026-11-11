@@ -40,12 +40,16 @@ test("Agent console uses the owner-scoped durable planning lifecycle", () => {
   assert.match(source, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
   assert.match(source, /restoredWorkspaceCandidate \?\? current/);
   assert.match(source, /if \(loadingWorkspaces\) return/);
-  assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/approve\//);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/approve\//);
+  assert.match(source, /matchesRunIdentity\(normalized, safeRunId\)/);
+  assert.match(source, /matchesWorkspace\(normalized, workspaceId\)/);
+  assert.match(source, /matchesWorkspace\(run, workspaceId\)/);
+  assert.match(source, /Select the workspace used to create this plan before approving it/);
   assert.match(source, /approvalError\.code = payload\?\.code/);
   assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
   assert.match(source, /normalizeAgentRun\(payload\)/);
   assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
-  assert.match(source, /\/ai\/agent\/runs\/\$\{run\.id\}\/cancel\//);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/cancel\//);
   assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
   assert.match(source, /latest \? 2200 : 3500/);
 });
