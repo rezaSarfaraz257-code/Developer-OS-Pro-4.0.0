@@ -145,7 +145,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
             metadata__revision=revision,
             metadata__approval="signed_single_use_revision_bound",
             created_at__gte=run.approved_at,
-        ).exists()
+        ).order_by("-created_at", "-id").first()
         if not approved_patch:
             return Response({"error": "No human-approved AI patch is recorded for this workspace revision."}, status=403)
         if AgentTask.objects.filter(run__workspace=workspace, execution_revision=revision).exclude(pk=task.id).exists():
@@ -159,6 +159,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
                     "run_id": run.id, "task_id": task.id, "workspace_id": workspace.id,
                     "owner_id": request.user.id, "revision": revision, "profile": profile,
                     "sync_job_id": sync_job.id,
+                    "patch_audit_id": approved_patch.id,
                 },
                 # Runner execution is a POST and may have completed despite a
                 # lost response. Do not replay an ambiguous command.
@@ -278,6 +279,7 @@ def execute_agent_task_verification(job):
         # is not a durable authorization grant: if the approval record is
         # revoked/removed while the job waits, fail closed before contacting Runner.
         approved_patch = AuditLog.objects.filter(
+            pk=payload.get("patch_audit_id"),
             user=actor, action="ai_agent.patch_applied",
             target_type="CodeWorkspace", target_id=str(workspace.id),
             metadata__previous_revision=workspace.revision - 1,
@@ -389,6 +391,7 @@ def execute_agent_task_verification(job):
             "profile": profile, "revision": revision,
             "verification_job_id": current_job.id,
             "sync_job_id": payload.get("sync_job_id"),
+            "patch_audit_id": payload.get("patch_audit_id"),
             "runner_job_id": runner_job_id,
             "iteration": queued_evidence.get("iteration", 1),
             "history": queued_evidence.get("history", []),
