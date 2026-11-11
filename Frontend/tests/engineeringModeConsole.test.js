@@ -118,7 +118,7 @@ test("Web IDE workspace discovery remains available when the framework catalog f
   const source = read("ProIDE.jsx");
 
   assert.match(source, /Promise\.allSettled\(\[apiFetch\("\/ide\/workspaces\/"\),apiFetch\("\/ide\/frameworks\/"\)\]\)/);
-  assert.match(source, /setWorkspaces\(items\);setWorkspaceListError\("")/);
+  assert.ok(source.includes('setWorkspaces(items);setWorkspaceListError("");'));
   assert.match(source, /setFrameworks\(items\)/);
   assert.match(source, /Framework catalog unavailable[^"]*workspace access remains available/);
   assert.match(source, /Workspace list returned an invalid response/);
