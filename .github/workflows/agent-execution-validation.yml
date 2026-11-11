@@ -200,8 +200,25 @@ jobs:
           docker inspect --format 'Runner masked paths: {{json .HostConfig.MaskedPaths}}' developer-os-runner-ci
           docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
           docker exec developer-os-runner-ci sh -c 'grep -E " /proc([ /]|$)" /proc/self/mountinfo || true; for path in /proc/kcore /proc/keys /proc/timer_list /proc/sysrq-trigger /proc/sys; do if [ -e "$path" ]; then stat -c "%n %F %a" "$path" 2>/dev/null || true; else printf "%s=absent\\n" "$path"; fi; done'
-          # Match the Runner's real capability probe exactly; never ignore a failure.
-          docker exec developer-os-runner-ci /usr/bin/bwrap --die-with-parent --new-session --unshare-user --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true
+          # Run the exact production capability probe, then split namespace setup from procfs mount.
+          # Keep the integration job failing unless the complete strict probe passes.
+          if docker exec developer-os-runner-ci /usr/bin/bwrap --debug --die-with-parent --new-session --unshare-user --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true; then
+            strict_probe_status=0
+          else
+            strict_probe_status=$?
+            echo "Strict Bubblewrap probe failed with exit code ${strict_probe_status}; running non-relaxing stage diagnostics."
+          fi
+          # Stage A: prove user namespace creation and bind mounts independently.
+          docker exec developer-os-runner-ci /usr/bin/bwrap --debug --die-with-parent --new-session --unshare-user --ro-bind /usr /usr --ro-bind /bin /bin -- /bin/true || true
+          # Stage B: add PID namespace creation without mounting procfs.
+          docker exec developer-os-runner-ci /usr/bin/bwrap --debug --die-with-parent --new-session --unshare-user --unshare-pid --ro-bind /usr /usr --ro-bind /bin /bin -- /bin/true || true
+          # Stage C: add only the procfs mount to the successful namespace setup.
+          docker exec developer-os-runner-ci /usr/bin/bwrap --debug --die-with-parent --new-session --unshare-user --unshare-pid --ro-bind /usr /usr --ro-bind /bin /bin --proc /proc -- /bin/true || true
+          echo "AppArmor audit records after staged probes:"
+          sudo journalctl -k --since '-3 minutes' --no-pager 2>/dev/null | grep -E 'apparmor="(DENIED|ALLOWED)".*(developer-os-runner|bwrap)|profile="developer-os-runner"' | tail -80 || true
+          if [ "${strict_probe_status}" -ne 0 ]; then
+            exit "${strict_probe_status}"
+          fi
           docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
       - name: Check Django configuration and migrate integration database
         run: |
