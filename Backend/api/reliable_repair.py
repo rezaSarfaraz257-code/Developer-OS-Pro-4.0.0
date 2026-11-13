@@ -8,6 +8,9 @@ workspace, or executes a proposed action.
 from __future__ import annotations
 
 
+_SUPPORTED_PROFILES = {"python_pytest", "python_unittest", "node_test", "node_build", "node_lint"}
+
+
 _DIAGNOSTICS = {
     "python_import_error": {
         "cause": "A Python import could not be resolved in the Runner environment.",
@@ -118,8 +121,8 @@ _DIAGNOSTICS = {
 
 def analyze_repair_evidence(profile, evidence):
     """Build a bounded repair recommendation from trusted, allowlisted evidence."""
-    if not isinstance(profile, str) or not isinstance(evidence, dict):
-        raise ValueError("Repair analysis requires a verification profile and evidence object.")
+    if profile not in _SUPPORTED_PROFILES or not isinstance(evidence, dict):
+        raise ValueError("Repair analysis requires a supported verification profile and evidence object.")
 
     if evidence.get("profile") != profile:
         raise ValueError("Repair analysis profile does not match the recorded evidence.")
