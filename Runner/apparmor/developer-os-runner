@@ -97,6 +97,8 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   deny /sys/fs/cg[^r]*/** wklx,
   deny /sys/firmware/ rwklx,
   deny /sys/firmware/** rwklx,
+  deny /sys/fs/selinux/ rwklx,
+  deny /sys/fs/selinux/** rwklx,
   deny /sys/kernel/security/** rwklx,
 
   # Bubblewrap sets no_new_privs before exec. Stack the workload policy
