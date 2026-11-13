@@ -1503,6 +1503,20 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
     try:
         root = safe_workspace(payload.workspace_id)
+        if payload.execution_id is not None:
+            if not re.fullmatch(r"agent-[1-9][0-9]{0,18}", payload.execution_id):
+                raise HTTPException(status_code=400, detail="Invalid execution identifier.")
+            existing = _job_snapshot(payload.execution_id)
+            if existing:
+                if str(existing.get("workspace_id")) != root.name:
+                    raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
+                if existing.get("status") == "cancelled":
+                    return {
+                        "job_id": payload.execution_id, "status": "cancelled",
+                        "exit_code": None, "stdout": "", "stderr": "", "duration_ms": 0,
+                        **({"files": snapshot(root)} if payload.include_files else {}),
+                    }
+                raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
         files = payload.files or {}
         if not isinstance(files, dict):
             raise HTTPException(status_code=400, detail="Workspace files must be an object.")
