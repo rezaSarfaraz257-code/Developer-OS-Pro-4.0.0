@@ -51,6 +51,7 @@ def _task_status_payload(task, job=None):
         "run_id": task.run_id,
         "task_id": task.id,
         "status": task.status,
+        "acceptance_criteria": task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else [],
         "verification_profile": task.execution_profile,
         "revision": task.execution_revision,
         "attempts": task.execution_attempts,
@@ -582,9 +583,9 @@ def agent_task_accept_api(request, pk, task_pk):
             or not evidence.get("revision")
         ):
             return Response({"error": "Runner verification has not been durably completed successfully."}, status=409)
-        criteria = run.plan.get("acceptance_criteria", []) if isinstance(run.plan, dict) else []
-        if not isinstance(criteria, list) or not criteria:
-            return Response({"error": "The Agent plan has no acceptance criteria; this task cannot be accepted automatically."}, status=409)
+        criteria = task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else []
+        if not criteria or any(not isinstance(item, str) or not item.strip() for item in criteria):
+            return Response({"error": "This Agent task has no valid task-specific acceptance criteria; it cannot be accepted automatically."}, status=409)
         accepted = request.data.get("accepted_criteria")
         if (
             not isinstance(accepted, list)
@@ -592,7 +593,7 @@ def agent_task_accept_api(request, pk, task_pk):
             or any(not isinstance(item, str) for item in accepted)
             or accepted != criteria
         ):
-            return Response({"error": "Explicit confirmation of every plan acceptance criterion is required."}, status=400)
+            return Response({"error": "Explicit confirmation of every task-specific acceptance criterion is required."}, status=400)
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not workspace or not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace access is no longer available."}, status=403)
@@ -603,7 +604,7 @@ def agent_task_accept_api(request, pk, task_pk):
             "user_id": request.user.id,
             "accepted_at": timezone.now().isoformat(),
             "accepted_criteria": accepted,
-            "criteria_scope": "agent_run",
+            "criteria_scope": "agent_task",
         }
         task.execution_evidence = evidence
         task.status = "succeeded"
