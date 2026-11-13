@@ -140,6 +140,39 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             with main.JOB_LOCK:
                 main.JOBS.pop(job_id, None)
 
+    def test_run_command_registers_and_cancels_its_real_subprocess(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            root.mkdir()
+            job_id = "agent-9005"
+            results = []
+            worker = threading.Thread(
+                target=lambda: results.append(main.run_command(
+                    root, "python3 -c 'import time; time.sleep(30)'",
+                    execution_id=job_id, include_files=False,
+                )),
+                daemon=True,
+            )
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+                worker.start()
+                deadline = time.monotonic() + 5
+                process = None
+                while time.monotonic() < deadline:
+                    with main.EXECUTION_PROCESS_LOCK:
+                        process = main.EXECUTION_PROCESSES.get(job_id)
+                    if process is not None:
+                        break
+                    time.sleep(0.01)
+                self.assertIsNotNone(process, "Runner did not register the real execution process.")
+                cancelled = main._cancel_job(job_id)
+                self.assertEqual(cancelled["status"], "cancelled")
+                worker.join(timeout=3)
+            self.assertFalse(worker.is_alive(), "Cancelled Runner process did not exit promptly.")
+            self.assertEqual(results[0]["status"], "cancelled")
+            self.assertIsNone(results[0]["exit_code"])
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
     def test_agent_cancel_tombstone_prevents_late_exec_from_starting(self):
         job_id = "agent-9002"
         cancelled = main._cancel_job(job_id, "42")
