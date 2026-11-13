@@ -130,7 +130,7 @@ services:
       - no-new-privileges:true
       # On Ubuntu 24.04+, load Runner/apparmor/developer-os-runner on the host
       # and set RUNNER_APPARMOR_PROFILE=developer-os-runner in the Compose env.
-      - apparmor:${RUNNER_APPARMOR_PROFILE:-docker-default}
+      - apparmor:${RUNNER_APPARMOR_PROFILE:-developer-os-runner}
       # Bubblewrap must mount a fresh procfs in each PID namespace. Docker's
       # default procfs submount masks prevent that; AppArmor below re-denies
       # Docker's sensitive procfs/sysfs paths before the Runner can access them.
