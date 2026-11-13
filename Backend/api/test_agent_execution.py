@@ -1028,7 +1028,9 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.task.status = "running"
         self.task.execution_job = verification_job
         self.task.save(update_fields=["status", "execution_job", "updated_at"])
-        self.run.status = "running"
+        # A failed sibling task may already have moved the run to failed
+        # while this independent task is still executing in Runner.
+        self.run.status = "failed"
         self.run.save(update_fields=["status", "updated_at"])
 
         response = self.client.post(
