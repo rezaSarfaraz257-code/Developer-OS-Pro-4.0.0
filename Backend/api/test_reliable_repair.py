@@ -55,16 +55,15 @@ class ReliableRepairAnalysisTests(SimpleTestCase):
 
     def test_every_supported_diagnostic_category_has_reviewable_guidance(self):
         cases = [
-            ("python_syntax_error", "stderr"),
-            ("python_test_failure", "stdout"),
-            ("node_module_resolution_error", "stderr"),
-            ("node_test_failure", "stdout"),
-            ("node_build_error", "stderr"),
-            ("node_lint_error", "stdout"),
+            ("python_syntax_error", "stderr", "python_pytest"),
+            ("python_test_failure", "stdout", "python_unittest"),
+            ("node_module_resolution_error", "stderr", "node_build"),
+            ("node_test_failure", "stdout", "node_test"),
+            ("node_build_error", "stderr", "node_build"),
+            ("node_lint_error", "stdout", "node_lint"),
         ]
-        for code, source in cases:
+        for code, source, profile in cases:
             with self.subTest(code=code):
-                profile = "python_pytest" if code.startswith("python_") else "node_test"
                 evidence = self.evidence(code, source)
                 evidence["profile"] = profile
                 analysis = analyze_repair_evidence(profile, evidence)
