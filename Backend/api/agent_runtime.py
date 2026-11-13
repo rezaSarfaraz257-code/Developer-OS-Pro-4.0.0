@@ -702,9 +702,7 @@ def agent_run_cancel_api(request, pk):
         # Capture the durable Runner ID before terminalizing tasks. It was
         # persisted before /exec, so cancellation is safe even if the request
         # has not reached the Runner yet (the Runner records a tombstone).
-        active_tasks = run.tasks.select_for_update().filter(
-            status="running",
-        ).select_related("execution_job")
+        active_tasks = run.tasks.select_for_update().filter(status="running")
         for task in active_tasks:
             job = task.execution_job
             payload = job.payload if job and isinstance(job.payload, dict) else {}
