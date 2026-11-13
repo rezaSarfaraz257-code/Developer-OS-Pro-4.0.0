@@ -173,6 +173,51 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             with main.JOB_LOCK:
                 main.JOBS.pop(job_id, None)
 
+    def test_cancellation_wins_when_global_capacity_wait_expires(self):
+        job_id = "agent-9006"
+
+        class CancelWhileWaiting:
+            def acquire(self, timeout):
+                main._cancel_job(job_id)
+                return False
+
+            def release(self):
+                raise AssertionError("Semaphore must not be released when acquire failed.")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.EXEC_SEMAPHORE", CancelWhileWaiting()):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+    def test_cancellation_wins_over_a_simultaneous_runner_timeout(self):
+        job_id = "agent-9007"
+
+        def timeout_after_cancel(*args, **kwargs):
+            main._cancel_job(job_id)
+            raise subprocess.TimeoutExpired("python3", 1, output=b"partial", stderr=b"partial-error")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main._sandbox_command", return_value=["python3", "ignored"]), \
+             patch("main._run_process_with_timeout", side_effect=timeout_after_cancel):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        self.assertIn("partial", result["stdout"])
+        self.assertIn("partial-error", result["stderr"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
     def test_agent_cancel_tombstone_prevents_late_exec_from_starting(self):
         job_id = "agent-9002"
         cancelled = main._cancel_job(job_id, "42")
