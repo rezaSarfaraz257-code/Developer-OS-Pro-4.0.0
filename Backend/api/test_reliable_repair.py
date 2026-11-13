@@ -53,6 +53,32 @@ class ReliableRepairAnalysisTests(SimpleTestCase):
         with self.assertRaises(ValueError):
             analyze_repair_evidence("python_pytest", evidence)
 
+    def test_every_supported_diagnostic_category_has_reviewable_guidance(self):
+        cases = [
+            ("python_syntax_error", "stderr"),
+            ("python_test_failure", "stdout"),
+            ("node_module_resolution_error", "stderr"),
+            ("node_test_failure", "stdout"),
+            ("node_build_error", "stderr"),
+            ("node_lint_error", "stdout"),
+        ]
+        for code, source in cases:
+            with self.subTest(code=code):
+                analysis = analyze_repair_evidence(
+                    "python_pytest" if code.startswith("python_") else "node_test",
+                    self.evidence(code, source),
+                )
+                self.assertEqual(analysis["diagnostic_code"], code)
+                self.assertTrue(analysis["recommended_actions"])
+                self.assertTrue(analysis["verification_checklist"])
+                self.assertTrue(analysis["human_review_required"])
+
+    def test_rejects_unsupported_verification_profile(self):
+        evidence = self.evidence()
+        evidence["profile"] = "arbitrary_shell"
+        with self.assertRaises(ValueError):
+            analyze_repair_evidence("arbitrary_shell", evidence)
+
     def test_rejects_unknown_diagnostic_codes_and_oversized_signal_lists(self):
         evidence = self.evidence("arbitrary_output", "stderr")
         with self.assertRaises(ValueError):
