@@ -211,7 +211,7 @@ jobs:
           # Read-only runtime inspection: identify masked procfs paths without changing container security.
           docker inspect --format 'Runner masked paths: {{json .HostConfig.MaskedPaths}}' developer-os-runner-ci
           docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
-          # systempaths=unconfined removes Docker's nested procfs masks only;
+          # systempaths=unconfined removes Docker's default procfs/sysfs masks;
           # the attached AppArmor profile must deny access to every sensitive path.
           docker exec developer-os-runner-ci /usr/bin/python3 - <<'PY'
           import os
