@@ -1065,6 +1065,13 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
         }
     acquired = EXEC_SEMAPHORE.acquire(timeout=5)
     if not acquired:
+        if _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": "", "stderr": "",
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
         _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     if not _scheduler_acquire(root.name, job_id, timeout=5):
@@ -1141,12 +1148,18 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
         elif not isinstance(partial_stderr, str):
             partial_stderr = str(partial_stderr) if partial_stderr else ""
         partial_stderr = partial_stderr[-MAX_OUTPUT:]
-        # Preserve both bounded streams so a timeout remains actionable for
-        # diagnostics without persisting unbounded process output.
+        # Preserve bounded output from either timeout or concurrent cancellation.
         if partial_stdout:
             _append_job_output(job_id, partial_stdout)
         if partial_stderr:
             _append_job_output(job_id, partial_stderr)
+        if _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": partial_stdout, "stderr": partial_stderr,
+                "duration_ms": int((time.monotonic()-started)*1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
         _append_job_output(job_id, timeout_message + "\n")
         stderr = (partial_stderr + ("\n" if partial_stderr else "") + timeout_message)[-MAX_OUTPUT:]
         _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
@@ -1159,6 +1172,13 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
             **({"files": snapshot(root)} if include_files else {}),
         }
     except Exception as exc:
+        if _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": "", "stderr": "",
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
         _set_job(job_id, status="failed", finished_at=time.time(), error=exc.__class__.__name__)
         raise
     finally:
