@@ -226,7 +226,10 @@ class ReadinessFailureLoggingTests(TestCase):
             # assertLogs.output intentionally contains the formatted log message;
             # inspect the real LogRecord extras for structured, secret-safe fields.
             self.assertIn("production_readiness_failed", matching[0])
-            record = captured.records[0]
+            record = next(
+                item for item in captured.records
+                if getattr(item, "event", None) == "production_readiness_failed"
+            )
             self.assertTrue(hasattr(record, "failed_checks"))
             self.assertEqual(record.event, "production_readiness_failed")
             self.assertEqual(record.release_sha, "c" * 40)
