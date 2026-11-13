@@ -204,6 +204,16 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
+    def test_verification_cannot_start_without_task_specific_criteria(self):
+        self.task.acceptance_criteria = []
+        self.task.save(update_fields=["acceptance_criteria"])
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
     def test_requires_exact_successfully_synced_revision(self):
         self.sync_job.result = {"revision": self.workspace.revision - 1}
         self.sync_job.save(update_fields=["result"])
