@@ -1351,3 +1351,14 @@ test("workspace recovery warns that browser storage is not encrypted", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.ok(ide.includes("Browser recovery storage is not encrypted; avoid secrets in recovered files."));
 });
+
+
+test("Agent task patching and human acceptance use task-specific acceptance criteria", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+  assert.match(assistant, /Task acceptance criteria: "\s*\+ JSON\.stringify\(task\.acceptance_criteria \|\| \[\]\)/);
+  assert.match(assistant, /const criteria = Array\.isArray\(task\.acceptance_criteria\) \? task\.acceptance_criteria : \[\];/);
+  assert.match(assistant, /accepted_criteria: criteria/);
+  assert.match(assistant, /Review every task-specific acceptance criterion before marking this task complete:/);
+  assert.match(assistant, /Array\.isArray\(task\.acceptance_criteria\) \? task\.acceptance_criteria : \[\]/);
+  assert.doesNotMatch(assistant, /accepted_criteria: agentRun\.plan\?\.acceptance_criteria/);
+});
