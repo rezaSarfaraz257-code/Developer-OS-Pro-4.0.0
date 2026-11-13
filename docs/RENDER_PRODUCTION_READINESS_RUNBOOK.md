@@ -86,3 +86,24 @@ If the intended release fails health or smoke verification, stop further rollout
 - [ ] API readiness returns HTTP 200 with every mandatory check true.
 - [ ] Live SaaS Smoke Monitor passes all checks.
 - [ ] Authenticated workspace/IDE smoke tests pass without mutating user data.
+
+### Cache readiness failure diagnostics
+
+The readiness probe performs a unique, short-lived write/read/delete round-trip and emits a structured, secret-safe `cache_readiness_failed` event. The log includes only the failure category and backend class; it never includes the Redis URL, password, or exception message.
+
+| Sanitized `failure_reason` | Meaning | Corrective action |
+|---|---|---|
+| `cache_url_missing` | Strict Render runtime has no effective `CACHE_URL` | Set the Backend service's `CACHE_URL` to the Key Value service's provider-issued internal connection URL |
+| `redis_backend_not_configured` | Django is not using `RedisCache` in strict runtime | Verify the deployed settings and environment; do not substitute local-memory cache |
+| `cache_roundtrip_mismatch` | Cache write/read did not return the same probe value | Check the Key Value service health, selected database, eviction/ACL policy, and network path |
+| `cache_backend_error:TimeoutError` (or another exception class) | Redis operation raised a transport/backend error | Check service availability, internal hostname/port, TLS scheme, credentials and network reachability in Render; inspect provider logs |
+
+The probe uses a cryptographically random key and value for every request, expires the key quickly, and attempts cleanup even after an operation fails. This avoids collisions between concurrent API replicas and prevents the readiness endpoint from leaving a permanent marker.
+
+After changing Render configuration, restart/redeploy the Backend and require all of the following:
+1. The sanitized cache failure event no longer appears.
+2. `GET /api/health/ready/` returns HTTP 200 with `checks.cache: true`.
+3. The live smoke workflow passes readiness and release-identity checks.
+4. The deployed `release_sha` matches the intended Backend revision.
+
+Do not post raw Render logs or connection strings. Share only the failure category, backend class, HTTP status, and release SHA.
