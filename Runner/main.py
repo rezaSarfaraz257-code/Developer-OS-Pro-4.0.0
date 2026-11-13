@@ -1026,7 +1026,7 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
         _remove_command_script(cleanup_path)
 
 
-def run_command(root, command, *, allow_network=False, entitlement=None, include_files=True, execution_id=None):
+def run_command(root, command, *, allow_network=False, entitlement=None, include_files=True, execution_id=None, execution_reserved=False):
     command = _normalize_command(command)
     policy = _entitlement_policy({"entitlement": entitlement or {}})
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
@@ -1045,7 +1045,17 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
     (root / ".home").mkdir(exist_ok=True); (root / ".tmp").mkdir(exist_ok=True); (root / ".cache").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
-    job_id = _new_job(root.name, execution_id)
+    if execution_reserved:
+        job_id = str(execution_id or "")
+        reserved = _job_snapshot(job_id)
+        if (
+            not reserved
+            or str(reserved.get("workspace_id")) != root.name
+            or reserved.get("status") != "queued"
+        ):
+            raise HTTPException(status_code=409, detail="Execution reservation is no longer available.")
+    else:
+        job_id = _new_job(root.name, execution_id)
     _cleanup_jobs()
     if _job_is_cancelled(job_id):
         return {
@@ -1067,7 +1077,17 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
         _scheduler_release(root.name)
         EXEC_SEMAPHORE.release()
         return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
-    _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
+    if not _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0):
+        _scheduler_release(root.name)
+        EXEC_SEMAPHORE.release()
+        if _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": "", "stderr": "",
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
+        raise HTTPException(status_code=409, detail="Execution job could not enter the running state.")
     try:
         with _workspace_lock(root.name):
             command_file = _create_command_script(root, command)
@@ -1503,31 +1523,47 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
     try:
         root = safe_workspace(payload.workspace_id)
-        if payload.execution_id is not None:
-            if not re.fullmatch(r"agent-[1-9][0-9]{0,18}", payload.execution_id):
-                raise HTTPException(status_code=400, detail="Invalid execution identifier.")
-            existing = _job_snapshot(payload.execution_id)
-            if existing:
-                if str(existing.get("workspace_id")) != root.name:
-                    raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
-                if existing.get("status") == "cancelled":
-                    return {
-                        "job_id": payload.execution_id, "status": "cancelled",
-                        "exit_code": None, "stdout": "", "stderr": "", "duration_ms": 0,
-                        **({"files": snapshot(root)} if payload.include_files else {}),
-                    }
-                raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
+        if payload.execution_id is not None and not re.fullmatch(r"agent-[1-9][0-9]{0,18}", payload.execution_id):
+            raise HTTPException(status_code=400, detail="Invalid execution identifier.")
         files = payload.files or {}
         if not isinstance(files, dict):
             raise HTTPException(status_code=400, detail="Workspace files must be an object.")
-        # Serialize file materialization + execution per workspace. This prevents
-        # an older execute request from overwriting a newer editor save.
+        # Serialize snapshot writes with execution reservation and cancellation.
+        # Holding JOB_LOCK only across the bounded snapshot write makes the
+        # tombstone-vs-write ordering atomic: cancellation either wins first and
+        # prevents the write, or follows a completed reservation+write.
         started=time.time()
         with _workspace_lock(payload.workspace_id):
-            replace_workspace_snapshot(root, files)
+            execution_reserved = False
+            if payload.execution_id is not None:
+                with JOB_LOCK:
+                    existing = JOBS.get(payload.execution_id)
+                    if existing:
+                        if str(existing.get("workspace_id")) != root.name:
+                            raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
+                        if existing.get("status") == "cancelled":
+                            return {
+                                "job_id": payload.execution_id, "status": "cancelled",
+                                "exit_code": None, "stdout": "", "stderr": "", "duration_ms": 0,
+                                **({"files": snapshot(root)} if payload.include_files else {}),
+                            }
+                        raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
+                    _new_job(root.name, payload.execution_id)
+                    execution_reserved = True
+                    try:
+                        replace_workspace_snapshot(root, files)
+                    except Exception:
+                        _set_job(
+                            payload.execution_id, status="failed",
+                            finished_at=time.time(), error="workspace_snapshot_failed",
+                        )
+                        raise
+            else:
+                replace_workspace_snapshot(root, files)
             result=run_command(
                 root, payload.command, entitlement=payload.entitlement,
                 include_files=payload.include_files, execution_id=payload.execution_id,
+                execution_reserved=execution_reserved,
             )
         _metric("exec_total")
         _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
