@@ -81,7 +81,7 @@ jobs:
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
       - name: Run Agent execution loop regression tests
-        run: python manage.py test api.test_agent_execution --verbosity 2
+        run: python manage.py test api.test_agent_execution api.test_agent_runtime api.test_agent_task_bound_approval --verbosity 2
 
   frontend-agent-execution:
     name: AI Assistant lint, build and unit tests
