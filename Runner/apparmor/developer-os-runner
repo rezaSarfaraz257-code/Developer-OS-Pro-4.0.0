@@ -82,7 +82,7 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   # Docker's systempaths=unconfined is required so Bubblewrap can mount a
   # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
   # here; these denials cover both the trusted Runner and stacked workload.
-  deny @{PROC}/{acpi,asound,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
   deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
   deny @{PROC}/sys/** wklx,
   deny @{PROC}/sysrq-trigger rwklx,
@@ -95,6 +95,7 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   deny /sys/fs/[^c]*/** wklx,
   deny /sys/fs/c[^g]*/** wklx,
   deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/ rwklx,
   deny /sys/firmware/** rwklx,
   deny /sys/kernel/security/** rwklx,
 
@@ -133,7 +134,7 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   # Docker's systempaths=unconfined is required so Bubblewrap can mount a
   # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
   # here; these denials cover both the trusted Runner and stacked workload.
-  deny @{PROC}/{acpi,asound,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
   deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
   deny @{PROC}/sys/** wklx,
   deny @{PROC}/sysrq-trigger rwklx,
@@ -146,6 +147,7 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   deny /sys/fs/[^c]*/** wklx,
   deny /sys/fs/c[^g]*/** wklx,
   deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/ rwklx,
   deny /sys/firmware/** rwklx,
   deny /sys/kernel/security/** rwklx,
 }
