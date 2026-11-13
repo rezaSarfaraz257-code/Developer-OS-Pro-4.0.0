@@ -592,6 +592,18 @@ def agent_task_accept_api(request, pk, task_pk):
         if task.status != "awaiting_approval":
             return Response({"error": "Runner verification must pass before human acceptance."}, status=409)
 
+        criteria = _task_acceptance_criteria(task)
+        if criteria is None:
+            return Response({"error": "This Agent task has no valid task-specific acceptance criteria; it cannot be accepted automatically."}, status=409)
+        accepted = request.data.get("accepted_criteria")
+        if (
+            not isinstance(accepted, list)
+            or len(accepted) != len(criteria)
+            or any(not isinstance(item, str) for item in accepted)
+            or accepted != criteria
+        ):
+            return Response({"error": "Explicit confirmation of every task-specific acceptance criterion is required."}, status=400)
+
         evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         verification_job = task.execution_job
         job_result = verification_job.result if verification_job and isinstance(verification_job.result, dict) else {}
@@ -670,17 +682,6 @@ def agent_task_accept_api(request, pk, task_pk):
         if not patch_audit:
             return Response({"error": "The exact task-bound human patch approval is no longer valid."}, status=409)
 
-        criteria = _task_acceptance_criteria(task)
-        if criteria is None:
-            return Response({"error": "This Agent task has no valid task-specific acceptance criteria; it cannot be accepted automatically."}, status=409)
-        accepted = request.data.get("accepted_criteria")
-        if (
-            not isinstance(accepted, list)
-            or len(accepted) != len(criteria)
-            or any(not isinstance(item, str) for item in accepted)
-            or accepted != criteria
-        ):
-            return Response({"error": "Explicit confirmation of every task-specific acceptance criterion is required."}, status=400)
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not workspace or not _workspace_write_allowed(workspace, request.user):
             return Response({"error": "Workspace access is no longer available."}, status=403)
