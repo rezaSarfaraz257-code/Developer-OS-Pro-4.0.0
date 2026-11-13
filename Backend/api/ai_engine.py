@@ -1306,12 +1306,41 @@ def _issue_patch_approval_token(request, answer):
     workspace = _workspace_for_user(workspace_id, request.user) if workspace_id else None
     if not workspace:
         return None
-    return signing.dumps({
+
+    token_payload = {
         "user_id": request.user.id,
         "workspace_id": workspace.id,
         "workspace_revision": workspace.revision,
         "proposal": proposal,
-    })
+    }
+    raw_run_id = request.data.get("agent_run_id")
+    raw_task_id = request.data.get("agent_task_id")
+    if raw_run_id is not None or raw_task_id is not None:
+        # Task context is all-or-nothing. A partial or malformed binding must
+        # never silently degrade into an ordinary workspace-only approval.
+        if raw_run_id is None or raw_task_id is None:
+            return None
+        if isinstance(raw_run_id, bool) or isinstance(raw_task_id, bool):
+            return None
+        if not str(raw_run_id).isdigit() or not str(raw_task_id).isdigit():
+            return None
+        run_id, task_id = int(raw_run_id), int(raw_task_id)
+        if run_id < 1 or task_id < 1:
+            return None
+        from .models import AgentRun, AgentTask
+        run = AgentRun.objects.filter(
+            pk=run_id, owner=request.user, workspace_id=workspace.id,
+            status__in={"approved", "running", "failed"},
+        ).first()
+        task = AgentTask.objects.filter(pk=task_id, run=run).first() if run else None
+        if (
+            not run or not task or task.status not in {"ready", "failed"}
+            or (run.status == "failed" and task.status != "failed")
+            or task.depends_on.exclude(status="succeeded").exists()
+        ):
+            return None
+        token_payload.update({"agent_run_id": run.id, "agent_task_id": task.id})
+    return signing.dumps(token_payload)
 
 
 
@@ -1359,11 +1388,41 @@ def ai_agent_apply_api(request):
         return Response({"error": "Patch proposal failed safety validation."}, status=400)
 
     from .views import _workspace_for_user, _workspace_write_allowed, _runner_request, _workspace_payload
+    from .models import AgentRun, AgentTask
+    raw_run_id = payload.get("agent_run_id")
+    raw_task_id = payload.get("agent_task_id")
+    if (raw_run_id is None) != (raw_task_id is None):
+        return Response({"error": "Task-bound approval is incomplete."}, status=400)
+    task_bound = raw_run_id is not None
+    if task_bound and (
+        type(raw_run_id) is not int or type(raw_task_id) is not int
+        or raw_run_id < 1 or raw_task_id < 1
+    ):
+        return Response({"error": "Task-bound approval identifiers are invalid."}, status=400)
     diffs = []
     try:
         with transaction.atomic():
-            # Lock the authoritative workspace row before checking its revision.
-            # This prevents two approvals from racing and overwriting each other.
+            agent_run = None
+            agent_task = None
+            if task_bound:
+                agent_run = AgentRun.objects.select_for_update().filter(
+                    pk=raw_run_id, owner=request.user,
+                    workspace_id=payload.get("workspace_id"),
+                    status__in={"approved", "running", "failed"},
+                ).first()
+                agent_task = AgentTask.objects.select_for_update().filter(
+                    pk=raw_task_id, run=agent_run,
+                ).first() if agent_run else None
+                if (
+                    not agent_run or not agent_task
+                    or agent_task.status not in {"ready", "failed"}
+                    or (agent_run.status == "failed" and agent_task.status != "failed")
+                    or agent_task.depends_on.exclude(status="succeeded").exists()
+                ):
+                    return Response({"error": "The task-bound approval is no longer valid for this Agent task."}, status=409)
+
+            # Lock the authoritative workspace row after run/task locks. This
+            # matches the Agent verification lock order and prevents deadlocks.
             workspace = _workspace_for_user(payload.get("workspace_id"), request.user, for_update=True)
             if not _workspace_write_allowed(workspace, request.user):
                 return Response({"error": "You do not have permission to modify this workspace."}, status=403)
@@ -1423,20 +1482,26 @@ def ai_agent_apply_api(request):
                     "max_attempts": 8,
                 },
             )
+            audit_metadata = {
+                "previous_revision": previous_revision,
+                "revision": workspace.revision,
+                "changed_files": [
+                    {"path": item["path"], "operation": item["operation"]}
+                    for item in diffs
+                ],
+                "approval": "signed_single_use_revision_bound",
+            }
+            if agent_run and agent_task:
+                audit_metadata.update({
+                    "agent_run_id": agent_run.id,
+                    "agent_task_id": agent_task.id,
+                })
             AuditLog.objects.create(
                 user=request.user,
                 action="ai_agent.patch_applied",
                 target_type="CodeWorkspace",
                 target_id=str(workspace.id),
-                metadata={
-                    "previous_revision": previous_revision,
-                    "revision": workspace.revision,
-                    "changed_files": [
-                        {"path": item["path"], "operation": item["operation"]}
-                        for item in diffs
-                    ],
-                    "approval": "signed_single_use_revision_bound",
-                },
+                metadata=audit_metadata,
             )
     except (TypeError, ValueError, KeyError):
         logger.exception("AI patch application rejected due to invalid workspace or proposal data")
