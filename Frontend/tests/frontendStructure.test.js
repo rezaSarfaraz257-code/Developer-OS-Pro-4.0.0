@@ -552,7 +552,10 @@ test("IDE workspace load failures expose an accessible retry action", () => {
   assert.match(ide, /role=\{workspaceLoadError\?"alert":"status"\}/);
   assert.match(ide, /workspaceLoadError&&<button type="button" className="dos-status-retry" onClick=\{\(\)=>void load\(ws\|\|workspaces\[0\]\)\}/);
   assert.ok(ide.includes('setWorkspaceLoadError("");setWorkspaceLoading(true);setStatus("Loading workspace…")'));
-  assert.match(ide, /setDirty\(false\);setWorkspaceLoadError\(""\);setStatus\("Explorer synced/);
+  assert.match(ide, /saveWorkspaceRecoverySnapshot\(/);
+  assert.match(ide, /saveWorkspaceRecoverySnapshotFallbackSync\(/);
+  assert.match(ide, /loadWorkspaceRecoverySnapshot\(item\.id\)/);
+  assert.match(ide, /setDirty\(recoveredPaths\.length>0\);setWorkspaceLoadError\(""\);setStatus\(recoveredPaths\.length\?/);
 });
 
 
@@ -561,7 +564,9 @@ test("IDE workspace loads reject malformed file maps instead of showing a false 
   const load = ide.match(/const load=useCallback\(async\(item\)=>\{([\s\S]*?)\},\[save\]\)/)?.[1] || "";
 
   assert.match(load, /if\(!d\.files\|\|typeof d\.files!=="object"\|\|Array\.isArray\(d\.files\)\)throw Error\("Workspace response did not include a valid file map\."\)/);
-  assert.match(load, /const f=d\.files;/);
+  assert.match(load, /const serverFiles=d\.files;/);
+  assert.match(load, /const f=recoveredPaths\.length\?\(\{\.\.\.serverFiles,\.\.\.recovery\.files\}\):serverFiles;/);
+  assert.match(load, /dirtyPathsRef\.current=new Set\(recoveredPaths\)/);
   assert.match(load, /r\.json\(\)\.catch\(\(\)=>\(\{\}\)\)/);
   assert.match(load, /setWorkspaceLoadError\(error\);setStatus\(error\)/);
   assert.doesNotMatch(load, /const f=d\.files&&typeof d\.files==="object"\?d\.files:\{\}/);
@@ -662,13 +667,16 @@ test("IDE rejects malformed array payloads when refreshing workspace file maps",
 });
 
 
-test("IDE workspace and framework list failures are visible and retryable", () => {
+test("IDE workspace and framework catalogs load independently and failures remain retryable", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
-  const initStart = ide.indexOf('Promise.all([apiFetch("/ide/workspaces/")');
-  const init = ide.slice(initStart, initStart + 1800);
-  assert.match(init, /if\(!a\.ok\)throw Error\(w\.error\|\|w\.detail\|\|`Workspace list failed \(HTTP \$\{a\.status\}\)`\)/);
-  assert.match(init, /if\(!b\.ok\)throw Error\(f\.error\|\|f\.detail\|\|`Framework list failed \(HTTP \$\{b\.status\}\)`\)/);
-  assert.match(init, /setWorkspaceListError\(error\);setStatus\(error\)/);
+  const initStart = ide.indexOf('Promise.allSettled([apiFetch("/ide/workspaces/"),apiFetch("/ide/frameworks/")])');
+  assert.ok(initStart >= 0, "workspace and framework requests should settle independently");
+  const init = ide.slice(initStart, initStart + 5000);
+  assert.match(init, /workspaceResult\.status==="fulfilled"/);
+  assert.match(init, /workspaceError=payload\.error\|\|payload\.detail\|\|\("Workspace list failed \(HTTP "\+response\.status\+"\)"\)/);
+  assert.match(init, /frameworkResult\.status==="fulfilled"/);
+  assert.ok(init.includes("Framework catalog unavailable") && init.includes("workspace access remains available"), "framework failure must remain non-blocking for workspace access");
+  assert.match(init, /setWorkspaceListError\(workspaceError\);setStatus\(workspaceError\)/);
   assert.match(init, /\[message,workspaceListRetry\]/);
   assert.match(ide, /workspaceListError&&<span className="dos-workspace-load-error" role="alert">/);
   assert.match(ide, /Retry workspaces/);
@@ -1336,4 +1344,10 @@ test("Web IDE does not request unused CRDT history that its client cannot apply"
     ide,
     /socket\.send\(JSON\.stringify\(\{\s*type:\s*["']crdt-sync["']/
   );
+});
+
+
+test("workspace recovery warns that browser storage is not encrypted", () => {
+  const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
+  assert.ok(ide.includes("Browser recovery storage is not encrypted; avoid secrets in recovered files."));
 });

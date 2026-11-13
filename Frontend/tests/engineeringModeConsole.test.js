@@ -1,0 +1,254 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { getAgentPollDelay, normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "../src/agentRunPayload.js";
+
+const testsDir = path.dirname(fileURLToPath(import.meta.url));
+const srcDir = path.resolve(testsDir, "../src");
+const read = (file) => fs.readFileSync(path.join(srcDir, file), "utf8");
+
+test("Command Center exposes the unified engineering mode console", () => {
+  const app = read("App.jsx");
+  const consoleSource = read("EngineeringModeConsole.jsx");
+
+  assert.match(app, /import EngineeringModeConsole from ["']\.\/EngineeringModeConsole\.jsx["']/);
+  assert.match(app, /<EngineeringModeConsole go=\{go\} \/>/);
+  for (const mode of ["Manual Build", "Agent Build", "Hybrid Build"]) {
+    assert.ok(consoleSource.includes(mode), `missing build mode: ${mode}`);
+  }
+});
+
+test("Agent console uses the owner-scoped durable planning lifecycle", () => {
+  const source = read("EngineeringModeConsole.jsx");
+
+  assert.match(source, /apiFetch\(["']\/ai\/agent\/runs\/["']/);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\//);
+  assert.match(source, /normalizeRunId\(id\)/);
+  assert.match(source, /A-Za-z0-9\._:-\]\{1,128\}/);
+  assert.match(source, /dos:pending-agent-request/);
+  assert.match(source, /mutationLockRef\.current/);
+  assert.match(source, /runRequestSequenceRef\.current/);
+  assert.match(source, /requestSequence !== runRequestSequenceRef\.current/);
+  assert.match(source, /if \(!response\.ok \|\| !matchesRunIdentity\(normalized, safeRunId\)\)/);
+  assert.match(source, /if \(!response\.ok \|\| !normalized \|\| !matchesWorkspace\(normalized, workspaceId\)\)/);
+  assert.match(source, /disabled=\{busy \|\| loadingWorkspaces \|\| !workspaces\.length\}/);
+  assert.match(source, /String\(task\.agent_role \|\| ["']engineering["']\)/);
+  assert.match(source, /pendingRequestRef\.current = pendingRequest/);
+  assert.match(source, /window\.sessionStorage\.removeItem\("dos:pending-agent-request"\)/);
+  assert.match(source, /resolveWorkspaceId\(\s*workspaces,\s*workspaceSelectionTouchedRef\.current \? current : restoredWorkspaceCandidate \?\? current,?\s*\)/);
+  assert.match(source, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
+  assert.match(source, /restoredWorkspaceCandidate \?\? current/);
+  assert.match(source, /if \(loadingWorkspaces \|\| workspaceLoadError\) return/);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/approve\//);
+  assert.match(source, /matchesRunIdentity\(normalized, safeRunId\)/);
+  assert.match(source, /matchesWorkspace\(normalized, workspaceId\)/);
+  assert.match(source, /matchesWorkspace\(normalized, run\.workspace\)/);
+  assert.match(source, /matchesWorkspace\(run, workspaceId\)/);
+  assert.match(source, /Select the workspace used to create this plan before approving it/);
+  assert.match(source, /approvalError\.code = payload\?\.code/);
+  assert.match(source, /requestError\?\.code === ["']stale_workspace["']/);
+  assert.ok(source.includes('|| /\\bstale_workspace\\b/i.test(requestError?.message || "")'), "API diagnostic code must survive apiFetch Error wrapping");
+  assert.match(source, /normalizeAgentRun\(payload\)/);
+  assert.match(source, /const normalized = normalizeAgentRun\(payload\)/);
+  assert.match(source, /\/ai\/agent\/runs\/\$\{safeRunId\}\/cancel\//);
+  assert.match(source, /ACTIVE_STATUSES\.has\(latest\.status\)/);
+  assert.match(source, /const ACTIVE_STATUSES = new Set\(\["queued", "planning", "running"\]\)/);
+  assert.match(source, /const CANCELLABLE_STATUSES = new Set\(\["queued", "planning", "approved", "running"\]\)/);
+  assert.match(source, /!CANCELLABLE_STATUSES\.has\(run\.status\)/);
+  assert.match(source, /\{CANCELLABLE_STATUSES\.has\(run\.status\) && <button type="button" onClick=\{cancelRun\}/);
+  assert.match(source, /let consecutiveFailures = 0/);
+  assert.match(source, /consecutiveFailures = 0/);
+  assert.match(source, /consecutiveFailures \+= 1/);
+  assert.match(source, /getAgentPollDelay\(latest, consecutiveFailures, isVisible\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /document\.removeEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /let pollInFlight = false/);
+  assert.match(source, /if \(!active \|\| pollInFlight\) return/);
+});
+
+test("live Agent updates announce only the changing status, not the entire task list", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  assert.match(source, /className="cc-agent-run">/);
+  assert.doesNotMatch(source, /className="cc-agent-run" aria-live=/);
+  const focusedStatusRegion = /className={`cc-agent-status is-\$\{status}`} role="status" aria-live="polite" aria-atomic="true"/g;
+  assert.equal([...source.matchAll(focusedStatusRegion)].length, 2, "both mutually exclusive status badges should announce status changes");
+  assert.match(source, /cc-agent-form-head[\s\S]*?className={`cc-agent-status is-\$\{status}`} role="status" aria-live="polite" aria-atomic="true"/);
+});
+
+test("Agent approval is not presented as code execution or workspace mutation", () => {
+  const source = read("EngineeringModeConsole.jsx");
+
+  assert.match(source, /plan_only_no_workspace_mutations/);
+  assert.match(source, /does not execute tasks or modify workspace files/);
+  assert.match(source, /Task execution remains unavailable in this runtime/);
+});
+
+test("Hybrid handoff restores the originating Agent run workspace in the Web IDE", () => {
+  const consoleSource = read("EngineeringModeConsole.jsx");
+  const ide = read("ProIDE.jsx");
+
+  assert.match(consoleSource, /dos:requested-ide-workspace/);
+  assert.match(consoleSource, /const openWorkspaceInIde = \(targetWorkspaceId = workspaceId, requireTarget = false\) =>/);
+  assert.match(consoleSource, /if \(requireTarget && !hasTarget\)/);
+  assert.match(consoleSource, /This agent run has no valid originating workspace/);
+  assert.match(consoleSource, /workspaces\.some\(\(workspace\) => String\(workspace\.id\) === String\(targetWorkspaceId\)\)/);
+  assert.match(consoleSource, /workspace associated with this run is no longer available/);
+  assert.match(consoleSource, /openWorkspaceInIde\(run\.workspace, true\)/);
+  assert.match(consoleSource, /mode === "hybrid" && run\?\.status === "approved"/);
+  assert.match(consoleSource, /Continue in originating workspace/);
+  assert.match(consoleSource, /The Web IDE opens this exact workspace automatically/);
+  assert.match(consoleSource, /cc-mode-manual-detail[\s\S]*?error && <p className="cc-agent-message is-error" role="alert">/);
+  assert.match(consoleSource, /onClick=\{\(\) => openWorkspaceInIde\(run\.workspace, true\)\}/);
+  assert.match(consoleSource, /sessionStorage\.setItem\("dos:requested-ide-workspace", String\(targetWorkspaceId\)\)/);
+  assert.match(consoleSource, /workspace handoff could not be saved in this browser session/);
+  assert.match(consoleSource, /if \(hasTarget\) \{\s*setError\([\s\S]*?\);\s*return;\s*\}/);
+  assert.match(ide, /dos:requested-ide-workspace/);
+  assert.match(ide, /if\(requestedId&&!preferred\)/);
+  assert.match(ide, /The requested workspace is no longer available to your account/);
+  assert.match(ide, /setWorkspaceLoadError\(error\)/);
+  assert.match(ide, /load\(preferred\|\|workspaces\[0\]\)/);
+});
+
+test("workspace loading failures are recoverable and not mislabeled as an empty workspace", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  const css = read("EngineeringModeConsole.css");
+
+  assert.match(source, /workspaceLoadAttempt, setWorkspaceLoadAttempt/);
+  assert.match(source, /useEffect\(\(\) => \{[\s\S]*?setLoadingWorkspaces\(true\);[\s\S]*?setWorkspaceLoadError\(""\);[\s\S]*?\}, \[workspaceLoadAttempt\]\)/);
+  assert.match(source, /setWorkspaceLoadError\(requestError\?\.message \|\| "Workspaces could not be loaded\."\)/);
+  assert.match(source, /WORKSPACE LOAD FAILED/);
+  assert.match(source, /Retry workspace connection/);
+  assert.match(source, /setWorkspaceLoadAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(source, /!loadingWorkspaces && !workspaceLoadError && !workspaces\.length/);
+  assert.match(source, /cc-workspace-load-error/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-error i/);
+  assert.match(css, /\.cc-workspace-load-error \{ display:flex/);
+});
+
+test("Web IDE workspace discovery remains available when the framework catalog fails", () => {
+  const source = read("ProIDE.jsx");
+
+  assert.match(source, /Promise\.allSettled\(\[apiFetch\("\/ide\/workspaces\/"\),apiFetch\("\/ide\/frameworks\/"\)\]\)/);
+  assert.ok(source.includes('setWorkspaces(items);setWorkspaceListError("");'));
+  assert.match(source, /setFrameworks\(items\)/);
+  assert.match(source, /Framework catalog unavailable[^"]*workspace access remains available/);
+  assert.match(source, /Workspace list returned an invalid response/);
+  assert.match(source, /if\(off\)return;if\(response\.ok\)/);
+  assert.match(source, /workspaceListRetry\]\)/);
+  assert.match(source, /Retry workspaces/);
+});
+
+test("engineering mode console styling is responsive and motion-safe", () => {
+  const component = read("EngineeringModeConsole.jsx");
+  const css = read("EngineeringModeConsole.css");
+
+  assert.match(component, /import ["']\.\/EngineeringModeConsole\.css["']/);
+  assert.match(css, /@media\(max-width:600px\)/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
+  assert.match(css, /:focus-visible/);
+  assert.match(css, /\.cc-mode-card:focus-visible/);
+  assert.match(css, /\.cc-mode-manual-detail > \.cc-agent-message/);
+  assert.match(css, /\.cc-agent-run-actions > button:focus-visible/);
+  assert.match(css, /\.cc-hybrid-next > button:focus-visible/);
+  assert.match(component, /NO WORKSPACE SELECTED/);
+  assert.match(component, /WORKSPACE READY/);
+  assert.match(component, /run\.workspace_revision \?\? ["']unknown["']/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-empty i/);
+  assert.match(css, /\.cc-mode-workspace-state\.is-loading i/);
+});
+
+test("Agent run normalizer rejects malformed envelopes and sanitizes task data", () => {
+  assert.equal(normalizeRunId(7), 7);
+  assert.equal(normalizeRunId(" 7 "), 7);
+  for (const invalid of ["run-7", "7/approve", "7?next=/admin", "", "0", -1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, {}]) {
+    assert.equal(normalizeRunId(invalid), null, `reject unsafe run ID: ${String(invalid)}`);
+  }
+  assert.equal(normalizeAgentRun(null), null);
+  assert.equal(normalizeAgentRun([]), null);
+  assert.equal(normalizeAgentRun({ id: " " }), null);
+  assert.equal(normalizeAgentRun({ id: {} }), null);
+  assert.equal(normalizeAgentRun({ id: "run-7" }), null);
+  assert.equal(normalizeAgentRun({ id: "0" }), null);
+  assert.equal(normalizeAgentRun({ id: Number.MAX_SAFE_INTEGER + 1 }), null);
+  assert.equal(normalizeAgentRun({ id: -1 }), null);
+
+  const normalized = normalizeAgentRun({
+    id: "7",
+    status: "unexpected <script>",
+    workspace: 42,
+    workspace_revision: null,
+    tasks: [null, "invalid", { id: 3, title: "Build", status: "run<script>", depends_on: ["task-1", {}, 2] }],
+  });
+  assert.equal(normalized.id, 7);
+  assert.equal(normalized.status, "unknown");
+  assert.equal(normalized.workspace, 42);
+  assert.equal(normalized.workspace_revision, null);
+  assert.equal(normalized.tasks.length, 1);
+  assert.equal(normalized.tasks[0].status, "runscript");
+  assert.deepEqual(normalized.tasks[0].depends_on, ["task-1", "2"]);
+});
+
+test("late session restoration never overrides an explicit workspace selection", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  assert.match(source, /workspaceSelectionTouchedRef = useRef\(false\)/);
+  assert.match(source, /workspaceSelectionTouchedRef\.current \? current : restoredWorkspaceCandidate \?\? current/);
+  assert.match(source, /workspaceSelectionTouchedRef\.current = true; setWorkspaceId\(event\.target\.value\)/);
+  assert.match(source, /key=\{`\$\{task\.id \?\? ["']task["']\}-\$\{index\}`\}/);
+});
+
+test("restored workspace selection cannot point to a deleted or inaccessible workspace", () => {
+  const workspaces = [{ id: 11 }, { id: 22 }];
+  assert.equal(resolveWorkspaceId(workspaces, "22"), "22");
+  assert.equal(resolveWorkspaceId(workspaces, 999), "11");
+  assert.equal(resolveWorkspaceId(workspaces, null), "11");
+  assert.equal(resolveWorkspaceId([{ name: "broken" }, null], "999"), "");
+  assert.equal(resolveWorkspaceId([], "22"), "");
+});
+
+
+test("workspace list normalization rejects malformed, duplicate and unsafe IDs", () => {
+  assert.deepEqual(normalizeWorkspaces({ results: [
+    { id: 7, name: "  Main  " },
+    { id: "8", name: "" },
+    { id: "not-an-id", name: "Invalid" },
+    { id: 7, name: "Duplicate" },
+    null,
+    [],
+    { id: Number.MAX_SAFE_INTEGER + 1, name: "Unsafe" },
+  ] }), [
+    { id: 7, name: "Main" },
+    { id: 8, name: "Workspace #8" },
+  ]);
+  assert.deepEqual(normalizeWorkspaces({ results: "invalid" }), []);
+});
+
+
+test("Agent polling backoff stays responsive when healthy and bounded during failures", () => {
+  assert.equal(getAgentPollDelay({ status: "planning" }, 0), 2200);
+  assert.equal(getAgentPollDelay({ status: "planning" }, 0, false), 15000);
+  assert.equal(getAgentPollDelay(null, 1, false), 15000);
+  assert.equal(getAgentPollDelay(null, 1), 3500);
+  assert.equal(getAgentPollDelay(null, 2), 7000);
+  assert.equal(getAgentPollDelay(null, 3), 14000);
+  assert.equal(getAgentPollDelay(null, 4), 14000);
+  assert.equal(getAgentPollDelay(null, 0), 3500);
+  assert.equal(getAgentPollDelay(null, Number.NaN), 3500);
+});
+
+test("transient workspace or Agent restore failures preserve the saved recovery targets", () => {
+  const source = read("EngineeringModeConsole.jsx");
+  const workspaceRestoreStart = source.indexOf("// Resolve restored workspace IDs only after the owned workspace list is ready.");
+  const workspaceRestoreEnd = source.indexOf("}, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);", workspaceRestoreStart);
+  const workspaceRestore = source.slice(workspaceRestoreStart, workspaceRestoreEnd);
+  assert.ok(workspaceRestoreStart >= 0 && workspaceRestoreEnd > workspaceRestoreStart, "workspace restore effect should be bounded");
+  assert.match(workspaceRestore, /if \(loadingWorkspaces \|\| workspaceLoadError\) return/);
+
+  const runRestoreStart = source.indexOf('const savedId = window.sessionStorage.getItem("dos:last-agent-run")');
+  const runRestoreEnd = source.indexOf("}, [refreshRun]);", runRestoreStart);
+  const runRestore = source.slice(runRestoreStart, runRestoreEnd);
+  assert.ok(runRestoreStart >= 0 && runRestoreEnd > runRestoreStart, "saved Agent run restore effect should be bounded");
+  assert.doesNotMatch(runRestore, /removeItem\(["']dos:last-agent-run["']\)/, "a transient restore failure must not erase the saved Agent run ID");
+  assert.match(runRestore, /setRestoredWorkspaceCandidate\(String\(payload\.workspace\)\)/);
+});

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from itertools import islice
 from typing import Any
 
 import requests
@@ -47,6 +48,209 @@ def _provider_config() -> dict[str, str]:
     model = (os.getenv("AI_MODEL") or "gpt-5.6-luna").strip()
     protocol = (os.getenv("AI_API_PROTOCOL") or "responses").strip().lower()
     return {"key": key, "base": base, "model": model, "protocol": protocol}
+
+
+def _redact_provider_file_content(content: str) -> str:
+    """Mask common credential values before workspace source reaches an AI provider."""
+    patterns = [
+        # Cookie headers may contain several semicolon-delimited credentials;
+        # redact the entire header line rather than only its first pair.
+        (re.compile(r"(?im)(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_HEADER]"),
+        # Authorization schemes other than Bearer (notably Basic and Digest) may
+        # contain credentials after a scheme token; redact the complete header.
+        (re.compile(r"(?im)(\b(?:proxy-authorization|authorization)\s*:\s*)[^\r\n]+"), r"\1[REDACTED_AUTH_HEADER]"),
+        # User prompts and history are plain text, so also recognize quoted JSON
+        # credential keys (for example, "api_key": "...") before generic matching.
+        (re.compile(r"""(?i)(["'][A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?key(?:[_-]?id)?|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|cookie|session[_-]?id)["']\s*:\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&}]+|[^\s,;&}]+)"""), r"\1[REDACTED_JSON_CREDENTIAL]"),
+        # Session identifiers and cookie assignments also occur outside HTTP headers.
+        (re.compile(r"(?im)(\bcookie\s*=\s*)[^\r\n]+"), r"\1[REDACTED_COOKIE_VALUE]"),
+        (re.compile(r"""(?i)(\b(?:session[_-]?id|sessionid)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)"""), r"\1[REDACTED_SESSION_ID]"),
+        # Azure Shared Access Signatures may appear as Authorization values rather
+        # than a field named token; redact the complete SAS payload including sig=.
+        (re.compile(r"""(?i)(\bSharedAccessSignature\b\s*(?:[:=]\s*|\s+))(?:\"[^\"]*\"|'[^']*'|[^\s,;\"']+)"""), r"\1[REDACTED_AZURE_SAS]"),
+        (re.compile(r"""(?i)([?&;]sig=)[^&;#\s\"']+"""), r"\1[REDACTED_AZURE_SAS_SIGNATURE]"),
+        # Redact signed-cloud-URL credentials and generic URI userinfo before prompt construction.
+        (re.compile(r"""(?i)([?&;](?:x-amz-signature|x-amz-security-token|x-amz-credential|x-goog-signature|x-goog-credential|signature|client_secret|client_assertion|access_token|refresh_token|security_token|session_token|api_key|apikey|access_key|secret_key|password|passwd|token|authorization)=)[^&#;\s\x22\x27<>]+"""), r"\1[REDACTED_URL_CREDENTIAL]"),
+        (re.compile(r"""(?i)([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^/@\s]+)@"""), r"\1[REDACTED]@"),
+        (re.compile(r"""(?i)(\b[A-Z0-9_.-]*(?:api[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|auth[_-]?key|access[_-]?key(?:[_-]?id)?|access[_-]?token|refresh[_-]?token|session[_-]?token|sas[_-]?token|token|client[_-]?secret|client[_-]?assertion|webhook[_-]?secret|connection[_-]?string|secret(?:[_-]?(?:access[_-]?)?key)?|password|passwd|authorization|private[_-]?key|signing[_-]?key|encryption[_-]?key|service[_-]?role[_-]?key)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;&]+|[^\s,;&]+)"""), r"\1[REDACTED]"),
+        (re.compile(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}"), r"\1[REDACTED_BEARER_TOKEN]"),
+        (re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^:/@\s]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
+        (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[REDACTED_AWS_KEY]"),
+        (re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"), "[REDACTED_GITHUB_TOKEN]"),
+        (re.compile(r"\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|(?:rk|sk)_(?:live|test)_[A-Za-z0-9]{16,})\b"), "[REDACTED_PROVIDER_KEY]"),
+        (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"), "[REDACTED_GOOGLE_KEY]"),
+        (re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"), "[REDACTED_GITLAB_TOKEN]"),
+        (re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b"), "[REDACTED_NPM_TOKEN]"),
+        (re.compile(r"\bpypi-[A-Za-z0-9_-]{50,}\b"), "[REDACTED_PYPI_TOKEN]"),
+        (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), "[REDACTED_JWT]"),
+        (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), "[REDACTED_SLACK_TOKEN]"),
+        (re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
+        (re.compile(r"-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----"), "[REDACTED_PGP_PRIVATE_KEY]"),
+    ]
+    redacted = content
+    for pattern, replacement in patterns:
+        redacted = pattern.sub(replacement, redacted)
+    return redacted
+
+
+def _provider_sensitive_context_key(key: str) -> bool:
+    """Identify structured credential fields even when values use unknown formats."""
+    normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
+    return normalized.endswith((
+        "apikey", "accountkey", "sharedaccesskey", "sharedaccesssignature", "authkey", "accesskey", "accesskeyid", "accesstoken", "refreshtoken",
+        "sessiontoken", "authtoken", "sastoken", "token", "clientsecret",
+        "clientassertion", "webhooksecret", "connectionstring", "credentials",
+        "credential", "secret", "secretkey", "secretaccesskey", "password",
+        "passwd", "cookie", "setcookie", "csrftoken", "xcsrftoken",
+        "xsrftoken", "sessionid", "authorizationheader", "authheader",
+        "authorization", "privatekey", "signingkey", "encryptionkey",
+    ))
+
+
+def _sanitize_provider_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Copy, filter, redact, and structurally bound provider-bound context."""
+    if not isinstance(context, dict):
+        return {}
+    remaining_bytes = 2_000_000
+    remaining_files = 500
+    remaining_nodes = 10_000
+    # Reserve room for JSON keys, separators, escaping, and nested structure.
+    # The final serialized-size check remains authoritative for unusually large metadata.
+    structural_reserve = min(4096, max(128, MAX_CONTEXT_CHARS // 16))
+    remaining_context_chars = max(0, MAX_CONTEXT_CHARS - structural_reserve)
+    max_depth = 16
+
+    def sanitize(value: Any, key: str = "", depth: int = 0) -> Any:
+        nonlocal remaining_bytes, remaining_files, remaining_nodes, remaining_context_chars
+        if depth > max_depth:
+            return "[TRUNCATED_CONTEXT_DEPTH]"
+        if remaining_nodes <= 0:
+            return "[TRUNCATED_CONTEXT_BUDGET]"
+        remaining_nodes -= 1
+        if isinstance(value, dict):
+            result = {}
+            child_limit = 999 if len(value) > 1_000 else 1_000
+            for child_key, child in islice(value.items(), child_limit):
+                if remaining_nodes <= 0:
+                    result["_context_truncated"] = True
+                    break
+                if not isinstance(child_key, str) or not child_key or len(child_key) > 120:
+                    continue
+                safe_key = _redact_provider_file_content(child_key)[:120]
+                if not safe_key:
+                    continue
+                if _provider_sensitive_context_key(child_key):
+                    result[safe_key] = "[REDACTED]"
+                    continue
+                normalized_child_key = child_key.casefold().replace("-", "_")
+                if normalized_child_key in {
+                    "file_inventory", "file_paths", "workspace_file_paths", "files_list",
+                } and isinstance(child, list):
+                    safe_paths = []
+                    for path in child[:500]:
+                        if (
+                            isinstance(path, str)
+                            and _provider_safe_context_path(path)
+                            and _redact_provider_file_content(path) == path
+                        ):
+                            safe_paths.append(path)
+                    result[safe_key] = safe_paths
+                    continue
+                if normalized_child_key in {
+                    "active_file", "current_file", "selected_file", "file_path", "filepath",
+                } and isinstance(child, str):
+                    if not _provider_safe_context_path(child) or _redact_provider_file_content(child) != child:
+                        result[safe_key] = "[REDACTED_PATH]"
+                    else:
+                        result[safe_key] = sanitize(child, safe_key, depth + 1)
+                    continue
+                if child_key.casefold() in {"files", "file_samples"} and isinstance(child, dict):
+                    safe_files = {}
+                    for path, source in islice(child.items(), 2_000):
+                        if remaining_files <= 0 or remaining_nodes <= 0:
+                            break
+                        remaining_nodes -= 1
+                        if not isinstance(path, str) or not _provider_safe_context_path(path):
+                            continue
+                        # File paths are provider-bound metadata too. A credential
+                        # accidentally embedded in a filename must not bypass the
+                        # content redactor simply because the source is safe.
+                        if _redact_provider_file_content(path) != path:
+                            continue
+                        if not isinstance(source, str) or len(source) > 256_000:
+                            continue
+                        if remaining_context_chars <= 0:
+                            break
+                        safe_source = _redact_provider_file_content(source)[:remaining_context_chars]
+                        try:
+                            size = len(safe_source.encode("utf-8"))
+                        except UnicodeEncodeError:
+                            continue
+                        if size > 256_000 or size > remaining_bytes:
+                            continue
+                        safe_files[path] = safe_source
+                        remaining_bytes -= size
+                        remaining_context_chars -= len(safe_source)
+                        remaining_files -= 1
+                    result[safe_key] = safe_files
+                else:
+                    result[safe_key] = sanitize(child, safe_key, depth + 1)
+            if len(value) > 1_000:
+                result["_context_truncated"] = True
+            return result
+        if isinstance(value, list):
+            bounded = [sanitize(item, key, depth + 1) for item in value[:100]]
+            if len(value) > 100:
+                bounded.append("[TRUNCATED_CONTEXT_LIST]")
+            return bounded
+        if isinstance(value, str):
+            if remaining_context_chars <= 0:
+                return ""
+            safe_value = _redact_provider_file_content(value)[:remaining_context_chars]
+            remaining_context_chars -= len(safe_value)
+            return safe_value
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        # Context normally contains JSON primitives, but do not let an
+        # unexpected object bypass redaction through json.dumps(default=str).
+        try:
+            rendered = str(value)
+        except Exception:
+            return "[UNSUPPORTED_CONTEXT_VALUE]"
+        if remaining_context_chars <= 0:
+            return ""
+        safe_value = _redact_provider_file_content(rendered)[:remaining_context_chars]
+        remaining_context_chars -= len(safe_value)
+        return safe_value
+
+    sanitized = sanitize(context)
+    # Enforce the final serialized context budget, including JSON punctuation,
+    # escaped characters, and path/metadata keys. Value-only accounting above
+    # is not sufficient for adversarial maps containing many long keys.
+    try:
+        serialized_size = len(json.dumps(sanitized, default=str, ensure_ascii=False))
+    except (TypeError, ValueError, OverflowError):
+        serialized_size = MAX_CONTEXT_CHARS + 1
+    if serialized_size <= MAX_CONTEXT_CHARS:
+        return sanitized
+
+    safe_context_keys = []
+    for key in list(context.keys())[:40]:
+        if not isinstance(key, str) or not key or _provider_sensitive_context_key(key):
+            continue
+        safe_key = _redact_provider_file_content(key)[:80]
+        if safe_key:
+            safe_context_keys.append(safe_key)
+    fallback = {
+        "context_truncated": True,
+        "_context_note": "Project context exceeded the serialized provider limit; only safe context keys were retained.",
+        "context_keys": safe_context_keys,
+    }
+    while safe_context_keys and len(json.dumps(fallback, ensure_ascii=False)) > MAX_CONTEXT_CHARS:
+        safe_context_keys.pop()
+    if len(json.dumps(fallback, ensure_ascii=False)) <= MAX_CONTEXT_CHARS:
+        return fallback
+    return {}
 
 
 def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
@@ -177,6 +381,12 @@ def _instructions(action: str | None = None) -> str:
 
 
 def _build_input(message: str, context: dict[str, Any], history: list[dict[str, str]]) -> list[dict[str, Any]]:
+    context = _sanitize_provider_context(context)
+    history = [
+        {"role": item.get("role"), "content": _redact_provider_file_content(item.get("content", ""))}
+        for item in history
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
     items: list[dict[str, Any]] = []
     remaining_history_chars = MAX_HISTORY_CHARS
     bounded_history: list[dict[str, str]] = []
@@ -199,7 +409,7 @@ def _build_input(message: str, context: dict[str, Any], history: list[dict[str, 
             "PROJECT CONTEXT (JSON):\n"
             + json.dumps(_compact_context(context), default=str, ensure_ascii=False)
             + "\n\nCURRENT REQUEST:\n"
-            + message
+            + _redact_provider_file_content(message)
         ),
     })
     return items
@@ -310,6 +520,51 @@ def _agent_safe_patch_path(path: Any) -> bool:
     )
 
 
+def _provider_safe_context_path(path: str) -> bool:
+    """Exclude credential stores and key material from provider-bound context."""
+    if not _agent_safe_patch_path(path):
+        return False
+    parts = [part.casefold() for part in path.split("/")]
+    name = parts[-1]
+    excluded_directories = {
+        ".aws", ".ssh", ".docker", ".kube", ".azure", ".gcloud",
+        ".terraform", "private", "secrets", "credentials", "private_keys",
+        "key_material", "vault", "keyrings",
+    }
+    # Common user-level CLI credential stores are not always named
+    # "credentials" and can contain opaque tokens that regex redaction
+    # cannot reliably identify (for example GitHub CLI hosts.yml).
+    excluded_config_store_names = {
+        "gcloud", "gh", "azure", "containers", "rclone",
+        "op", "1password", "oci", "terraform",
+    }
+    # A workspace may contain a copied home-directory tree (for example
+    # project/.config/gh/hosts.yml), so match the config-store pair anywhere
+    # in the normalized path rather than only at its root.
+    if any(
+        parts[index] == ".config" and parts[index + 1] in excluded_config_store_names
+        for index in range(len(parts) - 1)
+    ):
+        return False
+    if any(part in excluded_directories for part in parts[:-1]):
+        return False
+    if name in {
+        "service-account.json", "application_default_credentials.json",
+        ".git-credentials", "credentials", "id_rsa", "id_dsa",
+        "id_ecdsa", "id_ed25519", "known_hosts", "authorized_keys",
+        ".envrc", ".npmrc", ".pypirc", ".netrc", ".pgpass", ".my.cnf",
+        "terraform.tfstate", "terraform.tfstate.backup",
+    }:
+        return False
+    if (name != ".env.example" and (name == ".env" or name.startswith(".env."))) or name.endswith((".env", ".envrc", ".secret", ".secrets", ".credential", ".credentials", ".tfstate", ".tfvars", ".tfvars.json")):
+        return False
+    if re.search(r"(?:^|[._-])(?:secret|secrets|credential|credentials)(?:[._-]|$)", name):
+        return False
+    if name.endswith((".pem", ".key", ".p8", ".p12", ".pfx", ".keystore", ".jks", ".der", ".asc")):
+        return False
+    return True
+
+
 def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
     """Validate a model patch proposal; applying it is a separate approval action."""
     try:
@@ -366,29 +621,30 @@ def _agent_prompt_with_tools() -> str:
 
 
 def _provider_error(code: str, message: str, *, status: int | None = None, detail: str | None = None) -> str:
+    # Provider-controlled diagnostics are deliberately not returned to clients.
+    # Providers sometimes echo submitted prompts or request fragments in error
+    # messages; regex redaction cannot prove arbitrary echoed text is secret-free.
     payload: dict[str, Any] = {"code": code, "message": message}
     if status is not None:
         payload["provider_status"] = status
-    if detail:
-        payload["detail"] = detail[:1000]
     return json.dumps(payload, ensure_ascii=False)
 
 
 def _safe_provider_detail(response: requests.Response | None) -> str:
-    if response is None:
-        return ""
-    try:
-        data = response.json()
-        error = data.get("error") if isinstance(data, dict) else None
-        if isinstance(error, dict):
-            value = error.get("message") or error.get("code") or error.get("type")
-            return str(value or "")
-        return str(data.get("message") or "") if isinstance(data, dict) else ""
-    except (ValueError, TypeError):
-        return ""
+    # Kept as a compatibility seam for callers/tests. Do not trust upstream
+    # error bodies: they may contain echoed workspace context or credentials.
+    return ""
 
 
 def _call_provider(message: str, context: dict[str, Any], history: list[dict[str, str]], action: str | None = None) -> tuple[str, str | None]:
+    # Treat repository content and stored conversation history as untrusted data.
+    # Sanitize before prompt construction and before any model tool can inspect evidence.
+    context = _sanitize_provider_context(context)
+    history = [
+        {"role": item.get("role"), "content": _redact_provider_file_content(item.get("content", ""))}
+        for item in history
+        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
+    ]
     cfg = _provider_config()
     if not cfg["key"]:
         return "", _provider_error(
@@ -470,7 +726,7 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         detail = _safe_provider_detail(exc.response)
-        logger.warning("AI provider HTTP error status=%s model=%s detail=%s", status_code, cfg["model"], detail[:300])
+        logger.warning("AI provider HTTP error status=%s model=%s", status_code, cfg["model"])
         if status_code in {401, 403}:
             code = "AI_AUTH_ERROR"
             message = "OpenAI rejected the API credentials."
@@ -488,11 +744,11 @@ def _call_provider(message: str, context: dict[str, Any], history: list[dict[str
             message = "The AI provider returned a server error."
         return "", _provider_error(code, message, status=status_code, detail=detail)
     except requests.RequestException as exc:
-        logger.exception("AI provider request failed")
-        return "", _provider_error("AI_NETWORK_ERROR", "The AI provider could not be reached.", detail=str(exc))
+        logger.warning("AI provider request failed error_type=%s", type(exc).__name__)
+        return "", _provider_error("AI_NETWORK_ERROR", "The AI provider could not be reached.")
     except (ValueError, TypeError, KeyError, IndexError) as exc:
-        logger.exception("AI provider response parsing failed")
-        return "", _provider_error("AI_RESPONSE_ERROR", "The AI provider returned an unexpected response.", detail=str(exc))
+        logger.warning("AI provider response parsing failed error_type=%s", type(exc).__name__)
+        return "", _provider_error("AI_RESPONSE_ERROR", "The AI provider returned an unexpected response.")
 
 
 def _local_fallback(context: dict[str, Any], message: str) -> str:
@@ -532,10 +788,18 @@ def _run(request, message: str, action: str | None = None):
     try:
         conversation = _conversation(request, project_id, conversation_id)
     except DatabaseError:
-        logger.exception("AI conversation persistence unavailable; continuing in stateless mode")
+        # A project/conversation-scoped request must fail closed when its access
+        # check cannot be completed. Stateless fallback is safe only for an
+        # unscoped chat request with no private resource identifier.
+        logger.warning("AI conversation persistence unavailable error_type=DatabaseError")
+        if project_id or conversation_id:
+            return Response(
+                {"error": "Project or conversation access could not be verified."},
+                status=503,
+            )
         conversation = None
-    if conversation is None and conversation_id:
-        return Response({"error": "Conversation not found or unavailable."}, status=404)
+    if conversation is None and (conversation_id or project_id):
+        return Response({"error": "Project or conversation not found or unavailable."}, status=404)
 
     from .views import _workspace_context, _workspace_for_user
     workspace = None
