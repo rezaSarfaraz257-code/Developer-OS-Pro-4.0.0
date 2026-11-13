@@ -356,9 +356,10 @@ def build_agent_plan(run_id):
             "framework": workspace.framework,
             "runtime": workspace.runtime,
             "revision": workspace.revision,
-            "file_inventory": list(safe_files.keys()),
+            "sampled_file_paths": list(safe_files.keys()),
             "file_samples": safe_files,
-            "secrets_excluded": True,
+            "credential_filtering_applied": True,
+            "credential_filtering_is_heuristic": True,
         },
         "planning_contract": {
             "max_tasks": _MAX_TASKS,
