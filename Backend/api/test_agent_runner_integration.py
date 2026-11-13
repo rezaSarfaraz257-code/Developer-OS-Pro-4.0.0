@@ -76,6 +76,9 @@ class AgentRunnerIntegrationTests(TestCase):
             description="Execute the workspace test suite with the isolated Runner.",
             agent_role="testing",
             status="ready",
+            acceptance_criteria=[
+                "The Python feature test passes in isolated Runner execution",
+            ],
         )
 
         # Simulate the human-approved patch already committed to the
@@ -180,6 +183,8 @@ class AgentRunnerIntegrationTests(TestCase):
                 "previous_revision": self.workspace.revision - 1,
                 "revision": self.workspace.revision,
                 "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id,
             },
         )
 
@@ -219,7 +224,7 @@ class AgentRunnerIntegrationTests(TestCase):
 
         acceptance = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
         self.assertEqual(acceptance.status_code, 200)
