@@ -316,6 +316,11 @@ def execute_agent_task_verification(job):
 
         revision = workspace.revision
         workspace_snapshot = _workspace_payload(workspace)
+        # Reserve the Runner identifier durably before the outbound POST so a
+        # concurrent user cancellation can terminate the exact process group.
+        runner_execution_id = f"agent-{current_job.id}"
+        current_job.payload = {**payload, "runner_execution_id": runner_execution_id}
+        current_job.save(update_fields=["payload"])
         task.execution_attempts = current_job.attempts
         task.save(update_fields=["execution_attempts", "updated_at"])
 
@@ -325,6 +330,7 @@ def execute_agent_task_verification(job):
     result, error = _runner_request(
         "POST", "/exec", {
             **workspace_snapshot, "command": command, "include_files": False,
+            "execution_id": runner_execution_id,
         }, timeout=125
     )
     if error or not isinstance(result, dict):
@@ -342,6 +348,7 @@ def execute_agent_task_verification(job):
         or len(runner_job_id) > 80
         or not runner_job_id.isascii()
         or not all(char.isalnum() or char in "-_" for char in runner_job_id)
+        or runner_job_id != runner_execution_id
     ):
         raise RuntimeError("Runner returned an invalid execution job reference.")
     if not isinstance(runner_status, str) or runner_status not in {
