@@ -203,6 +203,57 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             with main.JOB_LOCK:
                 main.JOBS.pop(job_id, None)
 
+    def test_concurrent_cancel_is_ordered_after_snapshot_reservation_and_before_spawn(self):
+        job_id = "agent-9004"
+        snapshot_started = threading.Event()
+        allow_snapshot_finish = threading.Event()
+        cancel_started = threading.Event()
+        cancel_finished = threading.Event()
+        execution_results = []
+        cancel_results = []
+
+        def write_snapshot(root, files):
+            snapshot_started.set()
+            if not allow_snapshot_finish.wait(timeout=3):
+                raise AssertionError("Test did not release the workspace snapshot write.")
+
+        def execute_request():
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "print('must not run')"},
+                command="python3 main.py", execution_id=job_id, include_files=False,
+            )
+            with patch("main.auth"), patch("main.ROOT", Path(tmp)), \
+                 patch("main.replace_workspace_snapshot", side_effect=write_snapshot), \
+                 patch("main._run_process_with_timeout") as spawn:
+                result = main.execute(payload, authorization="Bearer internal")
+                execution_results.append(result)
+                spawn.assert_not_called()
+
+        def cancel_request():
+            cancel_started.set()
+            cancel_results.append(main._cancel_job(job_id, "42"))
+            cancel_finished.set()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            execution = threading.Thread(target=execute_request, daemon=True)
+            execution.start()
+            self.assertTrue(snapshot_started.wait(timeout=2))
+            cancellation = threading.Thread(target=cancel_request, daemon=True)
+            cancellation.start()
+            self.assertTrue(cancel_started.wait(timeout=2))
+            # Cancellation must wait for the atomic reservation+snapshot section.
+            self.assertFalse(cancel_finished.wait(timeout=0.05))
+            allow_snapshot_finish.set()
+            execution.join(timeout=3)
+            cancellation.join(timeout=3)
+
+        self.assertFalse(execution.is_alive())
+        self.assertFalse(cancellation.is_alive())
+        self.assertEqual(cancel_results[0]["status"], "cancelled")
+        self.assertEqual(execution_results[0]["status"], "cancelled")
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
     def test_exec_rejects_invalid_external_execution_id_before_snapshot_write(self):
         with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
             payload = main.ExecRequest(
