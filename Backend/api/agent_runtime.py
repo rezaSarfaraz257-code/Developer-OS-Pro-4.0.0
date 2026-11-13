@@ -692,11 +692,30 @@ def agent_runner_sync_status_api(request, job_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def agent_run_cancel_api(request, pk):
+    runner_cancellations = []
     with transaction.atomic():
         run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
         if run.status in {"succeeded", "failed", "canceled"}:
             return Response(_run_payload(run), status=409)
         previous_status = run.status
+        workspace_id = run.workspace_id
+        # Capture the durable Runner ID before terminalizing tasks. It was
+        # persisted before /exec, so cancellation is safe even if the request
+        # has not reached the Runner yet (the Runner records a tombstone).
+        active_tasks = run.tasks.select_for_update().filter(
+            status="running",
+        ).select_related("execution_job")
+        for task in active_tasks:
+            job = task.execution_job
+            payload = job.payload if job and isinstance(job.payload, dict) else {}
+            execution_id = payload.get("runner_execution_id")
+            if (
+                isinstance(execution_id, str)
+                and execution_id.startswith("agent-")
+                and execution_id[6:].isdigit()
+            ):
+                runner_cancellations.append(execution_id)
+
         run.status = "canceled"
         run.finished_at = timezone.now()
         run.error = ""
@@ -707,14 +726,41 @@ def agent_run_cancel_api(request, pk):
             action="agent_run.canceled",
             target_type="AgentRun",
             target_id=str(run.id),
-            metadata={"previous_status": previous_status},
+            metadata={
+                "previous_status": previous_status,
+                "runner_cancellation_requests": len(runner_cancellations),
+            },
         )
         BackgroundJob.objects.filter(
             kind="ai_agent_plan",
             payload__run_id=run.id,
             status="queued",
         ).update(status="canceled", finished_at=timezone.now())
-    return Response(_run_payload(run))
+
+    # Never hold AgentRun/AgentTask database locks while making network calls.
+    # A failed Runner cancellation remains fail-safe: the worker sees the
+    # canceled run on completion and queues authoritative workspace resync.
+    confirmed = 0
+    if runner_cancellations:
+        from .views import _runner_request
+        for execution_id in runner_cancellations:
+            result, error = _runner_request(
+                "POST",
+                f"/jobs/{execution_id}/cancel?workspace_id={workspace_id}",
+                {},
+                timeout=5,
+            )
+            if not error and isinstance(result, dict) and result.get("status") == "cancelled":
+                confirmed += 1
+
+    response = _run_payload(run)
+    if runner_cancellations:
+        response["runner_cancellation"] = {
+            "requested": len(runner_cancellations),
+            "confirmed": confirmed,
+            "unconfirmed": len(runner_cancellations) - confirmed,
+        }
+    return Response(response)
 
 
 @api_view(["POST"])
