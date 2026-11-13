@@ -1292,6 +1292,21 @@ import difflib
 AGENT_PATCH_TOKEN_MAX_AGE = 900
 
 
+def _valid_agent_task_acceptance_criteria(task):
+    criteria = task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else []
+    if not 1 <= len(criteria) <= 6:
+        return False
+    seen = set()
+    for item in criteria:
+        if not isinstance(item, str):
+            return False
+        value = item.strip()
+        if not value or len(value) > 500 or value.casefold() in seen:
+            return False
+        seen.add(value.casefold())
+    return True
+
+
 def _issue_patch_approval_token(request, answer):
     try:
         proposal = json.loads(answer)
@@ -1336,9 +1351,7 @@ def _issue_patch_approval_token(request, answer):
         if (
             not run or not task or task.status not in {"ready", "failed"}
             or (run.status == "failed" and task.status != "failed")
-            or not isinstance(task.acceptance_criteria, list)
-            or not task.acceptance_criteria
-            or any(not isinstance(item, str) or not item.strip() for item in task.acceptance_criteria)
+            or not _valid_agent_task_acceptance_criteria(task)
             or task.depends_on.exclude(status="succeeded").exists()
         ):
             return None
@@ -1420,9 +1433,7 @@ def ai_agent_apply_api(request):
                     not agent_run or not agent_task
                     or agent_task.status not in {"ready", "failed"}
                     or (agent_run.status == "failed" and agent_task.status != "failed")
-                    or not isinstance(agent_task.acceptance_criteria, list)
-                    or not agent_task.acceptance_criteria
-                    or any(not isinstance(item, str) or not item.strip() for item in agent_task.acceptance_criteria)
+                    or not _valid_agent_task_acceptance_criteria(agent_task)
                     or agent_task.depends_on.exclude(status="succeeded").exists()
                 ):
                     return Response({"error": "The task-bound approval is no longer valid for this Agent task."}, status=409)
