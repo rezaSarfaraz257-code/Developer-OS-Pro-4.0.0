@@ -46,6 +46,21 @@ def _queue_agent_runner_resync(workspace, actor, verification_job_id):
     return job
 
 
+def _task_acceptance_criteria(task):
+    criteria = task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else []
+    if not 1 <= len(criteria) <= 6:
+        return None
+    seen = set()
+    for item in criteria:
+        if not isinstance(item, str):
+            return None
+        value = item.strip()
+        if not value or len(value) > 500 or value.casefold() in seen:
+            return None
+        seen.add(value.casefold())
+    return criteria
+
+
 def _task_status_payload(task, job=None):
     return {
         "run_id": task.run_id,
@@ -101,6 +116,8 @@ def agent_task_verification_start_api(request, pk, task_pk):
             return Response({**_task_status_payload(task, existing_job), "job_id": existing_job.id}, status=200)
         if task.status not in {"ready", "failed"}:
             return Response({"error": "Only a ready or failed task can enter Runner verification."}, status=409)
+        if _task_acceptance_criteria(task) is None:
+            return Response({"error": "Task-specific acceptance criteria are missing or invalid."}, status=409)
         if run.status == "failed" and task.status != "failed":
             return Response({"error": "A failed run can only resume by retrying one of its failed tasks."}, status=409)
         if task.status == "failed" and task.execution_revision is not None and revision <= task.execution_revision:
@@ -254,6 +271,8 @@ def execute_agent_task_verification(job):
         # leave the succeeded state while this job waits in the worker queue.
         if task.depends_on.exclude(status="succeeded").exists():
             raise RuntimeError("Agent task dependencies are no longer satisfied.")
+        if _task_acceptance_criteria(task) is None:
+            raise RuntimeError("Task-specific acceptance criteria are missing or invalid.")
 
         workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
         if not _workspace_write_allowed(workspace, actor):
@@ -587,8 +606,8 @@ def agent_task_accept_api(request, pk, task_pk):
             or not evidence.get("revision")
         ):
             return Response({"error": "Runner verification has not been durably completed successfully."}, status=409)
-        criteria = task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else []
-        if not criteria or any(not isinstance(item, str) or not item.strip() for item in criteria):
+        criteria = _task_acceptance_criteria(task)
+        if criteria is None:
             return Response({"error": "This Agent task has no valid task-specific acceptance criteria; it cannot be accepted automatically."}, status=409)
         accepted = request.data.get("accepted_criteria")
         if (
