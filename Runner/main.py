@@ -1051,7 +1051,7 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
         if (
             not reserved
             or str(reserved.get("workspace_id")) != root.name
-            or reserved.get("status") != "queued"
+            or reserved.get("status") not in {"queued", "cancelled"}
         ):
             raise HTTPException(status_code=409, detail="Execution reservation is no longer available.")
     else:
