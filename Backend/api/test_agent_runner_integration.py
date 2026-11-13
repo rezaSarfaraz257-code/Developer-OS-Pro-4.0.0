@@ -82,6 +82,7 @@ class AgentRunnerIntegrationTests(TestCase):
         # authoritative workspace at a newer revision.
         self.workspace.files = {
             "test_feature.py": (
+                    "import os\\n"
                 "import ctypes\n"
                     "import errno\n"
                     "import socket\n"
@@ -110,6 +111,20 @@ class AgentRunnerIntegrationTests(TestCase):
                     "                    status[key] = value.strip()\n"
                     "        self.assertEqual(status.get('CapEff'), '0000000000000000')\n"
                     "        self.assertEqual(status.get('NoNewPrivs'), '1')\n"
+                    "    def test_workload_cannot_read_sensitive_procfs_or_sysfs_paths(self):\n"
+                    "        files = ('/proc/interrupts', '/proc/kcore', '/proc/keys', '/proc/timer_list', '/proc/sysrq-trigger')\n"
+                    "        for path in files:\n"
+                    "            if os.path.exists(path):\n"
+                    "                with self.assertRaises(PermissionError, msg=path):\n"
+                    "                    with open(path, 'rb') as stream: stream.read(1)\n"
+                    "        directories = ('/proc/acpi', '/proc/asound', '/proc/scsi', '/proc/bus', '/proc/fs', '/proc/irq', '/sys/firmware', '/sys/devices/virtual/powercap')\n"
+                    "        for path in directories:\n"
+                    "            if os.path.exists(path):\n"
+                    "                with self.assertRaises(PermissionError, msg=path):\n"
+                    "                    os.listdir(path)\n"
+                    "        if os.path.exists('/proc/sys/kernel/hostname'):\n"
+                    "            with self.assertRaises(PermissionError, msg='/proc/sys/kernel/hostname'):\n"
+                    "                os.open('/proc/sys/kernel/hostname', os.O_WRONLY)\n"
                     "    def test_workload_cannot_create_nested_user_namespace(self):\n"
                     "        libc = ctypes.CDLL(None, use_errno=True)\n"
                     "        libc.unshare.argtypes = [ctypes.c_int]\n"
