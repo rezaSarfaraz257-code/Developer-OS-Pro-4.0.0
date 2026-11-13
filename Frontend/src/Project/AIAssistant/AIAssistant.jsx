@@ -129,7 +129,7 @@ export default function AIAssistantPage({ setPage }) {
       ].join("\n");
       const response = await apiFetch("/ai/agent/", {
         method: "POST",
-        body: JSON.stringify({ message: prompt, workspace: agentRun.workspace, conversation: agentRun.conversation || undefined }),
+        body: JSON.stringify({ message: prompt, workspace: agentRun.workspace, conversation: agentRun.conversation || undefined, agent_run_id: agentRun.id, agent_task_id: task.id }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(errorText(data, "Agent task patch generation failed."));
