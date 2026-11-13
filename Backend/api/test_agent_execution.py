@@ -882,6 +882,43 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         runner_request.assert_called_once()
 
+    def test_ambiguous_runner_failure_after_cancel_still_queues_resync(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="failed",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+                "revision": self.workspace.revision,
+                "sync_job_id": self.sync_job.id,
+            },
+            idempotency_key="agent-canceled-ambiguous-001",
+            max_attempts=1,
+        )
+        self.task.status = "canceled"
+        self.task.execution_job = job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "canceled"
+        self.run.save(update_fields=["status"])
+
+        fail_agent_task_verification(job)
+
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "canceled")
+        resync = BackgroundJob.objects.get(
+            kind="ai_agent_runner_sync",
+            idempotency_key=f"agent-runner-resync:{self.workspace.id}:{self.workspace.revision}:{job.id}",
+        )
+        self.assertEqual(resync.payload["reason"], "agent_verification_reconciliation")
+        self.assertTrue(AuditLog.objects.filter(
+            action="agent_task.runner_resync_after_cancel_failure",
+            target_type="AgentTask",
+            target_id=str(self.task.id),
+            metadata__verification_job_id=job.id,
+        ).exists())
+
     def test_ambiguous_runner_failure_queues_authoritative_resync(self):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
