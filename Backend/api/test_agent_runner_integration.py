@@ -82,7 +82,7 @@ class AgentRunnerIntegrationTests(TestCase):
         # authoritative workspace at a newer revision.
         self.workspace.files = {
             "test_feature.py": (
-                    "import os\\n"
+                    "import os\n"
                 "import ctypes\n"
                     "import errno\n"
                     "import socket\n"
