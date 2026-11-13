@@ -8,7 +8,7 @@ from django.test import Client as DjangoTestClient, RequestFactory, override_set
 from django.urls import reverse
 
 from .operational_health import liveness_api
-from .views import _secure_runner_ready
+from .views import _cache_readiness, _secure_runner_ready
 
 
 class LivenessApiTests(TestCase):
@@ -352,3 +352,81 @@ class SecureRunnerReadinessTests(TestCase):
     @patch("api.views.requests.get", side_effect=requests.RequestException("offline"))
     def test_runner_network_failure_fails_closed(self, _get):
         self.assertFalse(_secure_runner_ready())
+
+
+class CacheReadinessProbeTests(TestCase):
+    @override_settings(
+        CACHE_URL="",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    )
+    def test_strict_runtime_rejects_missing_cache_url_without_contacting_cache(self):
+        from unittest.mock import Mock
+
+        cache_mock = Mock()
+        with patch.dict(os.environ, {"CACHE_URL": ""}, clear=False):
+            with patch("django.core.cache.cache", cache_mock):
+                ready, reason = _cache_readiness(strict_runtime=True)
+
+        self.assertFalse(ready)
+        self.assertEqual(reason, "cache_url_missing")
+        cache_mock.set.assert_not_called()
+
+    @override_settings(
+        CACHE_URL="redis://cache.internal:6379/1",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    )
+    def test_strict_runtime_rejects_non_redis_backend(self):
+        from unittest.mock import Mock
+
+        cache_mock = Mock()
+        with patch("django.core.cache.cache", cache_mock):
+            ready, reason = _cache_readiness(strict_runtime=True)
+
+        self.assertFalse(ready)
+        self.assertEqual(reason, "redis_backend_not_configured")
+        cache_mock.set.assert_not_called()
+
+    @override_settings(
+        CACHE_URL="redis://cache.internal:6379/1",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache"}},
+    )
+    def test_successful_cache_probe_uses_unique_key_and_cleans_it_up(self):
+        from unittest.mock import Mock
+
+        values = {}
+        cache_mock = Mock()
+        cache_mock.set.side_effect = lambda key, value, timeout: values.__setitem__(key, value)
+        cache_mock.get.side_effect = lambda key: values.get(key)
+        cache_mock.delete.side_effect = lambda key: values.pop(key, None)
+
+        with patch("django.core.cache.cache", cache_mock):
+            ready, reason = _cache_readiness(strict_runtime=True)
+
+        self.assertTrue(ready)
+        self.assertEqual(reason, "")
+        self.assertEqual(cache_mock.set.call_count, 1)
+        self.assertEqual(cache_mock.get.call_count, 1)
+        self.assertEqual(cache_mock.delete.call_count, 1)
+        key, value = cache_mock.set.call_args.args[:2]
+        self.assertTrue(key.startswith("developer-os:readiness:"))
+        self.assertNotIn(key, values)
+        self.assertTrue(value)
+        self.assertNotIn("readiness", values)
+
+    @override_settings(
+        CACHE_URL="redis://user:secret@cache.internal:6379/1",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache"}},
+    )
+    def test_cache_transport_failure_exposes_only_exception_class(self):
+        from unittest.mock import Mock
+
+        cache_mock = Mock()
+        cache_mock.set.side_effect = TimeoutError("redis://user:secret@cache.internal")
+        with patch("django.core.cache.cache", cache_mock):
+            ready, reason = _cache_readiness(strict_runtime=True)
+
+        self.assertFalse(ready)
+        self.assertEqual(reason, "cache_backend_error:TimeoutError")
+        self.assertNotIn("secret", reason)
+        self.assertNotIn("cache.internal", reason)
+        cache_mock.delete.assert_called_once()
