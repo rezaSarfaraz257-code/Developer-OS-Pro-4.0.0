@@ -604,11 +604,17 @@ def agent_task_accept_api(request, pk, task_pk):
             or job_payload.get("owner_id") != request.user.id
             or job_payload.get("workspace_id") != run.workspace_id
             or job_payload.get("revision") != evidence.get("revision")
+            or type(evidence.get("revision")) is not int
+            or evidence.get("revision") < 1
+            or task.execution_revision != evidence.get("revision")
+            or job_payload.get("profile") not in VERIFICATION_PROFILES
             or job_payload.get("profile") != task.execution_profile
             or job_payload.get("profile") != evidence.get("profile")
             or job_payload.get("sync_job_id") != evidence.get("sync_job_id")
             or job_payload.get("patch_audit_id") != evidence.get("patch_audit_id")
             or evidence.get("verification_job_id") != verification_job.id
+            or not isinstance(evidence.get("runner_job_id"), str)
+            or not evidence.get("runner_job_id")
             or job_result.get("status") != "verification_passed_pending_acceptance"
             or job_result.get("evidence") != evidence
             or evidence.get("state") != "passed"
@@ -616,7 +622,6 @@ def agent_task_accept_api(request, pk, task_pk):
             or type(evidence.get("exit_code")) is not int
             or evidence.get("exit_code") != 0
             or evidence.get("output_persisted") is not False
-            or not evidence.get("revision")
         ):
             return Response({"error": "Runner verification has not been durably completed successfully."}, status=409)
 
@@ -629,11 +634,13 @@ def agent_task_accept_api(request, pk, task_pk):
             status="succeeded",
             payload__workspace_id=run.workspace_id,
             payload__owner_id=request.user.id,
+            payload__requested_revision=evidence.get("revision"),
         ).first()
         sync_result = sync_job.result if sync_job and isinstance(sync_job.result, dict) else {}
         if (
             not sync_job
             or sync_result.get("status") != "synced"
+            or type(sync_result.get("revision")) is not int
             or sync_result.get("revision") != evidence.get("revision")
             or not AuditLog.objects.filter(
                 user=request.user,
