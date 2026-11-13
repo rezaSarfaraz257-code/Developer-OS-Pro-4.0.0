@@ -145,6 +145,8 @@ def agent_task_verification_start_api(request, pk, task_pk):
             metadata__previous_revision=revision - 1,
             metadata__revision=revision,
             metadata__approval="signed_single_use_revision_bound",
+            metadata__agent_run_id=run.id,
+            metadata__agent_task_id=task.id,
             created_at__gte=run.approved_at,
         ).order_by("-created_at", "-id").first()
         if not approved_patch:
@@ -286,6 +288,8 @@ def execute_agent_task_verification(job):
             metadata__previous_revision=workspace.revision - 1,
             metadata__revision=workspace.revision,
             metadata__approval="signed_single_use_revision_bound",
+            metadata__agent_run_id=run.id,
+            metadata__agent_task_id=task.id,
             created_at__gte=run.approved_at,
         ).exists()
         if not approved_patch:
