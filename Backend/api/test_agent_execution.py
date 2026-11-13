@@ -14,6 +14,14 @@ from .agent_execution import (
 from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
+ 
+def _runner_response_with_execution_id(response):
+    """Model the Runner contract: every execution response echoes its requested id."""
+    def respond(method, path, payload, timeout):
+        return ({**response, "job_id": payload["execution_id"]}, None)
+    return respond
+
+
 
 class AgentTaskVerificationAPITests(TestCase):
     def setUp(self):
@@ -258,9 +266,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(second.data["job_id"], job.id)
         self.assertEqual(BackgroundJob.objects.filter(kind="ai_agent_task_verify").count(), 1)
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
             run=self.run, key="review", title="Review", status="blocked",
@@ -377,10 +383,8 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         self.assertEqual(VERIFICATION_PROFILES["node_test"], "npm test")
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 1, "stdout": "x" * 30_000, "stderr": "y" * 30_000}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": "x" * 30_000, "stderr": "y" * 30_000}))
     def test_oversized_runner_output_fails_closed_and_reconciles(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -447,10 +451,8 @@ class AgentTaskVerificationAPITests(TestCase):
 
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-invalid-status", "status": {"unexpected": "object"},
-         "exit_code": 0, "duration_ms": 1, "stdout": "", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-invalid-status", "status": {"unexpected": "object"},
+         "exit_code": 0, "duration_ms": 1, "stdout": "", "stderr": ""}))
     def test_runner_rejects_non_string_execution_status(self, runner_request):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -466,10 +468,8 @@ class AgentTaskVerificationAPITests(TestCase):
 
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 1, "stdout": None, "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": None, "stderr": ""}))
     def test_malformed_runner_output_fails_closed_and_reconciles(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -492,9 +492,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.run.status, "failed")
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}))
     def test_failed_runner_verification_is_terminal_evidence_not_success(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -595,9 +593,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
 
 
 class AgentTaskRetryTests(AgentTaskVerificationAPITests):
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-retry-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 12, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-retry-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 12, "stdout": "", "stderr": "failure"}))
     def test_failed_task_can_retry_only_after_new_approved_synced_revision(self, runner_request):
         first = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -651,9 +647,7 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
 
 
 class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-limit-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 8, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-limit-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 8, "stdout": "", "stderr": "failure"}))
     def test_retry_loop_stops_after_four_total_iterations(self, runner_request):
         sync_job = self.sync_job
         for iteration in range(4):
@@ -737,7 +731,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         def runner_side_effect(*args, **kwargs):
             self.assertEqual(len(connection.atomic_blocks), baseline_atomic_depth)
             return {
-                "job_id": "runner-outside-tx-001", "status": "completed",
+                "job_id": args[2]["execution_id"], "status": "completed",
                 "exit_code": 0, "duration_ms": 20, "stdout": "not persisted",
                 "stderr": "", "files": {"main.py": "runner snapshot"},
             }, None
@@ -765,7 +759,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             workspace.files = {"main.py": "print('new revision')"}
             workspace.save(update_fields={"files"})
             return {
-                "job_id": "runner-stale-001", "status": "completed", "exit_code": 0,
+                "job_id": args[2]["execution_id"], "status": "completed", "exit_code": 0,
                 "duration_ms": 30, "stdout": "", "stderr": "",
             }, None
 
@@ -826,7 +820,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             self.task.status = "canceled"
             self.task.save(update_fields=["status"])
             return {
-                "job_id": "runner-canceled-001", "status": "completed",
+                "job_id": args[2]["execution_id"], "status": "completed",
                 "exit_code": 0, "duration_ms": 18, "stdout": "", "stderr": "",
             }, None
 
@@ -939,10 +933,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(resync.payload["requested_revision"], self.workspace.revision)
         self.assertIn("agent-runner-resync:", resync.idempotency_key)
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-collaborator-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 22, "stdout": "", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-collaborator-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 22, "stdout": "", "stderr": ""}))
     def test_project_collaborator_can_verify_authorized_workspace(self, runner_request):
         workspace_owner = User.objects.create_user(username="workspace-owner", password="StrongPassword123!")
         project = Project.objects.create(owner=workspace_owner, title="Shared workspace project")
