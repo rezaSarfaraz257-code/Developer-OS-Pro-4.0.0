@@ -93,6 +93,35 @@ class AgentTaskBoundPatchApprovalTests(TestCase):
             target_id=str(self.workspace.id),
         ).exists())
 
+    def test_task_bound_approval_rechecks_dependency_state(self):
+        prerequisite = AgentTask.objects.create(
+            run=self.run,
+            key="prerequisite",
+            title="Complete prerequisite",
+            status="ready",
+            acceptance_criteria=["The prerequisite work is complete."],
+        )
+        self.task.depends_on.add(prerequisite)
+        self.assertIsNone(self._token())
+
+        prerequisite.status = "succeeded"
+        prerequisite.save(update_fields=["status"])
+        token = self._token()
+        self.assertTrue(token)
+        prerequisite.status = "failed"
+        prerequisite.save(update_fields=["status"])
+        previous_revision = self.workspace.revision
+
+        response = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": token},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.revision, previous_revision)
+
     def test_apply_audit_is_bound_to_exact_run_and_task(self):
         token = self._token()
         response = self.client.post(
