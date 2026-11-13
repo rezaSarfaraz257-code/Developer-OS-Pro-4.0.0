@@ -357,7 +357,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(dependent.status, "ready")
         self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_task")
         self.assertEqual(self.task.execution_evidence["exit_code"], 0)
-        self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
+        self.assertEqual(self.task.execution_evidence["runner_job_id"], f"agent-{job.id}")
         self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
         self.assertEqual(self.task.execution_evidence["sync_job_id"], self.sync_job.id)
         self.assertEqual(
