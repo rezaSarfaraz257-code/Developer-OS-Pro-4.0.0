@@ -68,6 +68,11 @@ class AgentTaskBoundPatchApprovalTests(TestCase):
         self.assertEqual(payload["agent_task_id"], self.task.id)
         self.assertEqual(payload["workspace_id"], self.workspace.id)
 
+    def test_task_without_specific_acceptance_criteria_cannot_receive_token(self):
+        self.task.acceptance_criteria = []
+        self.task.save(update_fields=["acceptance_criteria"])
+        self.assertIsNone(self._token())
+
     def test_partial_task_binding_never_degrades_to_workspace_only_token(self):
         token = self._token(agent_task_id=None)
         self.assertIsNone(token)
