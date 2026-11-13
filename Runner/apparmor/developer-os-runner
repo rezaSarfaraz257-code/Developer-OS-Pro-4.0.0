@@ -87,6 +87,9 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
   # here; these denials cover both the trusted Runner and stacked workload.
   deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  # Match the directory inode itself as well as its descendants; AppArmor
+  # distinguishes /proc/acpi from /proc/acpi/ during directory traversal.
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/ rwklx,
   deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
   deny @{PROC}/sys/** wklx,
   deny @{PROC}/sysrq-trigger rwklx,
@@ -141,6 +144,9 @@ profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted)
   # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
   # here; these denials cover both the trusted Runner and stacked workload.
   deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  # Match the directory inode itself as well as its descendants; AppArmor
+  # distinguishes /proc/acpi from /proc/acpi/ during directory traversal.
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/ rwklx,
   deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
   deny @{PROC}/sys/** wklx,
   deny @{PROC}/sysrq-trigger rwklx,
