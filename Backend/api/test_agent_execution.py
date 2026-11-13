@@ -276,6 +276,9 @@ class AgentTaskVerificationAPITests(TestCase):
         job.save(update_fields=["status", "attempts"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
+        runner_request.assert_called_once()
+        runner_payload = runner_request.call_args.args[2]
+        self.assertIs(runner_payload["include_files"], False)
         self.task.refresh_from_db()
         dependent.refresh_from_db()
         self.run.refresh_from_db()
