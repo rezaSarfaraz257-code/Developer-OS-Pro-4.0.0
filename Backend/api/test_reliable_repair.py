@@ -64,10 +64,10 @@ class ReliableRepairAnalysisTests(SimpleTestCase):
         ]
         for code, source in cases:
             with self.subTest(code=code):
-                analysis = analyze_repair_evidence(
-                    "python_pytest" if code.startswith("python_") else "node_test",
-                    self.evidence(code, source),
-                )
+                profile = "python_pytest" if code.startswith("python_") else "node_test"
+                evidence = self.evidence(code, source)
+                evidence["profile"] = profile
+                analysis = analyze_repair_evidence(profile, evidence)
                 self.assertEqual(analysis["diagnostic_code"], code)
                 self.assertTrue(analysis["recommended_actions"])
                 self.assertTrue(analysis["verification_checklist"])
