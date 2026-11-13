@@ -222,6 +222,42 @@ def _email_transport_ready(strict_runtime):
     return bool(email_host or is_console or (is_resend and resend_api_key))
 
 
+def _cache_readiness(strict_runtime):
+    """Probe a unique cache key and return a secret-safe failure category."""
+    from django.core.cache import cache
+
+    cache_url = str(
+        getattr(settings, "CACHE_URL", "") or os.environ.get("CACHE_URL", "")
+    ).strip()
+    cache_config = getattr(settings, "CACHES", {}).get("default", {})
+    backend = str(cache_config.get("BACKEND", "") or "")
+    if strict_runtime and not cache_url:
+        return False, "cache_url_missing"
+    if strict_runtime and not backend.endswith("RedisCache"):
+        return False, "redis_backend_not_configured"
+
+    # A per-request key prevents concurrent readiness probes or application
+    # traffic from overwriting a shared sentinel. The random value is never
+    # returned or logged.
+    probe_key = f"developer-os:readiness:{secrets.token_hex(16)}"
+    probe_value = secrets.token_urlsafe(24)
+    try:
+        cache.set(probe_key, probe_value, timeout=10)
+        if cache.get(probe_key) != probe_value:
+            return False, "cache_roundtrip_mismatch"
+        return True, ""
+    except Exception as exc:
+        # Exception messages may contain Redis URLs, usernames, or credentials.
+        # Record only the exception class so operators can distinguish
+        # configuration/transport failures without leaking connection details.
+        return False, f"cache_backend_error:{type(exc).__name__}"
+    finally:
+        try:
+            cache.delete(probe_key)
+        except Exception as exc:
+            logger.debug("Cache readiness probe cleanup failed (%s).", type(exc).__name__)
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def readiness_api(request):
@@ -268,18 +304,19 @@ def readiness_api(request):
 
     checks["email"] = _email_transport_ready(strict_runtime)
 
-    try:
-        from django.core.cache import cache
-        cache.set("readiness", "ok", timeout=15)
-        cache_works = cache.get("readiness") == "ok"
-        cache_url = str(getattr(settings, "CACHE_URL", "") or os.environ.get("CACHE_URL", "")).strip()
-        cache_config = getattr(settings, "CACHES", {}).get("default", {})
-        cache_is_production_backend = (
-            str(cache_config.get("BACKEND", "")).endswith("RedisCache") and bool(cache_url)
+    checks["cache"], cache_failure_reason = _cache_readiness(strict_runtime)
+    if not checks["cache"]:
+        logger.warning(
+            "cache_readiness_failed",
+            extra={
+                "event": "cache_readiness_failed",
+                "failure_reason": cache_failure_reason,
+                "strict_runtime": strict_runtime,
+                "cache_backend": str(
+                    getattr(settings, "CACHES", {}).get("default", {}).get("BACKEND", "")
+                ).rsplit(".", 1)[-1][:64],
+            },
         )
-        checks["cache"] = cache_works and (cache_is_production_backend if strict_runtime else True)
-    except Exception:
-        checks["cache"] = False
 
     try:
         from .models import BackgroundJob, WorkerHeartbeat
@@ -328,6 +365,7 @@ def readiness_api(request):
                 "release_sha": release_identity().get("release_sha", "unknown"),
                 "strict_runtime": strict_runtime,
                 "worker_required": worker_required,
+                "cache_failure_reason": cache_failure_reason or None,
             },
         )
     return _no_store_health_response(Response(
