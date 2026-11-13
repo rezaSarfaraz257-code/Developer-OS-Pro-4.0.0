@@ -179,6 +179,7 @@ def _run_payload(run):
                 "key": task.key,
                 "title": task.title,
                 "description": task.description,
+                "acceptance_criteria": task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else [],
                 "agent_role": task.agent_role,
                 # Unknown/legacy roles receive no advertised permissions. The
                 # execution endpoint also denies capabilities absent from the
@@ -224,6 +225,7 @@ def _validate_plan(raw):
             "description": description,
             "agent_role": agent_role,
             "depends_on": [str(value).strip().lower() for value in dependencies],
+            "acceptance_criteria": item.get("acceptance_criteria"),
             "sequence": index,
         })
         keys.add(key)
@@ -245,6 +247,27 @@ def _validate_plan(raw):
 
     if any(positions[dep] >= item["sequence"] for item in normalized for dep in item["depends_on"]):
         raise ValueError("Agent plan tasks must be ordered before their dependents.")
+
+    # Every task needs its own bounded, reviewable acceptance contract. Run-level
+    # criteria remain useful for the overall goal but cannot substitute for it.
+    for item in normalized:
+        criteria = item["acceptance_criteria"]
+        if not isinstance(criteria, list) or not 1 <= len(criteria) <= 6:
+            raise ValueError("Each Agent task must define between 1 and 6 task-specific acceptance criteria.")
+        clean_criteria = []
+        seen_criteria = set()
+        for criterion in criteria:
+            if not isinstance(criterion, str):
+                raise ValueError("Agent task acceptance criteria must be text.")
+            value = criterion.strip()
+            if not value or len(value) > 500:
+                raise ValueError("Agent task acceptance criteria must be non-empty and at most 500 characters.")
+            normalized_criterion = value.casefold()
+            if normalized_criterion in seen_criteria:
+                raise ValueError("Agent task acceptance criteria must be unique.")
+            seen_criteria.add(normalized_criterion)
+            clean_criteria.append(value)
+        item["acceptance_criteria"] = clean_criteria
 
     return {
         "summary": str(raw.get("summary") or "").strip()[:2000],
@@ -345,7 +368,8 @@ def build_agent_plan(run_id):
     prompt = (
         "Create a safe, dependency-aware engineering implementation plan for the user's goal. "
         "Return ONLY valid JSON with keys summary, risks, acceptance_criteria, tasks. "
-        "tasks must be an array of 1 to 12 objects with id, title, description, agent_role, depends_on. "
+        "tasks must be an array of 1 to 12 objects with id, title, description, agent_role, depends_on, acceptance_criteria. "
+        "Every task must have 1 to 6 specific, observable, task-scoped acceptance_criteria strings (max 500 characters each); do not copy the run-wide criteria into every task. "
         "agent_role must be one of: " + ", ".join(AGENT_SPECIALIST_ROLES) + ". "
         "Assign each task to the most relevant specialist. Use unique lowercase snake_case IDs. "
         "depends_on is an array of task IDs. "
@@ -388,6 +412,7 @@ def build_agent_plan(run_id):
                 key=item["key"],
                 title=item["title"],
                 description=item["description"],
+                acceptance_criteria=item["acceptance_criteria"],
                 agent_role=item["agent_role"],
                 sequence=item["sequence"],
                 status="ready" if not item["depends_on"] else "blocked",
