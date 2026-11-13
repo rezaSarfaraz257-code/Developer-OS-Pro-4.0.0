@@ -523,6 +523,35 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.run.status, "failed")
         runner_request.assert_called_once()
 
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({
+        "job_id": "agent-diagnostic-001", "status": "failed", "exit_code": 1,
+        "duration_ms": 10, "stdout": "",
+        "stderr": "ModuleNotFoundError: No module named 'private_package'\nAWS_SECRET_ACCESS_KEY=DO_NOT_PERSIST_THIS_VALUE",
+    }))
+    def test_failed_verification_persists_only_allowlisted_diagnostic_signals(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        result = execute_agent_task_verification(job)
+        self.assertEqual(result["status"], "verification_failed")
+        self.task.refresh_from_db()
+        evidence = self.task.execution_evidence
+        self.assertEqual(
+            evidence["diagnostic_signals"],
+            [{"code": "python_import_error", "source": "stderr"}],
+        )
+        self.assertNotIn("private_package", str(evidence))
+        self.assertNotIn("DO_NOT_PERSIST_THIS_VALUE", str(evidence))
+        self.assertNotIn("stderr", evidence)
+        self.assertFalse(evidence["output_persisted"])
+        runner_request.assert_called_once()
+
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}))
     def test_failed_runner_verification_is_terminal_evidence_not_success(self, runner_request):
         response = self.client.post(self.url, {
