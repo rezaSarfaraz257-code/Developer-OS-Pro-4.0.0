@@ -46,6 +46,13 @@ class ReadOnlyAgentToolTests(TestCase):
             agent_role="architect",
             status="ready",
         )
+        # Keep these unit tests independent of the shared persistent quota backend.
+        # Rate-limit behavior is covered by dedicated security tests; this suite
+        # asserts authorization and read-only tool semantics.
+        rate_limit_patcher = patch("api.security.consume_rate_limit", return_value=(True, None))
+        rate_limit_patcher.start()
+        self.addCleanup(rate_limit_patcher.stop)
+
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
