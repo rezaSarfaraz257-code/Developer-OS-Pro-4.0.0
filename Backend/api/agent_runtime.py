@@ -195,8 +195,24 @@ def _run_payload(run):
 
 
 def _validate_plan(raw):
+    """Validate provider output as a strict, bounded task-graph contract."""
     if not isinstance(raw, dict):
         raise ValueError("Agent planner returned an invalid plan object.")
+
+    summary = raw.get("summary", "")
+    risks = raw.get("risks", [])
+    run_criteria = raw.get("acceptance_criteria", [])
+    if not isinstance(summary, str) or len(summary) > 2000:
+        raise ValueError("Agent plan summary must be text of at most 2000 characters.")
+    if not isinstance(risks, list) or len(risks) > 12:
+        raise ValueError("Agent plan risks must be an array of at most 12 items.")
+    if not isinstance(run_criteria, list) or len(run_criteria) > 12:
+        raise ValueError("Agent plan acceptance criteria must be an array of at most 12 items.")
+    for collection_name, values in (("risks", risks), ("acceptance criteria", run_criteria)):
+        for value in values:
+            if not isinstance(value, str) or not value.strip() or len(value) > 500:
+                raise ValueError(f"Agent plan {collection_name} must contain non-empty text of at most 500 characters.")
+
     tasks = raw.get("tasks")
     if not isinstance(tasks, list) or not 1 <= len(tasks) <= _MAX_TASKS:
         raise ValueError("Agent plan must contain between 1 and 12 tasks.")
@@ -206,11 +222,22 @@ def _validate_plan(raw):
     for index, item in enumerate(tasks):
         if not isinstance(item, dict):
             raise ValueError("Agent plan contains an invalid task.")
-        key = str(item.get("id") or "").strip().lower()
-        title = str(item.get("title") or "").strip()
-        description = str(item.get("description") or "").strip()
-        agent_role = str(item.get("agent_role") or "architect").strip().lower()
-        dependencies = item.get("depends_on") or []
+        key = item.get("id")
+        title = item.get("title")
+        description = item.get("description", "")
+        agent_role = item.get("agent_role", "architect")
+        dependencies = item.get("depends_on")
+        if (
+            not isinstance(key, str)
+            or not isinstance(title, str)
+            or not isinstance(description, str)
+            or not isinstance(agent_role, str)
+        ):
+            raise ValueError("Agent task identifiers, title, description, and role must be text.")
+        key = key.strip().lower()
+        title = title.strip()
+        description = description.strip()
+        agent_role = agent_role.strip().lower()
         if not _AGENT_KEY_RE.fullmatch(key) or key in keys:
             raise ValueError("Agent plan contains an invalid or duplicate task ID.")
         if not title or len(title) > 180 or len(description) > 2000:
@@ -218,13 +245,19 @@ def _validate_plan(raw):
         if agent_role not in AGENT_SPECIALIST_ROLES:
             raise ValueError("Agent task references an unsupported specialist role.")
         if not isinstance(dependencies, list) or len(dependencies) > _MAX_TASKS:
-            raise ValueError("Agent task dependencies are invalid.")
+            raise ValueError("Agent task dependencies must be an array of at most 12 task IDs.")
+        if any(not isinstance(value, str) for value in dependencies):
+            raise ValueError("Agent task dependency IDs must be text.")
+        dependency_keys = [value.strip().lower() for value in dependencies]
+        if any(not _AGENT_KEY_RE.fullmatch(value) for value in dependency_keys):
+            raise ValueError("Agent task contains an invalid dependency ID.")
+
         normalized.append({
             "key": key,
             "title": title,
             "description": description,
             "agent_role": agent_role,
-            "depends_on": [str(value).strip().lower() for value in dependencies],
+            "depends_on": dependency_keys,
             "acceptance_criteria": item.get("acceptance_criteria"),
             "sequence": index,
         })
@@ -236,6 +269,7 @@ def _validate_plan(raw):
             raise ValueError("Agent task contains duplicate dependencies.")
         if any(dep not in keys or dep == item["key"] for dep in item["depends_on"]):
             raise ValueError("Agent task references an unknown or invalid dependency.")
+
     # Kahn's algorithm rejects cycles before checking the provider's order.
     pending = {item["key"]: set(item["depends_on"]) for item in normalized}
     resolved = set()
@@ -270,9 +304,9 @@ def _validate_plan(raw):
         item["acceptance_criteria"] = clean_criteria
 
     return {
-        "summary": str(raw.get("summary") or "").strip()[:2000],
-        "risks": [str(value)[:500] for value in raw.get("risks", [])[:12]] if isinstance(raw.get("risks", []), list) else [],
-        "acceptance_criteria": [str(value)[:500] for value in raw.get("acceptance_criteria", [])[:12]] if isinstance(raw.get("acceptance_criteria", []), list) else [],
+        "summary": summary.strip(),
+        "risks": [value.strip() for value in risks],
+        "acceptance_criteria": [value.strip() for value in run_criteria],
         "tasks": normalized,
     }
 
@@ -322,9 +356,10 @@ def build_agent_plan(run_id):
             "framework": workspace.framework,
             "runtime": workspace.runtime,
             "revision": workspace.revision,
-            "file_inventory": list(safe_files.keys()),
+            "sampled_file_paths": list(safe_files.keys()),
             "file_samples": safe_files,
-            "secrets_excluded": True,
+            "credential_filtering_applied": True,
+            "credential_filtering_is_heuristic": True,
         },
         "planning_contract": {
             "max_tasks": _MAX_TASKS,
