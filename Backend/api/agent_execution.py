@@ -376,7 +376,10 @@ def execute_agent_task_verification(job):
         "stdout_bytes": len(stdout_bytes),
         "stderr_bytes": len(stderr_bytes),
     }
-    if type(exit_code) is not int:
+    if runner_status == "cancelled":
+        if exit_code is not None and type(exit_code) is not int:
+            raise RuntimeError("Runner returned an invalid execution exit code.")
+    elif type(exit_code) is not int:
         raise RuntimeError("Runner returned an invalid execution exit code.")
     if not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or not 0 <= duration_ms <= 120_000:
         duration_ms = None
