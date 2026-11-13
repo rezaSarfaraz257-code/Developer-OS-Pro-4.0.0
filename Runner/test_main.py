@@ -258,6 +258,7 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
         cancel_finished = threading.Event()
         execution_results = []
         cancel_results = []
+        original_scheduler_acquire = main._scheduler_acquire
 
         def write_snapshot(root, files):
             snapshot_started.set()
@@ -265,10 +266,11 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 raise AssertionError("Test did not release the workspace snapshot write.")
 
         def wait_for_scheduler(workspace_id, execution_id, timeout=5):
+            acquired = original_scheduler_acquire(workspace_id, execution_id, timeout=timeout)
             scheduler_started.set()
             if not allow_scheduler_finish.wait(timeout=3):
                 raise AssertionError("Test did not release the scheduler reservation.")
-            return True
+            return acquired
 
         def execute_request():
             payload = main.ExecRequest(
