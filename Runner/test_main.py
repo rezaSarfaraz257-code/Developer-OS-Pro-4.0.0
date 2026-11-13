@@ -155,6 +155,34 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             main.JOBS.pop(job_id, None)
 
 
+    def test_exec_honors_preexisting_cancel_tombstone_before_snapshot_write(self):
+        job_id = "agent-9003"
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            main._cancel_job(job_id, "42")
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "must-not-be-written"},
+                command="python3 main.py", execution_id=job_id,
+            )
+            with patch("main.auth"), patch("main.replace_workspace_snapshot") as replace:
+                result = main.execute(payload, authorization="Bearer internal")
+            self.assertEqual(result["status"], "cancelled")
+            replace.assert_not_called()
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
+    def test_exec_rejects_invalid_external_execution_id_before_snapshot_write(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "print('x')"},
+                command="python3 main.py", execution_id="../invalid",
+            )
+            with patch("main.auth"), patch("main.replace_workspace_snapshot") as replace:
+                with self.assertRaises(HTTPException) as ctx:
+                    main.execute(payload, authorization="Bearer internal")
+            self.assertEqual(ctx.exception.status_code, 400)
+            replace.assert_not_called()
+
+
 class RunnerWorkspaceIdNormalizationTests(unittest.TestCase):
     def test_workspace_id_is_integer_normalized_before_path_construction(self):
         with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
