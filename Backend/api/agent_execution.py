@@ -513,7 +513,32 @@ def fail_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run, execution_job_id=job.id,
         ).first()
-        if not task or task.status not in {"running", "awaiting_approval"}:
+        if not task:
+            return
+        if run.status == "canceled" or task.status == "canceled":
+            actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
+            resync_job = None
+            if actor:
+                try:
+                    workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+                except Http404:
+                    workspace = None
+                if workspace and _workspace_write_allowed(workspace, actor):
+                    resync_job = _queue_agent_runner_resync(workspace, actor, job.id)
+            AuditLog.objects.create(
+                user_id=payload.get("owner_id"),
+                action="agent_task.runner_resync_after_cancel_failure",
+                target_type="AgentTask",
+                target_id=str(task.id),
+                metadata={
+                    "run_id": run.id,
+                    "verification_job_id": job.id,
+                    "resync_job_id": resync_job.id if resync_job else None,
+                    "reason": "runner_request_outcome_ambiguous",
+                },
+            )
+            return
+        if task.status not in {"running", "awaiting_approval"}:
             return
         finalization_interrupted = task.status == "awaiting_approval"
         previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
