@@ -850,6 +850,35 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         resync = BackgroundJob.objects.get(pk=result["resync_job_id"])
         self.assertEqual(resync.kind, "ai_agent_runner_sync")
 
+    @patch("api.views._runner_request", return_value=(
+        {"job_id": "agent-canceled-001", "status": "cancelled",
+         "exit_code": None, "duration_ms": 0, "stdout": "", "stderr": ""}, None,
+    ))
+    def test_runner_cancellation_with_null_exit_code_reconciles_workspace(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        self.run.status = "canceled"
+        self.run.save(update_fields=["status"])
+        self.task.status = "canceled"
+        self.task.save(update_fields=["status"])
+
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        self.assertTrue(result["resync_job_id"])
+        self.assertEqual(
+            BackgroundJob.objects.get(pk=result["resync_job_id"]).kind,
+            "ai_agent_runner_sync",
+        )
+        runner_request.assert_called_once()
+
     def test_ambiguous_runner_failure_queues_authoritative_resync(self):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
