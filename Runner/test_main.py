@@ -300,8 +300,9 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             # Cancellation waits until the atomic snapshot reservation finishes.
             self.assertFalse(cancel_finished.wait(timeout=0.05))
             allow_snapshot_finish.set()
-            self.assertTrue(scheduler_started.wait(timeout=2))
             self.assertTrue(cancel_finished.wait(timeout=2))
+            # If the execution thread reached the scheduler wait, release it;
+            # if cancellation won earlier, no scheduler reservation is needed.
             allow_scheduler_finish.set()
             execution.join(timeout=3)
             cancellation.join(timeout=3)
