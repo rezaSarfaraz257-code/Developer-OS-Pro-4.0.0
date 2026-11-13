@@ -134,6 +134,8 @@ class AgentTaskVerificationAPITests(TestCase):
                 "previous_revision": self.workspace.revision - 1,
                 "revision": self.workspace.revision,
                 "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id,
             },
         )
 
@@ -629,6 +631,8 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
                 "previous_revision": self.workspace.revision - 1,
                 "revision": self.workspace.revision,
                 "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id,
             },
         )
         retry = self.client.post(self.url, {
@@ -704,6 +708,8 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
                 "previous_revision": self.workspace.revision - 1,
                 "revision": self.workspace.revision,
                 "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id,
             },
         )
         exhausted = self.client.post(self.url, {
@@ -901,6 +907,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
                 "previous_revision": workspace.revision - 1,
                 "revision": workspace.revision,
                 "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id,
             },
         )
         url = f"/api/ai/agent/runs/{run.id}/tasks/{task.id}/verify/"
