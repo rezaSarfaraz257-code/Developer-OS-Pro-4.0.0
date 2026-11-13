@@ -133,7 +133,7 @@ services:
       - apparmor:${RUNNER_APPARMOR_PROFILE:-docker-default}
       # Bubblewrap must mount a fresh procfs in each PID namespace. Docker's
       # default procfs submount masks prevent that; AppArmor below re-denies
-      # sensitive procfs/sysfs paths before the Runner can access them.
+      # Docker's sensitive procfs/sysfs paths before the Runner can access them.
       - systempaths=unconfined
       - seccomp:./Runner/seccomp-bwrap.json
     cap_drop:
