@@ -9,6 +9,16 @@ from __future__ import annotations
 
 
 _SUPPORTED_PROFILES = {"python_pytest", "python_unittest", "node_test", "node_build", "node_lint"}
+_DIAGNOSTIC_PROFILES = {
+    "python_import_error": {"python_pytest", "python_unittest"},
+    "python_syntax_error": {"python_pytest", "python_unittest"},
+    "python_test_failure": {"python_pytest", "python_unittest"},
+    "node_module_resolution_error": {"node_test", "node_build", "node_lint"},
+    "node_test_failure": {"node_test"},
+    "node_build_error": {"node_build"},
+    "node_lint_error": {"node_lint"},
+    "command_failed": _SUPPORTED_PROFILES,
+}
 
 
 _DIAGNOSTICS = {
@@ -141,8 +151,12 @@ def analyze_repair_evidence(profile, evidence):
         if not isinstance(signal, dict) or set(signal) != {"code", "source"}:
             raise ValueError("Repair diagnostic signal has an invalid shape.")
         code, source = signal.get("code"), signal.get("source")
-        if code not in _DIAGNOSTICS or source not in {"stdout", "stderr", "exit_status"}:
-            raise ValueError("Repair diagnostic signal is not allowlisted.")
+        if (
+            code not in _DIAGNOSTICS
+            or profile not in _DIAGNOSTIC_PROFILES.get(code, set())
+            or source not in {"stdout", "stderr", "exit_status"}
+        ):
+            raise ValueError("Repair diagnostic signal is not allowlisted for this verification profile.")
         key = (code, source)
         if key not in seen:
             seen.add(key)
