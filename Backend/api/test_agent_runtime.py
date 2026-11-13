@@ -159,8 +159,8 @@ class AgentPlanValidationTests(TestCase):
             "risks": [],
             "acceptance_criteria": ["Tests pass"],
             "tasks": [
-                {"id": "inspect", "title": "Inspect repository", "depends_on": []},
-                {"id": "test", "title": "Add regression tests", "depends_on": ["inspect"]},
+                {"id": "inspect", "title": "Inspect repository", "depends_on": [], "acceptance_criteria": ["Repository structure and critical entry points are documented."]},
+                {"id": "test", "title": "Add regression tests", "depends_on": ["inspect"], "acceptance_criteria": ["Regression tests cover the identified behavior and pass."]},
             ],
         })
         self.assertEqual([item["key"] for item in plan["tasks"]], ["inspect", "test"])
@@ -558,8 +558,8 @@ class AgentRunLifecycleTests(TestCase):
                 "risks": ["Potential regression"],
                 "acceptance_criteria": ["Regression tests pass"],
                 "tasks": [
-                    {"id": "inspect", "title": "Inspect existing code", "description": "Review source", "depends_on": []},
-                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "agent_role": "testing", "depends_on": ["inspect"]},
+                    {"id": "inspect", "title": "Inspect existing code", "description": "Review source", "depends_on": [], "acceptance_criteria": ["The relevant source modules and dependencies are identified."]},
+                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "agent_role": "testing", "depends_on": ["inspect"], "acceptance_criteria": ["Regression tests cover the stated edge cases and pass."]},
                 ],
             }),
             None,
