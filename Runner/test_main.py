@@ -195,6 +195,34 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
         with main.JOB_LOCK:
             main.JOBS.pop(job_id, None)
 
+    def test_cancellation_wins_if_it_arrives_before_completion_commit(self):
+        job_id = "agent-9008"
+        original_set_job = main._set_job
+
+        def cancel_before_completion(job, **updates):
+            if updates.get("status") == "completed":
+                main._cancel_job(job)
+            return original_set_job(job, **updates)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main._sandbox_command", return_value=["bash", "ignored"]), \
+             patch("main._run_process_with_timeout", return_value=Mock(
+                 returncode=0, stdout="completed output", stderr="",
+             )), \
+             patch("main._set_job", side_effect=cancel_before_completion):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        self.assertEqual(result["stdout"], "completed output")
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
     def test_cancellation_wins_over_a_simultaneous_runner_timeout(self):
         job_id = "agent-9007"
 
