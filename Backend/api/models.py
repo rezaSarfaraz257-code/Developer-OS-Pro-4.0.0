@@ -847,6 +847,7 @@ class AgentTask(models.Model):
     key = models.CharField(max_length=64)
     title = models.CharField(max_length=180)
     description = models.TextField(max_length=2000, blank=True, default="")
+    acceptance_criteria = models.JSONField(default=list, blank=True)
     agent_role = models.CharField(max_length=24, choices=SPECIALIST_CHOICES, default="architect")
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="blocked")
     sequence = models.PositiveSmallIntegerField(default=0)
