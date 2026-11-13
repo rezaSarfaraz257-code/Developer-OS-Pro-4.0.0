@@ -484,6 +484,7 @@ class Workspace(BaseModel):
 
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
+    include_files: bool = True
 
 class ProcessInputRequest(Workspace):
     data: str = ""
@@ -989,7 +990,7 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
         _remove_command_script(cleanup_path)
 
 
-def run_command(root, command, *, allow_network=False, entitlement=None):
+def run_command(root, command, *, allow_network=False, entitlement=None, include_files=True):
     command = _normalize_command(command)
     policy = _entitlement_policy({"entitlement": entitlement or {}})
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
@@ -1017,13 +1018,13 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
     if not _scheduler_acquire(root.name, job_id, timeout=5):
         EXEC_SEMAPHORE.release()
         if _job_is_cancelled(job_id):
-            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
+            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
         _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
     if _job_is_cancelled(job_id):
         _scheduler_release(root.name)
         EXEC_SEMAPHORE.release()
-        return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root)}
+        return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
     _set_job(job_id, status="running", started_at=time.time(), queue_wait_ms=int((time.monotonic()-started)*1000), queue_position=0)
     try:
         with _workspace_lock(root.name):
@@ -1059,7 +1060,8 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         return {
             "job_id": job_id, "status": status, "exit_code": None if cancelled else proc.returncode,
             "stdout": stdout, "stderr": stderr,
-            "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
+            "duration_ms": int((time.monotonic()-started)*1000),
+            **({"files": snapshot(root)} if include_files else {}),
         }
     except subprocess.TimeoutExpired as exc:
         finished = time.time()
@@ -1070,17 +1072,28 @@ def run_command(root, command, *, allow_network=False, entitlement=None):
         elif not isinstance(partial_stdout, str):
             partial_stdout = str(partial_stdout) if partial_stdout else ""
         partial_stdout = partial_stdout[-MAX_OUTPUT:]
-        # Keep pre-timeout output available to synchronous and streaming clients.
+        partial_stderr = exc.stderr or ""
+        if isinstance(partial_stderr, bytes):
+            partial_stderr = partial_stderr.decode("utf-8", errors="replace")
+        elif not isinstance(partial_stderr, str):
+            partial_stderr = str(partial_stderr) if partial_stderr else ""
+        partial_stderr = partial_stderr[-MAX_OUTPUT:]
+        # Preserve both bounded streams so a timeout remains actionable for
+        # diagnostics without persisting unbounded process output.
         if partial_stdout:
             _append_job_output(job_id, partial_stdout)
+        if partial_stderr:
+            _append_job_output(job_id, partial_stderr)
         _append_job_output(job_id, timeout_message + "\n")
+        stderr = (partial_stderr + ("\n" if partial_stderr else "") + timeout_message)[-MAX_OUTPUT:]
         _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
                  error=timeout_message)
         return {
             "job_id": job_id, "status": "timeout", "exit_code": 124,
             "stdout": partial_stdout,
-            "stderr": timeout_message,
-            "duration_ms": int((time.monotonic()-started)*1000), "files": snapshot(root),
+            "stderr": stderr,
+            "duration_ms": int((time.monotonic()-started)*1000),
+            **({"files": snapshot(root)} if include_files else {}),
         }
     except Exception as exc:
         _set_job(job_id, status="failed", finished_at=time.time(), error=exc.__class__.__name__)
@@ -1447,7 +1460,10 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
         started=time.time()
         with _workspace_lock(payload.workspace_id):
             replace_workspace_snapshot(root, files)
-            result=run_command(root, payload.command, entitlement=payload.entitlement)
+            result=run_command(
+                root, payload.command, entitlement=payload.entitlement,
+                include_files=payload.include_files,
+            )
         _metric("exec_total")
         _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
         with METRICS_LOCK:
