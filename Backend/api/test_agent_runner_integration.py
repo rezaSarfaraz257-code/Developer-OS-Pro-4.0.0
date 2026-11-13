@@ -217,10 +217,28 @@ class AgentRunnerIntegrationTests(TestCase):
         self.assertEqual(result["evidence"]["runner_status"], "completed")
         self.assertEqual(result["evidence"]["exit_code"], 0)
         self.assertFalse(result["evidence"]["output_persisted"])
+        self.assertEqual(result["evidence"]["revision"], revision)
+        self.assertEqual(result["evidence"]["patch_audit_id"], AuditLog.objects.get(
+            user=self.user,
+            action="ai_agent.patch_applied",
+            target_type="CodeWorkspace",
+            target_id=str(self.workspace.id),
+            metadata__agent_run_id=self.run.id,
+            metadata__agent_task_id=self.task.id,
+        ).id)
+        self.assertNotIn("stdout", result["evidence"])
+        self.assertNotIn("stderr", result["evidence"])
 
         verification_job.status = "succeeded"
         verification_job.result = result
         verification_job.save(update_fields=["status", "result"])
+
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "awaiting_approval")
+        self.assertEqual(self.run.status, "running")
+        self.assertEqual(self.task.execution_evidence["state"], "passed")
+        self.assertNotIn("human_acceptance", self.task.execution_evidence)
 
         acceptance = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
@@ -234,3 +252,10 @@ class AgentRunnerIntegrationTests(TestCase):
         self.assertEqual(self.task.status, "succeeded")
         self.assertEqual(self.run.status, "succeeded")
         self.assertEqual(self.task.execution_evidence["human_acceptance"]["user_id"], self.user.id)
+        self.assertEqual(
+            self.task.execution_evidence["human_acceptance"]["accepted_criteria"],
+            self.task.acceptance_criteria,
+        )
+        self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_task")
+        self.assertEqual(self.task.execution_evidence["revision"], revision)
+        self.assertFalse(self.task.execution_evidence["output_persisted"])
