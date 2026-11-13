@@ -185,6 +185,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --security-opt apparmor=developer-os-runner \
+            --security-opt systempaths=unconfined \
             --security-opt seccomp=../Runner/seccomp-bwrap.json \
             --pids-limit 128 --memory 1g --cpus 2 \
             --env IDE_RUNNER_TOKEN="$IDE_RUNNER_TOKEN" \
@@ -210,6 +211,44 @@ jobs:
           # Read-only runtime inspection: identify masked procfs paths without changing container security.
           docker inspect --format 'Runner masked paths: {{json .HostConfig.MaskedPaths}}' developer-os-runner-ci
           docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
+          # systempaths=unconfined removes Docker's nested procfs masks only;
+          # the attached AppArmor profile must deny access to every sensitive path.
+          docker exec developer-os-runner-ci /usr/bin/python3 - <<'PY'
+          import os
+          checks = [
+              ("/proc/interrupts", "file", os.O_RDONLY),
+              ("/proc/kcore", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/keys", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/timer_list", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/sysrq-trigger", "file", os.O_WRONLY | os.O_NONBLOCK),
+              ("/proc/sys/kernel/hostname", "file", os.O_WRONLY),
+              ("/proc/acpi", "dir", 0),
+              ("/proc/asound", "dir", 0),
+              ("/proc/scsi", "dir", 0),
+              ("/proc/bus", "dir", 0),
+              ("/proc/fs", "dir", 0),
+              ("/proc/irq", "dir", 0),
+              ("/sys/firmware", "dir", 0),
+              ("/sys/devices/virtual/powercap", "dir", 0),
+          ]
+          checked = 0
+          for path, kind, flags in checks:
+              if not os.path.exists(path):
+                  continue
+              try:
+                  if kind == "dir":
+                      os.listdir(path)
+                  else:
+                      fd = os.open(path, flags)
+                      os.close(fd)
+              except PermissionError:
+                  checked += 1
+              else:
+                  raise SystemExit(f"AppArmor failed to deny sensitive path: {path}")
+          if checked < 5:
+              raise SystemExit(f"Too few sensitive-path denials verified: {checked}")
+          print(f"AppArmor denied {checked} existing Docker-masked procfs/sysfs paths.")
+          PY
           docker exec developer-os-runner-ci sh -c 'grep -E " /proc([ /]|$)" /proc/self/mountinfo || true; for path in /proc/kcore /proc/keys /proc/timer_list /proc/sysrq-trigger /proc/sys; do if [ -e "$path" ]; then stat -c "%n %F %a" "$path" 2>/dev/null || true; else printf "%s=absent\\n" "$path"; fi; done'
           # Run the exact production capability probe, then split namespace setup from procfs mount.
           echo "Bubblewrap version:"
