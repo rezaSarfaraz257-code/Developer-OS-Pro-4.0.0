@@ -36,6 +36,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.task = AgentTask.objects.create(
             run=self.run, key="backend", title="Backend implementation",
             status="ready", agent_role="backend",
+            acceptance_criteria=["Feature behavior is correct", "Existing behavior remains compatible"],
         )
         self.workspace.files = {"main.py": "print('updated')"}
         self.workspace.save(update_fields={"files"})
@@ -99,7 +100,7 @@ class AgentTaskVerificationAPITests(TestCase):
         ])
         accepted = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
         self.assertEqual(accepted.status_code, 409)
@@ -255,7 +256,7 @@ class AgentTaskVerificationAPITests(TestCase):
         job.save(update_fields=["status", "result"])
         accepted = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
         self.assertEqual(accepted.status_code, 200)
@@ -263,7 +264,7 @@ class AgentTaskVerificationAPITests(TestCase):
         dependent.refresh_from_db()
         self.assertEqual(self.task.status, "succeeded")
         self.assertEqual(dependent.status, "ready")
-        self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_run")
+        self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_task")
         self.assertEqual(self.task.execution_evidence["exit_code"], 0)
         self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
         self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
@@ -453,7 +454,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
 
         response = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
 
@@ -472,7 +473,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
 
         response = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
 
@@ -483,7 +484,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
         self.assertEqual(self.task.status, "canceled")
         self.assertNotIn("human_acceptance", self.task.execution_evidence)
 
-    def test_acceptance_requires_all_exact_plan_criteria(self):
+    def test_acceptance_requires_all_exact_task_criteria(self):
         self._mark_task_passed_with_durable_job()
         response = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
@@ -500,7 +501,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
         self.workspace.save(update_fields={"files"})
         response = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
-            {"accepted_criteria": self.run.plan["acceptance_criteria"]},
+            {"accepted_criteria": self.task.acceptance_criteria},
             format="json",
         )
         self.assertEqual(response.status_code, 409)
@@ -800,6 +801,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         task = AgentTask.objects.create(
             run=run, key="collaborator", title="Collaborator implementation",
             status="ready", agent_role="backend",
+            acceptance_criteria=["Collaborator change is correct"],
         )
         workspace.files = {"main.py": "print('collaborator change')"}
         workspace.save(update_fields={"files"})
