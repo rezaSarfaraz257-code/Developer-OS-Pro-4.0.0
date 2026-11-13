@@ -173,6 +173,8 @@ def _scheduler_metric(key, value=1):
 
 JOB_LOCK = threading.RLock()
 JOBS = {}
+EXECUTION_PROCESS_LOCK = threading.RLock()
+EXECUTION_PROCESSES = {}
 JOB_RETENTION_SECONDS = _bounded_int_env("RUNNER_JOB_RETENTION_SECONDS", 3600, 60, 86400)
 JOB_OUTPUT_LOCK = threading.RLock()
 JOB_OUTPUT = {}
@@ -246,10 +248,19 @@ def _retry_delay(attempt):
 
 
 
-def _new_job(workspace_id):
-    job_id = uuid.uuid4().hex
+def _new_job(workspace_id, requested_id=None):
+    job_id = str(requested_id or uuid.uuid4().hex)
+    if requested_id is not None and not re.fullmatch(r"agent-[1-9][0-9]{0,18}", job_id):
+        raise HTTPException(status_code=400, detail="Invalid execution identifier.")
     now = time.time()
     with JOB_LOCK:
+        existing = JOBS.get(job_id)
+        if existing:
+            if str(existing.get("workspace_id")) != str(workspace_id):
+                raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
+            if existing.get("status") == "cancelled":
+                return job_id
+            raise HTTPException(status_code=409, detail="Execution identifier is already in use.")
         JOBS[job_id] = {"id": job_id, "workspace_id": str(workspace_id), "status": "queued",
                         "created_at": now, "started_at": None, "finished_at": None,
                         "process_id": None, "exit_code": None, "error": None, "attempt": 0, "max_retries": JOB_MAX_RETRIES, "retryable": False}
@@ -357,33 +368,46 @@ def _job_is_cancelled(job_id):
     return bool(job and job.get("status") == "cancelled")
 
 
-def _cancel_job(job_id):
+def _cancel_job(job_id, workspace_id=None):
+    process = None
     with JOB_LOCK:
         job = JOBS.get(job_id)
         if not job:
+            if (
+                workspace_id is None
+                or not re.fullmatch(r"agent-[1-9][0-9]{0,18}", str(job_id))
+                or not re.fullmatch(r"[0-9]{1,19}", str(workspace_id))
+            ):
+                return None
+            normalized_workspace = str(int(workspace_id))
+            now = time.time()
+            job = {
+                "id": job_id, "workspace_id": normalized_workspace, "status": "cancelled",
+                "created_at": now, "started_at": None, "finished_at": now,
+                "process_id": None, "exit_code": None, "error": None,
+                "attempt": 0, "max_retries": JOB_MAX_RETRIES, "retryable": False,
+            }
+            JOBS[job_id] = job
+            return dict(job)
+        if workspace_id is not None and str(job.get("workspace_id")) != str(int(workspace_id)):
             return None
         status = job.get("status")
+        if status in TERMINAL_JOB_STATES:
+            return dict(job)
+        now = time.time()
         if status == "queued":
-            now = time.time()
-            # Remove a queued scheduler entry immediately so queue metrics and
-            # position cannot retain a job that the user already cancelled.
+            # Remove queued scheduler accounting before marking the reservation terminal.
             with SCHEDULER_LOCK:
                 removed = SCHEDULER_WAITING.pop(str(job_id), None)
             if removed:
                 _scheduler_metric("queued", -1)
-            _set_job(job_id, status="cancelled", finished_at=now, queue_position=0)
-            return _job_snapshot(job_id)
-        if status not in ("running",):
-            return dict(job)
-        process_id = job.get("process_id")
-    if process_id:
-        with PROCESS_LOCK:
-            item = PROCESSES.get(str(process_id))
-        if item:
-            proc = item["popen"]
-            _terminate_process_group(proc)
-        _set_job(job_id, status="cancelled", finished_at=time.time(), process_id=None, exit_code=None)
-        return _job_snapshot(job_id)
+        job.update(status="cancelled", finished_at=now, queue_position=0, process_id=None, exit_code=None)
+    # Execution processes are distinct from persistent IDE processes. Kill the
+    # complete process group, not only the shell leader, and do not hold JOB_LOCK.
+    with EXECUTION_PROCESS_LOCK:
+        process = EXECUTION_PROCESSES.get(job_id)
+    if process is not None:
+        _terminate_process_group(process)
     return _job_snapshot(job_id)
 
 def _cleanup_jobs():
@@ -485,6 +509,7 @@ class Workspace(BaseModel):
 class ExecRequest(Workspace):
     command: str = Field(min_length=1, max_length=2000)
     include_files: bool = True
+    execution_id: str | None = None
 
 class ProcessInputRequest(Workspace):
     data: str = ""
@@ -895,7 +920,7 @@ def _normalize_command(command):
         command = re.sub(r"^pip(?=\s|$)", "pip3", command, count=1)
     return command
 
-def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
+def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None, job_id=None):
     """Run in a process group while retaining only a bounded tail of each output stream."""
     proc = None
     readers = []
@@ -936,6 +961,13 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             start_new_session=True,
             preexec_fn=preexec_fn,
         )
+        if job_id:
+            with EXECUTION_PROCESS_LOCK:
+                EXECUTION_PROCESSES[job_id] = proc
+            # Cancellation can arrive after the job reservation but before
+            # Popen registration. Re-check immediately after registration.
+            if _job_is_cancelled(job_id):
+                _terminate_process_group(proc, grace_seconds=0.1)
         for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             reader = threading.Thread(target=drain, args=(name, stream), daemon=True)
             reader.start()
@@ -987,10 +1019,14 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             stderr.decode("utf-8", errors="replace"),
         )
     finally:
+        if job_id:
+            with EXECUTION_PROCESS_LOCK:
+                if EXECUTION_PROCESSES.get(job_id) is proc:
+                    EXECUTION_PROCESSES.pop(job_id, None)
         _remove_command_script(cleanup_path)
 
 
-def run_command(root, command, *, allow_network=False, entitlement=None, include_files=True):
+def run_command(root, command, *, allow_network=False, entitlement=None, include_files=True, execution_id=None):
     command = _normalize_command(command)
     policy = _entitlement_policy({"entitlement": entitlement or {}})
     if not command or len(command) > MAX_COMMAND or "\x00" in command or any(ord(ch) < 9 for ch in command):
@@ -1009,8 +1045,14 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
     (root / ".home").mkdir(exist_ok=True); (root / ".tmp").mkdir(exist_ok=True); (root / ".cache").mkdir(exist_ok=True)
     os.umask(0o077)
     started = time.monotonic()
-    job_id = _new_job(root.name)
+    job_id = _new_job(root.name, execution_id)
     _cleanup_jobs()
+    if _job_is_cancelled(job_id):
+        return {
+            "job_id": job_id, "status": "cancelled", "exit_code": None,
+            "stdout": "", "stderr": "", "duration_ms": 0,
+            **({"files": snapshot(root)} if include_files else {}),
+        }
     acquired = EXEC_SEMAPHORE.acquire(timeout=5)
     if not acquired:
         _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
@@ -1038,6 +1080,7 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
                     timeout=min(TIMEOUT, int(policy["timeout"])),
                     preexec_fn=lambda: _limit_process_resources(policy["timeout"], policy["memory_mb"]),
                     cleanup_path=command_file,
+                    job_id=job_id,
                 )
             except Exception:
                 _remove_command_script(command_file)
@@ -1250,8 +1293,16 @@ def ready(authorization: str = Header(default="")):
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, workspace_id: str, authorization: str = Header(default="")):
     auth(authorization)
-    _job_for_workspace(job_id, workspace_id)
-    result = _cancel_job(job_id)
+    if not re.fullmatch(r"[0-9]{1,19}", str(workspace_id)):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    existing = _job_snapshot(job_id)
+    if existing:
+        _job_for_workspace(job_id, workspace_id)
+        result = _cancel_job(job_id)
+    else:
+        # Agent cancellation may race ahead of the synchronous /exec request.
+        # Reserve a workspace-bound tombstone so the later request cannot start.
+        result = _cancel_job(job_id, workspace_id)
     if not result:
         raise HTTPException(status_code=404, detail="Job not found.")
     return result
@@ -1462,7 +1513,7 @@ def execute(payload: ExecRequest, authorization: str = Header(default="")):
             replace_workspace_snapshot(root, files)
             result=run_command(
                 root, payload.command, entitlement=payload.entitlement,
-                include_files=payload.include_files,
+                include_files=payload.include_files, execution_id=payload.execution_id,
             )
         _metric("exec_total")
         _metric("exec_success" if result.get("exit_code")==0 else "exec_failed")
