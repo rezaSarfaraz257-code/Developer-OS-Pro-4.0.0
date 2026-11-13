@@ -323,7 +323,9 @@ def execute_agent_task_verification(job):
     # own per-workspace lock and per-execution isolation. Never replay an
     # ambiguous POST: this BackgroundJob is configured for one attempt.
     result, error = _runner_request(
-        "POST", "/exec", {**workspace_snapshot, "command": command}, timeout=125
+        "POST", "/exec", {
+            **workspace_snapshot, "command": command, "include_files": False,
+        }, timeout=125
     )
     if error or not isinstance(result, dict):
         raise RuntimeError("Isolated Runner verification request failed.")
