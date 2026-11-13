@@ -116,6 +116,45 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 main.JOB_OUTPUT.pop(job_id, None)
 
 
+    def test_agent_execution_cancel_terminates_registered_process_group(self):
+        job_id = main._new_job("42", "agent-9001")
+        main._set_job(job_id, status="running")
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            with main.EXECUTION_PROCESS_LOCK:
+                main.EXECUTION_PROCESSES[job_id] = process
+            result = main._cancel_job(job_id, "42")
+            self.assertEqual(result["status"], "cancelled")
+            process.wait(timeout=2)
+            self.assertIsNotNone(process.returncode)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+            with main.EXECUTION_PROCESS_LOCK:
+                main.EXECUTION_PROCESSES.pop(job_id, None)
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
+    def test_agent_cancel_tombstone_prevents_late_exec_from_starting(self):
+        job_id = "agent-9002"
+        cancelled = main._cancel_job(job_id, "42")
+        self.assertEqual(cancelled["status"], "cancelled")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = main.run_command(
+                Path(tmp), "python3 -c 'raise SystemExit(99)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+
 class RunnerWorkspaceIdNormalizationTests(unittest.TestCase):
     def test_workspace_id_is_integer_normalized_before_path_construction(self):
         with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
