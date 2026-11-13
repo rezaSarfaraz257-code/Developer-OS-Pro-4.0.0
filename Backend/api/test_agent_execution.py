@@ -279,6 +279,9 @@ class AgentTaskVerificationAPITests(TestCase):
         runner_request.assert_called_once()
         runner_payload = runner_request.call_args.args[2]
         self.assertIs(runner_payload["include_files"], False)
+        self.assertEqual(runner_payload["execution_id"], f"agent-{job.id}")
+        job.refresh_from_db()
+        self.assertEqual(job.payload["runner_execution_id"], f"agent-{job.id}")
         self.task.refresh_from_db()
         dependent.refresh_from_db()
         self.run.refresh_from_db()
@@ -931,6 +934,49 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.assertEqual(task.status, "awaiting_approval")
         runner_request.assert_called_once()
+
+
+    @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
+    def test_run_cancel_propagates_to_the_exact_active_runner_job(self, runner_request):
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+            },
+            idempotency_key="agent-cancel-propagation-001",
+            max_attempts=1,
+        )
+        execution_id = f"agent-{verification_job.id}"
+        verification_job.payload = {
+            **verification_job.payload,
+            "runner_execution_id": execution_id,
+        }
+        verification_job.save(update_fields=["payload"])
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.run.__class__.objects.get(pk=self.run.id).status, "canceled")
+        self.assertEqual(response.data["runner_cancellation"], {
+            "requested": 1, "confirmed": 1, "unconfirmed": 0,
+        })
+        runner_request.assert_called_once_with(
+            "POST",
+            f"/jobs/{execution_id}/cancel?workspace_id={self.workspace.id}",
+            {},
+            timeout=5,
+        )
 
 
     @patch("api.views._runner_request", return_value=({"status": "synced", "files": {}}, None))
