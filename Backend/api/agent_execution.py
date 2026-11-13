@@ -591,6 +591,7 @@ def agent_task_accept_api(request, pk, task_pk):
             return Response({"error": "This task has already been accepted."}, status=409)
         if task.status != "awaiting_approval":
             return Response({"error": "Runner verification must pass before human acceptance."}, status=409)
+
         evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
         verification_job = task.execution_job
         job_result = verification_job.result if verification_job and isinstance(verification_job.result, dict) else {}
