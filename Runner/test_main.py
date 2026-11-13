@@ -2134,7 +2134,7 @@ class RunnerProcessOutputUtf8BudgetTests(unittest.TestCase):
 
 def test_agent_verification_can_omit_workspace_snapshot_from_exec_response():
     root = Path(tempfile.mkdtemp(prefix="developer-os-agent-response-"))
-    (root / "main.py").write_text("print('verification-ok')\\n", encoding="utf-8")
+    (root / "main.py").write_text("print('verification-ok')\n", encoding="utf-8")
     with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
         result = main.run_command(root, "python3 main.py", include_files=False)
     assert result["status"] == "completed"
