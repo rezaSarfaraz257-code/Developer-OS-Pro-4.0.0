@@ -174,6 +174,23 @@ class AgentTaskVerificationAPITests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 403)
 
+    def test_rejects_patch_approval_bound_to_a_different_task(self):
+        AuditLog.objects.filter(action="ai_agent.patch_applied").update(
+            metadata={
+                "previous_revision": self.workspace.revision - 1,
+                "revision": self.workspace.revision,
+                "approval": "signed_single_use_revision_bound",
+                "agent_run_id": self.run.id,
+                "agent_task_id": self.task.id + 999,
+            },
+        )
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
 
 
     def test_rejects_patch_audit_without_signed_revision_chain(self):
