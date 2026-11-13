@@ -28,6 +28,13 @@ Set the following in the host's Compose environment (or `.env`):
 RUNNER_APPARMOR_PROFILE=developer-os-runner
 ```
 
+## Agent task authorization
+
+- Every newly generated AgentTask must carry 1–6 task-specific, bounded acceptance criteria. Run-level criteria are supplementary and cannot replace a task's own criteria.
+- A patch intended for an AgentTask must be requested with both `agent_run_id` and `agent_task_id`. The signed approval token binds the user, workspace, exact revision, run, task, and proposed patch. Supplying only one task identifier produces no approval token.
+- Patch application re-locks and revalidates the run, task, dependency DAG, and workspace revision. The resulting audit record stores the exact run/task IDs.
+- Verification queueing and worker execution both require that exact task-bound audit record. A workspace-only AI patch approval cannot be reassigned to an AgentTask.
+
 The policy uses two profiles:
 
 - `developer-os-runner`: trusted control-plane and Bubblewrap setup process. It has only the namespace, mount, and setup capabilities required to construct the sandbox; Docker still drops every container capability and keeps no-new-privileges enabled.
