@@ -1358,6 +1358,7 @@ test("Agent task patching and human acceptance use task-specific acceptance crit
   assert.match(assistant, /Task acceptance criteria: "\s*\+ JSON\.stringify\(task\.acceptance_criteria \|\| \[\]\)/);
   assert.match(assistant, /const criteria = Array\.isArray\(task\.acceptance_criteria\) \? task\.acceptance_criteria : \[\];/);
   assert.match(assistant, /accepted_criteria: criteria/);
+  assert.match(assistant, /agent_run_id: agentRun\.id, agent_task_id: task\.id/);
   assert.match(assistant, /Review every task-specific acceptance criterion before marking this task complete:/);
   assert.match(assistant, /Array\.isArray\(task\.acceptance_criteria\) \? task\.acceptance_criteria : \[\]/);
   assert.doesNotMatch(assistant, /accepted_criteria: agentRun\.plan\?\.acceptance_criteria/);
