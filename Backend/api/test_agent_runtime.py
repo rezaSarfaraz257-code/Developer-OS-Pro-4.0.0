@@ -676,7 +676,13 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn("boundary-secret-value-123456", sent_context["workspace"]["file_samples"]["boundary.py"])
         self.assertNotIn("boundary-s", sent_context["workspace"]["file_samples"]["boundary.py"])
         self.assertIn("[REDACTED]", sent_context["workspace"]["file_samples"]["boundary.py"])
-        self.assertTrue(sent_context["workspace"]["secrets_excluded"])
+        self.assertTrue(sent_context["workspace"]["credential_filtering_applied"])
+        self.assertTrue(sent_context["workspace"]["credential_filtering_is_heuristic"])
+        self.assertEqual(
+            sent_context["workspace"]["sampled_file_paths"],
+            list(sent_context["workspace"]["file_samples"].keys()),
+        )
+        self.assertNotIn("file_inventory", sent_context["workspace"])
 
     @patch("api.ai_engine._call_provider")
     def test_duplicate_delivery_does_not_call_provider_while_run_is_planning(self, provider):
