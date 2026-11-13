@@ -695,7 +695,10 @@ def agent_run_cancel_api(request, pk):
     runner_cancellations = []
     with transaction.atomic():
         run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
-        if run.status in {"succeeded", "failed", "canceled"}:
+        active_task_exists = run.tasks.filter(status="running").exists()
+        if run.status in {"succeeded", "canceled"} or (
+            run.status == "failed" and not active_task_exists
+        ):
             return Response(_run_payload(run), status=409)
         previous_status = run.status
         workspace_id = run.workspace_id
