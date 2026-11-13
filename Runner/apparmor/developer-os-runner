@@ -18,6 +18,10 @@ profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
   deny network alg,
 
   capability sys_admin,
+  # Bubblewrap needs DAC override inside its freshly-created user namespace
+  # while assembling the private root. The stacked workload profile below
+  # explicitly denies every capability before workspace code is executed.
+  capability dac_override,
   capability net_admin,
   capability setuid,
   capability setgid,
