@@ -258,13 +258,13 @@ def _validate_plan(raw):
         seen_criteria = set()
         for criterion in criteria:
             if not isinstance(criterion, str):
-                raise ValueError("Agent task acceptance criteria must be text.")
+                raise ValueError("Task-specific acceptance criteria must be text.")
             value = criterion.strip()
             if not value or len(value) > 500:
-                raise ValueError("Agent task acceptance criteria must be non-empty and at most 500 characters.")
+                raise ValueError("Task-specific acceptance criteria must be non-empty and at most 500 characters.")
             normalized_criterion = value.casefold()
             if normalized_criterion in seen_criteria:
-                raise ValueError("Agent task acceptance criteria must be unique.")
+                raise ValueError("Task-specific acceptance criteria must be unique.")
             seen_criteria.add(normalized_criterion)
             clean_criteria.append(value)
         item["acceptance_criteria"] = clean_criteria
