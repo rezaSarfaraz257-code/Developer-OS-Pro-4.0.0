@@ -612,25 +612,29 @@ def test_timeout_job_stream_reports_done():
 
 def test_timeout_execution_persists_partial_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
-    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output", stderr="partial diagnostic")
     with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
+    assert "partial diagnostic" in result["stderr"]
     streamed = main._job_output_snapshot(result["job_id"])
     assert "partial output" in streamed
+    assert "partial diagnostic" in streamed
     assert "Execution timed out after" in streamed
 
 
 def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
-    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output", stderr=b"partial diagnostic")
     with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
+    assert "partial diagnostic" in result["stderr"]
     streamed = main._job_output_snapshot(result["job_id"])
     assert "partial output" in streamed
+    assert "partial diagnostic" in streamed
     assert "Execution timed out after" in streamed
 
 
@@ -1258,25 +1262,29 @@ def test_timeout_job_stream_reports_done():
 
 def test_timeout_execution_persists_partial_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-"))
-    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output")
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output="partial output", stderr="partial diagnostic")
     with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
+    assert "partial diagnostic" in result["stderr"]
     streamed = main._job_output_snapshot(result["job_id"])
     assert "partial output" in streamed
+    assert "partial diagnostic" in streamed
     assert "Execution timed out after" in streamed
 
 
 def test_timeout_execution_decodes_byte_output_for_streaming_clients():
     root = Path(tempfile.mkdtemp(prefix="developer-os-timeout-bytes-"))
-    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output")
+    timeout = subprocess.TimeoutExpired(cmd="test-command", timeout=30, output=b"partial output", stderr=b"partial diagnostic")
     with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"), patch("main._run_process_with_timeout", side_effect=timeout):
         result = main.run_command(root, "python -c 'print(1)'")
     assert result["status"] == "timeout"
     assert result["stdout"] == "partial output"
+    assert "partial diagnostic" in result["stderr"]
     streamed = main._job_output_snapshot(result["job_id"])
     assert "partial output" in streamed
+    assert "partial diagnostic" in streamed
     assert "Execution timed out after" in streamed
 
 
@@ -2122,3 +2130,13 @@ class RunnerProcessOutputUtf8BudgetTests(unittest.TestCase):
         self.assertLessEqual(len(encoded), 31)
         self.assertEqual(encoded.decode("utf-8"), output)
         self.assertTrue(output.endswith("-end"))
+
+
+def test_agent_verification_can_omit_workspace_snapshot_from_exec_response():
+    root = Path(tempfile.mkdtemp(prefix="developer-os-agent-response-"))
+    (root / "main.py").write_text("print('verification-ok')\\n", encoding="utf-8")
+    with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+        result = main.run_command(root, "python3 main.py", include_files=False)
+    assert result["status"] == "completed"
+    assert result["stdout"].strip() == "verification-ok"
+    assert "files" not in result
