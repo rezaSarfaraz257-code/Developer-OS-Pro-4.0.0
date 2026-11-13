@@ -850,11 +850,19 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         resync = BackgroundJob.objects.get(pk=result["resync_job_id"])
         self.assertEqual(resync.kind, "ai_agent_runner_sync")
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "agent-canceled-001", "status": "cancelled",
-         "exit_code": None, "duration_ms": 0, "stdout": "", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request")
     def test_runner_cancellation_with_null_exit_code_reconciles_workspace(self, runner_request):
+        def cancel_during_request(method, path, payload, timeout):
+            self.run.status = "canceled"
+            self.run.save(update_fields=["status"])
+            self.task.status = "canceled"
+            self.task.save(update_fields=["status"])
+            return ({
+                "job_id": payload["execution_id"], "status": "cancelled",
+                "exit_code": None, "duration_ms": 0, "stdout": "", "stderr": "",
+            }, None)
+
+        runner_request.side_effect = cancel_during_request
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
             "profile": "python_pytest",
@@ -863,11 +871,6 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.save(update_fields=["status", "attempts"])
-
-        self.run.status = "canceled"
-        self.run.save(update_fields=["status"])
-        self.task.status = "canceled"
-        self.task.save(update_fields=["status"])
 
         result = execute_agent_task_verification(job)
 
