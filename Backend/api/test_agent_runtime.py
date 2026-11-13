@@ -161,7 +161,7 @@ class AgentPlanValidationTests(TestCase):
             {"tasks": [{"id": "inspect", "title": "Inspect", "depends_on": [], "acceptance_criteria": ["Same", "same"]}]},
         ]
         for plan in invalid_plans:
-            with self.subTest(plan=plan), self.assertRaisesRegex(ValueError, "task-specific acceptance criteria"):
+            with self.subTest(plan=plan), self.assertRaisesRegex(ValueError, "(?i)task-specific acceptance criteria"):
                 _validate_plan(plan)
 
     def test_accepts_topological_dependency_graph(self):
