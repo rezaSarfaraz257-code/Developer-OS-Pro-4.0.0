@@ -1072,13 +1072,15 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
                 "duration_ms": int((time.monotonic() - started) * 1000),
                 **({"files": snapshot(root)} if include_files else {}),
             }
-        _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit")
+        if not _set_job(job_id, status="failed", finished_at=time.time(), error="global_concurrency_limit") and _job_is_cancelled(job_id):
+            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
         raise HTTPException(status_code=429, detail="Runner concurrency limit reached.")
     if not _scheduler_acquire(root.name, job_id, timeout=5):
         EXEC_SEMAPHORE.release()
         if _job_is_cancelled(job_id):
             return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
-        _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit")
+        if not _set_job(job_id, status="failed", finished_at=time.time(), error="workspace_concurrency_limit") and _job_is_cancelled(job_id):
+            return {"job_id": job_id, "status": "cancelled", "exit_code": None, "stdout": "", "stderr": "", "duration_ms": int((time.monotonic()-started)*1000), **({"files": snapshot(root)} if include_files else {})}
         raise HTTPException(status_code=429, detail="Workspace execution queue is busy.")
     if _job_is_cancelled(job_id):
         _scheduler_release(root.name)
@@ -1125,8 +1127,11 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
             _append_job_output(job_id, stdout)
         if stderr:
             _append_job_output(job_id, stderr)
-        _set_job(job_id, status=status, finished_at=finished, exit_code=None if cancelled else proc.returncode,
-                 duration_ms=int((time.monotonic()-started)*1000))
+        committed = _set_job(job_id, status=status, finished_at=finished, exit_code=None if cancelled else proc.returncode,
+                             duration_ms=int((time.monotonic()-started)*1000))
+        if not committed and _job_is_cancelled(job_id):
+            status = "cancelled"
+            cancelled = True
         return {
             "job_id": job_id, "status": status, "exit_code": None if cancelled else proc.returncode,
             "stdout": stdout, "stderr": stderr,
@@ -1160,10 +1165,16 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
                 "duration_ms": int((time.monotonic()-started)*1000),
                 **({"files": snapshot(root)} if include_files else {}),
             }
+        if not _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
+                        error=timeout_message) and _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": partial_stdout, "stderr": partial_stderr,
+                "duration_ms": int((time.monotonic()-started)*1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
         _append_job_output(job_id, timeout_message + "\n")
         stderr = (partial_stderr + ("\n" if partial_stderr else "") + timeout_message)[-MAX_OUTPUT:]
-        _set_job(job_id, status="timeout", finished_at=finished, exit_code=124,
-                 error=timeout_message)
         return {
             "job_id": job_id, "status": "timeout", "exit_code": 124,
             "stdout": partial_stdout,
@@ -1179,7 +1190,13 @@ def run_command(root, command, *, allow_network=False, entitlement=None, include
                 "duration_ms": int((time.monotonic() - started) * 1000),
                 **({"files": snapshot(root)} if include_files else {}),
             }
-        _set_job(job_id, status="failed", finished_at=time.time(), error=exc.__class__.__name__)
+        if not _set_job(job_id, status="failed", finished_at=time.time(), error=exc.__class__.__name__) and _job_is_cancelled(job_id):
+            return {
+                "job_id": job_id, "status": "cancelled", "exit_code": None,
+                "stdout": "", "stderr": "",
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                **({"files": snapshot(root)} if include_files else {}),
+            }
         raise
     finally:
         _scheduler_release(root.name)
