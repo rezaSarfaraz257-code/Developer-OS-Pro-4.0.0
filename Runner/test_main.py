@@ -207,6 +207,8 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
         job_id = "agent-9004"
         snapshot_started = threading.Event()
         allow_snapshot_finish = threading.Event()
+        scheduler_started = threading.Event()
+        allow_scheduler_finish = threading.Event()
         cancel_started = threading.Event()
         cancel_finished = threading.Event()
         execution_results = []
@@ -217,6 +219,12 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             if not allow_snapshot_finish.wait(timeout=3):
                 raise AssertionError("Test did not release the workspace snapshot write.")
 
+        def wait_for_scheduler(workspace_id, execution_id, timeout=5):
+            scheduler_started.set()
+            if not allow_scheduler_finish.wait(timeout=3):
+                raise AssertionError("Test did not release the scheduler reservation.")
+            return True
+
         def execute_request():
             payload = main.ExecRequest(
                 workspace_id="42", files={"main.py": "print('must not run')"},
@@ -224,6 +232,7 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             )
             with patch("main.auth"), patch("main.ROOT", Path(tmp)), \
                  patch("main.replace_workspace_snapshot", side_effect=write_snapshot), \
+                 patch("main._scheduler_acquire", side_effect=wait_for_scheduler), \
                  patch("main._run_process_with_timeout") as spawn:
                 result = main.execute(payload, authorization="Bearer internal")
                 execution_results.append(result)
@@ -241,9 +250,12 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
             cancellation = threading.Thread(target=cancel_request, daemon=True)
             cancellation.start()
             self.assertTrue(cancel_started.wait(timeout=2))
-            # Cancellation must wait for the atomic reservation+snapshot section.
+            # Cancellation waits until the atomic snapshot reservation finishes.
             self.assertFalse(cancel_finished.wait(timeout=0.05))
             allow_snapshot_finish.set()
+            self.assertTrue(scheduler_started.wait(timeout=2))
+            self.assertTrue(cancel_finished.wait(timeout=2))
+            allow_scheduler_finish.set()
             execution.join(timeout=3)
             cancellation.join(timeout=3)
 
