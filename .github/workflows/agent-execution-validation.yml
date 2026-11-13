@@ -220,6 +220,9 @@ jobs:
               ("/proc/kcore", "file", os.O_RDONLY | os.O_NONBLOCK),
               ("/proc/keys", "file", os.O_RDONLY | os.O_NONBLOCK),
               ("/proc/timer_list", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/latency_stats", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/sched_debug", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/timer_stats", "file", os.O_RDONLY | os.O_NONBLOCK),
               ("/proc/sysrq-trigger", "file", os.O_WRONLY | os.O_NONBLOCK),
               ("/proc/sys/kernel/hostname", "file", os.O_WRONLY),
               ("/proc/acpi", "dir", 0),
@@ -229,6 +232,7 @@ jobs:
               ("/proc/fs", "dir", 0),
               ("/proc/irq", "dir", 0),
               ("/sys/firmware", "dir", 0),
+              ("/sys/fs/selinux", "dir", 0),
               ("/sys/devices/virtual/powercap", "dir", 0),
           ]
           checked = 0
