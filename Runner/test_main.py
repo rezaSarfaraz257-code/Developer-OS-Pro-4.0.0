@@ -116,6 +116,247 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                 main.JOB_OUTPUT.pop(job_id, None)
 
 
+    def test_agent_execution_cancel_terminates_registered_process_group(self):
+        job_id = main._new_job("42", "agent-9001")
+        main._set_job(job_id, status="running")
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            with main.EXECUTION_PROCESS_LOCK:
+                main.EXECUTION_PROCESSES[job_id] = process
+            result = main._cancel_job(job_id, "42")
+            self.assertEqual(result["status"], "cancelled")
+            process.wait(timeout=2)
+            self.assertIsNotNone(process.returncode)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+            with main.EXECUTION_PROCESS_LOCK:
+                main.EXECUTION_PROCESSES.pop(job_id, None)
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
+    def test_run_command_registers_and_cancels_its_real_subprocess(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            root.mkdir()
+            job_id = "agent-9005"
+            results = []
+            worker = threading.Thread(
+                target=lambda: results.append(main.run_command(
+                    root, "python3 -c 'import time; time.sleep(30)'",
+                    execution_id=job_id, include_files=False,
+                )),
+                daemon=True,
+            )
+            with patch("main.SANDBOX_MODE", "container"), patch("main.RUNNER_SECURITY_LEVEL", "compat"):
+                worker.start()
+                deadline = time.monotonic() + 5
+                process = None
+                while time.monotonic() < deadline:
+                    with main.EXECUTION_PROCESS_LOCK:
+                        process = main.EXECUTION_PROCESSES.get(job_id)
+                    if process is not None:
+                        break
+                    time.sleep(0.01)
+                self.assertIsNotNone(process, "Runner did not register the real execution process.")
+                cancelled = main._cancel_job(job_id)
+                self.assertEqual(cancelled["status"], "cancelled")
+                worker.join(timeout=3)
+            self.assertFalse(worker.is_alive(), "Cancelled Runner process did not exit promptly.")
+            self.assertEqual(results[0]["status"], "cancelled")
+            self.assertIsNone(results[0]["exit_code"])
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
+    def test_cancellation_wins_when_global_capacity_wait_expires(self):
+        job_id = "agent-9006"
+
+        class CancelWhileWaiting:
+            def acquire(self, timeout):
+                main._cancel_job(job_id)
+                return False
+
+            def release(self):
+                raise AssertionError("Semaphore must not be released when acquire failed.")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.EXEC_SEMAPHORE", CancelWhileWaiting()):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+    def test_cancellation_wins_if_it_arrives_before_completion_commit(self):
+        job_id = "agent-9008"
+        original_set_job = main._set_job
+
+        def cancel_before_completion(job, **updates):
+            if updates.get("status") == "completed":
+                main._cancel_job(job)
+            return original_set_job(job, **updates)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main._sandbox_command", return_value=["bash", "ignored"]), \
+             patch("main._run_process_with_timeout", return_value=Mock(
+                 returncode=0, stdout="completed output", stderr="",
+             )), \
+             patch("main._set_job", side_effect=cancel_before_completion):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        self.assertEqual(result["stdout"], "completed output")
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+    def test_cancellation_wins_over_a_simultaneous_runner_timeout(self):
+        job_id = "agent-9007"
+
+        def timeout_after_cancel(*args, **kwargs):
+            main._cancel_job(job_id)
+            raise subprocess.TimeoutExpired("python3", 1, output=b"partial", stderr=b"partial-error")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("main.SANDBOX_MODE", "container"), \
+             patch("main.RUNNER_SECURITY_LEVEL", "compat"), \
+             patch("main._sandbox_command", return_value=["python3", "ignored"]), \
+             patch("main._run_process_with_timeout", side_effect=timeout_after_cancel):
+            result = main.run_command(
+                Path(tmp), "python3 -c 'print(1)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        self.assertIn("partial", result["stdout"])
+        self.assertIn("partial-error", result["stderr"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+    def test_agent_cancel_tombstone_prevents_late_exec_from_starting(self):
+        job_id = "agent-9002"
+        cancelled = main._cancel_job(job_id, "42")
+        self.assertEqual(cancelled["status"], "cancelled")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace_root = Path(tmp) / "42"
+            workspace_root.mkdir()
+            result = main.run_command(
+                workspace_root, "python3 -c 'raise SystemExit(99)'",
+                execution_id=job_id, include_files=False,
+            )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+
+    def test_exec_honors_preexisting_cancel_tombstone_before_snapshot_write(self):
+        job_id = "agent-9003"
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            main._cancel_job(job_id, "42")
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "must-not-be-written"},
+                command="python3 main.py", execution_id=job_id,
+            )
+            with patch("main.auth"), patch("main.replace_workspace_snapshot") as replace:
+                result = main.execute(payload, authorization="Bearer internal")
+            self.assertEqual(result["status"], "cancelled")
+            replace.assert_not_called()
+            with main.JOB_LOCK:
+                main.JOBS.pop(job_id, None)
+
+    def test_concurrent_cancel_is_ordered_after_snapshot_reservation_and_before_spawn(self):
+        job_id = "agent-9004"
+        snapshot_started = threading.Event()
+        allow_snapshot_finish = threading.Event()
+        scheduler_started = threading.Event()
+        allow_scheduler_finish = threading.Event()
+        cancel_started = threading.Event()
+        cancel_finished = threading.Event()
+        execution_results = []
+        cancel_results = []
+        original_scheduler_acquire = main._scheduler_acquire
+
+        def write_snapshot(root, files):
+            snapshot_started.set()
+            if not allow_snapshot_finish.wait(timeout=3):
+                raise AssertionError("Test did not release the workspace snapshot write.")
+
+        def wait_for_scheduler(workspace_id, execution_id, timeout=5):
+            acquired = original_scheduler_acquire(workspace_id, execution_id, timeout=timeout)
+            scheduler_started.set()
+            if not allow_scheduler_finish.wait(timeout=3):
+                raise AssertionError("Test did not release the scheduler reservation.")
+            return acquired
+
+        def execute_request():
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "print('must not run')"},
+                command="python3 main.py", execution_id=job_id, include_files=False,
+            )
+            with patch("main.auth"), patch("main.ROOT", Path(tmp)), \
+                 patch("main.replace_workspace_snapshot", side_effect=write_snapshot), \
+                 patch("main._scheduler_acquire", side_effect=wait_for_scheduler), \
+                 patch("main._run_process_with_timeout") as spawn:
+                result = main.execute(payload, authorization="Bearer internal")
+                execution_results.append(result)
+                spawn.assert_not_called()
+
+        def cancel_request():
+            cancel_started.set()
+            cancel_results.append(main._cancel_job(job_id, "42"))
+            cancel_finished.set()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            execution = threading.Thread(target=execute_request, daemon=True)
+            execution.start()
+            self.assertTrue(snapshot_started.wait(timeout=2))
+            cancellation = threading.Thread(target=cancel_request, daemon=True)
+            cancellation.start()
+            self.assertTrue(cancel_started.wait(timeout=2))
+            # Cancellation waits until the atomic snapshot reservation finishes.
+            self.assertFalse(cancel_finished.wait(timeout=0.05))
+            allow_snapshot_finish.set()
+            self.assertTrue(cancel_finished.wait(timeout=2))
+            # If the execution thread reached the scheduler wait, release it;
+            # if cancellation won earlier, no scheduler reservation is needed.
+            allow_scheduler_finish.set()
+            execution.join(timeout=3)
+            cancellation.join(timeout=3)
+
+        self.assertFalse(execution.is_alive())
+        self.assertFalse(cancellation.is_alive())
+        self.assertEqual(cancel_results[0]["status"], "cancelled")
+        self.assertEqual(execution_results[0]["status"], "cancelled")
+        with main.JOB_LOCK:
+            main.JOBS.pop(job_id, None)
+
+    def test_exec_rejects_invalid_external_execution_id_before_snapshot_write(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
+            payload = main.ExecRequest(
+                workspace_id="42", files={"main.py": "print('x')"},
+                command="python3 main.py", execution_id="../invalid",
+            )
+            with patch("main.auth"), patch("main.replace_workspace_snapshot") as replace:
+                with self.assertRaises(HTTPException) as ctx:
+                    main.execute(payload, authorization="Bearer internal")
+            self.assertEqual(ctx.exception.status_code, 400)
+            replace.assert_not_called()
+
+
 class RunnerWorkspaceIdNormalizationTests(unittest.TestCase):
     def test_workspace_id_is_integer_normalized_before_path_construction(self):
         with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):

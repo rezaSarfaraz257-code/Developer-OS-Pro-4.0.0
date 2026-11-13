@@ -14,6 +14,14 @@ from .agent_execution import (
 from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
+ 
+def _runner_response_with_execution_id(response):
+    """Model the Runner contract: every execution response echoes its requested id."""
+    def respond(method, path, payload, timeout):
+        return ({**response, "job_id": payload["execution_id"]}, None)
+    return respond
+
+
 
 class AgentTaskVerificationAPITests(TestCase):
     def setUp(self):
@@ -258,9 +266,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(second.data["job_id"], job.id)
         self.assertEqual(BackgroundJob.objects.filter(kind="ai_agent_task_verify").count(), 1)
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
             run=self.run, key="review", title="Review", status="blocked",
@@ -279,6 +285,9 @@ class AgentTaskVerificationAPITests(TestCase):
         runner_request.assert_called_once()
         runner_payload = runner_request.call_args.args[2]
         self.assertIs(runner_payload["include_files"], False)
+        self.assertEqual(runner_payload["execution_id"], f"agent-{job.id}")
+        job.refresh_from_db()
+        self.assertEqual(job.payload["runner_execution_id"], f"agent-{job.id}")
         self.task.refresh_from_db()
         dependent.refresh_from_db()
         self.run.refresh_from_db()
@@ -348,7 +357,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(dependent.status, "ready")
         self.assertEqual(self.task.execution_evidence["human_acceptance"]["criteria_scope"], "agent_task")
         self.assertEqual(self.task.execution_evidence["exit_code"], 0)
-        self.assertEqual(self.task.execution_evidence["runner_job_id"], "runner-test-001")
+        self.assertEqual(self.task.execution_evidence["runner_job_id"], f"agent-{job.id}")
         self.assertEqual(self.task.execution_evidence["verification_job_id"], job.id)
         self.assertEqual(self.task.execution_evidence["sync_job_id"], self.sync_job.id)
         self.assertEqual(
@@ -374,10 +383,8 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         self.assertEqual(VERIFICATION_PROFILES["node_test"], "npm test")
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 1, "stdout": "x" * 30_000, "stderr": "y" * 30_000}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-oversized-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": "x" * 30_000, "stderr": "y" * 30_000}))
     def test_oversized_runner_output_fails_closed_and_reconciles(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -444,10 +451,8 @@ class AgentTaskVerificationAPITests(TestCase):
 
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-invalid-status", "status": {"unexpected": "object"},
-         "exit_code": 0, "duration_ms": 1, "stdout": "", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-invalid-status", "status": {"unexpected": "object"},
+         "exit_code": 0, "duration_ms": 1, "stdout": "", "stderr": ""}))
     def test_runner_rejects_non_string_execution_status(self, runner_request):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -463,10 +468,8 @@ class AgentTaskVerificationAPITests(TestCase):
 
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 1, "stdout": None, "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-malformed-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 1, "stdout": None, "stderr": ""}))
     def test_malformed_runner_output_fails_closed_and_reconciles(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -489,9 +492,7 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.run.status, "failed")
         runner_request.assert_called_once()
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}))
     def test_failed_runner_verification_is_terminal_evidence_not_success(self, runner_request):
         response = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -592,9 +593,7 @@ class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
 
 
 class AgentTaskRetryTests(AgentTaskVerificationAPITests):
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-retry-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 12, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-retry-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 12, "stdout": "", "stderr": "failure"}))
     def test_failed_task_can_retry_only_after_new_approved_synced_revision(self, runner_request):
         first = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -648,9 +647,7 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
 
 
 class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-limit-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 8, "stdout": "", "stderr": "failure"}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-limit-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 8, "stdout": "", "stderr": "failure"}))
     def test_retry_loop_stops_after_four_total_iterations(self, runner_request):
         sync_job = self.sync_job
         for iteration in range(4):
@@ -734,7 +731,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         def runner_side_effect(*args, **kwargs):
             self.assertEqual(len(connection.atomic_blocks), baseline_atomic_depth)
             return {
-                "job_id": "runner-outside-tx-001", "status": "completed",
+                "job_id": args[2]["execution_id"], "status": "completed",
                 "exit_code": 0, "duration_ms": 20, "stdout": "not persisted",
                 "stderr": "", "files": {"main.py": "runner snapshot"},
             }, None
@@ -762,7 +759,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             workspace.files = {"main.py": "print('new revision')"}
             workspace.save(update_fields={"files"})
             return {
-                "job_id": "runner-stale-001", "status": "completed", "exit_code": 0,
+                "job_id": args[2]["execution_id"], "status": "completed", "exit_code": 0,
                 "duration_ms": 30, "stdout": "", "stderr": "",
             }, None
 
@@ -823,7 +820,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             self.task.status = "canceled"
             self.task.save(update_fields=["status"])
             return {
-                "job_id": "runner-canceled-001", "status": "completed",
+                "job_id": args[2]["execution_id"], "status": "completed",
                 "exit_code": 0, "duration_ms": 18, "stdout": "", "stderr": "",
             }, None
 
@@ -847,6 +844,75 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         resync = BackgroundJob.objects.get(pk=result["resync_job_id"])
         self.assertEqual(resync.kind, "ai_agent_runner_sync")
 
+    @patch("api.views._runner_request")
+    def test_runner_cancellation_with_null_exit_code_reconciles_workspace(self, runner_request):
+        def cancel_during_request(method, path, payload, timeout):
+            self.run.status = "canceled"
+            self.run.save(update_fields=["status"])
+            self.task.status = "canceled"
+            self.task.save(update_fields=["status"])
+            return ({
+                "job_id": payload["execution_id"], "status": "cancelled",
+                "exit_code": None, "duration_ms": 0, "stdout": "", "stderr": "",
+            }, None)
+
+        runner_request.side_effect = cancel_during_request
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        self.assertTrue(result["resync_job_id"])
+        self.assertEqual(
+            BackgroundJob.objects.get(pk=result["resync_job_id"]).kind,
+            "ai_agent_runner_sync",
+        )
+        runner_request.assert_called_once()
+
+    def test_ambiguous_runner_failure_after_cancel_still_queues_resync(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="failed",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+                "revision": self.workspace.revision,
+                "sync_job_id": self.sync_job.id,
+            },
+            idempotency_key="agent-canceled-ambiguous-001",
+            max_attempts=1,
+        )
+        self.task.status = "canceled"
+        self.task.execution_job = job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "canceled"
+        self.run.save(update_fields=["status"])
+
+        fail_agent_task_verification(job)
+
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "canceled")
+        resync = BackgroundJob.objects.get(
+            kind="ai_agent_runner_sync",
+            idempotency_key=f"agent-runner-resync:{self.workspace.id}:{self.workspace.revision}:{job.id}",
+        )
+        self.assertEqual(resync.payload["reason"], "agent_verification_reconciliation")
+        self.assertTrue(AuditLog.objects.filter(
+            action="agent_task.runner_resync_after_cancel_failure",
+            target_type="AgentTask",
+            target_id=str(self.task.id),
+            metadata__verification_job_id=job.id,
+        ).exists())
+
     def test_ambiguous_runner_failure_queues_authoritative_resync(self):
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
@@ -867,10 +933,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(resync.payload["requested_revision"], self.workspace.revision)
         self.assertIn("agent-runner-resync:", resync.idempotency_key)
 
-    @patch("api.views._runner_request", return_value=(
-        {"job_id": "runner-collaborator-001", "status": "completed", "exit_code": 0,
-         "duration_ms": 22, "stdout": "", "stderr": ""}, None,
-    ))
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-collaborator-001", "status": "completed", "exit_code": 0,
+         "duration_ms": 22, "stdout": "", "stderr": ""}))
     def test_project_collaborator_can_verify_authorized_workspace(self, runner_request):
         workspace_owner = User.objects.create_user(username="workspace-owner", password="StrongPassword123!")
         project = Project.objects.create(owner=workspace_owner, title="Shared workspace project")
@@ -931,6 +995,80 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.assertEqual(task.status, "awaiting_approval")
         runner_request.assert_called_once()
+
+
+    @patch("api.views._runner_request")
+    def test_run_cancel_terminalizes_queued_verification_without_runner_call(self, runner_request):
+        queued_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="queued",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+            },
+            idempotency_key="agent-cancel-queued-001",
+            max_attempts=1,
+        )
+        self.task.status = "running"
+        self.task.execution_job = queued_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        queued_job.refresh_from_db()
+        self.assertEqual(queued_job.status, "canceled")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
+    def test_run_cancel_propagates_to_the_exact_active_runner_job(self, runner_request):
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+            },
+            idempotency_key="agent-cancel-propagation-001",
+            max_attempts=1,
+        )
+        execution_id = f"agent-{verification_job.id}"
+        verification_job.payload = {
+            **verification_job.payload,
+            "runner_execution_id": execution_id,
+        }
+        verification_job.save(update_fields=["payload"])
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        # A failed sibling task may already have moved the run to failed
+        # while this independent task is still executing in Runner.
+        self.run.status = "failed"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.run.__class__.objects.get(pk=self.run.id).status, "canceled")
+        self.assertEqual(response.data["runner_cancellation"], {
+            "requested": 1, "confirmed": 1, "unconfirmed": 0,
+        })
+        runner_request.assert_called_once_with(
+            "POST",
+            f"/jobs/{execution_id}/cancel?workspace_id={self.workspace.id}",
+            {},
+            timeout=5,
+        )
 
 
     @patch("api.views._runner_request", return_value=({"status": "synced", "files": {}}, None))

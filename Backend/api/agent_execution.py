@@ -316,6 +316,11 @@ def execute_agent_task_verification(job):
 
         revision = workspace.revision
         workspace_snapshot = _workspace_payload(workspace)
+        # Reserve the Runner identifier durably before the outbound POST so a
+        # concurrent user cancellation can terminate the exact process group.
+        runner_execution_id = f"agent-{current_job.id}"
+        current_job.payload = {**payload, "runner_execution_id": runner_execution_id}
+        current_job.save(update_fields=["payload"])
         task.execution_attempts = current_job.attempts
         task.save(update_fields=["execution_attempts", "updated_at"])
 
@@ -325,6 +330,7 @@ def execute_agent_task_verification(job):
     result, error = _runner_request(
         "POST", "/exec", {
             **workspace_snapshot, "command": command, "include_files": False,
+            "execution_id": runner_execution_id,
         }, timeout=125
     )
     if error or not isinstance(result, dict):
@@ -342,6 +348,7 @@ def execute_agent_task_verification(job):
         or len(runner_job_id) > 80
         or not runner_job_id.isascii()
         or not all(char.isalnum() or char in "-_" for char in runner_job_id)
+        or runner_job_id != runner_execution_id
     ):
         raise RuntimeError("Runner returned an invalid execution job reference.")
     if not isinstance(runner_status, str) or runner_status not in {
@@ -369,7 +376,10 @@ def execute_agent_task_verification(job):
         "stdout_bytes": len(stdout_bytes),
         "stderr_bytes": len(stderr_bytes),
     }
-    if type(exit_code) is not int:
+    if runner_status == "cancelled":
+        if exit_code is not None and type(exit_code) is not int:
+            raise RuntimeError("Runner returned an invalid execution exit code.")
+    elif type(exit_code) is not int:
         raise RuntimeError("Runner returned an invalid execution exit code.")
     if not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or not 0 <= duration_ms <= 120_000:
         duration_ms = None
@@ -503,7 +513,32 @@ def fail_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run, execution_job_id=job.id,
         ).first()
-        if not task or task.status not in {"running", "awaiting_approval"}:
+        if not task:
+            return
+        if run.status == "canceled" or task.status == "canceled":
+            actor = get_user_model().objects.filter(pk=payload.get("owner_id")).first()
+            resync_job = None
+            if actor:
+                try:
+                    workspace = _workspace_for_user(run.workspace_id, actor, for_update=True)
+                except Http404:
+                    workspace = None
+                if workspace and _workspace_write_allowed(workspace, actor):
+                    resync_job = _queue_agent_runner_resync(workspace, actor, job.id)
+            AuditLog.objects.create(
+                user_id=payload.get("owner_id"),
+                action="agent_task.runner_resync_after_cancel_failure",
+                target_type="AgentTask",
+                target_id=str(task.id),
+                metadata={
+                    "run_id": run.id,
+                    "verification_job_id": job.id,
+                    "resync_job_id": resync_job.id if resync_job else None,
+                    "reason": "runner_request_outcome_ambiguous",
+                },
+            )
+            return
+        if task.status not in {"running", "awaiting_approval"}:
             return
         finalization_interrupted = task.status == "awaiting_approval"
         previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
