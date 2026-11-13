@@ -164,6 +164,53 @@ class AgentPlanValidationTests(TestCase):
             with self.subTest(plan=plan), self.assertRaisesRegex(ValueError, "(?i)task-specific acceptance criteria"):
                 _validate_plan(plan)
 
+    def test_rejects_coerced_task_fields_and_dependency_values(self):
+        base_task = {
+            "id": "inspect", "title": "Inspect", "description": "",
+            "agent_role": "architect", "depends_on": [],
+            "acceptance_criteria": ["Inspection evidence is recorded."],
+        }
+        invalid_tasks = []
+        for field, value in (
+            ("id", 123),
+            ("title", {"text": "coerced title"}),
+            ("description", ["not", "text"]),
+            ("agent_role", ["architect"]),
+            ("depends_on", "inspect"),
+            ("depends_on", [123]),
+        ):
+            task = {**base_task, field: value}
+            invalid_tasks.append({"tasks": [task]})
+        for plan in invalid_tasks:
+            with self.subTest(plan=plan), self.assertRaises(ValueError):
+                _validate_plan(plan)
+
+    def test_rejects_malformed_run_level_metadata_instead_of_stringifying(self):
+        valid_task = {
+            "id": "inspect", "title": "Inspect", "description": "",
+            "agent_role": "architect", "depends_on": [],
+            "acceptance_criteria": ["Inspection evidence is recorded."],
+        }
+        for field, value in (
+            ("summary", {"text": "not plain text"}),
+            ("risks", "not-an-array"),
+            ("risks", [123]),
+            ("acceptance_criteria", [{"criterion": "not text"}]),
+        ):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                _validate_plan({"tasks": [valid_task], field: value})
+
+    def test_rejects_oversized_run_level_metadata(self):
+        valid_task = {
+            "id": "inspect", "title": "Inspect", "description": "",
+            "agent_role": "architect", "depends_on": [],
+            "acceptance_criteria": ["Inspection evidence is recorded."],
+        }
+        with self.assertRaisesRegex(ValueError, "summary"):
+            _validate_plan({"summary": "x" * 2001, "tasks": [valid_task]})
+        with self.assertRaisesRegex(ValueError, "at most 12"):
+            _validate_plan({"risks": ["risk"] * 13, "tasks": [valid_task]})
+
     def test_accepts_topological_dependency_graph(self):
         plan = _validate_plan({
             "summary": "Safe plan",
