@@ -4,10 +4,15 @@ on:
   pull_request:
     paths:
       - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_runtime.py"
+      - "Backend/api/ai_engine.py"
       - "Backend/api/management/commands/worker.py"
       - "Backend/api/migrations/0037_agent_task_execution_evidence.py"
+      - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
       - "Backend/api/models.py"
       - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_runtime.py"
+      - "Backend/api/test_agent_task_bound_approval.py"
       - "Backend/api/test_agent_runner_integration.py"
       - "Backend/api/urls.py"
       - "Runner/**"
@@ -17,10 +22,15 @@ on:
     branches: [master]
     paths:
       - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_runtime.py"
+      - "Backend/api/ai_engine.py"
       - "Backend/api/management/commands/worker.py"
       - "Backend/api/migrations/0037_agent_task_execution_evidence.py"
+      - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
       - "Backend/api/models.py"
       - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_runtime.py"
+      - "Backend/api/test_agent_task_bound_approval.py"
       - "Backend/api/test_agent_runner_integration.py"
       - "Backend/api/urls.py"
       - "Runner/**"
