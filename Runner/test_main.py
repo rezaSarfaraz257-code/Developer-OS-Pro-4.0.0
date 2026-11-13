@@ -251,8 +251,10 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
         cancelled = main._cancel_job(job_id, "42")
         self.assertEqual(cancelled["status"], "cancelled")
         with tempfile.TemporaryDirectory() as tmp:
+            workspace_root = Path(tmp) / "42"
+            workspace_root.mkdir()
             result = main.run_command(
-                Path(tmp), "python3 -c 'raise SystemExit(99)'",
+                workspace_root, "python3 -c 'raise SystemExit(99)'",
                 execution_id=job_id, include_files=False,
             )
         self.assertEqual(result["status"], "cancelled")
