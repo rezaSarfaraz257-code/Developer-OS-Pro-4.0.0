@@ -1005,6 +1005,35 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         runner_request.assert_called_once()
 
 
+    @patch("api.views._runner_request")
+    def test_run_cancel_terminalizes_queued_verification_without_runner_call(self, runner_request):
+        queued_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="queued",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+            },
+            idempotency_key="agent-cancel-queued-001",
+            max_attempts=1,
+        )
+        self.task.status = "running"
+        self.task.execution_job = queued_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        queued_job.refresh_from_db()
+        self.assertEqual(queued_job.status, "canceled")
+        runner_request.assert_not_called()
+
     @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
     def test_run_cancel_propagates_to_the_exact_active_runner_job(self, runner_request):
         verification_job = BackgroundJob.objects.create(
