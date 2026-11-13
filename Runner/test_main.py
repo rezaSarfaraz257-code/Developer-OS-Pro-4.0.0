@@ -1867,10 +1867,13 @@ class ProcessEnvironmentBoundsTests(unittest.TestCase):
         self.assertLessEqual(len(result), main.MAX_PROCESS_ENV_VARS)
 
 def test_timeout_runner_terminates_process_group_and_preserves_output():
+    import io
     process = Mock()
-    process.communicate.side_effect = [
-        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01, output=b"partial", stderr=b"warning"),
-        ("partial", "warning"),
+    process.stdout = io.BytesIO(b"partial")
+    process.stderr = io.BytesIO(b"warning")
+    process.wait.side_effect = [
+        subprocess.TimeoutExpired(cmd=["test-command"], timeout=0.01),
+        -9,
     ]
     with patch("main.subprocess.Popen", return_value=process) as popen, patch(
         "main._terminate_process_group"
@@ -1884,10 +1887,11 @@ def test_timeout_runner_terminates_process_group_and_preserves_output():
             result_error = exc
     popen.assert_called_once()
     assert popen.call_args.kwargs["shell"] is False
+    assert popen.call_args.kwargs["text"] is False
     terminate.assert_called_once_with(process, grace_seconds=0.1)
     assert result_error is not None
-    assert result_error.output == "partial"
-    assert result_error.stderr == "warning"
+    assert result_error.output == b"partial"
+    assert result_error.stderr == b"warning"
 
 
 def test_terminate_process_group_signals_descendants_after_leader_exits():
@@ -1905,6 +1909,38 @@ def test_terminate_process_group_signals_descendants_after_leader_exits():
     calls = killpg.call_args_list
     assert calls[0].args == (12345, main.signal.SIGTERM)
     assert any(call.args == (12345, main.signal.SIGKILL) for call in calls)
+
+def test_process_output_capture_is_bounded_per_stream():
+    with tempfile.TemporaryDirectory(prefix="runner-bounded-output-") as tmp:
+        result = main._run_process_with_timeout(
+            [sys.executable, "-c", "import sys; sys.stdout.write('A' * 200000); sys.stderr.write('B' * 200000)"],
+            cwd=Path(tmp), env={"PATH": os.environ.get("PATH", "")}, timeout=5,
+            preexec_fn=lambda: None,
+        )
+    assert len(result.stdout.encode("utf-8")) == main.MAX_OUTPUT
+    assert len(result.stderr.encode("utf-8")) == main.MAX_OUTPUT
+    assert result.stdout.endswith("A" * 128)
+    assert result.stderr.endswith("B" * 128)
+
+
+def test_successful_execution_kills_background_descendants():
+    with tempfile.TemporaryDirectory(prefix="runner-success-group-") as tmp:
+        root = Path(tmp)
+        marker = root / "descendant-survived"
+        child_code = "import time; time.sleep(0.4); open('descendant-survived', 'w').write('alive')"
+        parent_code = (
+            "import subprocess,sys; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}])"
+        )
+        result = main._run_process_with_timeout(
+            [sys.executable, "-c", parent_code], cwd=root,
+            env={"PATH": os.environ.get("PATH", "")}, timeout=5,
+            preexec_fn=lambda: None,
+        )
+        time.sleep(0.7)
+        assert result.returncode == 0
+        assert not marker.exists(), "A background descendant survived successful execution"
+
 
 def test_execution_timeout_kills_descendant_processes():
     with tempfile.TemporaryDirectory(prefix="runner-timeout-group-") as tmp:

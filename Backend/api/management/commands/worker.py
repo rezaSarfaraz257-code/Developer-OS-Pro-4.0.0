@@ -78,6 +78,13 @@ def recover_stale_jobs():
                     pk=locked.payload.get("export_id"),
                     user_id=locked.payload.get("user_id"),
                 ).exclude(status__in=["ready", "expired"]).update(status="failed")
+            if locked.status == "failed" and locked.kind == "ai_agent_task_verify":
+                # Verification POSTs are deliberately single-attempt: after a
+                # worker lease expires, the Runner may already have executed.
+                # Never replay that POST; reconcile the authoritative workspace
+                # and terminalize the task through the same failure path.
+                from api.agent_execution import fail_agent_task_verification
+                fail_agent_task_verification(locked)
 
 
 def refresh_job_lease(job_id, worker):
@@ -208,18 +215,20 @@ def execute(job):
         # Serialize the snapshot read and Runner write against workspace edits.
         # If several revisions queued, an older job coalesces to the newest
         # authoritative database snapshot instead of overwriting Runner backwards.
-        from api.models import CodeWorkspace
-        from api.views import _runner_request, _workspace_payload, _workspace_write_allowed
+        from api.views import (
+            _runner_request, _workspace_for_user, _workspace_payload,
+            _workspace_write_allowed,
+        )
 
         payload = job.payload if isinstance(job.payload, dict) else {}
+        actor = User.objects.filter(pk=payload.get("owner_id")).first()
+        if actor is None:
+            raise RuntimeError("Runner sync requester is no longer available.")
         with transaction.atomic():
-            workspace = CodeWorkspace.objects.select_for_update().filter(
-                pk=payload.get("workspace_id"),
-                owner_id=payload.get("owner_id"),
-            ).first()
-            if workspace is None:
-                raise RuntimeError("Workspace no longer exists or is not owned by the requesting account.")
-            if not _workspace_write_allowed(workspace, workspace.owner):
+            workspace = _workspace_for_user(
+                payload.get("workspace_id"), actor, for_update=True,
+            )
+            if not _workspace_write_allowed(workspace, actor):
                 raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
             synced_revision = int(workspace.revision)
             runner_data, runner_error = _runner_request(
@@ -229,7 +238,7 @@ def execute(job):
                 # Keep provider/Runner diagnostics out of durable job errors.
                 raise RuntimeError("Runner workspace synchronization failed.")
             AuditLog.objects.create(
-                user=workspace.owner,
+                user=actor,
                 action="ai_agent.runner_workspace_synced",
                 target_type="CodeWorkspace",
                 target_id=str(workspace.id),
@@ -250,6 +259,9 @@ def execute(job):
     if job.kind == "ai_agent_plan":
         from api.agent_runtime import build_agent_plan
         return build_agent_plan(job.payload["run_id"])
+    if job.kind == "ai_agent_task_verify":
+        from api.agent_execution import execute_agent_task_verification
+        return execute_agent_task_verification(job)
     if job.kind == "email":
         _require_real_email_transport()
         payload = job.payload
@@ -357,6 +369,9 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
+                if job.status == "failed" and job.kind == "ai_agent_task_verify":
+                    from api.agent_execution import fail_agent_task_verification
+                    fail_agent_task_verification(job)
             finally:
                 lease_stop.set()
                 lease_thread.join(timeout=2)

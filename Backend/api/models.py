@@ -847,10 +847,18 @@ class AgentTask(models.Model):
     key = models.CharField(max_length=64)
     title = models.CharField(max_length=180)
     description = models.TextField(max_length=2000, blank=True, default="")
+    acceptance_criteria = models.JSONField(default=list, blank=True)
     agent_role = models.CharField(max_length=24, choices=SPECIALIST_CHOICES, default="architect")
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="blocked")
     sequence = models.PositiveSmallIntegerField(default=0)
     depends_on = models.ManyToManyField("self", symmetrical=False, blank=True, related_name="dependents")
+    # Durable evidence for the human-approved patch -> Runner verification loop.
+    execution_job = models.ForeignKey("BackgroundJob", on_delete=models.SET_NULL, null=True, blank=True, related_name="agent_tasks")
+    execution_revision = models.PositiveBigIntegerField(null=True, blank=True)
+    execution_profile = models.CharField(max_length=32, blank=True, default="")
+    execution_attempts = models.PositiveSmallIntegerField(default=0)
+    execution_evidence = models.JSONField(default=dict, blank=True)
+    execution_error = models.CharField(max_length=500, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

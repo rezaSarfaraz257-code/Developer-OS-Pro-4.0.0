@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math
+import os, re, subprocess, time, shutil, signal, resource, hmac, threading, json, shlex, uuid, functools, errno, math, logging
 import requests
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -17,6 +17,7 @@ from recovery_engine import checkpoint as recovery_checkpoint, recover as recove
 from extension_engine import manifest as extension_manifest
 from lsp_engine import MANAGER as LSP_MANAGER, LSPError
 
+logger = logging.getLogger("developer_os.runner.security")
 app = FastAPI(title="Developer OS Secure Workspace Runner")
 ROOT = Path(os.environ.get("RUNNER_ROOT", "/workspaces"))
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -705,7 +706,7 @@ def _bwrap_runtime_available():
         return False
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        "--unshare-pid", "--unshare-uts", "--unshare-ipc", "--unshare-net",
+        "--unshare-user", "--unshare-pid", "--unshare-uts", "--unshare-ipc", "--unshare-net",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
         "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
@@ -714,11 +715,18 @@ def _bwrap_runtime_available():
     try:
         result = subprocess.run(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=3, check=False,
+            stderr=subprocess.PIPE, text=True, timeout=3, check=False,
             env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
         )
+        if result.returncode != 0:
+            diagnostic = (result.stderr or "Bubblewrap exited without a diagnostic.")[:500]
+            logger.error(
+                "Strict Bubblewrap capability probe failed (exit=%s): %s",
+                result.returncode, diagnostic,
+            )
         return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.error("Strict Bubblewrap capability probe could not run: %s", str(exc)[:300])
         return False
 
 
@@ -820,7 +828,7 @@ def _sandbox_command(root, command_file, allow_network=False):
         )
     args = [
         bwrap, "--die-with-parent", "--new-session",
-        "--unshare-pid", "--unshare-uts", "--unshare-ipc",
+        "--unshare-user", "--unshare-pid", "--unshare-uts", "--unshare-ipc",
         "--ro-bind", "/usr", "/usr", "--ro-bind", "/usr/local", "/usr/local",
         "--ro-bind", "/bin", "/bin", "--ro-bind", "/lib", "/lib",
         "--ro-bind", "/lib64", "/lib64", "--ro-bind", "/etc", "/etc",
@@ -887,7 +895,33 @@ def _normalize_command(command):
     return command
 
 def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_path=None):
-    """Run a fixed-argv script in its own process group and terminate descendants on timeout."""
+    """Run in a process group while retaining only a bounded tail of each output stream."""
+    proc = None
+    readers = []
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    buffer_lock = threading.Lock()
+
+    def drain(name, stream):
+        try:
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                with buffer_lock:
+                    target = buffers[name]
+                    target.extend(chunk)
+                    if len(target) > MAX_OUTPUT:
+                        del target[:-MAX_OUTPUT]
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    def captured():
+        with buffer_lock:
+            return bytes(buffers["stdout"]), bytes(buffers["stderr"])
+
     try:
         proc = subprocess.Popen(
             argv,
@@ -897,26 +931,60 @@ def _run_process_with_timeout(argv, *, cwd, env, timeout, preexec_fn, cleanup_pa
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             start_new_session=True,
             preexec_fn=preexec_fn,
         )
+        for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            reader = threading.Thread(target=drain, args=(name, stream), daemon=True)
+            reader.start()
+            readers.append(reader)
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
+            proc.wait(timeout=timeout)
+            # A successful shell can still leave background descendants holding
+            # inherited pipes or consuming resources. The execution boundary is
+            # the whole process group, not merely the shell leader.
+            _terminate_process_group(proc, grace_seconds=0.1)
+        except subprocess.TimeoutExpired:
             _terminate_process_group(proc, grace_seconds=0.1)
             try:
-                stdout, stderr = proc.communicate(timeout=1)
+                proc.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 _terminate_process_group(proc, grace_seconds=0.1)
                 try:
-                    stdout, stderr = proc.communicate(timeout=1)
+                    proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:
-                    stdout, stderr = exc.output or "", exc.stderr or ""
-            stdout = stdout or exc.output or ""
-            stderr = stderr or exc.stderr or ""
+                    pass
+            for reader in readers:
+                reader.join(timeout=1)
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None and not stream.closed:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            for reader in readers:
+                reader.join(timeout=0.2)
+            stdout, stderr = captured()
             raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr)
-        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+        # A descendant retaining an inherited pipe must not pin the worker.
+        for reader in readers:
+            reader.join(timeout=1)
+        for stream in (proc.stdout, proc.stderr):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        for reader in readers:
+            reader.join(timeout=0.2)
+        stdout, stderr = captured()
+        return subprocess.CompletedProcess(
+            argv, proc.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
     finally:
         _remove_command_script(cleanup_path)
 

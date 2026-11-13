@@ -27,3 +27,6 @@ Thumbs.db
 *.pyc
 media/
 staticfiles/
+
+# Generated on the Docker host by Runner/prepare-host.sh
+/Runner/seccomp-bwrap.json

@@ -1,0 +1,332 @@
+name: Agent Execution Loop Validation
+
+on:
+  pull_request:
+    paths:
+      - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_runtime.py"
+      - "Backend/api/ai_engine.py"
+      - "Backend/api/management/commands/worker.py"
+      - "Backend/api/migrations/0037_agent_task_execution_evidence.py"
+      - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
+      - "Backend/api/models.py"
+      - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_runtime.py"
+      - "Backend/api/test_agent_task_bound_approval.py"
+      - "Backend/api/test_agent_runner_integration.py"
+      - "Backend/api/urls.py"
+      - "Runner/**"
+      - "Frontend/src/Project/AIAssistant/**"
+      - ".github/workflows/agent-execution-validation.yml"
+  push:
+    branches: [master]
+    paths:
+      - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_runtime.py"
+      - "Backend/api/ai_engine.py"
+      - "Backend/api/management/commands/worker.py"
+      - "Backend/api/migrations/0037_agent_task_execution_evidence.py"
+      - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
+      - "Backend/api/models.py"
+      - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_runtime.py"
+      - "Backend/api/test_agent_task_bound_approval.py"
+      - "Backend/api/test_agent_runner_integration.py"
+      - "Backend/api/urls.py"
+      - "Runner/**"
+      - "Frontend/src/Project/AIAssistant/**"
+      - ".github/workflows/agent-execution-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend-agent-execution:
+    name: Agent execution API, worker and migration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: developeros_test
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U developeros -d developeros_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: Backend
+    env:
+      DEBUG: "False"
+      DJANGO_SECRET_KEY: ci-only-secret-key-with-enough-entropy-123456789-abcdef
+      ENVIRONMENT: development
+      ALLOWED_HOSTS: backend,localhost,127.0.0.1,testserver
+      CORS_ALLOWED_ORIGINS: http://localhost
+      CSRF_TRUSTED_ORIGINS: http://localhost
+      DATABASE_URL: postgresql://developeros:test-password@127.0.0.1:5432/developeros_test
+      IDE_RUNNER_TOKEN: ci-runner-token
+      GITHUB_TOKEN_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      SECURE_SSL_REDIRECT: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check Django configuration and migration consistency
+        run: |
+          export GITHUB_TOKEN_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+      - name: Run Agent execution loop regression tests
+        # Includes DAG planning, task-specific acceptance, and task-bound patch approval.
+        run: python manage.py test api.test_agent_execution api.test_agent_runtime api.test_agent_task_bound_approval --verbosity 2
+
+  frontend-agent-execution:
+    name: AI Assistant lint, build and unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+          package-manager-cache: false
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Lint frontend
+        run: npm run lint
+      - name: Build frontend
+        run: npm run build
+      - name: Run frontend unit tests
+        run: npm test
+
+
+  backend-runner-integration:
+    name: Backend to strict isolated Runner integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: developeros_integration
+          POSTGRES_USER: developeros
+          POSTGRES_PASSWORD: integration-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U developeros -d developeros_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: Backend
+    env:
+      DEBUG: "False"
+      DJANGO_SECRET_KEY: ci-only-secret-key-with-enough-entropy-123456789-abcdef
+      ENVIRONMENT: development
+      ALLOWED_HOSTS: backend,localhost,127.0.0.1,testserver
+      CORS_ALLOWED_ORIGINS: http://localhost
+      CSRF_TRUSTED_ORIGINS: http://localhost
+      DATABASE_URL: postgresql://developeros:integration-password@127.0.0.1:5432/developeros_integration
+      IDE_RUNNER_URL: http://127.0.0.1:8080
+      IDE_RUNNER_TOKEN: ci-runner-integration-token
+      GITHUB_TOKEN_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      SECURE_SSL_REDIRECT: "false"
+      AGENT_RUNNER_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate AppArmor namespace boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup_profile="$(awk '/^profile developer-os-runner flags=/,/^}/' ../Runner/apparmor/developer-os-runner)"
+          workload_profile="$(awk '/^profile developer-os-runner-workload flags=/,/^}/' ../Runner/apparmor/developer-os-runner)"
+          grep -Eq '^[[:space:]]*userns,' <<<"$setup_profile"
+          grep -Eq '^[[:space:]]*deny userns,' <<<"$workload_profile"
+          grep -Eq '^[[:space:]]*deny capability,' <<<"$workload_profile"
+          grep -Eq '^[[:space:]]*deny mount,' <<<"$workload_profile"
+          echo "AppArmor control/workload namespace boundary is explicitly present."
+      - name: Build strict Runner image
+        run: docker build --pull -t developer-os-runner-ci:agent-loop ../Runner
+      - name: Start strict isolated Runner
+        env:
+          RUNNER_WORKSPACE_VOLUME: ${{ runner.temp }}/agent-runner-workspaces
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apparmor apparmor-utils jq curl
+          sudo bash ../Runner/prepare-host.sh
+          mkdir -p "$RUNNER_WORKSPACE_VOLUME"
+          sudo chown 10001:10001 "$RUNNER_WORKSPACE_VOLUME"
+          docker run -d --name developer-os-runner-ci \
+            --publish 127.0.0.1:8080:8080 \
+            --read-only \
+            --tmpfs /tmp:size=256m,noexec,nosuid,nodev \
+            --tmpfs /run:size=16m,noexec,nosuid,nodev \
+            --mount "type=bind,src=$RUNNER_WORKSPACE_VOLUME,dst=/workspaces" \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --security-opt apparmor=developer-os-runner \
+            --security-opt systempaths=unconfined \
+            --security-opt seccomp=../Runner/seccomp-bwrap.json \
+            --pids-limit 128 --memory 1g --cpus 2 \
+            --env IDE_RUNNER_TOKEN="$IDE_RUNNER_TOKEN" \
+            --env RUNNER_SECURITY_LEVEL=strict \
+            --env RUNNER_SANDBOX_MODE=bwrap \
+            --env RUNNER_ALLOW_NETWORK=false \
+            --env RUNNER_MEMORY_MB=768 \
+            developer-os-runner-ci:agent-loop
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8080/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:8080/health >/dev/null
+          docker exec developer-os-runner-ci sh -c 'cat /proc/self/attr/current; grep -E "^(NoNewPrivs|Seccomp|CapEff):" /proc/self/status; cat /proc/sys/user/max_user_namespaces'
+          echo "Host namespace and AppArmor policy:"
+          for setting in /proc/sys/kernel/apparmor_restrict_unprivileged_userns /proc/sys/kernel/unprivileged_userns_clone /proc/sys/user/max_user_namespaces; do
+            if [ -r "$setting" ]; then printf '%s=' "$setting"; cat "$setting"; else printf '%s=unavailable\n' "$setting"; fi
+          done
+          sudo aa-status | grep -E 'developer-os-runner|docker-default' || true
+          docker inspect --format 'Runner security options: {{json .HostConfig.SecurityOpt}}' developer-os-runner-ci
+          # Read-only runtime inspection: identify masked procfs paths without changing container security.
+          docker inspect --format 'Runner masked paths: {{json .HostConfig.MaskedPaths}}' developer-os-runner-ci
+          docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
+          # systempaths=unconfined removes Docker's default procfs/sysfs masks;
+          # the attached AppArmor profile must deny access to every sensitive path.
+          docker exec -u 0 -i developer-os-runner-ci /usr/bin/python3 - <<'PY'
+          import os
+          status = {}
+          with open("/proc/self/status", encoding="utf-8") as stream:
+              for line in stream:
+                  if ":" in line:
+                      key, value = line.split(":", 1)
+                      status[key] = value.strip()
+          if status.get("CapEff") != "0000000000000000" or status.get("NoNewPrivs") != "1":
+              raise SystemExit("root probe must retain zero capabilities and no-new-privileges")
+          checks = [
+              ("/proc/interrupts", "file", os.O_RDONLY),
+              ("/proc/kcore", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/keys", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/timer_list", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/latency_stats", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/sched_debug", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/timer_stats", "file", os.O_RDONLY | os.O_NONBLOCK),
+              ("/proc/sysrq-trigger", "file", os.O_WRONLY | os.O_NONBLOCK),
+              ("/proc/sys/kernel/hostname", "file", os.O_WRONLY),
+              ("/proc/acpi", "dir", 0),
+              ("/proc/asound", "dir", 0),
+              ("/proc/scsi", "dir", 0),
+              ("/proc/bus", "dir", 0),
+              ("/proc/fs", "dir", 0),
+              ("/proc/irq", "dir", 0),
+              ("/sys/firmware", "dir", 0),
+              ("/sys/fs/selinux", "dir", 0),
+              ("/sys/devices/virtual/powercap", "dir", 0),
+          ]
+          checked = 0
+          for path, kind, flags in checks:
+              if not os.path.exists(path):
+                  continue
+              try:
+                  if kind == "dir":
+                      os.listdir(path)
+                  else:
+                      fd = os.open(path, flags)
+                      os.close(fd)
+              except PermissionError:
+                  checked += 1
+              else:
+                  raise SystemExit(f"AppArmor failed to deny sensitive path: {path}")
+          if checked < 5:
+              raise SystemExit(f"Too few sensitive-path denials verified: {checked}")
+          print(f"AppArmor denied {checked} existing Docker-masked procfs/sysfs paths.")
+          PY
+          docker exec developer-os-runner-ci sh -c 'grep -E " /proc([ /]|$)" /proc/self/mountinfo || true; for path in /proc/kcore /proc/keys /proc/timer_list /proc/sysrq-trigger /proc/sys; do if [ -e "$path" ]; then stat -c "%n %F %a" "$path" 2>/dev/null || true; else printf "%s=absent\\n" "$path"; fi; done'
+          # Run the exact production capability probe, then split namespace setup from procfs mount.
+          echo "Bubblewrap version:"
+          docker exec developer-os-runner-ci /usr/bin/bwrap --version
+          docker exec developer-os-runner-ci /usr/bin/bwrap --version
+          # Keep the integration job failing unless the complete strict probe passes.
+          if docker exec developer-os-runner-ci /usr/bin/bwrap --die-with-parent --new-session --unshare-user --unshare-pid --unshare-uts --unshare-ipc --unshare-net --ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc --proc /proc --dev /dev -- /bin/true; then
+            strict_probe_status=0
+          else
+            strict_probe_status=$?
+            echo "Strict Bubblewrap probe failed with exit code ${strict_probe_status}; running non-relaxing stage diagnostics."
+          fi
+          # Report every stage explicitly; diagnostic failures must never be mistaken for passes.
+          probe_stage() {
+            stage_name="$1"
+            shift
+            echo "===== ${stage_name} ====="
+            if docker exec developer-os-runner-ci /usr/bin/bwrap "$@"; then
+              echo "${stage_name}: PASS"
+            else
+              stage_status=$?
+              echo "${stage_name}: FAIL (exit ${stage_status})"
+            fi
+          }
+          runtime_binds=(--ro-bind /usr /usr --ro-bind /usr/local /usr/local --ro-bind /bin /bin --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind /etc /etc)
+          # Stage A: user namespace and read-only runtime binds only.
+          probe_stage "Stage A: user namespace + binds" --die-with-parent --new-session --unshare-user "${runtime_binds[@]}" -- /bin/true
+          # Stage A-proc: determine whether procfs mount fails even without a PID namespace.
+          probe_stage "Stage A-proc: user namespace + procfs" --die-with-parent --new-session --unshare-user "${runtime_binds[@]}" --proc /proc -- /bin/true
+          # Stage B: add PID namespace creation, but do not mount procfs.
+          probe_stage "Stage B: user + PID namespaces, no procfs" --die-with-parent --new-session --unshare-user --unshare-pid "${runtime_binds[@]}" -- /bin/true
+          # Stage C: add procfs to the same successful namespace setup.
+          probe_stage "Stage C: user + PID namespaces + procfs" --die-with-parent --new-session --unshare-user --unshare-pid "${runtime_binds[@]}" --proc /proc -- /bin/true
+          echo "AppArmor audit records after staged probes:"
+          sudo journalctl -k --since '-3 minutes' --no-pager 2>/dev/null | grep -E 'apparmor="(DENIED|ALLOWED)".*(developer-os-runner|bwrap)|profile="developer-os-runner"' | tail -80 || true
+          if [ "${strict_probe_status}" -ne 0 ]; then
+            exit "${strict_probe_status}"
+          fi
+          docker exec -w /app developer-os-runner-ci /opt/venv/bin/python -c "import main; assert main._bwrap_runtime_available(), 'strict Bubblewrap isolation is unavailable'"
+      - name: Check Django configuration and migrate integration database
+        run: |
+          python manage.py check
+          python manage.py migrate --noinput
+      - name: Execute real Backend to Runner verification and human acceptance
+        run: python manage.py test api.test_agent_runner_integration --verbosity 2
+      - name: Collect Runner diagnostics on failure
+        if: failure()
+        run: |
+          docker logs developer-os-runner-ci || true
+          sudo aa-status | grep -E 'developer-os-runner|docker-default' || true
+          # Capture the host kernel's exact AppArmor denial; do not weaken policy
+          # based only on Bubblewrap's generic errno.
+          sudo journalctl -k --since '-10 minutes' --no-pager 2>/dev/null | grep -E 'apparmor="DENIED"|audit.*DENIED' | tail -80 || true
+          # Keep diagnostics under the exact production seccomp/AppArmor policy.
+          # Never compare by relaxing either layer; strict execution remains fail-closed.
+      - name: Stop strict Runner
+        if: always()
+        run: docker rm -f developer-os-runner-ci || true

@@ -1,0 +1,165 @@
+# Dedicated AppArmor policy for the Developer OS Runner.
+# The trusted Runner/bwrap control process may create its own unprivileged
+# namespaces. The executed shell is stacked with a workload profile that
+# removes userns, mount, and capability permissions without relaxing NNP.
+abi <abi/4.0>,
+#include <tunables/global>
+
+profile developer-os-runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  # Bubblewrap needs NETLINK_ROUTE while preparing its isolated network namespace.
+  # Keep raw IP and packet sockets denied; workload profile denies all raw sockets.
+  network netlink raw,
+  deny network inet raw,
+  deny network inet6 raw,
+  deny network packet,
+  deny network alg,
+
+  capability sys_admin,
+  # Bubblewrap needs DAC override inside its freshly-created user namespace
+  # while assembling the private root. The stacked workload profile below
+  # explicitly denies every capability before workspace code is executed.
+  capability dac_override,
+  capability net_admin,
+  capability setuid,
+  capability setgid,
+  capability sys_chroot,
+  capability setpcap,
+  # Bubblewrap uses ptrace while preparing its PID namespace.
+  capability sys_ptrace,
+  file,
+
+  # The launcher must remain in this setup profile. Its shell is stacked
+  # with the workload profile below; NNP forbids a relaxing profile transition.
+  /usr/bin/bwrap ix,
+
+  # Bubblewrap's private root and mount operations are confined to its
+  # temporary root trees. The workload profile below cannot mount or pivot.
+  mount options=(rw rbind) -> /newroot/{,**},
+  mount options=(rw rbind) /tmp/newroot/ -> /tmp/newroot/,
+  mount options=(rw silent make-rslave) /,
+  mount options=(rw silent make-rprivate) /oldroot/,
+  # Bubblewrap mounts procfs at this exact private-root destination. Do not
+  # constrain the kernel-reported source/options: they vary across supported
+  # kernels, while the filesystem type and destination remain tightly scoped.
+  mount fstype=proc -> /newroot/@{PROC}/,
+  mount fstype=proc options=(rw nosuid nodev noexec) proc -> /newroot/@{PROC}/,
+  # Bubblewrap first bind-mounts the original procfs into its private mount root.
+  mount options=(rw rbind) /oldroot/proc/ -> @{PROC}/,
+  mount fstype=tmpfs options=(rw nosuid nodev) tmpfs -> /newroot/{,**},
+  mount fstype=tmpfs options=(rw nosuid nodev) tmpfs -> /tmp/,
+  mount fstype=devpts options=(rw nosuid noexec) devpts -> /newroot/dev/pts/,
+  remount /newroot/{,**},
+  # Debian's AppArmor mount mediation needs the destination-scoped form.
+  mount -> /newroot/{,**},
+  umount /,
+  umount /oldroot/,
+  pivot_root oldroot=/newroot/ /newroot/,
+  pivot_root oldroot=/tmp/oldroot/ /tmp/,
+  owner /newroot/{,**} w,
+  owner /tmp/newroot/ w,
+  owner /tmp/oldroot/ w,
+  owner / r,
+  @{PROC}/sys/kernel/overflowgid r,
+  @{PROC}/sys/kernel/overflowuid r,
+  @{PROC}/sys/user/max_user_namespaces r,
+  @{PROC}/sys/kernel/seccomp/actions_avail r,
+  owner @{PROC}/@{pid}/fd/ r,
+  owner @{PROC}/@{pid}/gid_map rw,
+  owner @{PROC}/@{pid}/mountinfo r,
+  owner @{PROC}/@{pid}/setgroups rw,
+  owner @{PROC}/@{pid}/uid_map rw,
+  userns,
+
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (send,receive) peer=developer-os-runner,
+  signal (send,receive) peer=developer-os-runner//&developer-os-runner-workload,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  # Docker's systempaths=unconfined is required so Bubblewrap can mount a
+  # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
+  # here; these denials cover both the trusted Runner and stacked workload.
+  deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  # Match the directory inode itself as well as its descendants; AppArmor
+  # distinguishes /proc/acpi from /proc/acpi/ during directory traversal.
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/ rwklx,
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
+  deny @{PROC}/sys/** wklx,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+  deny /sys/devices/virtual/powercap/ rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/ rwklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/fs/selinux/ rwklx,
+  deny /sys/fs/selinux/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # Bubblewrap sets no_new_privs before exec. Stack the workload policy
+  # only onto the shell entrypoints used by the Runner; keep this transition
+  # path-scoped so it cannot conflict with bwrap's inherit-exec rule.
+  allow pix /usr/bin/bash -> &developer-os-runner-workload,
+  allow pix /bin/bash -> &developer-os-runner-workload,
+}
+
+profile developer-os-runner-workload flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  deny network raw,
+  deny network packet,
+  deny network alg,
+
+  file,
+
+  # This profile is stacked with developer-os-runner after Bubblewrap setup.
+  # The intersection removes setup-only privileges from every workload child.
+  deny capability,
+  deny userns,
+  deny mount,
+  deny umount,
+  deny pivot_root,
+
+  signal (receive) peer=developer-os-runner,
+  signal (send,receive) peer=developer-os-runner//&developer-os-runner-workload,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  # Docker's systempaths=unconfined is required so Bubblewrap can mount a
+  # fresh procfs inside each PID namespace. Reapply the sensitive-path masks
+  # here; these denials cover both the trusted Runner and stacked workload.
+  deny @{PROC}/{acpi,asound,bus,fs,irq,interrupts,kcore,keys,latency_stats,sched_debug,scsi,timer_list,timer_stats} rwklx,
+  # Match the directory inode itself as well as its descendants; AppArmor
+  # distinguishes /proc/acpi from /proc/acpi/ during directory traversal.
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/ rwklx,
+  deny @{PROC}/{acpi,asound,scsi,bus,fs,irq}/** rwklx,
+  deny @{PROC}/sys/** wklx,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+  deny /sys/devices/virtual/powercap/ rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/ rwklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+}

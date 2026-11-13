@@ -153,14 +153,25 @@ class AgentPlanValidationTests(TestCase):
                 ]
             })
 
+    def test_rejects_missing_or_invalid_task_acceptance_criteria(self):
+        invalid_plans = [
+            {"tasks": [{"id": "inspect", "title": "Inspect", "depends_on": []}]},
+            {"tasks": [{"id": "inspect", "title": "Inspect", "depends_on": [], "acceptance_criteria": []}]},
+            {"tasks": [{"id": "inspect", "title": "Inspect", "depends_on": [], "acceptance_criteria": [" ", " "] }]},
+            {"tasks": [{"id": "inspect", "title": "Inspect", "depends_on": [], "acceptance_criteria": ["Same", "same"]}]},
+        ]
+        for plan in invalid_plans:
+            with self.subTest(plan=plan), self.assertRaisesRegex(ValueError, "(?i)task-specific acceptance criteria"):
+                _validate_plan(plan)
+
     def test_accepts_topological_dependency_graph(self):
         plan = _validate_plan({
             "summary": "Safe plan",
             "risks": [],
             "acceptance_criteria": ["Tests pass"],
             "tasks": [
-                {"id": "inspect", "title": "Inspect repository", "depends_on": []},
-                {"id": "test", "title": "Add regression tests", "depends_on": ["inspect"]},
+                {"id": "inspect", "title": "Inspect repository", "depends_on": [], "acceptance_criteria": ["Repository structure and critical entry points are documented."]},
+                {"id": "test", "title": "Add regression tests", "depends_on": ["inspect"], "acceptance_criteria": ["Regression tests cover the identified behavior and pass."]},
             ],
         })
         self.assertEqual([item["key"] for item in plan["tasks"]], ["inspect", "test"])
@@ -558,8 +569,8 @@ class AgentRunLifecycleTests(TestCase):
                 "risks": ["Potential regression"],
                 "acceptance_criteria": ["Regression tests pass"],
                 "tasks": [
-                    {"id": "inspect", "title": "Inspect existing code", "description": "Review source", "depends_on": []},
-                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "agent_role": "testing", "depends_on": ["inspect"]},
+                    {"id": "inspect", "title": "Inspect existing code", "description": "Review source", "depends_on": [], "acceptance_criteria": ["The relevant source modules and dependencies are identified."]},
+                    {"id": "tests", "title": "Design regression tests", "description": "Cover edge cases", "agent_role": "testing", "depends_on": ["inspect"], "acceptance_criteria": ["Regression tests cover the stated edge cases and pass."]},
                 ],
             }),
             None,
@@ -580,8 +591,11 @@ class AgentRunLifecycleTests(TestCase):
         ).exists())
         self.assertEqual(run.tasks.get(key="inspect").agent_role, "architect")
         self.assertEqual(run.tasks.get(key="tests").agent_role, "testing")
+        self.assertEqual(run.tasks.get(key="inspect").acceptance_criteria, ["The relevant source modules and dependencies are identified."])
+        self.assertEqual(run.tasks.get(key="tests").acceptance_criteria, ["Regression tests cover the stated edge cases and pass."])
         payload = self.client.get(f"/api/ai/agent/runs/{run.id}/").data
         testing_task = next(item for item in payload["tasks"] if item["key"] == "tests")
+        self.assertEqual(testing_task["acceptance_criteria"], ["Regression tests cover the stated edge cases and pass."])
         self.assertIn("inspect_workspace", testing_task["allowed_capabilities"])
         self.assertNotIn("design_tests", testing_task["allowed_capabilities"])
         self.assertNotIn("shell", testing_task["allowed_capabilities"])
