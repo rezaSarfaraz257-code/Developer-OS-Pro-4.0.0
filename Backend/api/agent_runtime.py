@@ -737,6 +737,11 @@ def agent_run_cancel_api(request, pk):
             payload__run_id=run.id,
             status="queued",
         ).update(status="canceled", finished_at=timezone.now())
+        BackgroundJob.objects.filter(
+            kind="ai_agent_task_verify",
+            payload__run_id=run.id,
+            status="queued",
+        ).update(status="canceled", finished_at=timezone.now())
 
     # Never hold AgentRun/AgentTask database locks while making network calls.
     # A failed Runner cancellation remains fail-safe: the worker sees the
