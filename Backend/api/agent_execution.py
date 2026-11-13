@@ -598,14 +598,70 @@ def agent_task_accept_api(request, pk, task_pk):
         if (
             not verification_job or verification_job.kind != "ai_agent_task_verify"
             or verification_job.status != "succeeded"
+            or task.execution_job_id != verification_job.id
             or job_payload.get("run_id") != run.id
             or job_payload.get("task_id") != task.id
+            or job_payload.get("owner_id") != request.user.id
+            or job_payload.get("workspace_id") != run.workspace_id
             or job_payload.get("revision") != evidence.get("revision")
+            or job_payload.get("profile") != task.execution_profile
+            or job_payload.get("profile") != evidence.get("profile")
+            or job_payload.get("sync_job_id") != evidence.get("sync_job_id")
+            or job_payload.get("patch_audit_id") != evidence.get("patch_audit_id")
+            or evidence.get("verification_job_id") != verification_job.id
             or job_result.get("status") != "verification_passed_pending_acceptance"
+            or job_result.get("evidence") != evidence
             or evidence.get("state") != "passed"
+            or evidence.get("runner_status") != "completed"
+            or type(evidence.get("exit_code")) is not int
+            or evidence.get("exit_code") != 0
+            or evidence.get("output_persisted") is not False
             or not evidence.get("revision")
         ):
             return Response({"error": "Runner verification has not been durably completed successfully."}, status=409)
+
+        # Acceptance is a second authorization boundary, not just a status
+        # transition. Revalidate the exact sync and signed patch-audit chain
+        # that authorized this task's immutable Runner revision.
+        sync_job = BackgroundJob.objects.filter(
+            pk=job_payload.get("sync_job_id"),
+            kind="ai_agent_runner_sync",
+            status="succeeded",
+            payload__workspace_id=run.workspace_id,
+            payload__owner_id=request.user.id,
+        ).first()
+        sync_result = sync_job.result if sync_job and isinstance(sync_job.result, dict) else {}
+        if (
+            not sync_job
+            or sync_result.get("status") != "synced"
+            or sync_result.get("revision") != evidence.get("revision")
+            or not AuditLog.objects.filter(
+                user=request.user,
+                action="ai_agent.runner_workspace_synced",
+                target_type="CodeWorkspace",
+                target_id=str(run.workspace_id),
+                metadata__job_id=sync_job.id,
+                metadata__revision=evidence.get("revision"),
+            ).exists()
+        ):
+            return Response({"error": "The exact Runner sync evidence is no longer valid."}, status=409)
+
+        patch_audit = AuditLog.objects.filter(
+            pk=job_payload.get("patch_audit_id"),
+            user=request.user,
+            action="ai_agent.patch_applied",
+            target_type="CodeWorkspace",
+            target_id=str(run.workspace_id),
+            metadata__previous_revision=evidence.get("revision") - 1,
+            metadata__revision=evidence.get("revision"),
+            metadata__approval="signed_single_use_revision_bound",
+            metadata__agent_run_id=run.id,
+            metadata__agent_task_id=task.id,
+            created_at__gte=run.approved_at,
+        ).exists()
+        if not patch_audit:
+            return Response({"error": "The exact task-bound human patch approval is no longer valid."}, status=409)
+
         criteria = _task_acceptance_criteria(task)
         if criteria is None:
             return Response({"error": "This Agent task has no valid task-specific acceptance criteria; it cannot be accepted automatically."}, status=409)
