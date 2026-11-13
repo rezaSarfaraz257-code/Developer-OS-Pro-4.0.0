@@ -26,7 +26,7 @@ def _runner_response_with_execution_id(response):
 class SafeAgentDiagnosticSignalTests(TestCase):
     def test_python_import_diagnostic_is_an_enum_without_output_content(self):
         output = (
-            "ModuleNotFoundError: No module named 'private_internal_package'\\n"
+            "ModuleNotFoundError: No module named 'private_internal_package'\n"
             "AWS_SECRET_ACCESS_KEY=DO_NOT_PERSIST_THIS_VALUE"
         )
         signals = _safe_diagnostic_signals("python_pytest", "", output, 1)
