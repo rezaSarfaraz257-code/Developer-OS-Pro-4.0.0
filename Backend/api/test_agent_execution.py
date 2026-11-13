@@ -283,6 +283,54 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "succeeded"
         job.result = result
         job.save(update_fields=["status", "result"])
+
+        # Acceptance must bind the task evidence to the exact durable worker
+        # result and must revalidate both the sync and signed patch audit.
+        self.task.refresh_from_db()
+        valid_evidence = dict(self.task.execution_evidence)
+        tampered_evidence = dict(valid_evidence)
+        tampered_evidence["patch_audit_id"] = valid_evidence["patch_audit_id"] + 1
+        self.task.execution_evidence = tampered_evidence
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+        rejected = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.task.acceptance_criteria},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 409)
+        self.task.execution_evidence = valid_evidence
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+
+        patch_audit = AuditLog.objects.get(pk=job.payload["patch_audit_id"])
+        original_patch_metadata = dict(patch_audit.metadata)
+        patch_audit.metadata = {**original_patch_metadata, "agent_task_id": self.task.id + 999}
+        patch_audit.save(update_fields=["metadata"])
+        rejected = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.task.acceptance_criteria},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 409)
+        patch_audit.metadata = original_patch_metadata
+        patch_audit.save(update_fields=["metadata"])
+
+        sync_audit = AuditLog.objects.get(
+            user=self.user,
+            action="ai_agent.runner_workspace_synced",
+            metadata__job_id=self.sync_job.id,
+        )
+        original_sync_metadata = dict(sync_audit.metadata)
+        sync_audit.metadata = {**original_sync_metadata, "revision": self.workspace.revision - 1}
+        sync_audit.save(update_fields=["metadata"])
+        rejected = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.task.acceptance_criteria},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 409)
+        sync_audit.metadata = original_sync_metadata
+        sync_audit.save(update_fields=["metadata"])
+
         accepted = self.client.post(
             f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
             {"accepted_criteria": self.task.acceptance_criteria},
