@@ -169,13 +169,6 @@ class AgentRunnerIntegrationTests(TestCase):
         self.sync_job.save(update_fields={"status", "result"})
         AuditLog.objects.create(
             user=self.user,
-            action="ai_agent.runner_workspace_synced",
-            target_type="CodeWorkspace",
-            target_id=str(self.workspace.id),
-            metadata={"job_id": self.sync_job.id, "revision": self.workspace.revision},
-        )
-        AuditLog.objects.create(
-            user=self.user,
             action="ai_agent.patch_applied",
             target_type="CodeWorkspace",
             target_id=str(self.workspace.id),
