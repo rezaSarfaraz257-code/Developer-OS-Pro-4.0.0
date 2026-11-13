@@ -480,10 +480,10 @@ def execute_agent_task_verification(job):
             "runner_status": runner_status or "unknown", "exit_code": exit_code,
             "duration_ms": duration_ms, "verified_at": verified_at,
             **output_fingerprints,
-            "output_persisted": False,,
+            "output_persisted": False,
             "diagnostic_signals": _safe_diagnostic_signals(
                 profile, stdout, stderr, exit_code,
-            ) if not passed else []
+            ) if not passed else [],
         }
 
         # If the workspace moved while Runner was executing the immutable
