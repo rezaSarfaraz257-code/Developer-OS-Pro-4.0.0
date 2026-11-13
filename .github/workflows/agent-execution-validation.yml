@@ -213,8 +213,16 @@ jobs:
           docker inspect --format 'Runner readonly paths: {{json .HostConfig.ReadonlyPaths}}' developer-os-runner-ci
           # systempaths=unconfined removes Docker's default procfs/sysfs masks;
           # the attached AppArmor profile must deny access to every sensitive path.
-          docker exec -i developer-os-runner-ci /usr/bin/python3 - <<'PY'
+          docker exec -u 0 -i developer-os-runner-ci /usr/bin/python3 - <<'PY'
           import os
+          status = {}
+          with open("/proc/self/status", encoding="utf-8") as stream:
+              for line in stream:
+                  if ":" in line:
+                      key, value = line.split(":", 1)
+                      status[key] = value.strip()
+          if status.get("CapEff") != "0000000000000000" or status.get("NoNewPrivs") != "1":
+              raise SystemExit("root probe must retain zero capabilities and no-new-privileges")
           checks = [
               ("/proc/interrupts", "file", os.O_RDONLY),
               ("/proc/kcore", "file", os.O_RDONLY | os.O_NONBLOCK),
