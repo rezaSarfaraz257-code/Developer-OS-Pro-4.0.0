@@ -154,6 +154,17 @@ export PGUSER="$POSTGRES_USER"
       OR EXISTS (SELECT 1 FROM pg_largeobject_metadata)
       OR EXISTS (SELECT 1 FROM pg_event_trigger)
       OR EXISTS (SELECT 1 FROM pg_publication)
+      -- Database-local security/configuration objects are not represented by
+      -- pg_class or pg_namespace. Do not silently restore into a database
+      -- whose default grants or per-database settings have been customized.
+      OR EXISTS (SELECT 1 FROM pg_default_acl)
+      OR EXISTS (
+        SELECT 1 FROM pg_db_role_setting
+        WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+      )
+      -- plpgsql is installed by default on supported PostgreSQL images; any
+      -- other extension is an explicit database customization.
+      OR EXISTS (SELECT 1 FROM pg_extension WHERE extname <> 'plpgsql')
     )")"
   if [ "$target_has_objects" != "f" ]; then
     echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2

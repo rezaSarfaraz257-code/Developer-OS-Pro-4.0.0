@@ -301,6 +301,25 @@ jobs:
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT count(*) FROM pg_largeobject_metadata")" = "1"
 
+            # Database-local default grants are also state: they are not
+            # visible in pg_class/pg_namespace and must block a restore.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_default_acl
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_default_acl -c "ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC;"
+            if POSTGRES_DB=developeros_default_acl BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target with customized default privileges." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_default_acl -tAc "SELECT count(*) FROM pg_default_acl")" = "1"
+
+            # Per-database role settings are also non-empty database state.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_db_setting
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_db_setting -c "ALTER DATABASE developeros_db_setting SET application_name = 'operator-customized';"
+            if POSTGRES_DB=developeros_db_setting BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target with customized database settings." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_db_setting -tAc "SELECT count(*) FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())")" = "1"
+
             # The supported recovery path is a separately created empty DB.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
             POSTGRES_DB=developeros_restored BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh
