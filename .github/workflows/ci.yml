@@ -309,7 +309,7 @@ jobs:
               echo "Restore unexpectedly accepted a target containing a foreign-data wrapper." >&2
               exit 1
             fi
-            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_foreign_data -tAc "SELECT count(*) FROM pg_foreign_data_wrapper WHERE fdwname = 'operator_dummy_fdw'")" = "1"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_foreign_data -tAc "SELECT count(*) FROM pg_foreign_data_wrapper WHERE fdwname = chr(111)||chr(112)||chr(101)||chr(114)||chr(97)||chr(116)||chr(111)||chr(114)||chr(95)||chr(100)||chr(117)||chr(109)||chr(109)||chr(121)||chr(95)||chr(102)||chr(100)||chr(119)")" = "1"
 
             # Database-local default grants are also state: they are not
             # visible in pg_class/pg_namespace and must block a restore.
