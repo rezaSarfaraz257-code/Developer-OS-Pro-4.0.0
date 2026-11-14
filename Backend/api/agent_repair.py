@@ -18,6 +18,16 @@ from rest_framework.response import Response
 
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob
 
+_REPAIRABLE_DIAGNOSTIC_CODES = frozenset({
+    "python_import_error",
+    "python_syntax_error",
+    "python_test_failure",
+    "node_module_resolution_error",
+    "node_test_failure",
+    "node_build_error",
+    "node_lint_error",
+})
+
 
 def _repairable_sample_paths(workspace_files, safe_files):
     """Only allow whole, unredacted files to be replaced by complete-file patches."""
@@ -135,10 +145,10 @@ def _repair_evidence_is_current(run, task, workspace):
         or not isinstance(analysis, dict)
         or analysis.get("status") != "review_required"
         or analysis.get("confidence") not in {"moderate", "high"}
-        or analysis.get("diagnostic_code") in {None, "command_failed"}
+        or analysis.get("diagnostic_code") not in _REPAIRABLE_DIAGNOSTIC_CODES
         or analysis.get("diagnostic_code") not in {
             signal.get("code") for signal in evidence.get("diagnostic_signals", [])
-            if isinstance(signal, dict) and isinstance(signal.get("code"), str)
+            if isinstance(signal, dict) and signal.get("source") in {"stderr", "stdout"}
         }
     ):
         return None
