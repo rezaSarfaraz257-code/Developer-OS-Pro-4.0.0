@@ -154,7 +154,6 @@ export PGUSER="$POSTGRES_USER"
       OR EXISTS (SELECT 1 FROM pg_largeobject_metadata)
       OR EXISTS (SELECT 1 FROM pg_event_trigger)
       OR EXISTS (SELECT 1 FROM pg_publication)
-      OR EXISTS (SELECT 1 FROM pg_subscription)
     )")"
   if [ "$target_has_objects" != "f" ]; then
     echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2
