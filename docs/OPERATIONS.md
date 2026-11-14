@@ -55,7 +55,7 @@ Example recovery flow (run only with approved database credentials and a separat
 POSTGRES_DB=developer_os_recovery BACKUP_FILE=/secure-backups/developer-os-<timestamp>.dump \
   sh scripts/restore_postgres.sh
 ```
-The target database must already exist and be empty. Keep the dump and its `.sha256` sidecar together when moving them to recovery storage. A missing or mismatched checksum is a hard failure.
+The target database must already exist and be empty. The restore script checks for existing user schemas, relations, routines and standalone types before it invokes `pg_restore`; it rejects non-empty targets even when their objects would not collide with the backup. Keep the dump and its `.sha256` sidecar together when moving them to recovery storage. A missing or mismatched checksum is a hard failure.
 
 Before destructive schema changes:
 
