@@ -175,6 +175,39 @@ class AgentTaskRepairProposalTests(TestCase):
 
     @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
     @patch("api.ai_engine._call_provider")
+    def test_approved_repair_proposal_uses_existing_revision_bound_apply_and_sync_outbox(self, provider, usage):
+        provider.return_value = (json.dumps(self.proposal()), None)
+        proposal_response = self.client.post(self.url, {}, format="json")
+        self.assertEqual(proposal_response.status_code, 200)
+
+        apply_response = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": proposal_response.data["approval_token"]},
+            format="json",
+        )
+        self.assertEqual(apply_response.status_code, 200)
+        self.assertEqual(apply_response.data["status"], "applied_sync_pending")
+        self.workspace.refresh_from_db()
+        self.assertEqual(
+            self.workspace.files["main.py"],
+            "def load_value():\\n    return 1\\n",
+        )
+        applied = AuditLog.objects.filter(
+            action="ai_agent.patch_applied",
+            target_id=str(self.workspace.id),
+            metadata__agent_run_id=self.run.id,
+            metadata__agent_task_id=self.task.id,
+            metadata__approval="signed_single_use_revision_bound",
+        ).latest("created_at")
+        self.assertEqual(applied.metadata["revision"], self.workspace.revision)
+        self.assertTrue(BackgroundJob.objects.filter(
+            kind="ai_agent_runner_sync",
+            payload__workspace_id=self.workspace.id,
+            payload__requested_revision=self.workspace.revision,
+        ).exists())
+
+    @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
+    @patch("api.ai_engine._call_provider")
     def test_rejects_provider_output_that_is_not_a_complete_patch_contract(self, provider, usage):
         invalid = self.proposal()
         invalid["requires_approval"] = False
