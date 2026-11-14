@@ -280,11 +280,16 @@ class AgentTaskRepairProposalTests(TestCase):
 
         for path in (
             ".github/workflows/deploy.yml",
+            ".github/actions/custom/action.yml",
+            ".github/CODEOWNERS",
             ".gitlab-ci.yml",
             "docker-compose.yml",
             "Dockerfile",
             "render.yaml",
             "pnpm-lock.yaml",
+            "bun.lock",
+            "npm-shrinkwrap.json",
+            "Dockerfile.ci",
             "poetry.lock",
             "Runner/seccomp-bwrap.json",
             "Runner/apparmor/developer-os-runner",
