@@ -306,6 +306,7 @@ class SecureRunnerReadinessTests(TestCase):
         DATABASE_URL="postgresql://ci:ci@example.test:5432/developer_os",
         CACHE_URL="redis://cache.example.test:6379/0",
         CACHES={"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache"}},
+        REST_FRAMEWORK={"DEFAULT_THROTTLE_CLASSES": []},
     )
     def test_runner_is_a_mandatory_production_readiness_gate(self):
         from api.models import BackgroundJob, WorkerHeartbeat

@@ -20,9 +20,10 @@ The production readiness contract intentionally requires all of these checks to 
 - PostgreSQL connection and `DATABASE_URL`
 - Non-development Django secret key
 - Exact, non-wildcard production `ALLOWED_HOSTS`
-- Real SMTP email backend and host configuration
+- A real SMTP transport with a configured host, or the supported Resend HTTPS backend with API key and verified sender
 - Redis-backed shared cache via `CACHE_URL`
-- A fresh background-worker heartbeat
+- A fresh background-worker heartbeat with no stale running jobs
+- A reachable execution runner whose capabilities confirm strict Bubblewrap isolation, execution availability, no trusted shared-container fallback, and isolated network enforcement
 
 A 503 response means the service is not ready for production traffic. Do not disable readiness checks, substitute SQLite/in-memory cache, or switch production email to the console backend to force a green status.
 
