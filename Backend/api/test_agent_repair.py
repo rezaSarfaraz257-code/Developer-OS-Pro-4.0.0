@@ -294,6 +294,28 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(response.data.get("approval_token"))
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
+    def test_malformed_persisted_evidence_references_fail_closed(self):
+        from copy import deepcopy
+
+        for field in ("sync_job_id", "patch_audit_id"):
+            for malformed in ([], {}, "not-an-id", True):
+                with self.subTest(field=field, malformed=repr(malformed)):
+                    evidence = deepcopy(self.evidence)
+                    evidence[field] = malformed
+                    self.task.execution_evidence = evidence
+                    self.task.save(update_fields=["execution_evidence"])
+                    self.verification_job.result = {
+                        "status": "verification_failed",
+                        "task_id": self.task.id,
+                        "evidence": evidence,
+                    }
+                    self.verification_job.save(update_fields=["result"])
+
+                    response = self.client.post(self.url, {}, format="json")
+
+                    self.assertEqual(response.status_code, 409)
+                    self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_rejects_unknown_provider_fields_before_signing(self):
         from .agent_repair import _valid_repair_proposal
 
