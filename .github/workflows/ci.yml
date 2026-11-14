@@ -241,6 +241,17 @@ jobs:
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_collision -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "preserve-existing-data"
 
+            # A database with unrelated user data is also rejected; restore
+            # must not silently merge an archive into a non-empty target.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_unrelated
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -c "CREATE TABLE operator_data(id integer primary key, value text not null); INSERT INTO operator_data VALUES (1, chr(112)||chr(114)||chr(101)||chr(115)||chr(101)||chr(114)||chr(118)||chr(101)||chr(45)||chr(117)||chr(110)||chr(114)||chr(101)||chr(108)||chr(97)||chr(116)||chr(101)||chr(100)||chr(45)||chr(100)||chr(97)||chr(116)||chr(97));"
+            if POSTGRES_DB=developeros_unrelated BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly merged into a non-empty target database." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT value FROM operator_data WHERE id=1")" = "preserve-unrelated-data"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT to_regclass('public.recovery_probe') IS NULL")" = "t"
+
             # The supported recovery path is a separately created empty DB.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
             POSTGRES_DB=developeros_restored BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh
