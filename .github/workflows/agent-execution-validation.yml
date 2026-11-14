@@ -24,6 +24,7 @@ on:
     branches: [master]
     paths:
       - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_repair.py"
       - "Backend/api/agent_runtime.py"
       - "Backend/api/ai_engine.py"
       - "Backend/api/management/commands/worker.py"
@@ -31,6 +32,7 @@ on:
       - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
       - "Backend/api/models.py"
       - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_repair.py"
       - "Backend/api/test_agent_runtime.py"
       - "Backend/api/test_agent_task_bound_approval.py"
       - "Backend/api/test_agent_runner_integration.py"
