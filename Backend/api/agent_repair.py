@@ -120,19 +120,26 @@ def _repair_evidence_is_current(run, task, workspace):
         or type(evidence.get("revision")) is not int
         or evidence.get("revision") != workspace.revision
         or job_payload.get("profile") != task.execution_profile
+        or evidence.get("profile") != task.execution_profile
         or evidence.get("state") != "failed"
+        or evidence.get("runner_status") not in {"failed", "completed"}
+        or type(evidence.get("exit_code")) is not int
+        or evidence.get("exit_code") == 0
+        or evidence.get("output_persisted") is not False
         or evidence.get("revision") != workspace.revision
         or evidence.get("verification_job_id") != verification_job.id
         or job_result.get("status") != "verification_failed"
+        or job_result.get("task_id") != task.id
         or job_result.get("evidence") != evidence
+        or not run.approved_at
         or not isinstance(analysis, dict)
         or analysis.get("status") != "review_required"
+        or analysis.get("confidence") not in {"moderate", "high"}
         or analysis.get("diagnostic_code") in {None, "command_failed"}
         or analysis.get("diagnostic_code") not in {
             signal.get("code") for signal in evidence.get("diagnostic_signals", [])
-            if isinstance(signal, dict)
+            if isinstance(signal, dict) and isinstance(signal.get("code"), str)
         }
-        or analysis.get("confidence") == "insufficient"
     ):
         return None
 
@@ -142,6 +149,7 @@ def _repair_evidence_is_current(run, task, workspace):
         status="succeeded",
         payload__workspace_id=workspace.id,
         payload__owner_id=run.owner_id,
+        payload__requested_revision=workspace.revision,
     ).first()
     sync_result = sync_job.result if sync_job and isinstance(sync_job.result, dict) else {}
     if (
@@ -236,7 +244,8 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
                 "framework": workspace.framework,
                 "runtime": workspace.runtime,
                 "files": safe_files,
-                "sampled_file_paths": list(safe_files.keys()),\n                "repairable_file_paths": sorted(repairable_paths),
+                "sampled_file_paths": list(safe_files.keys()),
+                "repairable_file_paths": sorted(repairable_paths),
                 "credential_filtering_is_heuristic": True,
             },
             "verification": {
