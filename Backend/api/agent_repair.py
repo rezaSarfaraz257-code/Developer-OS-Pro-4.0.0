@@ -213,8 +213,12 @@ def _repair_evidence_is_current(run, task, workspace):
     ):
         return None
 
+    sync_job_id = job_payload.get("sync_job_id")
+    if type(sync_job_id) is not int or sync_job_id < 1:
+        return None
+
     sync_job = BackgroundJob.objects.filter(
-        pk=job_payload.get("sync_job_id"),
+        pk=sync_job_id,
         kind="ai_agent_runner_sync",
         status="succeeded",
         payload__workspace_id=workspace.id,
@@ -239,6 +243,8 @@ def _repair_evidence_is_current(run, task, workspace):
         return None
 
     patch_audit_id = evidence.get("patch_audit_id")
+    if type(patch_audit_id) is not int or patch_audit_id < 1:
+        return None
     if not AuditLog.objects.filter(
         pk=patch_audit_id,
         user_id=run.owner_id,
