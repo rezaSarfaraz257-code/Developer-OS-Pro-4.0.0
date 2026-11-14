@@ -357,6 +357,38 @@ class SecureRunnerReadinessTests(TestCase):
         self.assertFalse(_secure_runner_ready())
 
 
+class PublicCacheDiagnosticTests(TestCase):
+    def test_cache_diagnostic_allows_only_safe_categories(self):
+        from .views import _public_cache_diagnostic
+
+        self.assertEqual(_public_cache_diagnostic("cache_url_missing"), "cache_url_missing")
+        self.assertEqual(
+            _public_cache_diagnostic("redis_backend_not_configured"),
+            "redis_backend_not_configured",
+        )
+        self.assertEqual(
+            _public_cache_diagnostic("cache_roundtrip_mismatch"),
+            "cache_roundtrip_mismatch",
+        )
+        self.assertEqual(
+            _public_cache_diagnostic("cache_backend_error:TimeoutError"),
+            "cache_backend_error:TimeoutError",
+        )
+
+    def test_cache_diagnostic_never_echoes_urls_or_exception_messages(self):
+        from .views import _public_cache_diagnostic
+
+        unsafe_values = (
+            "redis://user:password@private-cache:6379/1",
+            "cache_backend_error:TimeoutError: redis://user:password@private-cache",
+            "unexpected_internal_value",
+            None,
+        )
+        for value in unsafe_values:
+            with self.subTest(value=value):
+                self.assertEqual(_public_cache_diagnostic(value), "cache_unavailable")
+
+
 class CacheReadinessProbeTests(TestCase):
     @override_settings(
         CACHE_URL="",
