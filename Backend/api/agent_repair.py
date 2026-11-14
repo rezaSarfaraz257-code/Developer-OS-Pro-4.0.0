@@ -215,7 +215,7 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
             owner=request.user,
         )
         task = get_object_or_404(
-            AgentTask.objects.select_for_update().select_related("execution_job"),
+            AgentTask.objects.select_for_update(of=("self",)).select_related("execution_job"),
             pk=task_pk,
             run=run,
         )
