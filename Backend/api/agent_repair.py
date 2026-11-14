@@ -55,7 +55,9 @@ def _repair_path_is_allowed(path):
     parts = [part.casefold() for part in path.split("/")]
     if not parts:
         return False
-    if any("/".join(parts[:index + 1]) in _REPAIR_PROTECTED_PATH_PARTS for index in range(len(parts))):
+    # Protected control directories must be blocked at every depth, not only
+    # when they are workspace-root entries (for example, nested/.github/...).
+    if any(part in _REPAIR_PROTECTED_PATH_PARTS for part in parts):
         return False
     return parts[-1] not in _REPAIR_PROTECTED_BASENAMES and not parts[-1].startswith("dockerfile.")
 
