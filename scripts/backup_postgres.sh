@@ -9,15 +9,18 @@ umask 077
 OUT_DIR="${BACKUP_DIR:-./backups}"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-FINAL_FILE="$OUT_DIR/developer-os-$STAMP.dump"
-TEMP_FILE="$FINAL_FILE.tmp.$$"
+FINAL_FILE="$OUT_DIR/developer-os-$STAMP-$$.dump"
+TEMP_FILE="$(mktemp "$OUT_DIR/.developer-os-$STAMP.XXXXXX.tmp")"
 CHECKSUM_FILE="$FINAL_FILE.sha256"
 
 cleanup() {
   rm -f "$TEMP_FILE"
   unset PGPASSWORD PGUSER
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
 export PGUSER="$POSTGRES_USER"
@@ -30,15 +33,22 @@ pg_dump \
   --no-acl \
   --file="$TEMP_FILE" \
   "$POSTGRES_DB"
+chmod 600 "$TEMP_FILE"
 
-# Publish atomically only after pg_dump exits successfully.
-mv -f "$TEMP_FILE" "$FINAL_FILE"
-chmod 600 "$FINAL_FILE"
+# Publish without replacing an earlier backup if two jobs collide or a name
+# already exists. The temporary file is in the same directory/filesystem.
+if ! ln "$TEMP_FILE" "$FINAL_FILE"; then
+  echo "Refusing to overwrite existing backup: $FINAL_FILE" >&2
+  exit 1
+fi
+rm -f "$TEMP_FILE"
 
-# Store a detached checksum beside the artifact for transfer/storage integrity
-# verification before a restore. Encryption remains the responsibility of the
-# configured backup storage/KMS layer rather than this script.
-sha256sum "$FINAL_FILE" > "$CHECKSUM_FILE"
+# Store a portable checksum relative to the backup directory. The dump and
+# checksum can be moved together to isolated recovery storage.
+(
+  cd "$OUT_DIR"
+  sha256sum "./$(basename "$FINAL_FILE")"
+) > "$CHECKSUM_FILE"
 chmod 600 "$CHECKSUM_FILE"
 
 printf '%s\n' "Created $FINAL_FILE"
