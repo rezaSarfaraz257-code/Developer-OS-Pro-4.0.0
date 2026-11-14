@@ -294,6 +294,23 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(response.data.get("approval_token"))
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
+    def test_rejects_unknown_provider_fields_before_signing(self):
+        from .agent_repair import _valid_repair_proposal
+
+        unknown_top_level = self.proposal()
+        unknown_top_level["provider_metadata"] = {"untrusted": "value\\x00"}
+        self.assertIsNone(_valid_repair_proposal(
+            json.dumps(unknown_top_level),
+            self.workspace.files,
+        ))
+
+        unknown_change_field = self.proposal()
+        unknown_change_field["changes"][0]["provider_metadata"] = {"untrusted": "value\\x00"}
+        self.assertIsNone(_valid_repair_proposal(
+            json.dumps(unknown_change_field),
+            self.workspace.files,
+        ))
+
     def test_rejects_database_unsafe_unicode_in_all_repair_metadata(self):
         from .agent_repair import _valid_repair_proposal
 
