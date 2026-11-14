@@ -269,6 +269,19 @@ jobs:
               exit 1
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_corrupt -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
+
+            # A checksum sidecar must contain exactly one record for its own
+            # archive; it must never make sha256sum read arbitrary extra paths.
+            SIDECAR_ATTACK_FILE="$BACKUP_FILE.sidecar-attack"
+            cp "$BACKUP_FILE" "$SIDECAR_ATTACK_FILE"
+            (cd "$(dirname "$SIDECAR_ATTACK_FILE")" && sha256sum "./$(basename "$SIDECAR_ATTACK_FILE")" > "$(basename "$SIDECAR_ATTACK_FILE").sha256")
+            printf "%064d  /etc/passwd\\n" 0 >> "$SIDECAR_ATTACK_FILE.sha256"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_sidecar_attack
+            if POSTGRES_DB=developeros_sidecar_attack BACKUP_FILE="$SIDECAR_ATTACK_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a checksum sidecar with an extra path." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_sidecar_attack -tAc "SELECT to_regclass('public.recovery_probe') IS NULL")" = "t"
             unset PGPASSWORD
           '
 
