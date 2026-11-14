@@ -329,6 +329,14 @@ class AgentTaskRepairProposalTests(TestCase):
             "poetry.lock",
             "Runner/seccomp-bwrap.json",
             "Runner/apparmor/developer-os-runner",
+            ".env",
+            ".config/gh/hosts.yml",
+            "project/.config/azure/accessTokens.json",
+            "secrets/service-account.json",
+            "nested/.ssh/id_ed25519",
+            "project/.aws/credentials",
+            ".terraform/terraform.tfstate",
+            ".npmrc",
         ):
             with self.subTest(path=path):
                 self.assertFalse(_repair_path_is_allowed(path))
@@ -336,6 +344,24 @@ class AgentTaskRepairProposalTests(TestCase):
         for path in ("src/main.py", "tests/test_main.py", "README.md"):
             with self.subTest(path=path):
                 self.assertTrue(_repair_path_is_allowed(path))
+
+    def test_repair_proposals_cannot_create_credential_store_paths(self):
+        from .agent_repair import _valid_repair_proposal
+
+        proposal = self.proposal()
+        proposal["affected_files"] = [".config/gh/hosts.yml"]
+        proposal["changes"] = [{
+            "path": ".config/gh/hosts.yml",
+            "operation": "create",
+            "reason": "Attempted credential-store creation must be rejected.",
+            "content": "github.com:\\n  oauth_token: fake-token\\n",
+        }]
+
+        self.assertIsNone(_valid_repair_proposal(
+            json.dumps(proposal),
+            self.workspace.files,
+            sampled_paths=set(),
+        ))
 
     def test_only_complete_unredacted_source_files_are_repairable(self):
         from .agent_repair import _repairable_sample_paths
