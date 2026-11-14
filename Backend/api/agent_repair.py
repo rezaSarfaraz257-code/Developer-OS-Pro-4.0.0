@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob
 
 
-def _valid_repair_proposal(answer, workspace_files):
+def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     """Accept only a complete, bounded patch contract compatible with AI apply."""
     from .ai_engine import _agent_parse_patch
 
@@ -64,13 +64,15 @@ def _valid_repair_proposal(answer, workspace_files):
     # A proposal may create a new file, but may not overwrite an absent path,
     # create over an existing file, or delete/modify a path absent from the
     # authoritative workspace snapshot.
+    sampled_paths = set(sampled_paths if sampled_paths is not None else workspace_files.keys())
+    existing_paths_casefold = {path.casefold() for path in workspace_files}
     for change in changes:
         path = change["path"]
         operation = change["operation"]
         exists = path in workspace_files
-        if operation in {"modify", "delete"} and not exists:
+        if operation in {"modify", "delete"} and (not exists or path not in sampled_paths):
             return None
-        if operation == "create" and exists:
+        if operation == "create" and path.casefold() in existing_paths_casefold:
             return None
         reason = change.get("reason")
         if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
@@ -100,7 +102,8 @@ def _repair_evidence_is_current(run, task, workspace):
         or job_payload.get("workspace_id") != workspace.id
         or type(job_payload.get("revision")) is not int
         or job_payload.get("revision") != task.execution_revision
-        or job_payload.get("revision") != workspace.revision
+        or type(evidence.get("revision")) is not int
+        or evidence.get("revision") != workspace.revision
         or job_payload.get("profile") != task.execution_profile
         or evidence.get("state") != "failed"
         or evidence.get("revision") != workspace.revision
@@ -280,7 +283,7 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
             "provider_status": provider_error,
         }, status=503)
 
-    proposal = _valid_repair_proposal(answer, workspace_files)
+    proposal = _valid_repair_proposal(answer, workspace_files, sampled_paths=safe_files.keys())
     if proposal is None:
         return Response({
             "error": "The provider did not return a complete safe repair proposal. No workspace changes were made.",
