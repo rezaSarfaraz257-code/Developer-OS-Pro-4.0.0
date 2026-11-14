@@ -299,7 +299,7 @@ class AgentTaskRepairProposalTests(TestCase):
         from .agent_repair import _valid_repair_proposal
 
         proposal = self.proposal()
-        proposal["changes"][0]["content"] = "def load_value():\\n    return 1\\x00\\n"
+        proposal["changes"][0]["content"] = "def load_value():\n    return 1\x00\n"
         encoded = json.dumps(proposal)
 
         self.assertIsNone(_agent_parse_patch(encoded))
