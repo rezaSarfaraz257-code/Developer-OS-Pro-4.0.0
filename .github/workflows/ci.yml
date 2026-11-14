@@ -248,6 +248,17 @@ jobs:
             fi
             test -z "$(find /repo/failed-backups -type f -print -quit)"
 
+            # If checksum generation fails after pg_dump succeeds, remove the
+            # unpublished dump as well as temporary files.
+            mkdir -p /repo/failing-bin /repo/checksum-failure-backups
+            printf '#!/bin/sh\\nexit 42\\n' > /repo/failing-bin/sha256sum
+            chmod 700 /repo/failing-bin/sha256sum
+            if PATH="/repo/failing-bin:$PATH" BACKUP_DIR=/repo/checksum-failure-backups sh /repo/scripts/backup_postgres.sh; then
+              echo "Backup unexpectedly succeeded when checksum generation failed." >&2
+              exit 1
+            fi
+            test -z "$(find /repo/checksum-failure-backups -type f -print -quit)"
+
             # A populated target must not be cleaned or overwritten. The
             # transaction must fail atomically and preserve its existing row.
             export PGPASSWORD="$POSTGRES_PASSWORD"
