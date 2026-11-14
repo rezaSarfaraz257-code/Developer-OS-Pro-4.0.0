@@ -275,6 +275,27 @@ class AgentTaskRepairProposalTests(TestCase):
         invalid_create["changes"][0]["operation"] = "create"
         self.assertIsNone(_valid_repair_proposal(json.dumps(invalid_create), self.workspace.files))
 
+    def test_repair_proposals_cannot_change_ci_deployment_or_runner_security_controls(self):
+        from .agent_repair import _repair_path_is_allowed
+
+        for path in (
+            ".github/workflows/deploy.yml",
+            ".gitlab-ci.yml",
+            "docker-compose.yml",
+            "Dockerfile",
+            "render.yaml",
+            "pnpm-lock.yaml",
+            "poetry.lock",
+            "Runner/seccomp-bwrap.json",
+            "Runner/apparmor/developer-os-runner",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_repair_path_is_allowed(path))
+
+        for path in ("src/main.py", "tests/test_main.py", "README.md"):
+            with self.subTest(path=path):
+                self.assertTrue(_repair_path_is_allowed(path))
+
     def test_only_complete_unredacted_source_files_are_repairable(self):
         from .agent_repair import _repairable_sample_paths
 
