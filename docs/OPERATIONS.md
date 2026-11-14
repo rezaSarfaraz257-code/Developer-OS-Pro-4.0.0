@@ -107,7 +107,7 @@ OpenTelemetry is intentionally an optional observability layer rather than a har
 
 ## 9.1 Readiness diagnostics
 
-The public readiness response keeps dependency state in the existing `checks` object.
+The public readiness response keeps dependency state in the existing `checks` object, including the isolated execution runner gate.
 When cache readiness fails, it may additionally expose `diagnostics.cache` using
 only fixed categories: `cache_url_missing`, `redis_backend_not_configured`,
 `cache_roundtrip_mismatch`, `cache_backend_error:<ExceptionClass>`, or

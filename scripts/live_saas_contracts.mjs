@@ -1,7 +1,7 @@
 /** Pure validators for the read-only live SaaS smoke monitor. */
 export const PLAN_NAMES = Object.freeze(["free", "pro", "team", "enterprise"]);
 export const REQUIRED_READINESS_CHECKS = Object.freeze([
-  "database", "secret_key", "allowed_hosts", "email", "cache", "worker",
+  "database", "secret_key", "allowed_hosts", "email", "cache", "worker", "runner",
 ]);
 export const FEATURE_KEYS = Object.freeze([
   "web_ide", "ai_assistant", "api_keys", "organizations", "collaboration",
