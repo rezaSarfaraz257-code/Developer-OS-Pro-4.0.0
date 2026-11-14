@@ -35,6 +35,17 @@ _REPAIR_PROTECTED_PATH_PARTS = frozenset({
     ".circleci",
     ".buildkite",
 })
+def _repair_text_is_database_safe(value):
+    """Reject malformed Unicode and PostgreSQL-incompatible NUL in persisted proposal text."""
+    if not isinstance(value, str) or "\\x00" in value:
+        return False
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 _REPAIR_PROTECTED_BASENAMES = frozenset({
     ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml",
     "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb", "npm-shrinkwrap.json",
@@ -95,9 +106,9 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     risks = proposal.get("risks")
     changes = proposal.get("changes")
 
-    if not isinstance(summary, str) or not summary.strip() or len(summary) > 500:
+    if not _repair_text_is_database_safe(summary) or not summary.strip() or len(summary) > 500:
         return None
-    if not isinstance(root_cause, str) or not root_cause.strip() or len(root_cause) > 1200:
+    if not _repair_text_is_database_safe(root_cause) or not root_cause.strip() or len(root_cause) > 1200:
         return None
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.5 <= confidence <= 1:
         return None
@@ -108,7 +119,7 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     if not isinstance(risks, list) or len(risks) > 8:
         return None
     for item in [*affected_files, *test_plan, *risks]:
-        if not isinstance(item, str) or not item.strip() or len(item) > 500:
+        if not _repair_text_is_database_safe(item) or not item.strip() or len(item) > 500:
             return None
 
     change_paths = [change.get("path") for change in changes if isinstance(change, dict)]
@@ -135,7 +146,7 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
         if operation == "create" and path.casefold() in existing_paths_casefold:
             return None
         reason = change.get("reason")
-        if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
+        if not _repair_text_is_database_safe(reason) or not reason.strip() or len(reason) > 500:
             return None
 
     return proposal
