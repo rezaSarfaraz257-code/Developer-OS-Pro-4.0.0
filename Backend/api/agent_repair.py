@@ -225,6 +225,7 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
         revision = workspace.revision
         workspace_files = dict(workspace.files or {})
         safe_files = _agent_context_file_samples(workspace_files)
+        repairable_paths = _repairable_sample_paths(workspace_files, safe_files)
         repair_analysis = evidence["repair_analysis"]
         task_context = {
             "run_id": run.id,
