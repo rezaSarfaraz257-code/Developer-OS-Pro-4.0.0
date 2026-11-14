@@ -66,7 +66,7 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
         return None
     if not isinstance(root_cause, str) or not root_cause.strip() or len(root_cause) > 1200:
         return None
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.5 <= confidence <= 1:
         return None
     if not isinstance(affected_files, list) or not 1 <= len(affected_files) <= 20:
         return None
