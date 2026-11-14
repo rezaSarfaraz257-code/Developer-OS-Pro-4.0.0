@@ -37,8 +37,10 @@ In the Render environment settings for the API, verify the following are set to 
 - `CACHE_URL` (reachable Redis URL)
 - `ALLOWED_HOSTS` (API host, exact hostnames only)
 - `FRONTEND_URL` (HTTPS frontend origin)
-- `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
-- `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and appropriate TLS settings
+- Configure exactly one supported production mail transport:
+  - SMTP: `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` with `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and appropriate TLS settings; or
+  - Resend HTTPS API: `EMAIL_BACKEND=api.email_backends.resend.EmailBackend`, `RESEND_API_KEY`, and a verified `DEFAULT_FROM_EMAIL`.
+- Do not use the console email backend in production. The readiness probe accepts SMTP only when a host is configured, or Resend only when its API key and sender are configured.
 
 Do not paste secrets into GitHub issues, PRs, logs, or chat. Never commit these values to the repository.
 
