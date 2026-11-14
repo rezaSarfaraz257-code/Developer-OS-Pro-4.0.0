@@ -591,7 +591,11 @@ def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
         seen_paths.add(path.casefold())
         if not isinstance(operation, str) or operation not in {"modify", "create", "delete"}:
             return None
-        if full_content is not None and not isinstance(full_content, str):
+        if full_content is not None and (
+            not isinstance(full_content, str) or "\x00" in full_content
+        ):
+            # PostgreSQL JSONB rejects U+0000; fail closed before approval so
+            # a provider-generated patch cannot turn apply into a DB error.
             return None
         if operation in {"modify", "create"} and full_content is None:
             return None
