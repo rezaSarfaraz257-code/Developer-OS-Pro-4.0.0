@@ -295,6 +295,46 @@ class RenderReadinessFailClosedRegressionTests(TestCase):
 
 
 class SecureRunnerReadinessTests(TestCase):
+    @override_settings(
+        DEBUG=False,
+        IS_PRODUCTION=True,
+        SECRET_KEY="ci-readiness-test-secret-with-sufficient-entropy",
+        ALLOWED_HOSTS=["testserver"],
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.test",
+        DATABASES={"default": {"ENGINE": "django.db.backends.postgresql"}},
+        DATABASE_URL="postgresql://ci:ci@example.test:5432/developer_os",
+        CACHE_URL="redis://cache.example.test:6379/0",
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache"}},
+    )
+    def test_runner_is_a_mandatory_production_readiness_gate(self):
+        from api.models import BackgroundJob, WorkerHeartbeat
+
+        with (
+            patch("api.views.connection.cursor") as cursor_factory,
+            patch("api.views._cache_readiness", return_value=(True, "")),
+            patch("api.views._secure_runner_ready", side_effect=[False, True]) as runner_ready,
+            patch.object(WorkerHeartbeat.objects, "filter") as worker_filter,
+            patch.object(BackgroundJob.objects, "filter") as job_filter,
+        ):
+            cursor = cursor_factory.return_value.__enter__.return_value
+            cursor.fetchone.return_value = (1,)
+            worker_filter.return_value.exists.return_value = True
+            job_filter.return_value.filter.return_value.exists.return_value = False
+
+            client = DjangoTestClient()
+            blocked = client.get("/api/health/ready/?format=json")
+            allowed = client.get("/api/health/ready/?format=json")
+
+        self.assertEqual(blocked.status_code, 503)
+        self.assertFalse(blocked.json()["checks"]["runner"])
+        self.assertEqual(blocked.json()["status"], "not_ready")
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(allowed.json()["checks"]["runner"])
+        self.assertEqual(allowed.json()["status"], "ready")
+        self.assertEqual(runner_ready.call_count, 2)
+
+
     @patch("api.views.RUNNER_URL", "http://runner:8080")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
     @patch("api.views.requests.get")

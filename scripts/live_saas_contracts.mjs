@@ -391,7 +391,7 @@ export function diagnoseChecks(checks) {
       message: failedCheckSummary
         ? `API readiness returned HTTP ${readiness.status}; required checks not passing: ${failedCheckSummary.trim()}.`
         : `API readiness returned HTTP ${readiness.status}; the endpoint is reachable but is not ready for production traffic.`,
-      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency or worker check. Verify service configuration and worker heartbeat; do not change the readiness status to green or disable required checks without fixing the underlying condition.",
+      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency, worker, or isolated runner check. Verify the worker heartbeat and confirm the runner capabilities endpoint reports strict Bubblewrap isolation, execution availability, disabled shared-container trust, and isolated network enforcement; do not change readiness to green or disable required checks without fixing the underlying condition.",
     });
   }
 

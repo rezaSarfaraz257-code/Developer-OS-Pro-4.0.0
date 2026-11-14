@@ -16,7 +16,7 @@ This runbook defines the operational baseline for a real production deployment.
 
 - `/api/health/live/` is the dependency-free process liveness signal. Docker/container healthchecks must use this endpoint so a missing optional/paid worker does not cause the API process to be marked unhealthy or repeatedly restarted.
 - `/api/health/` checks API/database health and reports the deployed release identity.
-- `/api/health/ready/` is the production traffic-readiness contract. It validates database connectivity, trusted hosts, non-development secret configuration, deliverable-email configuration, cache health, and a fresh background-worker heartbeat with no stale running jobs.
+- `/api/health/ready/` is the production traffic-readiness contract. It validates PostgreSQL connectivity, trusted hosts, non-development secret configuration, deliverable-email configuration, Redis cache health, a fresh background-worker heartbeat with no stale running jobs, and the secure execution runner. In strict production/platform runtimes the runner must report strict Bubblewrap isolation, execution availability, no trusted shared-container fallback, and isolated network enforcement.
 - A production readiness response of HTTP 503 when the worker is absent is intentional and must not be hidden; do not route traffic that requires queued jobs until readiness passes. Container liveness and traffic readiness are separate signals.
 - Readiness is not a substitute for synthetic user journeys; production acceptance must exercise authentication, core workspace operations, runner execution, queued email delivery and billing boundaries.
 

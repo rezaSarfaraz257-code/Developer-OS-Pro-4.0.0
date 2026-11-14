@@ -266,6 +266,8 @@ test("diagnostics identify a reachable API whose readiness gate is blocked", () 
   assert.ok(readiness);
   assert.match(readiness.message, /cache, worker/);
   assert.match(readiness.action, /worker heartbeat/);
+  assert.match(readiness.action, /runner capabilities endpoint/);
+  assert.match(readiness.action, /strict Bubblewrap isolation/);
   assert.equal(diagnostics.some(item => item.code === "API_ORIGIN_UNAVAILABLE"), false);
 });
 
