@@ -275,6 +275,34 @@ class AgentTaskRepairProposalTests(TestCase):
         invalid_create["changes"][0]["operation"] = "create"
         self.assertIsNone(_valid_repair_proposal(json.dumps(invalid_create), self.workspace.files))
 
+    def test_only_complete_unredacted_source_files_are_repairable(self):
+        from .agent_repair import _repairable_sample_paths
+
+        full_source = "print('safe')\\n"
+        self.assertEqual(
+            _repairable_sample_paths(
+                {"main.py": full_source, "large.py": "x" * 1801, "secret.py": "TOKEN=real"},
+                {"main.py": full_source, "large.py": "x" * 1800, "secret.py": "TOKEN=[REDACTED]"},
+            ),
+            {"main.py"},
+        )
+
+    def test_rejects_low_confidence_repair_diagnosis_before_provider_call(self):
+        self.evidence["repair_analysis"]["confidence"] = "low"
+        self.verification_job.result = {
+            "status": "verification_failed",
+            "task_id": self.task.id,
+            "evidence": self.evidence,
+        }
+        self.verification_job.save(update_fields=["result"])
+        self.task.execution_evidence = self.evidence
+        self.task.save(update_fields=["execution_evidence"])
+
+        response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_rejects_modifying_a_file_that_was_not_in_the_provider_snapshot(self):
         from .agent_repair import _valid_repair_proposal
 
