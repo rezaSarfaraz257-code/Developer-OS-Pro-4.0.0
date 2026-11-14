@@ -161,6 +161,10 @@ export PGUSER="$POSTGRES_USER"
       OR EXISTS (
         SELECT 1 FROM pg_db_role_setting
         WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+           OR (
+             setdatabase = 0
+             AND setrole = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+           )
       )
       -- plpgsql is installed by default on supported PostgreSQL images; any
       -- other extension is an explicit database customization.
