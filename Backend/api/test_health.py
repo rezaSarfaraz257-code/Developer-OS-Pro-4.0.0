@@ -304,9 +304,12 @@ class SecureRunnerReadinessTests(TestCase):
         EMAIL_HOST="smtp.example.test",
         DATABASES={"default": {"ENGINE": "django.db.backends.postgresql"}},
         DATABASE_URL="postgresql://ci:ci@example.test:5432/developer_os",
-        CACHE_URL="redis://cache.example.test:6379/0",
-        CACHES={"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache"}},
-        REST_FRAMEWORK={"DEFAULT_THROTTLE_CLASSES": []},
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "runner-readiness-test",
+            }
+        },
     )
     def test_runner_is_a_mandatory_production_readiness_gate(self):
         from api.models import BackgroundJob, WorkerHeartbeat
