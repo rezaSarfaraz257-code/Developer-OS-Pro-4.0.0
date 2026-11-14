@@ -297,7 +297,7 @@ class AgentTaskRepairProposalTests(TestCase):
     def test_rejects_database_unsafe_unicode_in_all_repair_metadata(self):
         from .agent_repair import _valid_repair_proposal
 
-        invalid_values = ("unsafe\\x00text", "unpaired-\\ud800-surrogate")
+        invalid_values = ("unsafe\x00text", "unpaired-\ud800-surrogate")
         for field in ("summary", "root_cause", "affected_files", "test_plan", "risks"):
             for invalid in invalid_values:
                 with self.subTest(field=field, invalid=repr(invalid)):
