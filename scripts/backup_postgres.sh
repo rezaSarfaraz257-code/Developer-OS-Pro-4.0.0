@@ -5,22 +5,16 @@ umask 077
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
-: "${BACKUP_FILE:?BACKUP_FILE must point to a pg_dump custom-format file}"
 
-if [ ! -f "$BACKUP_FILE" ]; then
-  echo "Backup file not found: $BACKUP_FILE" >&2
-  exit 1
-fi
-
-BACKUP_DIR="$(dirname "$BACKUP_FILE")"
-BACKUP_NAME="$(basename "$BACKUP_FILE")"
-CHECKSUM_NAME="$BACKUP_NAME.sha256"
-if [ ! -f "$BACKUP_DIR/$CHECKSUM_NAME" ]; then
-  echo "Backup checksum file not found: $BACKUP_DIR/$CHECKSUM_NAME" >&2
-  exit 1
-fi
+OUT_DIR="${BACKUP_DIR:-./backups}"
+mkdir -p "$OUT_DIR"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+FINAL_FILE="$OUT_DIR/developer-os-$STAMP-$$.dump"
+TEMP_FILE="$(mktemp "$OUT_DIR/.developer-os-$STAMP.XXXXXX")"
+CHECKSUM_FILE="$FINAL_FILE.sha256"
 
 cleanup() {
+  rm -f "$TEMP_FILE"
   unset PGPASSWORD PGUSER
 }
 trap cleanup EXIT
@@ -31,145 +25,31 @@ trap 'exit 143' TERM
 export PGPASSWORD="$POSTGRES_PASSWORD"
 export PGUSER="$POSTGRES_USER"
 
+# Write to a private temporary file first so an interrupted dump can never be
+# mistaken for a valid recovery artifact. Custom format supports pg_restore.
+pg_dump \
+  --format=custom \
+  --no-owner \
+  --no-acl \
+  --file="$TEMP_FILE" \
+  "$POSTGRES_DB"
+chmod 600 "$TEMP_FILE"
+
+# Publish without replacing an earlier backup if two jobs collide or a name
+# already exists. The temporary file is in the same directory/filesystem.
+if ! ln "$TEMP_FILE" "$FINAL_FILE"; then
+  echo "Refusing to overwrite existing backup: $FINAL_FILE" >&2
+  exit 1
+fi
+rm -f "$TEMP_FILE"
+
+# Store a portable checksum relative to the backup directory. The dump and
+# checksum can be moved together to isolated recovery storage.
 (
-  cd "$BACKUP_DIR"
-  # Treat the sidecar as untrusted input: accept exactly one checksum
-  # record for this archive, never arbitrary paths or extra checksum entries.
-  if ! awk -v expected="./$BACKUP_NAME" '
-    NR == 1 && NF == 2 && length($1) == 64 &&
-      $1 ~ /^[[:xdigit:]]+$/ && $2 == expected { valid = 1 }
-    END { exit !(NR == 1 && valid) }
-  ' "$CHECKSUM_NAME"; then
-    echo "Backup checksum sidecar is malformed or names a different file: $CHECKSUM_NAME" >&2
-    exit 1
-  fi
-  expected_checksum="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_NAME")"
-  actual_checksum="$(sha256sum -- "$BACKUP_NAME" | awk '{ print $1 }')"
-  if [ "$actual_checksum" != "$expected_checksum" ]; then
-    echo "Backup checksum verification failed: $BACKUP_NAME" >&2
-    exit 1
-  fi
-  pg_restore --list "$BACKUP_NAME" >/dev/null
+  cd "$OUT_DIR"
+  sha256sum "./$(basename "$FINAL_FILE")"
+) > "$CHECKSUM_FILE"
+chmod 600 "$CHECKSUM_FILE"
 
-  # Enforce the documented empty-database precondition before pg_restore.
-  # This prevents silently merging a backup into a database that contains
-  # unrelated tables, routines, types, or custom schemas (even without name
-  # collisions). The default public schema is allowed only while it is empty.
-  target_has_objects="$(psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align \
-    --dbname="$POSTGRES_DB" \
-    --command="SELECT (
-      EXISTS (
-        SELECT 1 FROM pg_namespace
-        WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public')
-          AND nspname NOT LIKE 'pg_toast%'
-          AND nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_class AS c
-        JOIN pg_namespace AS n ON n.oid = c.relnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_proc AS p
-        JOIN pg_namespace AS n ON n.oid = p.pronamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_type AS t
-        JOIN pg_namespace AS n ON n.oid = t.typnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-          AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'p', 'r')
-          AND t.typelem = 0
-          AND t.typrelid = 0
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_operator AS o
-        JOIN pg_namespace AS n ON n.oid = o.oprnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_collation AS c
-        JOIN pg_namespace AS n ON n.oid = c.collnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_conversion AS c
-        JOIN pg_namespace AS n ON n.oid = c.connamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_ts_config AS c
-        JOIN pg_namespace AS n ON n.oid = c.cfgnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_ts_dict AS d
-        JOIN pg_namespace AS n ON n.oid = d.dictnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_ts_parser AS p
-        JOIN pg_namespace AS n ON n.oid = p.prsnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_ts_template AS t
-        JOIN pg_namespace AS n ON n.oid = t.tmplnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_opclass AS o
-        JOIN pg_namespace AS n ON n.oid = o.opcnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (
-        SELECT 1 FROM pg_opfamily AS o
-        JOIN pg_namespace AS n ON n.oid = o.opfnamespace
-        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
-          AND n.nspname NOT LIKE 'pg_temp_%'
-      )
-      OR EXISTS (SELECT 1 FROM pg_largeobject_metadata)
-      OR EXISTS (SELECT 1 FROM pg_event_trigger)
-      OR EXISTS (SELECT 1 FROM pg_publication)
-    )")"
-  if [ "$target_has_objects" != "f" ]; then
-    echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2
-    exit 1
-  fi
-
-  # Safe by default: never drop or clean objects in the target database.
-  # The preflight above enforces isolation; this transaction remains a second
-  # line of defense against conflicts or failures during the restore itself.
-  pg_restore \
-    --exit-on-error \
-    --single-transaction \
-    --no-owner \
-    --no-acl \
-    --dbname="$POSTGRES_DB" \
-    "$BACKUP_NAME"
-)
-
-printf '%s\n' "Restored $BACKUP_FILE into $POSTGRES_DB without dropping existing objects"
+printf '%s\n' "Created $FINAL_FILE"
+printf '%s\n' "Checksum: $CHECKSUM_FILE"
