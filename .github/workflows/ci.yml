@@ -262,6 +262,16 @@ jobs:
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_type_only -tAc "SELECT count(*) FROM pg_type WHERE typname = chr(111)||chr(112)||chr(101)||chr(114)||chr(97)||chr(116)||chr(111)||chr(114)||chr(95)||chr(99)||chr(111)||chr(109)||chr(112)||chr(111)||chr(115)||chr(105)||chr(116)||chr(101)")" = "1"
 
+            # Large objects live outside the ordinary schema relation/type
+            # checks; the restore preflight must reject them as user data too.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_large_object
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT lo_create(0)" >/dev/null
+            if POSTGRES_DB=developeros_large_object BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target containing a large object." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT count(*) FROM pg_largeobject_metadata")" = "1"
+
             # The supported recovery path is a separately created empty DB.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
             POSTGRES_DB=developeros_restored BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh
