@@ -36,6 +36,7 @@ _REPAIR_PROTECTED_PATH_PARTS = frozenset({
     ".buildkite",
 })
 _REPAIR_PROTECTED_BASENAMES = frozenset({
+    ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml",
     "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
     "poetry.lock", "uv.lock", "pipfile.lock", "pdm.lock",
     "pip-tools.lock", "cargo.lock", "go.sum", "composer.lock",
