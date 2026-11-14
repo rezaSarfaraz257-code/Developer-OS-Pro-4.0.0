@@ -194,6 +194,17 @@ def _run_payload(run):
     }
 
 
+def _agent_plan_text_is_safe(value):
+    """Reject text that cannot be safely persisted by the configured database."""
+    if not isinstance(value, str) or "\\x00" in value:
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _validate_plan(raw):
     """Validate provider output as a strict, bounded task-graph contract."""
     if not isinstance(raw, dict):
@@ -202,7 +213,7 @@ def _validate_plan(raw):
     summary = raw.get("summary", "")
     risks = raw.get("risks", [])
     run_criteria = raw.get("acceptance_criteria", [])
-    if not isinstance(summary, str) or len(summary) > 2000:
+    if not _agent_plan_text_is_safe(summary) or len(summary) > 2000:
         raise ValueError("Agent plan summary must be text of at most 2000 characters.")
     if not isinstance(risks, list) or len(risks) > 12:
         raise ValueError("Agent plan risks must be an array of at most 12 items.")
@@ -210,7 +221,7 @@ def _validate_plan(raw):
         raise ValueError("Agent plan acceptance criteria must be an array of at most 12 items.")
     for collection_name, values in (("risks", risks), ("acceptance criteria", run_criteria)):
         for value in values:
-            if not isinstance(value, str) or not value.strip() or len(value) > 500:
+            if not _agent_plan_text_is_safe(value) or not value.strip() or len(value) > 500:
                 raise ValueError(f"Agent plan {collection_name} must contain non-empty text of at most 500 characters.")
 
     tasks = raw.get("tasks")
@@ -228,10 +239,10 @@ def _validate_plan(raw):
         agent_role = item.get("agent_role", "architect")
         dependencies = item.get("depends_on")
         if (
-            not isinstance(key, str)
-            or not isinstance(title, str)
-            or not isinstance(description, str)
-            or not isinstance(agent_role, str)
+            not _agent_plan_text_is_safe(key)
+            or not _agent_plan_text_is_safe(title)
+            or not _agent_plan_text_is_safe(description)
+            or not _agent_plan_text_is_safe(agent_role)
         ):
             raise ValueError("Agent task identifiers, title, description, and role must be text.")
         key = key.strip().lower()
@@ -246,7 +257,7 @@ def _validate_plan(raw):
             raise ValueError("Agent task references an unsupported specialist role.")
         if not isinstance(dependencies, list) or len(dependencies) > _MAX_TASKS:
             raise ValueError("Agent task dependencies must be an array of at most 12 task IDs.")
-        if any(not isinstance(value, str) for value in dependencies):
+        if any(not _agent_plan_text_is_safe(value) for value in dependencies):
             raise ValueError("Agent task dependency IDs must be text.")
         dependency_keys = [value.strip().lower() for value in dependencies]
         if any(not _AGENT_KEY_RE.fullmatch(value) for value in dependency_keys):
@@ -291,7 +302,7 @@ def _validate_plan(raw):
         clean_criteria = []
         seen_criteria = set()
         for criterion in criteria:
-            if not isinstance(criterion, str):
+            if not _agent_plan_text_is_safe(criterion):
                 raise ValueError("Task-specific acceptance criteria must be text.")
             value = criterion.strip()
             if not value or len(value) > 500:
