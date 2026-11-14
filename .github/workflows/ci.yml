@@ -250,7 +250,7 @@ jobs:
               exit 1
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT value FROM operator_data WHERE id=1")" = "preserve-unrelated-data"
-            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT to_regclass('public.recovery_probe') IS NULL")" = "t"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
 
             # The supported recovery path is a separately created empty DB.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
@@ -281,7 +281,7 @@ jobs:
               echo "Restore unexpectedly accepted a checksum sidecar with an extra path." >&2
               exit 1
             fi
-            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_sidecar_attack -tAc "SELECT to_regclass('public.recovery_probe') IS NULL")" = "t"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_sidecar_attack -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
             unset PGPASSWORD
           '
 
