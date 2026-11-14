@@ -33,8 +33,22 @@ export PGUSER="$POSTGRES_USER"
 
 (
   cd "$BACKUP_DIR"
-  # Fail closed on missing/corrupt checksum or an invalid custom-format archive.
-  sha256sum -c "$CHECKSUM_NAME"
+  # Treat the sidecar as untrusted input: accept exactly one checksum
+  # record for this archive, never arbitrary paths or extra checksum entries.
+  if ! awk -v expected="./$BACKUP_NAME" '
+    NR == 1 && NF == 2 && length($1) == 64 &&
+      $1 ~ /^[[:xdigit:]]+$/ && $2 == expected { valid = 1 }
+    END { exit !(NR == 1 && valid) }
+  ' "$CHECKSUM_NAME"; then
+    echo "Backup checksum sidecar is malformed or names a different file: $CHECKSUM_NAME" >&2
+    exit 1
+  fi
+  expected_checksum="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_NAME")"
+  actual_checksum="$(sha256sum -- "$BACKUP_NAME" | awk '{ print $1 }')"
+  if [ "$actual_checksum" != "$expected_checksum" ]; then
+    echo "Backup checksum verification failed: $BACKUP_NAME" >&2
+    exit 1
+  fi
   pg_restore --list "$BACKUP_NAME" >/dev/null
 
   # Enforce the documented empty-database precondition before pg_restore.
