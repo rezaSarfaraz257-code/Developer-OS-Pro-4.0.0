@@ -84,7 +84,7 @@ export PGUSER="$POSTGRES_USER"
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
           AND n.nspname NOT LIKE 'pg_toast%'
           AND n.nspname NOT LIKE 'pg_temp_%'
-          AND t.typtype IN ('b', 'e', 'r', 'm', 'd')
+          AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'p', 'r')
           AND t.typelem = 0
           AND t.typrelid = 0
       )
