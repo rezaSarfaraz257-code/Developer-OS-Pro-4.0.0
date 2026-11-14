@@ -30,14 +30,14 @@ _REPAIRABLE_DIAGNOSTIC_CODES = frozenset({
 
 
 _REPAIR_PROTECTED_PATH_PARTS = frozenset({
-    ".github/workflows",
+    ".github",
     ".gitlab",
     ".circleci",
     ".buildkite",
 })
 _REPAIR_PROTECTED_BASENAMES = frozenset({
     ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml",
-    "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb", "npm-shrinkwrap.json",
     "poetry.lock", "uv.lock", "pipfile.lock", "pdm.lock",
     "pip-tools.lock", "cargo.lock", "go.sum", "composer.lock",
     "gemfile.lock",
@@ -57,7 +57,7 @@ def _repair_path_is_allowed(path):
         return False
     if any("/".join(parts[:index + 1]) in _REPAIR_PROTECTED_PATH_PARTS for index in range(len(parts))):
         return False
-    return parts[-1] not in _REPAIR_PROTECTED_BASENAMES
+    return parts[-1] not in _REPAIR_PROTECTED_BASENAMES and not parts[-1].startswith("dockerfile.")
 
 
 def _repairable_sample_paths(workspace_files, safe_files):
