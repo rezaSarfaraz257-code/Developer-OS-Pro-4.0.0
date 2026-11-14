@@ -369,10 +369,12 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
         if not run or not task:
             return Response({"error": "Agent task is no longer available."}, status=404)
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
+        current_evidence = _repair_evidence_is_current(run, task, workspace)
         if (
             workspace.revision != revision
             or not _workspace_write_allowed(workspace, request.user)
-            or _repair_evidence_is_current(run, task, workspace) is None
+            or current_evidence is None
+            or current_evidence != evidence
         ):
             return Response({
                 "error": "Task evidence or workspace revision changed while the repair proposal was generated. Re-run diagnosis.",
