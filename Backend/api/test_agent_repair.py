@@ -392,6 +392,25 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
 
+    def test_malformed_persisted_diagnostic_signals_fail_closed(self):
+        for malformed in (None, {}, "python_import_error", 7):
+            with self.subTest(diagnostic_signals=malformed):
+                evidence = dict(self.evidence)
+                evidence["diagnostic_signals"] = malformed
+                self.task.execution_evidence = evidence
+                self.task.save(update_fields=["execution_evidence"])
+                self.verification_job.result = {
+                    "status": "verification_failed",
+                    "task_id": self.task.id,
+                    "evidence": evidence,
+                }
+                self.verification_job.save(update_fields=["result"])
+
+                response = self.client.post(self.url, {}, format="json")
+
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_nullable_execution_job_relation_is_safe_under_row_lock(self):
         self.task.execution_job = None
         self.task.save(update_fields=["execution_job"])
