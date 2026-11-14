@@ -294,6 +294,17 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(response.data.get("approval_token"))
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
+    def test_rejects_database_unsafe_nul_patch_content_before_approval_or_apply(self):
+        from .ai_engine import _agent_parse_patch
+        from .agent_repair import _valid_repair_proposal
+
+        proposal = self.proposal()
+        proposal["changes"][0]["content"] = "def load_value():\\n    return 1\\x00\\n"
+        encoded = json.dumps(proposal)
+
+        self.assertIsNone(_agent_parse_patch(encoded))
+        self.assertIsNone(_valid_repair_proposal(encoded, self.workspace.files))
+
     def test_rejects_patch_that_targets_missing_or_existing_paths_incorrectly(self):
         from .agent_repair import _valid_repair_proposal
 
