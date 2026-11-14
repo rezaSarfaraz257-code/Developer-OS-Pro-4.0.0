@@ -29,6 +29,36 @@ _REPAIRABLE_DIAGNOSTIC_CODES = frozenset({
 })
 
 
+_REPAIR_PROTECTED_PATH_PARTS = frozenset({
+    ".github/workflows",
+    ".gitlab",
+    ".circleci",
+    ".buildkite",
+})
+_REPAIR_PROTECTED_BASENAMES = frozenset({
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "poetry.lock", "uv.lock", "pipfile.lock", "pdm.lock",
+    "pip-tools.lock", "cargo.lock", "go.sum", "composer.lock",
+    "gemfile.lock",
+    "dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "compose.yml", "compose.yaml", "render.yaml", "fly.toml",
+    "vercel.json", "netlify.toml", "procfile", "nginx.conf",
+    "seccomp-bwrap.json", "developer-os-runner",
+})
+
+
+def _repair_path_is_allowed(path):
+    """Keep AI repair away from CI, deployment, lockfiles, and sandbox policy."""
+    if not isinstance(path, str):
+        return False
+    parts = [part.casefold() for part in path.split("/")]
+    if not parts:
+        return False
+    if any("/".join(parts[:index + 1]) in _REPAIR_PROTECTED_PATH_PARTS for index in range(len(parts))):
+        return False
+    return parts[-1] not in _REPAIR_PROTECTED_BASENAMES
+
+
 def _repairable_sample_paths(workspace_files, safe_files):
     """Only allow whole, unredacted files to be replaced by complete-file patches."""
     if not isinstance(workspace_files, dict) or not isinstance(safe_files, dict):
@@ -94,6 +124,8 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     for change in changes:
         path = change["path"]
         operation = change["operation"]
+        if not _repair_path_is_allowed(path):
+            return None
         exists = path in workspace_files
         if operation in {"modify", "delete"} and (not exists or path not in sampled_paths):
             return None
