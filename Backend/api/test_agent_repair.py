@@ -298,14 +298,14 @@ class AgentTaskRepairProposalTests(TestCase):
         from .agent_repair import _valid_repair_proposal
 
         unknown_top_level = self.proposal()
-        unknown_top_level["provider_metadata"] = {"untrusted": "value\\x00"}
+        unknown_top_level["provider_metadata"] = {"untrusted": "value\x00"}
         self.assertIsNone(_valid_repair_proposal(
             json.dumps(unknown_top_level),
             self.workspace.files,
         ))
 
         unknown_change_field = self.proposal()
-        unknown_change_field["changes"][0]["provider_metadata"] = {"untrusted": "value\\x00"}
+        unknown_change_field["changes"][0]["provider_metadata"] = {"untrusted": "value\x00"}
         self.assertIsNone(_valid_repair_proposal(
             json.dumps(unknown_change_field),
             self.workspace.files,
