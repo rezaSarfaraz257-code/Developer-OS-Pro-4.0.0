@@ -294,6 +294,32 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(response.data.get("approval_token"))
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
+    def test_rejects_database_unsafe_unicode_in_all_repair_metadata(self):
+        from .agent_repair import _valid_repair_proposal
+
+        invalid_values = ("unsafe\\x00text", "unpaired-\\ud800-surrogate")
+        for field in ("summary", "root_cause", "affected_files", "test_plan", "risks"):
+            for invalid in invalid_values:
+                with self.subTest(field=field, invalid=repr(invalid)):
+                    proposal = self.proposal()
+                    if field in {"affected_files", "test_plan", "risks"}:
+                        proposal[field] = [invalid]
+                    else:
+                        proposal[field] = invalid
+                    self.assertIsNone(_valid_repair_proposal(
+                        json.dumps(proposal),
+                        self.workspace.files,
+                    ))
+
+        for invalid in invalid_values:
+            with self.subTest(field="change.reason", invalid=repr(invalid)):
+                proposal = self.proposal()
+                proposal["changes"][0]["reason"] = invalid
+                self.assertIsNone(_valid_repair_proposal(
+                    json.dumps(proposal),
+                    self.workspace.files,
+                ))
+
     def test_rejects_database_unsafe_nul_patch_content_before_approval_or_apply(self):
         from .ai_engine import _agent_parse_patch
         from .agent_repair import _valid_repair_proposal
