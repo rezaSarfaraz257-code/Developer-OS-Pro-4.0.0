@@ -217,7 +217,7 @@ class AgentPlanValidationTests(TestCase):
             "agent_role": "architect", "depends_on": [],
             "acceptance_criteria": ["Inspection evidence is recorded."],
         }
-        invalid_values = ("unsafe\\x00text", "\\ud800")
+        invalid_values = ("unsafe\x00text", "\ud800")
         for field in ("summary", "risks", "acceptance_criteria"):
             for value in invalid_values:
                 with self.subTest(field=field, value=repr(value)), self.assertRaises(ValueError):
