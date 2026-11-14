@@ -74,7 +74,7 @@ export PGUSER="$POSTGRES_USER"
           AND t.typelem = 0
           AND t.typrelid = 0
       )
-    )::text")"
+    )")"
   if [ "$target_has_objects" != "f" ]; then
     echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2
     exit 1
