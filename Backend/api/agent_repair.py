@@ -56,6 +56,8 @@ def _valid_repair_proposal(answer, workspace_files):
     change_paths = [change.get("path") for change in changes if isinstance(change, dict)]
     if len(change_paths) != len(changes) or len(set(path.casefold() for path in change_paths)) != len(change_paths):
         return None
+    if len({path.casefold() for path in affected_files}) != len(affected_files):
+        return None
     if set(path.casefold() for path in affected_files) != set(path.casefold() for path in change_paths):
         return None
 
@@ -108,6 +110,10 @@ def _repair_evidence_is_current(run, task, workspace):
         or not isinstance(analysis, dict)
         or analysis.get("status") != "review_required"
         or analysis.get("diagnostic_code") in {None, "command_failed"}
+        or analysis.get("diagnostic_code") not in {
+            signal.get("code") for signal in evidence.get("diagnostic_signals", [])
+            if isinstance(signal, dict)
+        }
         or analysis.get("confidence") == "insufficient"
     ):
         return None
