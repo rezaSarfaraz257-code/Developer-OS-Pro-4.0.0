@@ -89,6 +89,22 @@ test("readiness HTTP 503 reports only allow-listed failed check names", () => {
   assert.match(result, /HTTP 503/);
   assert.match(result, /cache, worker/);
   assert.doesNotMatch(result, /DATABASE_URL|password|secret/i);
+  const diagnosticResult = isReady(jsonInput({
+    status: "not_ready",
+    checks,
+    version: "4.0.0",
+    release_sha: "a".repeat(40),
+    diagnostics: { cache: "cache_backend_error:TimeoutError" },
+  }, false));
+  assert.match(diagnosticResult, /cache diagnostic: cache_backend_error:TimeoutError/);
+  const unsafeDiagnostic = isReady(jsonInput({
+    status: "not_ready",
+    checks,
+    version: "4.0.0",
+    release_sha: "a".repeat(40),
+    diagnostics: { cache: "redis://user:password@internal-host" },
+  }, false));
+  assert.doesNotMatch(unsafeDiagnostic, /password|internal-host|redis:\/\//i);
   assert.match(isReady({ response: response(false), body: "<html>platform unavailable</html>" }), /HTTP 503/);
 });
 

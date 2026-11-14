@@ -212,7 +212,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Backup, destroy, restore and verify
+      - name: Verify backup and restore entrypoints are not swapped
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^[[:space:]]*pg_dump[[:space:]]' scripts/backup_postgres.sh
+          ! grep -Eq '^[[:space:]]*pg_restore[[:space:]]' scripts/backup_postgres.sh
+          grep -Eq '^[[:space:]]*pg_restore[[:space:]]' scripts/restore_postgres.sh
+          ! grep -Eq '^[[:space:]]*pg_dump[[:space:]]' scripts/restore_postgres.sh
+      - name: Backup and verify non-destructive isolated restore
         env:
           POSTGRES_DB: developeros_recovery
           POSTGRES_USER: developeros
@@ -220,20 +228,88 @@ jobs:
           BACKUP_DIR: /repo/recovery-backups
         run: |
           docker run --rm --network host -v "$PWD:/repo" -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD -e BACKUP_DIR postgres:17-alpine sh -ec '
-            export PGPASSWORD="$POSTGRES_PASSWORD"
-            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(98)||chr(97)||chr(99)||chr(107)||chr(117)||chr(112)||chr(45)||chr(114)||chr(101)||chr(115)||chr(116)||chr(111)||chr(114)||chr(101)||chr(45)||chr(111)||chr(107));"
-            unset PGPASSWORD
             export PGHOST=127.0.0.1
+            export PGPASSWORD="$POSTGRES_PASSWORD"
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(98)||chr(97)||chr(99)||chr(107)||chr(117)||chr(112)||chr(45)||chr(114)||chr(101)||chr(115)||chr(116)||chr(111)||chr(114)||chr(101)||chr(45)||chr(111)||chr(107));"
+            unset PGPASSWORD
             sh /repo/scripts/backup_postgres.sh
             BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
-            CHECKSUM_FILE="$BACKUP_FILE.sha256"
             test -n "$BACKUP_FILE"
-            test -f "$CHECKSUM_FILE"
-            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")
+            test -f "$BACKUP_FILE.sha256"
+            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$BACKUP_FILE").sha256")
+
+            # A populated target must not be cleaned or overwritten. The
+            # transaction must fail atomically and preserve its existing row.
             export PGPASSWORD="$POSTGRES_PASSWORD"
-            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
-            pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
-            test "$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_collision
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_collision -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(112)||chr(114)||chr(101)||chr(115)||chr(101)||chr(114)||chr(118)||chr(101)||chr(45)||chr(101)||chr(120)||chr(105)||chr(115)||chr(116)||chr(105)||chr(110)||chr(103)||chr(45)||chr(100)||chr(97)||chr(116)||chr(97));"
+            if POSTGRES_DB=developeros_collision BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly replaced objects in a populated target database." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_collision -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "preserve-existing-data"
+
+            # A database with unrelated user data is also rejected; restore
+            # must not silently merge an archive into a non-empty target.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_unrelated
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -c "CREATE TABLE operator_data(id integer primary key, value text not null); INSERT INTO operator_data VALUES (1, chr(112)||chr(114)||chr(101)||chr(115)||chr(101)||chr(114)||chr(118)||chr(101)||chr(45)||chr(117)||chr(110)||chr(114)||chr(101)||chr(108)||chr(97)||chr(116)||chr(101)||chr(100)||chr(45)||chr(100)||chr(97)||chr(116)||chr(97));"
+            if POSTGRES_DB=developeros_unrelated BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly merged into a non-empty target database." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT value FROM operator_data WHERE id=1")" = "preserve-unrelated-data"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_unrelated -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
+
+            # A standalone composite type has no pg_class relation row; the
+            # preflight must still reject this otherwise easy-to-miss object.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_type_only
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_type_only -c "CREATE TYPE operator_composite AS (value text);"
+            if POSTGRES_DB=developeros_type_only BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target containing a standalone composite type." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_type_only -tAc "SELECT count(*) FROM pg_type WHERE typname = chr(111)||chr(112)||chr(101)||chr(114)||chr(97)||chr(116)||chr(111)||chr(114)||chr(95)||chr(99)||chr(111)||chr(109)||chr(112)||chr(111)||chr(115)||chr(105)||chr(116)||chr(101)")" = "1"
+
+            # Large objects live outside the ordinary schema relation/type
+            # checks; the restore preflight must reject them as user data too.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_large_object
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT lo_create(0)" >/dev/null
+            if POSTGRES_DB=developeros_large_object BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target containing a large object." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT count(*) FROM pg_largeobject_metadata")" = "1"
+
+            # The supported recovery path is a separately created empty DB.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
+            POSTGRES_DB=developeros_restored BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_restored -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+
+            # Corrupted archives must fail checksum validation before pg_restore.
+            CORRUPT_FILE="$BACKUP_FILE.corrupt"
+            cp "$BACKUP_FILE" "$CORRUPT_FILE"
+            printf "tamper" >> "$CORRUPT_FILE"
+            sed "s|./$(basename "$BACKUP_FILE")|./$(basename "$CORRUPT_FILE")|" "$BACKUP_FILE.sha256" > "$CORRUPT_FILE.sha256"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_corrupt
+            if POSTGRES_DB=developeros_corrupt BACKUP_FILE="$CORRUPT_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a corrupted archive." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_corrupt -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
+
+            # A checksum sidecar must contain exactly one record for its own
+            # archive; it must never make sha256sum read arbitrary extra paths.
+            SIDECAR_ATTACK_FILE="$BACKUP_FILE.sidecar-attack"
+            cp "$BACKUP_FILE" "$SIDECAR_ATTACK_FILE"
+            (cd "$(dirname "$SIDECAR_ATTACK_FILE")" && sha256sum "./$(basename "$SIDECAR_ATTACK_FILE")" > "$(basename "$SIDECAR_ATTACK_FILE").sha256")
+            printf "%064d  /etc/passwd\\n" 0 >> "$SIDECAR_ATTACK_FILE.sha256"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_sidecar_attack
+            if POSTGRES_DB=developeros_sidecar_attack BACKUP_FILE="$SIDECAR_ATTACK_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a checksum sidecar with an extra path." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_sidecar_attack -tAc "SELECT to_regclass(chr(112)||chr(117)||chr(98)||chr(108)||chr(105)||chr(99)||chr(46)||chr(114)||chr(101)||chr(99)||chr(111)||chr(118)||chr(101)||chr(114)||chr(121)||chr(95)||chr(112)||chr(114)||chr(111)||chr(98)||chr(101)) IS NULL")" = "t"
             unset PGPASSWORD
           '
 

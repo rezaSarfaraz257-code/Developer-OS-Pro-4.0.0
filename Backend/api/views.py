@@ -222,6 +222,23 @@ def _email_transport_ready(strict_runtime):
     return bool(email_host or is_console or (is_resend and resend_api_key))
 
 
+def _public_cache_diagnostic(reason):
+    """Expose only fixed cache failure categories, never connection details."""
+    allowed = {
+        "cache_url_missing",
+        "redis_backend_not_configured",
+        "cache_roundtrip_mismatch",
+    }
+    if reason in allowed:
+        return reason
+    prefix = "cache_backend_error:"
+    if isinstance(reason, str) and reason.startswith(prefix):
+        exception_name = reason[len(prefix):]
+        if exception_name.isidentifier() and len(exception_name) <= 64:
+            return reason
+    return "cache_unavailable"
+
+
 def _cache_readiness(strict_runtime):
     """Probe a unique cache key and return a secret-safe failure category."""
     from django.core.cache import cache
@@ -368,8 +385,19 @@ def readiness_api(request):
                 "cache_failure_reason": cache_failure_reason or None,
             },
         )
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "checks": checks,
+        **release_identity(),
+    }
+    # The readiness monitor needs a useful next diagnostic without exposing
+    # Redis URLs, usernames, passwords, hostnames, or exception messages.
+    if not checks["cache"]:
+        payload["diagnostics"] = {
+            "cache": _public_cache_diagnostic(cache_failure_reason),
+        }
     return _no_store_health_response(Response(
-        {"status": "ready" if ready else "not_ready", "checks": checks, **release_identity()},
+        payload,
         status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
     ))
 

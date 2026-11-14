@@ -48,6 +48,12 @@ The durable background worker must start against the same production database an
 
 The Web IDE runner is a separate security boundary. The current Render runner definition requests strict Bubblewrap namespace isolation. If the host runtime cannot create the required Linux namespaces, execution must remain disabled. **Do not change the runner to a permissive/shared-container mode** to make Run appear successful. Move execution to a runtime that supports the required isolation (for example, dedicated sandboxed compute with enforced CPU/memory/time limits, filesystem restrictions, and network denial) before enabling arbitrary code execution.
 
+## 4.1 Database recovery must not overwrite production in place
+
+The supported repository restore script verifies the backup's SHA-256 sidecar and validates the custom-format archive before connecting to the target. It intentionally does not use `pg_restore --clean` or `--if-exists`. Provision a separate, empty recovery database and restore there; if the target already contains conflicting objects, the single-transaction restore must fail without deleting or replacing those objects. Keep the dump and its `.sha256` sidecar together when moving them. A missing or mismatched checksum is a hard failure.
+
+Do not run a restore against the live production database as an in-place overwrite. Validate the isolated restored database and application compatibility first. Any later cutover is a separate, explicitly approved recovery operation with its own backup, rollback plan, and change window.
+
 ## 5. Final live acceptance
 
 After deployment and configuration changes:
