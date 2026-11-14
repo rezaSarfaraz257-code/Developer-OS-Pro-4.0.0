@@ -37,9 +37,52 @@ export PGUSER="$POSTGRES_USER"
   sha256sum -c "$CHECKSUM_NAME"
   pg_restore --list "$BACKUP_NAME" >/dev/null
 
+  # Enforce the documented empty-database precondition before pg_restore.
+  # This prevents silently merging a backup into a database that contains
+  # unrelated tables, routines, types, or custom schemas (even without name
+  # collisions). The default public schema is allowed only while it is empty.
+  target_has_objects="$(psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align \
+    --dbname="$POSTGRES_DB" \
+    --command="SELECT (
+      EXISTS (
+        SELECT 1 FROM pg_namespace
+        WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public')
+          AND nspname NOT LIKE 'pg_toast%'
+          AND nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_class AS c
+        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_proc AS p
+        JOIN pg_namespace AS n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_type AS t
+        JOIN pg_namespace AS n ON n.oid = t.typnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+          AND t.typtype IN ('b', 'e', 'r', 'm', 'd')
+          AND t.typelem = 0
+          AND t.typrelid = 0
+      )
+    )::text")"
+  if [ "$target_has_objects" != "f" ]; then
+    echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2
+    exit 1
+  fi
+
   # Safe by default: never drop or clean objects in the target database.
-  # Restore into a newly created, isolated empty database. If objects already
-  # exist, --single-transaction rolls back the attempted restore on failure.
+  # The preflight above enforces isolation; this transaction remains a second
+  # line of defense against conflicts or failures during the restore itself.
   pg_restore \
     --exit-on-error \
     --single-transaction \
