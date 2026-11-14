@@ -95,6 +95,14 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     proposal = _agent_parse_patch(answer)
     if not isinstance(proposal, dict):
         return None
+    # Reject unknown top-level fields instead of carrying arbitrary provider
+    # metadata into the signed approval token or later JSONB audit records.
+    expected_proposal_keys = {
+        "type", "summary", "root_cause", "confidence", "affected_files",
+        "changes", "test_plan", "risks", "requires_approval",
+    }
+    if set(proposal) != expected_proposal_keys:
+        return None
     if proposal.get("requires_approval") is not True:
         return None
 
@@ -138,6 +146,11 @@ def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     for change in changes:
         path = change["path"]
         operation = change["operation"]
+        expected_change_keys = {"path", "operation", "reason"}
+        if operation in {"modify", "create"}:
+            expected_change_keys.add("content")
+        if set(change) != expected_change_keys:
+            return None
         if not _repair_path_is_allowed(path):
             return None
         exists = path in workspace_files
