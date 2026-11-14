@@ -256,6 +256,37 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
     @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
+    @patch("api.ai_engine._call_provider")
+    def test_rejects_changed_verification_evidence_even_when_workspace_revision_is_unchanged(self, provider, usage):
+        def change_evidence(*args, **kwargs):
+            self.task.refresh_from_db()
+            changed = dict(self.task.execution_evidence)
+            changed_analysis = dict(changed["repair_analysis"])
+            changed_analysis["probable_cause"] = "A different diagnosis was persisted during generation."
+            changed["repair_analysis"] = changed_analysis
+            self.task.execution_evidence = changed
+            self.task.save(update_fields=["execution_evidence"])
+            self.verification_job.refresh_from_db()
+            self.verification_job.result = {
+                "status": "verification_failed",
+                "task_id": self.task.id,
+                "evidence": changed,
+            }
+            self.verification_job.save(update_fields=["result"])
+            return json.dumps(self.proposal()), None
+
+        provider.side_effect = change_evidence
+        original_revision = self.workspace.revision
+
+        response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "stale_repair_context")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.revision, original_revision)
+        self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
+
+    @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
     @patch("api.ai_engine._call_provider", return_value=("", '{"code":"AI_CONFIG_ERROR"}'))
     def test_provider_unavailable_never_falls_back_to_fake_patch(self, provider, usage):
         response = self.client.post(self.url, {}, format="json")
