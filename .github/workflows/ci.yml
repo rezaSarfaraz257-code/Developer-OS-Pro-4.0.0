@@ -208,20 +208,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: developeros_recovery
-          POSTGRES_USER: developeros
-          POSTGRES_PASSWORD: recovery-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U developeros -d developeros_recovery"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v7
         with:
