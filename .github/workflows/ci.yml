@@ -323,7 +323,7 @@ jobs:
 
             # Per-database role settings are also non-empty database state.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_db_setting
-            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_db_setting -c "ALTER DATABASE developeros_db_setting SET application_name = chr(111)||chr(112)||chr(101)||chr(114)||chr(97)||chr(116)||chr(111)||chr(114)||chr(45)||chr(99)||chr(117)||chr(115)||chr(116)||chr(111)||chr(109)||chr(105)||chr(122)||chr(101)||chr(100);"
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_db_setting -c "ALTER DATABASE developeros_db_setting SET application_name = '"'"'operator-customized'"'"';"
             if POSTGRES_DB=developeros_db_setting BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
               echo "Restore unexpectedly accepted a target with customized database settings." >&2
               exit 1
@@ -363,7 +363,7 @@ jobs:
 
             # Run the global-role setting regression last: the customized
             # setting applies to every later connection for this role.
-            psql -h "$PGHOST" -U "$POSTGRES_USER" -d postgres -c "ALTER ROLE \"$POSTGRES_USER\" SET application_name = chr(111)||chr(112)||chr(101)||chr(114)||chr(97)||chr(116)||chr(111)||chr(114)||chr(45)||chr(103)||chr(108)||chr(111)||chr(98)||chr(97)||chr(108)||chr(45)||chr(99)||chr(117)||chr(115)||chr(116)||chr(111)||chr(109)||chr(105)||chr(122)||chr(101)||chr(100);"
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d postgres -c "ALTER ROLE \"$POSTGRES_USER\" SET application_name = '"'"'operator-global-customized'"'"';"
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_global_role_setting
             if POSTGRES_DB=developeros_global_role_setting BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
               echo "Restore unexpectedly accepted a target with customized global role settings." >&2
