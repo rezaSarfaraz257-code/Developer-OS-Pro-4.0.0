@@ -173,6 +173,7 @@ def _repair_evidence_is_current(run, task, workspace):
         or evidence.get("output_persisted") is not False
         or evidence.get("revision") != workspace.revision
         or evidence.get("verification_job_id") != verification_job.id
+        or not isinstance(evidence.get("diagnostic_signals"), list)
         or job_result.get("status") != "verification_failed"
         or job_result.get("task_id") != task.id
         or job_result.get("evidence") != evidence
