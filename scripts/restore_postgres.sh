@@ -34,7 +34,7 @@ export PGUSER="$POSTGRES_USER"
 (
   cd "$BACKUP_DIR"
   # Fail closed on missing/corrupt checksum or an invalid custom-format archive.
-  sha256sum --check "$CHECKSUM_NAME"
+  sha256sum -c "$CHECKSUM_NAME"
   pg_restore --list "$BACKUP_NAME" >/dev/null
 
   # Safe by default: never drop or clean objects in the target database.
