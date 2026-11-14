@@ -48,6 +48,15 @@ User-uploaded media should use S3-compatible persistent storage in production. D
 
 PostgreSQL is the production source of truth. Backups must be automated outside the application container and periodically restored into an isolated environment. The CI recovery job verifies that the repository's backup/restore procedure remains executable.
 
+The repository backup script writes a custom-format dump and a portable SHA-256 sidecar. Restore verifies the sidecar and archive before connecting to the target database. It deliberately does not use `pg_restore --clean` or `--if-exists`: create a separate, empty recovery database first and restore into that database. If objects already exist, the restore runs in one transaction and fails without dropping or replacing them. Never point the routine restore command at the production database as an in-place overwrite procedure. Validate recovered data and application compatibility before any separately approved cutover.
+
+Example recovery flow (run only with approved database credentials and a separately provisioned target):
+```sh
+POSTGRES_DB=developer_os_recovery BACKUP_FILE=/secure-backups/developer-os-<timestamp>.dump \
+  sh scripts/restore_postgres.sh
+```
+The target database must already exist and be empty. Keep the dump and its `.sha256` sidecar together when moving them to recovery storage. A missing or mismatched checksum is a hard failure.
+
 Before destructive schema changes:
 
 - create and verify a fresh backup;
