@@ -88,6 +88,73 @@ export PGUSER="$POSTGRES_USER"
           AND t.typelem = 0
           AND t.typrelid = 0
       )
+      OR EXISTS (
+        SELECT 1 FROM pg_operator AS o
+        JOIN pg_namespace AS n ON n.oid = o.oprnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_collation AS c
+        JOIN pg_namespace AS n ON n.oid = c.collnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_conversion AS c
+        JOIN pg_namespace AS n ON n.oid = c.connamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_ts_config AS c
+        JOIN pg_namespace AS n ON n.oid = c.cfgnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_ts_dict AS d
+        JOIN pg_namespace AS n ON n.oid = d.dictnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_ts_parser AS p
+        JOIN pg_namespace AS n ON n.oid = p.prsnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_ts_template AS t
+        JOIN pg_namespace AS n ON n.oid = t.tmplnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_opclass AS o
+        JOIN pg_namespace AS n ON n.oid = o.opcnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_opfamily AS o
+        JOIN pg_namespace AS n ON n.oid = o.opfnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND n.nspname NOT LIKE 'pg_temp_%'
+      )
+      OR EXISTS (SELECT 1 FROM pg_largeobject_metadata)
+      OR EXISTS (SELECT 1 FROM pg_event_trigger)
+      OR EXISTS (SELECT 1 FROM pg_publication)
+      OR EXISTS (SELECT 1 FROM pg_subscription)
     )")"
   if [ "$target_has_objects" != "f" ]; then
     echo "Refusing to restore into a non-empty database: $POSTGRES_DB" >&2
