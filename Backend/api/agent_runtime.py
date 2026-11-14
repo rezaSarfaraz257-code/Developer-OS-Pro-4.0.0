@@ -196,7 +196,7 @@ def _run_payload(run):
 
 def _agent_plan_text_is_safe(value):
     """Reject text that cannot be safely persisted by the configured database."""
-    if not isinstance(value, str) or "\\x00" in value:
+    if not isinstance(value, str) or "\x00" in value:
         return False
     try:
         value.encode("utf-8")
