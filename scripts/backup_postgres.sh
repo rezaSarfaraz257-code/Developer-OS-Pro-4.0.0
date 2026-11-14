@@ -10,7 +10,7 @@ OUT_DIR="${BACKUP_DIR:-./backups}"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 FINAL_FILE="$OUT_DIR/developer-os-$STAMP-$$.dump"
-TEMP_FILE="$(mktemp "$OUT_DIR/.developer-os-$STAMP.XXXXXX.tmp")"
+TEMP_FILE="$(mktemp "$OUT_DIR/.developer-os-$STAMP.XXXXXX")"
 CHECKSUM_FILE="$FINAL_FILE.sha256"
 
 cleanup() {
