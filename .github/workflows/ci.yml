@@ -301,6 +301,16 @@ jobs:
             fi
             test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_large_object -tAc "SELECT count(*) FROM pg_largeobject_metadata")" = "1"
 
+            # Foreign-data wrappers and servers are database-level objects
+            # outside pg_class; they must not be silently inherited by restore.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_foreign_data
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_foreign_data -c "CREATE FOREIGN DATA WRAPPER operator_dummy_fdw;"
+            if POSTGRES_DB=developeros_foreign_data BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a target containing a foreign-data wrapper." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_foreign_data -tAc "SELECT count(*) FROM pg_foreign_data_wrapper WHERE fdwname = 'operator_dummy_fdw'")" = "1"
+
             # Database-local default grants are also state: they are not
             # visible in pg_class/pg_namespace and must block a restore.
             createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_default_acl

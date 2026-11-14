@@ -151,6 +151,19 @@ export PGUSER="$POSTGRES_USER"
           AND n.nspname NOT LIKE 'pg_toast%'
           AND n.nspname NOT LIKE 'pg_temp_%'
       )
+      OR EXISTS (
+        SELECT 1 FROM pg_foreign_data_wrapper
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_foreign_server
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_user_mapping
+      )
+      OR EXISTS (
+        SELECT 1 FROM pg_language
+        WHERE lanname NOT IN ('internal', 'c', 'sql', 'plpgsql')
+      )
       OR EXISTS (SELECT 1 FROM pg_largeobject_metadata)
       OR EXISTS (SELECT 1 FROM pg_event_trigger)
       OR EXISTS (SELECT 1 FROM pg_publication)
