@@ -37,7 +37,7 @@ _REPAIR_PROTECTED_PATH_PARTS = frozenset({
 })
 def _repair_text_is_database_safe(value):
     """Reject malformed Unicode and PostgreSQL-incompatible NUL in persisted proposal text."""
-    if not isinstance(value, str) or "\\x00" in value:
+    if not isinstance(value, str) or "\x00" in value:
         return False
     try:
         value.encode("utf-8", errors="strict")
