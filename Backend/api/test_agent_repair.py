@@ -389,6 +389,28 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
 
+    def test_provider_excluded_credential_stores_are_not_repairable(self):
+        from .agent_repair import _repairable_sample_paths
+        from .ai_engine import _agent_context_file_samples, _provider_safe_context_path
+
+        files = {
+            "main.py": "print('safe')\\n",
+            ".config/gh/hosts.yml": "github.com:\\n  user: developer\\n",
+        }
+        sampled = _agent_context_file_samples(files)
+        provider_files = {
+            path: content
+            for path, content in sampled.items()
+            if _provider_safe_context_path(path)
+        }
+
+        self.assertIn(".config/gh/hosts.yml", sampled)
+        self.assertNotIn(".config/gh/hosts.yml", provider_files)
+        self.assertEqual(
+            _repairable_sample_paths(files, provider_files),
+            {"main.py"},
+        )
+
     def test_rejects_modifying_a_file_that_was_not_in_the_provider_snapshot(self):
         from .agent_repair import _valid_repair_proposal
 
