@@ -237,6 +237,16 @@ jobs:
             test -n "$BACKUP_FILE"
             test -f "$BACKUP_FILE.sha256"
             (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$BACKUP_FILE").sha256")
+            test "$(stat -c %a "$BACKUP_FILE")" = "600"
+            test "$(stat -c %a "$BACKUP_FILE.sha256")" = "600"
+
+            # A failed dump must leave no published artifact or temp file.
+            mkdir -p /repo/failed-backups
+            if POSTGRES_DB=developer_os_missing_backup_test BACKUP_DIR=/repo/failed-backups sh /repo/scripts/backup_postgres.sh; then
+              echo "Backup unexpectedly succeeded for a missing database." >&2
+              exit 1
+            fi
+            test -z "$(find /repo/failed-backups -type f -print -quit)"
 
             # A populated target must not be cleaned or overwritten. The
             # transaction must fail atomically and preserve its existing row.
