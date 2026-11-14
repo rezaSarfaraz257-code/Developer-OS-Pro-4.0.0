@@ -19,6 +19,21 @@ from rest_framework.response import Response
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob
 
 
+def _repairable_sample_paths(workspace_files, safe_files):
+    """Only allow whole, unredacted files to be replaced by complete-file patches."""
+    if not isinstance(workspace_files, dict) or not isinstance(safe_files, dict):
+        return set()
+    return {
+        path for path, content in workspace_files.items()
+        if (
+            isinstance(path, str)
+            and isinstance(content, str)
+            and len(content) <= 1800
+            and safe_files.get(path) == content
+        )
+    }
+
+
 def _valid_repair_proposal(answer, workspace_files, sampled_paths=None):
     """Accept only a complete, bounded patch contract compatible with AI apply."""
     from .ai_engine import _agent_parse_patch
@@ -221,7 +236,7 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
                 "framework": workspace.framework,
                 "runtime": workspace.runtime,
                 "files": safe_files,
-                "sampled_file_paths": list(safe_files.keys()),
+                "sampled_file_paths": list(safe_files.keys()),\n                "repairable_file_paths": sorted(repairable_paths),
                 "credential_filtering_is_heuristic": True,
             },
             "verification": {
@@ -283,7 +298,7 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
             "provider_status": provider_error,
         }, status=503)
 
-    proposal = _valid_repair_proposal(answer, workspace_files, sampled_paths=safe_files.keys())
+    proposal = _valid_repair_proposal(answer, workspace_files, sampled_paths=repairable_paths)
     if proposal is None:
         return Response({
             "error": "The provider did not return a complete safe repair proposal. No workspace changes were made.",
