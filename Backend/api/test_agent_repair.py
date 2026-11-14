@@ -304,6 +304,13 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
 
+    def test_nullable_execution_job_relation_is_safe_under_row_lock(self):
+        self.task.execution_job = None
+        self.task.save(update_fields=["execution_job"])
+        response = self.client.post(self.url, {}, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_rejects_low_confidence_repair_diagnosis_before_provider_call(self):
         self.evidence["repair_analysis"]["confidence"] = "low"
         self.verification_job.result = {
