@@ -274,3 +274,12 @@ class AgentTaskRepairProposalTests(TestCase):
         invalid_create = self.proposal()
         invalid_create["changes"][0]["operation"] = "create"
         self.assertIsNone(_valid_repair_proposal(json.dumps(invalid_create), self.workspace.files))
+
+    def test_rejects_modifying_a_file_that_was_not_in_the_provider_snapshot(self):
+        from .agent_repair import _valid_repair_proposal
+
+        self.assertIsNone(_valid_repair_proposal(
+            json.dumps(self.proposal()),
+            self.workspace.files,
+            sampled_paths=set(),
+        ))
