@@ -96,6 +96,19 @@ At minimum, production monitoring should alert on:
 
 OpenTelemetry is intentionally an optional observability layer rather than a hard dependency of the core release gate. Python traces and metrics are currently stable, while the broader signal/component maturity is mixed; instrumentation should be enabled only with a tested exporter/backend and initialized correctly for the Gunicorn/Uvicorn worker model.
 
+## 9.1 Readiness diagnostics
+
+The public readiness response keeps dependency state in the existing `checks` object.
+When cache readiness fails, it may additionally expose `diagnostics.cache` using
+only fixed categories: `cache_url_missing`, `redis_backend_not_configured`,
+`cache_roundtrip_mismatch`, `cache_backend_error:<ExceptionClass>`, or
+`cache_unavailable`. The diagnostic is intentionally not a Redis connectivity
+string: it must never contain a cache URL, hostname, username, password, raw
+exception message, or environment value. Use the sanitized category together
+with the API's structured server-side readiness log to investigate the
+deployment configuration. A diagnostic does not change the readiness result;
+HTTP 503 remains a hard traffic gate until the underlying dependency is fixed.
+
 ## 10. Incident response
 
 For a production incident:
