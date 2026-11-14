@@ -49,12 +49,12 @@ _REPAIR_PROTECTED_BASENAMES = frozenset({
 
 
 def _repair_path_is_allowed(path):
-    """Keep AI repair away from CI, deployment, lockfiles, and sandbox policy."""
-    if not isinstance(path, str):
+    """Keep AI repair away from credentials, CI, deployment, and sandbox policy."""
+    from .ai_engine import _provider_safe_context_path
+
+    if not isinstance(path, str) or not _provider_safe_context_path(path):
         return False
     parts = [part.casefold() for part in path.split("/")]
-    if not parts:
-        return False
     # Protected control directories must be blocked at every depth, not only
     # when they are workspace-root entries (for example, nested/.github/...).
     if any(part in _REPAIR_PROTECTED_PATH_PARTS for part in parts):
