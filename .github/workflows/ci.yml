@@ -212,7 +212,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Backup, destroy, restore and verify
+      - name: Backup and verify non-destructive isolated restore
         env:
           POSTGRES_DB: developeros_recovery
           POSTGRES_USER: developeros
@@ -220,20 +220,44 @@ jobs:
           BACKUP_DIR: /repo/recovery-backups
         run: |
           docker run --rm --network host -v "$PWD:/repo" -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD -e BACKUP_DIR postgres:17-alpine sh -ec '
-            export PGPASSWORD="$POSTGRES_PASSWORD"
-            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(98)||chr(97)||chr(99)||chr(107)||chr(117)||chr(112)||chr(45)||chr(114)||chr(101)||chr(115)||chr(116)||chr(111)||chr(114)||chr(101)||chr(45)||chr(111)||chr(107));"
-            unset PGPASSWORD
             export PGHOST=127.0.0.1
+            export PGPASSWORD="$POSTGRES_PASSWORD"
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, chr(98)||chr(97)||chr(99)||chr(107)||chr(117)||chr(112)||chr(45)||chr(114)||chr(101)||chr(115)||chr(116)||chr(111)||chr(114)||chr(101)||chr(45)||chr(111)||chr(107));"
+            unset PGPASSWORD
             sh /repo/scripts/backup_postgres.sh
             BACKUP_FILE="$(find /repo/recovery-backups -name "*.dump" -type f | head -n 1)"
-            CHECKSUM_FILE="$BACKUP_FILE.sha256"
             test -n "$BACKUP_FILE"
-            test -f "$CHECKSUM_FILE"
-            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")
+            test -f "$BACKUP_FILE.sha256"
+            (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$BACKUP_FILE").sha256")
+
+            # A populated target must not be cleaned or overwritten. The
+            # transaction must fail atomically and preserve its existing row.
             export PGPASSWORD="$POSTGRES_PASSWORD"
-            psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE recovery_probe;"
-            pg_restore --clean --if-exists --no-owner --no-acl -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$BACKUP_FILE"
-            test "$(psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_collision
+            psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_collision -c "CREATE TABLE recovery_probe(id integer primary key, value text not null); INSERT INTO recovery_probe VALUES (1, 'preserve-existing-data');"
+            if POSTGRES_DB=developeros_collision BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly replaced objects in a populated target database." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_collision -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "preserve-existing-data"
+
+            # The supported recovery path is a separately created empty DB.
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_restored
+            POSTGRES_DB=developeros_restored BACKUP_FILE="$BACKUP_FILE" sh /repo/scripts/restore_postgres.sh
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_restored -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT value FROM recovery_probe WHERE id=1")" = "backup-restore-ok"
+
+            # Corrupted archives must fail checksum validation before pg_restore.
+            CORRUPT_FILE="$BACKUP_FILE.corrupt"
+            cp "$BACKUP_FILE" "$CORRUPT_FILE"
+            printf "tamper" >> "$CORRUPT_FILE"
+            sed "s|./$(basename "$BACKUP_FILE")|./$(basename "$CORRUPT_FILE")|" "$BACKUP_FILE.sha256" > "$CORRUPT_FILE.sha256"
+            createdb -h "$PGHOST" -U "$POSTGRES_USER" developeros_corrupt
+            if POSTGRES_DB=developeros_corrupt BACKUP_FILE="$CORRUPT_FILE" sh /repo/scripts/restore_postgres.sh; then
+              echo "Restore unexpectedly accepted a corrupted archive." >&2
+              exit 1
+            fi
+            test "$(psql -h "$PGHOST" -U "$POSTGRES_USER" -d developeros_corrupt -tAc "SELECT to_regclass('''public.recovery_probe''') IS NULL")" = "t"
             unset PGPASSWORD
           '
 
