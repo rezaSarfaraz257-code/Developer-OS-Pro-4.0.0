@@ -211,6 +211,25 @@ class AgentPlanValidationTests(TestCase):
         with self.assertRaisesRegex(ValueError, "at most 12"):
             _validate_plan({"risks": ["risk"] * 13, "tasks": [valid_task]})
 
+    def test_rejects_database_unsafe_plan_text(self):
+        valid_task = {
+            "id": "inspect", "title": "Inspect", "description": "",
+            "agent_role": "architect", "depends_on": [],
+            "acceptance_criteria": ["Inspection evidence is recorded."],
+        }
+        invalid_values = ("unsafe\\x00text", "\\ud800")
+        for field in ("summary", "risks", "acceptance_criteria"):
+            for value in invalid_values:
+                with self.subTest(field=field, value=repr(value)), self.assertRaises(ValueError):
+                    _validate_plan({"tasks": [valid_task], field: [value] if field != "summary" else value})
+
+        task_fields = ("id", "title", "description", "agent_role", "depends_on", "acceptance_criteria")
+        for field in task_fields:
+            for value in invalid_values:
+                task = {**valid_task, field: [value] if field in {"depends_on", "acceptance_criteria"} else value}
+                with self.subTest(field=field, value=repr(value)), self.assertRaises(ValueError):
+                    _validate_plan({"tasks": [task]})
+
     def test_accepts_topological_dependency_graph(self):
         plan = _validate_plan({
             "summary": "Safe plan",
