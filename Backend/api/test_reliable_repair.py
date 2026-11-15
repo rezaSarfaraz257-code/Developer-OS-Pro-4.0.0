@@ -86,3 +86,19 @@ class ReliableRepairAnalysisTests(SimpleTestCase):
         evidence["diagnostic_signals"] = evidence["diagnostic_signals"] * 5
         with self.assertRaises(ValueError):
             analyze_repair_evidence("python_pytest", evidence)
+
+    def test_malformed_unhashable_profile_state_and_signal_values_fail_closed(self):
+        with self.assertRaises(ValueError):
+            analyze_repair_evidence([], self.evidence())
+
+        evidence = self.evidence()
+        evidence["state"] = []
+        with self.assertRaises(ValueError):
+            analyze_repair_evidence("python_pytest", evidence)
+
+        for field, malformed in (("code", []), ("source", {})):
+            with self.subTest(field=field):
+                evidence = self.evidence()
+                evidence["diagnostic_signals"][0][field] = malformed
+                with self.assertRaises(ValueError):
+                    analyze_repair_evidence("python_pytest", evidence)
