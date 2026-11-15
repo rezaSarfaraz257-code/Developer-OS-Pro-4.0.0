@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, _safe_diagnostic_signals,
+    VERIFICATION_PROFILES, _safe_diagnostic_signals, _sync_revision_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
@@ -112,6 +112,43 @@ class AgentTaskVerificationAPITests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_verification_rejects_boolean_and_string_identity_values(self):
+        for field, invalid_value in (
+            ("sync_job_id", True),
+            ("sync_job_id", str(self.sync_job.id)),
+            ("revision", True),
+            ("revision", str(self.workspace.revision)),
+        ):
+            with self.subTest(field=field, value=invalid_value):
+                payload = {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }
+                payload[field] = invalid_value
+                response = self.client.post(self.url, payload, format="json")
+                self.assertEqual(response.status_code, 400)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_malformed_persisted_sync_revision_fails_closed(self):
+        for invalid_revision in (True, "1", [], {"revision": 1}, None):
+            with self.subTest(revision=invalid_revision):
+                self.sync_job.result = {"status": "synced", "revision": invalid_revision}
+                self.sync_job.save(update_fields=["result"])
+                response = self.client.post(self.url, {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }, format="json")
+                self.assertEqual(response.status_code, 409)
+                self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_sync_revision_matcher_never_coerces_untrusted_json(self):
+        self.assertTrue(_sync_revision_matches({"revision": 7}, 7))
+        for value in (True, "7", 7.0, [], {}, None):
+            with self.subTest(value=value):
+                self.assertFalse(_sync_revision_matches({"revision": value}, 7))
 
     def test_dag_dependencies_are_enforced_even_if_task_status_is_stale(self):
         dependency = AgentTask.objects.create(
