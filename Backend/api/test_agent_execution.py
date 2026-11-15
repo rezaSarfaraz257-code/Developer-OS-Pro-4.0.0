@@ -550,6 +550,10 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertNotIn("DO_NOT_PERSIST_THIS_VALUE", str(evidence))
         self.assertNotIn("stderr", evidence)
         self.assertFalse(evidence["output_persisted"])
+        self.assertEqual(evidence["repair_analysis"]["diagnostic_code"], "python_import_error")
+        self.assertEqual(evidence["repair_analysis"]["status"], "review_required")
+        self.assertFalse(evidence["repair_analysis"]["workspace_mutated"])
+        self.assertFalse(evidence["repair_analysis"]["patch_generated"])
         runner_request.assert_called_once()
 
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}))
