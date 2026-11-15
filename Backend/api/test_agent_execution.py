@@ -150,6 +150,55 @@ class AgentTaskVerificationAPITests(TestCase):
             with self.subTest(value=value):
                 self.assertFalse(_sync_revision_matches({"revision": value}, 7))
 
+    def test_retry_rejects_malformed_persisted_history(self):
+        self.task.status = "failed"
+        self.task.execution_revision = self.workspace.revision - 1
+        self.task.execution_evidence = {"history": {"unexpected": "mapping"}}
+        self.task.save(update_fields=[
+            "status", "execution_revision", "execution_evidence", "updated_at",
+        ])
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    @patch("api.views._runner_request")
+    def test_worker_rejects_boolean_job_identity_before_runner(self, runner_request):
+        audit = AuditLog.objects.get(action="ai_agent.patch_applied")
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            payload={
+                "run_id": True, "task_id": self.task.id,
+                "workspace_id": self.workspace.id, "owner_id": self.user.id,
+                "revision": self.workspace.revision, "sync_job_id": self.sync_job.id,
+                "patch_audit_id": audit.id, "profile": "python_pytest",
+            },
+            idempotency_key="agent-task-malformed-identity",
+        )
+        with self.assertRaisesRegex(RuntimeError, "identity is malformed"):
+            execute_agent_task_verification(job)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_worker_rejects_non_string_profile_before_runner(self, runner_request):
+        audit = AuditLog.objects.get(action="ai_agent.patch_applied")
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            payload={
+                "run_id": self.run.id, "task_id": self.task.id,
+                "workspace_id": self.workspace.id, "owner_id": self.user.id,
+                "revision": self.workspace.revision, "sync_job_id": self.sync_job.id,
+                "patch_audit_id": audit.id, "profile": ["python_pytest"],
+            },
+            idempotency_key="agent-task-malformed-profile",
+        )
+        with self.assertRaisesRegex(RuntimeError, "Unsupported Agent verification profile"):
+            execute_agent_task_verification(job)
+        runner_request.assert_not_called()
+
     def test_dag_dependencies_are_enforced_even_if_task_status_is_stale(self):
         dependency = AgentTask.objects.create(
             run=self.run, key="prerequisite", title="Prerequisite", status="ready",
