@@ -180,9 +180,15 @@ def _repair_evidence_is_current(run, task, workspace):
         or verification_job.kind != "ai_agent_task_verify"
         or verification_job.status != "succeeded"
         or task.execution_job_id != verification_job.id
+        # JSON payload identity values must be actual integers; bool compares
+        # equal to 0/1 in Python and must never satisfy durable identity checks.
+        or type(job_payload.get("run_id")) is not int
         or job_payload.get("run_id") != run.id
+        or type(job_payload.get("task_id")) is not int
         or job_payload.get("task_id") != task.id
+        or type(job_payload.get("owner_id")) is not int
         or job_payload.get("owner_id") != run.owner_id
+        or type(job_payload.get("workspace_id")) is not int
         or job_payload.get("workspace_id") != workspace.id
         or type(job_payload.get("revision")) is not int
         or job_payload.get("revision") != task.execution_revision
@@ -196,6 +202,7 @@ def _repair_evidence_is_current(run, task, workspace):
         or evidence.get("exit_code") == 0
         or evidence.get("output_persisted") is not False
         or evidence.get("revision") != workspace.revision
+        or type(evidence.get("verification_job_id")) is not int
         or evidence.get("verification_job_id") != verification_job.id
         # The verification job payload is authoritative for linked audit/job IDs;
         # persisted evidence must agree exactly and reject bool/string/container IDs.
@@ -209,6 +216,7 @@ def _repair_evidence_is_current(run, task, workspace):
         or evidence.get("patch_audit_id") != job_payload.get("patch_audit_id")
         or not isinstance(evidence.get("diagnostic_signals"), list)
         or job_result.get("status") != "verification_failed"
+        or type(job_result.get("task_id")) is not int
         or job_result.get("task_id") != task.id
         or job_result.get("evidence") != evidence
         or not run.approved_at
