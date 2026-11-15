@@ -173,6 +173,24 @@ def _repair_evidence_is_current(run, task, workspace):
     job_payload = verification_job.payload if verification_job and isinstance(verification_job.payload, dict) else {}
     job_result = verification_job.result if verification_job and isinstance(verification_job.result, dict) else {}
 
+    # Persisted JSON is untrusted, even when written by an earlier worker.
+    # Guard types before set membership so lists/dicts fail closed instead of
+    # raising TypeError and turning malformed evidence into an HTTP 500.
+    runner_status = evidence.get("runner_status")
+    analysis_confidence = analysis.get("confidence") if isinstance(analysis, dict) else None
+    diagnostic_code = analysis.get("diagnostic_code") if isinstance(analysis, dict) else None
+    diagnostic_signals = evidence.get("diagnostic_signals")
+    source_diagnostic_codes = {
+        signal.get("code")
+        for signal in diagnostic_signals
+        if (
+            isinstance(signal, dict)
+            and isinstance(signal.get("source"), str)
+            and signal.get("source") in {"stderr", "stdout"}
+            and isinstance(signal.get("code"), str)
+        )
+    } if isinstance(diagnostic_signals, list) else set()
+
     if (
         task.status != "failed"
         or run.status != "failed"
@@ -197,7 +215,8 @@ def _repair_evidence_is_current(run, task, workspace):
         or job_payload.get("profile") != task.execution_profile
         or evidence.get("profile") != task.execution_profile
         or evidence.get("state") != "failed"
-        or evidence.get("runner_status") not in {"failed", "completed"}
+        or not isinstance(runner_status, str)
+        or runner_status not in {"failed", "completed"}
         or type(evidence.get("exit_code")) is not int
         or evidence.get("exit_code") == 0
         or evidence.get("output_persisted") is not False
@@ -222,12 +241,11 @@ def _repair_evidence_is_current(run, task, workspace):
         or not run.approved_at
         or not isinstance(analysis, dict)
         or analysis.get("status") != "review_required"
-        or analysis.get("confidence") not in {"moderate", "high"}
-        or analysis.get("diagnostic_code") not in _REPAIRABLE_DIAGNOSTIC_CODES
-        or analysis.get("diagnostic_code") not in {
-            signal.get("code") for signal in evidence.get("diagnostic_signals", [])
-            if isinstance(signal, dict) and signal.get("source") in {"stderr", "stdout"}
-        }
+        or not isinstance(analysis_confidence, str)
+        or analysis_confidence not in {"moderate", "high"}
+        or not isinstance(diagnostic_code, str)
+        or diagnostic_code not in _REPAIRABLE_DIAGNOSTIC_CODES
+        or diagnostic_code not in source_diagnostic_codes
     ):
         return None
 
