@@ -515,6 +515,44 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
 
+    def test_malformed_repair_evidence_values_fail_closed_without_server_errors(self):
+        from copy import deepcopy
+
+        cases = (
+            ("runner_status", [], None),
+            ("repair_analysis", None, None),
+            ("confidence", [], "repair_analysis"),
+            ("diagnostic_code", [], "repair_analysis"),
+            ("signal_code", [], "diagnostic_signals"),
+            ("signal_source", [], "diagnostic_signals"),
+        )
+        for field, malformed, container in cases:
+            with self.subTest(field=field, malformed=repr(malformed)):
+                evidence = deepcopy(self.evidence)
+                if field == "runner_status":
+                    evidence[field] = malformed
+                elif field == "repair_analysis":
+                    evidence[field] = malformed
+                elif container == "repair_analysis":
+                    evidence[container][field] = malformed
+                else:
+                    evidence[container][0][
+                        "code" if field == "signal_code" else "source"
+                    ] = malformed
+                self.task.execution_evidence = evidence
+                self.task.save(update_fields=["execution_evidence"])
+                self.verification_job.result = {
+                    "status": "verification_failed",
+                    "task_id": self.task.id,
+                    "evidence": evidence,
+                }
+                self.verification_job.save(update_fields=["result"])
+
+                response = self.client.post(self.url, {}, format="json")
+
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_malformed_persisted_diagnostic_signals_fail_closed(self):
         for malformed in (None, {}, "python_import_error", 7):
             with self.subTest(diagnostic_signals=malformed):
