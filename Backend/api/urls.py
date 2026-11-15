@@ -6,6 +6,7 @@ from . import repository_engine
 from . import ai_engine
 from . import agent_runtime
 from . import agent_execution
+from . import agent_repair
 from . import ai_recovery
 from . import operational_health
 
@@ -142,6 +143,7 @@ urlpatterns = [
     path("ai/agent/runs/<int:pk>/approve/", agent_runtime.agent_run_approve_api, name="ai-agent-run-approve"),
     path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/tools/<slug:tool_name>/", agent_runtime.agent_task_tool_api, name="ai-agent-task-tool"),
     path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/verify/", agent_execution.agent_task_verification_start_api, name="ai-agent-task-verify"),
+    path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/repair-proposal/", agent_repair.agent_task_repair_proposal_api, name="ai-agent-task-repair-proposal"),
     path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/verification/", agent_execution.agent_task_verification_status_api, name="ai-agent-task-verification-status"),
     path("ai/agent/runs/<int:pk>/tasks/<int:task_pk>/accept/", agent_execution.agent_task_accept_api, name="ai-agent-task-accept"),
     path("ai/agent/apply/", ai_engine.ai_agent_apply_api, name="ai-agent-apply"),

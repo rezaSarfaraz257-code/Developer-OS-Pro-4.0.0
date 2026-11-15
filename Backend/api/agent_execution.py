@@ -6,6 +6,7 @@ It creates no second patch format, approval token, or Runner transport.
 from __future__ import annotations
 
 import hashlib
+import re
 
 from django.db import transaction
 from django.http import Http404
@@ -45,6 +46,48 @@ def _queue_agent_runner_resync(workspace, actor, verification_job_id):
     )
     return job
 
+
+
+# Fixed diagnostic enums only: never persist filenames, source lines, package
+# names, environment values, or arbitrary process output.
+_DIAGNOSTIC_PATTERNS = {
+    "python_pytest": (
+        ("python_import_error", re.compile(r"(?m)^\s*(?:ModuleNotFoundError|ImportError):")),
+        ("python_syntax_error", re.compile(r"(?m)^\s*SyntaxError:")),
+        ("python_test_failure", re.compile(r"(?m)^FAILED\s+.+::.+|=+\s+\d+\s+failed")),
+    ),
+    "python_unittest": (
+        ("python_import_error", re.compile(r"(?m)^\s*(?:ModuleNotFoundError|ImportError):")),
+        ("python_syntax_error", re.compile(r"(?m)^\s*SyntaxError:")),
+        ("python_test_failure", re.compile(r"(?m)^\s*(?:FAIL|ERROR):\s")),
+    ),
+    "node_test": (
+        ("node_module_resolution_error", re.compile(r"(?m)(?:ERR_MODULE_NOT_FOUND|Cannot find module)")),
+        ("node_test_failure", re.compile(r"(?m)^not ok\s+\d+\b")),
+    ),
+    "node_build": (
+        ("node_module_resolution_error", re.compile(r"(?m)(?:ERR_MODULE_NOT_FOUND|Cannot find module)")),
+        ("node_build_error", re.compile(r"(?m)^\s*(?:ERROR in |\[vite\].*error|error TS\d+:)")),
+    ),
+    "node_lint": (
+        ("node_module_resolution_error", re.compile(r"(?m)(?:ERR_MODULE_NOT_FOUND|Cannot find module)")),
+        ("node_lint_error", re.compile(r"(?m)\b\d+\s+problems?\s+\(\d+\s+errors?")),
+    ),
+}
+
+
+def _safe_diagnostic_signals(profile, stdout, stderr, exit_code):
+    """Return bounded, non-content diagnostic enums; never retain process output."""
+    if type(exit_code) is not int or exit_code == 0:
+        return []
+    signals = []
+    for source, output in (("stderr", stderr), ("stdout", stdout)):
+        for code, pattern in _DIAGNOSTIC_PATTERNS.get(profile, ()):
+            if pattern.search(output) and {"code": code, "source": source} not in signals:
+                signals.append({"code": code, "source": source})
+                if len(signals) == 4:
+                    return signals
+    return signals or [{"code": "command_failed", "source": "exit_status"}]
 
 def _task_acceptance_criteria(task):
     criteria = task.acceptance_criteria if isinstance(task.acceptance_criteria, list) else []
@@ -438,6 +481,9 @@ def execute_agent_task_verification(job):
             "duration_ms": duration_ms, "verified_at": verified_at,
             **output_fingerprints,
             "output_persisted": False,
+            "diagnostic_signals": _safe_diagnostic_signals(
+                profile, stdout, stderr, exit_code,
+            ) if not passed else [],
         }
 
         # If the workspace moved while Runner was executing the immutable
@@ -470,8 +516,12 @@ def execute_agent_task_verification(job):
             )
             return {"status": "verification_stale", "task_id": task.id, "evidence": evidence}
 
+        if not passed:
+            from .reliable_repair import analyze_repair_evidence
+
+            evidence["repair_analysis"] = analyze_repair_evidence(profile, evidence)
         task.execution_evidence = evidence
-        task.execution_error = "" if passed else "Runner verification did not pass. Review the result and create a new approved patch."
+        task.execution_error = "" if passed else "Runner verification did not pass. Review the repair analysis and create a new approved patch."
         # Passing a generic profile is evidence only. Explicit human acceptance
         # is required before the task can become succeeded.
         task.status = "awaiting_approval" if passed else "failed"
