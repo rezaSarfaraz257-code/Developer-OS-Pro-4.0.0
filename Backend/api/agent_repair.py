@@ -243,9 +243,16 @@ def _repair_evidence_is_current(run, task, workspace):
         payload__owner_id=run.owner_id,
         payload__requested_revision=workspace.revision,
     ).first()
+    sync_payload = sync_job.payload if sync_job and isinstance(sync_job.payload, dict) else {}
     sync_result = sync_job.result if sync_job and isinstance(sync_job.result, dict) else {}
     if (
         not sync_job
+        or type(sync_payload.get("workspace_id")) is not int
+        or sync_payload.get("workspace_id") != workspace.id
+        or type(sync_payload.get("owner_id")) is not int
+        or sync_payload.get("owner_id") != run.owner_id
+        or type(sync_payload.get("requested_revision")) is not int
+        or sync_payload.get("requested_revision") != workspace.revision
         or sync_result.get("status") != "synced"
         or type(sync_result.get("revision")) is not int
         or sync_result.get("revision") != workspace.revision
