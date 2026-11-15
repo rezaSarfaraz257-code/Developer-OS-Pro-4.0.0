@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, _safe_diagnostic_signals, _sync_revision_matches,
+    VERIFICATION_PROFILES, _safe_diagnostic_signals, _sync_receipt_matches, _sync_revision_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
@@ -144,11 +144,40 @@ class AgentTaskVerificationAPITests(TestCase):
                 self.assertEqual(response.status_code, 409)
                 self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
+    def test_mismatched_or_malformed_sync_workspace_fails_closed(self):
+        for invalid_workspace in (True, str(self.workspace.id), self.workspace.id + 1, None):
+            with self.subTest(workspace_id=invalid_workspace):
+                self.sync_job.result = {
+                    "status": "synced",
+                    "workspace_id": invalid_workspace,
+                    "revision": self.workspace.revision,
+                }
+                self.sync_job.save(update_fields=["result"])
+                response = self.client.post(self.url, {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }, format="json")
+                self.assertEqual(response.status_code, 409)
+                self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
     def test_sync_revision_matcher_never_coerces_untrusted_json(self):
         self.assertTrue(_sync_revision_matches({"revision": 7}, 7))
         for value in (True, "7", 7.0, [], {}, None):
             with self.subTest(value=value):
                 self.assertFalse(_sync_revision_matches({"revision": value}, 7))
+
+    def test_sync_receipt_is_bound_to_exact_workspace_and_revision(self):
+        receipt = {"workspace_id": 12, "revision": 7, "status": "synced"}
+        self.assertTrue(_sync_receipt_matches(receipt, 12, 7))
+        for invalid_workspace in (True, "12", 12.0, [], {}, None, 13):
+            with self.subTest(workspace_id=invalid_workspace):
+                candidate = {**receipt, "workspace_id": invalid_workspace}
+                self.assertFalse(_sync_receipt_matches(candidate, 12, 7))
+        for invalid_revision in (True, "7", 7.0, [], {}, None, 8):
+            with self.subTest(revision=invalid_revision):
+                candidate = {**receipt, "revision": invalid_revision}
+                self.assertFalse(_sync_receipt_matches(candidate, 12, 7))
 
     def test_retry_rejects_malformed_persisted_history(self):
         self.task.status = "failed"
