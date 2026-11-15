@@ -516,8 +516,12 @@ def execute_agent_task_verification(job):
             )
             return {"status": "verification_stale", "task_id": task.id, "evidence": evidence}
 
+        if not passed:
+            from .reliable_repair import analyze_repair_evidence
+
+            evidence["repair_analysis"] = analyze_repair_evidence(profile, evidence)
         task.execution_evidence = evidence
-        task.execution_error = "" if passed else "Runner verification did not pass. Review the result and create a new approved patch."
+        task.execution_error = "" if passed else "Runner verification did not pass. Review the repair analysis and create a new approved patch."
         # Passing a generic profile is evidence only. Explicit human acceptance
         # is required before the task can become succeeded.
         task.status = "awaiting_approval" if passed else "failed"
