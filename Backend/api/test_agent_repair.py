@@ -294,6 +294,34 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertFalse(response.data.get("approval_token"))
         self.assertFalse(AuditLog.objects.filter(action="agent_task.repair_proposal_generated").exists())
 
+    def test_json_identity_fields_require_strict_integer_values(self):
+        from copy import deepcopy
+
+        for field in ("run_id", "task_id", "owner_id", "workspace_id"):
+            for malformed in (True, str(getattr(self, {"run_id": "run", "task_id": "task", "owner_id": "user", "workspace_id": "workspace"}[field]).id)):
+                with self.subTest(payload_field=field, malformed=repr(malformed)):
+                    payload = dict(self.verification_job.payload)
+                    payload[field] = malformed
+                    self.verification_job.payload = payload
+                    self.verification_job.save(update_fields=["payload"])
+                    response = self.client.post(self.url, {}, format="json")
+                    self.assertEqual(response.status_code, 409)
+                    self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+                    self.verification_job.payload = dict(payload, **{field: getattr(self, {"run_id": "run", "task_id": "task", "owner_id": "user", "workspace_id": "workspace"}[field]).id})
+                    self.verification_job.save(update_fields=["payload"])
+
+        for field, malformed in (("verification_job_id", True), ("verification_job_id", str(self.verification_job.id))):
+            with self.subTest(evidence_field=field, malformed=repr(malformed)):
+                evidence = deepcopy(self.evidence)
+                evidence[field] = malformed
+                self.task.execution_evidence = evidence
+                self.task.save(update_fields=["execution_evidence"])
+                self.verification_job.result = {"status": "verification_failed", "task_id": self.task.id, "evidence": evidence}
+                self.verification_job.save(update_fields=["result"])
+                response = self.client.post(self.url, {}, format="json")
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+
     def test_malformed_persisted_evidence_references_fail_closed(self):
         from copy import deepcopy
 
