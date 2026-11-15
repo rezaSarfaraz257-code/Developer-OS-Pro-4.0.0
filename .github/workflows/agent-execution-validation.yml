@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_repair.py"
       - "Backend/api/agent_runtime.py"
       - "Backend/api/ai_engine.py"
       - "Backend/api/management/commands/worker.py"
@@ -11,6 +12,7 @@ on:
       - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
       - "Backend/api/models.py"
       - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_repair.py"
       - "Backend/api/test_agent_runtime.py"
       - "Backend/api/test_agent_task_bound_approval.py"
       - "Backend/api/test_agent_runner_integration.py"
@@ -22,6 +24,7 @@ on:
     branches: [master]
     paths:
       - "Backend/api/agent_execution.py"
+      - "Backend/api/agent_repair.py"
       - "Backend/api/agent_runtime.py"
       - "Backend/api/ai_engine.py"
       - "Backend/api/management/commands/worker.py"
@@ -29,6 +32,7 @@ on:
       - "Backend/api/migrations/0038_agent_task_acceptance_criteria.py"
       - "Backend/api/models.py"
       - "Backend/api/test_agent_execution.py"
+      - "Backend/api/test_agent_repair.py"
       - "Backend/api/test_agent_runtime.py"
       - "Backend/api/test_agent_task_bound_approval.py"
       - "Backend/api/test_agent_runner_integration.py"
@@ -92,7 +96,7 @@ jobs:
           python manage.py migrate --noinput
       - name: Run Agent execution loop regression tests
         # Includes DAG planning, task-specific acceptance, and task-bound patch approval.
-        run: python manage.py test api.test_agent_execution api.test_agent_runtime api.test_agent_task_bound_approval --verbosity 2
+        run: python manage.py test api.test_agent_execution api.test_agent_repair api.test_agent_runtime api.test_agent_task_bound_approval --verbosity 2
 
   frontend-agent-execution:
     name: AI Assistant lint, build and unit tests
