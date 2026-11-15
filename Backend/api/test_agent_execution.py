@@ -8,8 +8,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, execute_agent_task_verification,
-    fail_agent_task_verification,
+    VERIFICATION_PROFILES, _safe_diagnostic_signals,
+    execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
@@ -21,6 +21,37 @@ def _runner_response_with_execution_id(response):
         return ({**response, "job_id": payload["execution_id"]}, None)
     return respond
 
+
+
+class SafeAgentDiagnosticSignalTests(TestCase):
+    def test_python_import_diagnostic_is_an_enum_without_output_content(self):
+        output = (
+            "ModuleNotFoundError: No module named 'private_internal_package'\n"
+            "AWS_SECRET_ACCESS_KEY=DO_NOT_PERSIST_THIS_VALUE"
+        )
+        signals = _safe_diagnostic_signals("python_pytest", "", output, 1)
+        self.assertEqual(signals, [{"code": "python_import_error", "source": "stderr"}])
+        self.assertNotIn("private_internal_package", str(signals))
+        self.assertNotIn("DO_NOT_PERSIST_THIS_VALUE", str(signals))
+
+    def test_node_module_resolution_signal_is_recognized_from_stdout(self):
+        signals = _safe_diagnostic_signals(
+            "node_build", "Error [ERR_MODULE_NOT_FOUND]: Cannot find package", "", 1,
+        )
+        self.assertEqual(
+            signals, [{"code": "node_module_resolution_error", "source": "stdout"}],
+        )
+
+    def test_unknown_failure_has_only_a_generic_exit_status_signal(self):
+        signals = _safe_diagnostic_signals(
+            "python_pytest", "", "opaque user-controlled output with a password", 2,
+        )
+        self.assertEqual(signals, [{"code": "command_failed", "source": "exit_status"}])
+        self.assertNotIn("password", str(signals))
+
+    def test_success_and_invalid_exit_codes_produce_no_diagnostic_signals(self):
+        self.assertEqual(_safe_diagnostic_signals("python_pytest", "", "", 0), [])
+        self.assertEqual(_safe_diagnostic_signals("python_pytest", "", "", True), [])
 
 
 class AgentTaskVerificationAPITests(TestCase):
@@ -490,6 +521,35 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.execution_evidence["state"], "infrastructure_failed")
         self.assertIsNotNone(self.task.execution_evidence["resync_job_id"])
         self.assertEqual(self.run.status, "failed")
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({
+        "job_id": "agent-diagnostic-001", "status": "failed", "exit_code": 1,
+        "duration_ms": 10, "stdout": "",
+        "stderr": "ModuleNotFoundError: No module named 'private_package'\nAWS_SECRET_ACCESS_KEY=DO_NOT_PERSIST_THIS_VALUE",
+    }))
+    def test_failed_verification_persists_only_allowlisted_diagnostic_signals(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.save(update_fields=["status", "attempts"])
+
+        result = execute_agent_task_verification(job)
+        self.assertEqual(result["status"], "verification_failed")
+        self.task.refresh_from_db()
+        evidence = self.task.execution_evidence
+        self.assertEqual(
+            evidence["diagnostic_signals"],
+            [{"code": "python_import_error", "source": "stderr"}],
+        )
+        self.assertNotIn("private_package", str(evidence))
+        self.assertNotIn("DO_NOT_PERSIST_THIS_VALUE", str(evidence))
+        self.assertNotIn("stderr", evidence)
+        self.assertFalse(evidence["output_persisted"])
         runner_request.assert_called_once()
 
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-failed-001", "status": "failed", "exit_code": 1, "duration_ms": 10, "stdout": "", "stderr": "failure"}))
