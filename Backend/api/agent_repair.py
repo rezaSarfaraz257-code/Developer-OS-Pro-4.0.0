@@ -197,6 +197,16 @@ def _repair_evidence_is_current(run, task, workspace):
         or evidence.get("output_persisted") is not False
         or evidence.get("revision") != workspace.revision
         or evidence.get("verification_job_id") != verification_job.id
+        # The verification job payload is authoritative for linked audit/job IDs;
+        # persisted evidence must agree exactly and reject bool/string/container IDs.
+        or type(job_payload.get("sync_job_id")) is not int
+        or job_payload.get("sync_job_id") < 1
+        or type(evidence.get("sync_job_id")) is not int
+        or evidence.get("sync_job_id") != job_payload.get("sync_job_id")
+        or type(job_payload.get("patch_audit_id")) is not int
+        or job_payload.get("patch_audit_id") < 1
+        or type(evidence.get("patch_audit_id")) is not int
+        or evidence.get("patch_audit_id") != job_payload.get("patch_audit_id")
         or not isinstance(evidence.get("diagnostic_signals"), list)
         or job_result.get("status") != "verification_failed"
         or job_result.get("task_id") != task.id
