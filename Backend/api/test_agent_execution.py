@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, _safe_diagnostic_signals, _sync_receipt_matches, _sync_revision_matches,
+    VERIFICATION_PROFILES, _is_positive_int, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches, _sync_revision_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
@@ -178,6 +178,12 @@ class AgentTaskVerificationAPITests(TestCase):
             with self.subTest(revision=invalid_revision):
                 candidate = {**receipt, "revision": invalid_revision}
                 self.assertFalse(_sync_receipt_matches(candidate, 12, 7))
+
+    def test_persisted_id_comparison_rejects_boolean_aliases(self):
+        self.assertTrue(_matches_positive_id(1, 1))
+        self.assertFalse(_matches_positive_id(True, 1))
+        self.assertFalse(_matches_positive_id("1", 1))
+        self.assertFalse(_matches_positive_id(1, True))
 
     def test_retry_rejects_malformed_persisted_history(self):
         self.task.status = "failed"
