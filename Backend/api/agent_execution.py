@@ -33,6 +33,11 @@ def _is_positive_int(value):
     return type(value) is int and value > 0
 
 
+def _matches_positive_id(value, expected):
+    """Compare persisted JSON identifiers without Python bool/int coercion."""
+    return _is_positive_int(value) and type(expected) is int and expected > 0 and value == expected
+
+
 def _sync_revision_matches(result, expected_revision):
     """Treat persisted job result JSON as untrusted and fail closed on coercion."""
     return (
@@ -713,8 +718,11 @@ def agent_task_accept_api(request, pk, task_pk):
         if task.depends_on.exclude(status="succeeded").exists():
             return Response({"error": "Complete every dependent task before accepting this task."}, status=409)
         if task.status == "succeeded":
-            acceptance = (task.execution_evidence or {}).get("human_acceptance", {})
-            if acceptance.get("user_id") == request.user.id:
+            stored_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+            acceptance = stored_evidence.get("human_acceptance", {})
+            if not isinstance(acceptance, dict):
+                acceptance = {}
+            if _matches_positive_id(acceptance.get("user_id"), request.user.id):
                 return Response(_task_status_payload(task, task.execution_job), status=200)
             return Response({"error": "This task has already been accepted."}, status=409)
         if task.status != "awaiting_approval":
@@ -740,22 +748,24 @@ def agent_task_accept_api(request, pk, task_pk):
             not verification_job or verification_job.kind != "ai_agent_task_verify"
             or verification_job.status != "succeeded"
             or task.execution_job_id != verification_job.id
-            or job_payload.get("run_id") != run.id
-            or job_payload.get("task_id") != task.id
-            or job_payload.get("owner_id") != request.user.id
-            or job_payload.get("workspace_id") != run.workspace_id
-            or job_payload.get("revision") != evidence.get("revision")
-            or type(evidence.get("revision")) is not int
-            or evidence.get("revision") < 1
+            or not _matches_positive_id(job_payload.get("run_id"), run.id)
+            or not _matches_positive_id(job_payload.get("task_id"), task.id)
+            or not _matches_positive_id(job_payload.get("owner_id"), request.user.id)
+            or not _matches_positive_id(job_payload.get("workspace_id"), run.workspace_id)
+            or not _matches_positive_id(job_payload.get("revision"), evidence.get("revision"))
+            or not _is_positive_int(evidence.get("revision"))
             or task.execution_revision != evidence.get("revision")
+            or not isinstance(job_payload.get("profile"), str)
             or job_payload.get("profile") not in VERIFICATION_PROFILES
             or job_payload.get("profile") != task.execution_profile
             or job_payload.get("profile") != evidence.get("profile")
-            or job_payload.get("sync_job_id") != evidence.get("sync_job_id")
-            or job_payload.get("patch_audit_id") != evidence.get("patch_audit_id")
-            or evidence.get("verification_job_id") != verification_job.id
+            or not _matches_positive_id(job_payload.get("sync_job_id"), evidence.get("sync_job_id"))
+            or not _is_positive_int(evidence.get("sync_job_id"))
+            or not _matches_positive_id(job_payload.get("patch_audit_id"), evidence.get("patch_audit_id"))
+            or not _is_positive_int(evidence.get("patch_audit_id"))
+            or not _matches_positive_id(evidence.get("verification_job_id"), verification_job.id)
             or not isinstance(evidence.get("runner_job_id"), str)
-            or not evidence.get("runner_job_id")
+            or evidence.get("runner_job_id") != f"agent-{verification_job.id}"
             or job_result.get("status") != "verification_passed_pending_acceptance"
             or job_result.get("evidence") != evidence
             or evidence.get("state") != "passed"
