@@ -38,15 +38,6 @@ def _matches_positive_id(value, expected):
     return _is_positive_int(value) and type(expected) is int and expected > 0 and value == expected
 
 
-def _sync_revision_matches(result, expected_revision):
-    """Treat persisted job result JSON as untrusted and fail closed on coercion."""
-    return (
-        isinstance(result, dict)
-        and type(result.get("revision")) is int
-        and result.get("revision") == expected_revision
-    )
-
-
 def _sync_receipt_matches(result, expected_workspace_id, expected_revision):
     """Bind a persisted Runner sync receipt to one exact workspace and revision."""
     return (
