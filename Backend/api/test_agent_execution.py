@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, _is_positive_int, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches, _sync_revision_matches,
+    VERIFICATION_PROFILES, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
@@ -160,12 +160,6 @@ class AgentTaskVerificationAPITests(TestCase):
                 }, format="json")
                 self.assertEqual(response.status_code, 409)
                 self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
-
-    def test_sync_revision_matcher_never_coerces_untrusted_json(self):
-        self.assertTrue(_sync_revision_matches({"revision": 7}, 7))
-        for value in (True, "7", 7.0, [], {}, None):
-            with self.subTest(value=value):
-                self.assertFalse(_sync_revision_matches({"revision": value}, 7))
 
     def test_sync_receipt_is_bound_to_exact_workspace_and_revision(self):
         receipt = {"workspace_id": 12, "revision": 7, "status": "synced"}
@@ -466,6 +460,18 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(rejected.status_code, 409)
         self.task.execution_evidence = valid_evidence
         self.task.save(update_fields=["execution_evidence", "updated_at"])
+
+        original_job_payload = dict(job.payload)
+        job.payload = {**original_job_payload, "profile": []}
+        job.save(update_fields=["payload"])
+        rejected = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.task.acceptance_criteria},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 409)
+        job.payload = original_job_payload
+        job.save(update_fields=["payload"])
 
         patch_audit = AuditLog.objects.get(pk=job.payload["patch_audit_id"])
         original_patch_metadata = dict(patch_audit.metadata)
