@@ -16,7 +16,7 @@ This runbook defines the operational baseline for a real production deployment.
 
 - `/api/health/live/` is the dependency-free process liveness signal. Docker/container healthchecks must use this endpoint so a missing optional/paid worker does not cause the API process to be marked unhealthy or repeatedly restarted.
 - `/api/health/` checks API/database health and reports the deployed release identity.
-- `/api/health/ready/` is the production traffic-readiness contract. It validates database connectivity, trusted hosts, non-development secret configuration, deliverable-email configuration, cache health, and a fresh background-worker heartbeat with no stale running jobs.
+- `/api/health/ready/` is the production traffic-readiness contract. It validates PostgreSQL connectivity, trusted hosts, non-development secret configuration, deliverable-email configuration, Redis cache health, a fresh background-worker heartbeat with no stale running jobs, and the secure execution runner. In strict production/platform runtimes the runner must report strict Bubblewrap isolation, execution availability, no trusted shared-container fallback, and isolated network enforcement.
 - A production readiness response of HTTP 503 when the worker is absent is intentional and must not be hidden; do not route traffic that requires queued jobs until readiness passes. Container liveness and traffic readiness are separate signals.
 - Readiness is not a substitute for synthetic user journeys; production acceptance must exercise authentication, core workspace operations, runner execution, queued email delivery and billing boundaries.
 
@@ -47,6 +47,15 @@ User-uploaded media should use S3-compatible persistent storage in production. D
 ## 5. Database safety
 
 PostgreSQL is the production source of truth. Backups must be automated outside the application container and periodically restored into an isolated environment. The CI recovery job verifies that the repository's backup/restore procedure remains executable.
+
+The repository backup script writes a custom-format dump and a portable SHA-256 sidecar. Restore verifies the sidecar and archive before connecting to the target database. It deliberately does not use `pg_restore --clean` or `--if-exists`: create a separate, empty recovery database first and restore into that database. If objects already exist, the restore runs in one transaction and fails without dropping or replacing them. Never point the routine restore command at the production database as an in-place overwrite procedure. Validate recovered data and application compatibility before any separately approved cutover.
+
+Example recovery flow (run only with approved database credentials and a separately provisioned target):
+```sh
+POSTGRES_DB=developer_os_recovery BACKUP_FILE=/secure-backups/developer-os-<timestamp>.dump \
+  sh scripts/restore_postgres.sh
+```
+The target database must already exist and be empty. The restore script checks for existing user schemas, relations, routines, standalone types, operators, collations, conversions, text-search objects, operator classes/families, foreign-data wrappers/servers/user mappings, non-default procedural languages, large objects, event triggers, publications, customized default privileges, per-database role settings, global settings for the restore login and non-default extensions before it invokes `pg_restore`; it rejects non-empty targets even when their objects would not collide with the backup. Keep the dump and its `.sha256` sidecar together when moving them to recovery storage. A missing or mismatched checksum is a hard failure.
 
 Before destructive schema changes:
 
@@ -95,6 +104,19 @@ At minimum, production monitoring should alert on:
 - repeated authentication/security throttling anomalies.
 
 OpenTelemetry is intentionally an optional observability layer rather than a hard dependency of the core release gate. Python traces and metrics are currently stable, while the broader signal/component maturity is mixed; instrumentation should be enabled only with a tested exporter/backend and initialized correctly for the Gunicorn/Uvicorn worker model.
+
+## 9.1 Readiness diagnostics
+
+The public readiness response keeps dependency state in the existing `checks` object, including the isolated execution runner gate.
+When cache readiness fails, it may additionally expose `diagnostics.cache` using
+only fixed categories: `cache_url_missing`, `redis_backend_not_configured`,
+`cache_roundtrip_mismatch`, `cache_backend_error:<ExceptionClass>`, or
+`cache_unavailable`. The diagnostic is intentionally not a Redis connectivity
+string: it must never contain a cache URL, hostname, username, password, raw
+exception message, or environment value. Use the sanitized category together
+with the API's structured server-side readiness log to investigate the
+deployment configuration. A diagnostic does not change the readiness result;
+HTTP 503 remains a hard traffic gate until the underlying dependency is fixed.
 
 ## 10. Incident response
 

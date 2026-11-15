@@ -1,7 +1,7 @@
 /** Pure validators for the read-only live SaaS smoke monitor. */
 export const PLAN_NAMES = Object.freeze(["free", "pro", "team", "enterprise"]);
 export const REQUIRED_READINESS_CHECKS = Object.freeze([
-  "database", "secret_key", "allowed_hosts", "email", "cache", "worker",
+  "database", "secret_key", "allowed_hosts", "email", "cache", "worker", "runner",
 ]);
 export const FEATURE_KEYS = Object.freeze([
   "web_ide", "ai_assistant", "api_keys", "organizations", "collaboration",
@@ -70,6 +70,11 @@ export function summarizeHealthPayload(body) {
     }
     if (Object.keys(checks).length) summary.checks = checks;
   }
+  const cacheDiagnostic = payload.diagnostics?.cache;
+  if (typeof cacheDiagnostic === "string" &&
+      /^(cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable)$/.test(cacheDiagnostic)) {
+    summary.diagnostics = { cache: cacheDiagnostic };
+  }
   return Object.keys(summary).length ? summary : null;
 }
 
@@ -132,12 +137,14 @@ export function isReady({ response, body, result = {} }) {
   const checkSummary = missing.length
     ? `failed or missing checks: ${missing.join(", ")}`
     : "no failed required checks were reported";
-  // Django intentionally returns structured readiness diagnostics with HTTP
-  // 503. Preserve the failure status while surfacing only allow-listed check
-  // names; never log or echo arbitrary response bodies or configuration values.
+  const cacheDiagnostic = typeof json?.diagnostics?.cache === "string" &&
+    /^(cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable)$/.test(json.diagnostics.cache)
+    ? `; cache diagnostic: ${json.diagnostics.cache}` : "";
+  // Preserve the readiness failure status while surfacing only allow-listed
+  // check names and diagnostic categories; never echo arbitrary response data.
   if (!response.ok) {
     if (response.status >= 500 && Object.keys(checks).length > 0) {
-      return `HTTP ${response.status}; ${checkSummary}; ${statusProblem || "status is ready"}`;
+      return `HTTP ${response.status}; ${checkSummary}; ${statusProblem || "status is ready"}${cacheDiagnostic}`;
     }
     return `HTTP ${response.status}`;
   }
@@ -384,7 +391,7 @@ export function diagnoseChecks(checks) {
       message: failedCheckSummary
         ? `API readiness returned HTTP ${readiness.status}; required checks not passing: ${failedCheckSummary.trim()}.`
         : `API readiness returned HTTP ${readiness.status}; the endpoint is reachable but is not ready for production traffic.`,
-      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency or worker check. Verify service configuration and worker heartbeat; do not change the readiness status to green or disable required checks without fixing the underlying condition.",
+      action: "Inspect the readiness JSON and sanitized API logs in Render to identify the failed dependency, worker, or isolated runner check. Verify the worker heartbeat and confirm the runner capabilities endpoint reports strict Bubblewrap isolation, execution availability, disabled shared-container trust, and isolated network enforcement; do not change readiness to green or disable required checks without fixing the underlying condition.",
     });
   }
 

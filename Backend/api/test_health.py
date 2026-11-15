@@ -295,6 +295,50 @@ class RenderReadinessFailClosedRegressionTests(TestCase):
 
 
 class SecureRunnerReadinessTests(TestCase):
+    @override_settings(
+        DEBUG=False,
+        IS_PRODUCTION=True,
+        SECRET_KEY="ci-readiness-test-secret-with-sufficient-entropy",
+        ALLOWED_HOSTS=["testserver"],
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.test",
+        DATABASES={"default": {"ENGINE": "django.db.backends.postgresql"}},
+        DATABASE_URL="postgresql://ci:ci@example.test:5432/developer_os",
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "runner-readiness-test",
+            }
+        },
+    )
+    def test_runner_is_a_mandatory_production_readiness_gate(self):
+        from api.models import BackgroundJob, WorkerHeartbeat
+
+        with (
+            patch("api.views.connection.cursor") as cursor_factory,
+            patch("api.views._cache_readiness", return_value=(True, "")),
+            patch("api.views._secure_runner_ready", side_effect=[False, True]) as runner_ready,
+            patch.object(WorkerHeartbeat.objects, "filter") as worker_filter,
+            patch.object(BackgroundJob.objects, "filter") as job_filter,
+        ):
+            cursor = cursor_factory.return_value.__enter__.return_value
+            cursor.fetchone.return_value = (1,)
+            worker_filter.return_value.exists.return_value = True
+            job_filter.return_value.filter.return_value.exists.return_value = False
+
+            client = DjangoTestClient()
+            blocked = client.get("/api/health/ready/?format=json")
+            allowed = client.get("/api/health/ready/?format=json")
+
+        self.assertEqual(blocked.status_code, 503)
+        self.assertFalse(blocked.json()["checks"]["runner"])
+        self.assertEqual(blocked.json()["status"], "not_ready")
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(allowed.json()["checks"]["runner"])
+        self.assertEqual(allowed.json()["status"], "ready")
+        self.assertEqual(runner_ready.call_count, 2)
+
+
     @patch("api.views.RUNNER_URL", "http://runner:8080")
     @patch("api.views.RUNNER_TOKEN", "test-runner-token")
     @patch("api.views.requests.get")
@@ -355,6 +399,38 @@ class SecureRunnerReadinessTests(TestCase):
     @patch("api.views.requests.get", side_effect=requests.RequestException("offline"))
     def test_runner_network_failure_fails_closed(self, _get):
         self.assertFalse(_secure_runner_ready())
+
+
+class PublicCacheDiagnosticTests(TestCase):
+    def test_cache_diagnostic_allows_only_safe_categories(self):
+        from .views import _public_cache_diagnostic
+
+        self.assertEqual(_public_cache_diagnostic("cache_url_missing"), "cache_url_missing")
+        self.assertEqual(
+            _public_cache_diagnostic("redis_backend_not_configured"),
+            "redis_backend_not_configured",
+        )
+        self.assertEqual(
+            _public_cache_diagnostic("cache_roundtrip_mismatch"),
+            "cache_roundtrip_mismatch",
+        )
+        self.assertEqual(
+            _public_cache_diagnostic("cache_backend_error:TimeoutError"),
+            "cache_backend_error:TimeoutError",
+        )
+
+    def test_cache_diagnostic_never_echoes_urls_or_exception_messages(self):
+        from .views import _public_cache_diagnostic
+
+        unsafe_values = (
+            "redis://user:password@private-cache:6379/1",
+            "cache_backend_error:TimeoutError: redis://user:password@private-cache",
+            "unexpected_internal_value",
+            None,
+        )
+        for value in unsafe_values:
+            with self.subTest(value=value):
+                self.assertEqual(_public_cache_diagnostic(value), "cache_unavailable")
 
 
 class CacheReadinessProbeTests(TestCase):

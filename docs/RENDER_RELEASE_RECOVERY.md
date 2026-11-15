@@ -20,9 +20,10 @@ The production readiness contract intentionally requires all of these checks to 
 - PostgreSQL connection and `DATABASE_URL`
 - Non-development Django secret key
 - Exact, non-wildcard production `ALLOWED_HOSTS`
-- Real SMTP email backend and host configuration
+- A real SMTP transport with a configured host, or the supported Resend HTTPS backend with API key and verified sender
 - Redis-backed shared cache via `CACHE_URL`
-- A fresh background-worker heartbeat
+- A fresh background-worker heartbeat with no stale running jobs
+- A reachable execution runner whose capabilities confirm strict Bubblewrap isolation, execution availability, no trusted shared-container fallback, and isolated network enforcement
 
 A 503 response means the service is not ready for production traffic. Do not disable readiness checks, substitute SQLite/in-memory cache, or switch production email to the console backend to force a green status.
 
@@ -37,8 +38,10 @@ In the Render environment settings for the API, verify the following are set to 
 - `CACHE_URL` (reachable Redis URL)
 - `ALLOWED_HOSTS` (API host, exact hostnames only)
 - `FRONTEND_URL` (HTTPS frontend origin)
-- `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
-- `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and appropriate TLS settings
+- Configure exactly one supported production mail transport:
+  - SMTP: `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` with `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and appropriate TLS settings; or
+  - Resend HTTPS API: `EMAIL_BACKEND=api.email_backends.resend.EmailBackend`, `RESEND_API_KEY`, and a verified `DEFAULT_FROM_EMAIL`.
+- Do not use the console email backend in production. The readiness probe accepts SMTP only when a host is configured, or Resend only when its API key and sender are configured.
 
 Do not paste secrets into GitHub issues, PRs, logs, or chat. Never commit these values to the repository.
 
@@ -47,6 +50,12 @@ Do not paste secrets into GitHub issues, PRs, logs, or chat. Never commit these 
 The durable background worker must start against the same production database and cache as the API. Verify its logs show successful startup and a recent heartbeat; restarting only the API will not repair a missing worker.
 
 The Web IDE runner is a separate security boundary. The current Render runner definition requests strict Bubblewrap namespace isolation. If the host runtime cannot create the required Linux namespaces, execution must remain disabled. **Do not change the runner to a permissive/shared-container mode** to make Run appear successful. Move execution to a runtime that supports the required isolation (for example, dedicated sandboxed compute with enforced CPU/memory/time limits, filesystem restrictions, and network denial) before enabling arbitrary code execution.
+
+## 4.1 Database recovery must not overwrite production in place
+
+The supported repository restore script verifies the backup's SHA-256 sidecar and validates the custom-format archive before connecting to the target. It intentionally does not use `pg_restore --clean` or `--if-exists`. Provision a separate, empty recovery database and restore there; if the target already contains conflicting objects, the single-transaction restore must fail without deleting or replacing those objects. Keep the dump and its `.sha256` sidecar together when moving them. A missing or mismatched checksum is a hard failure.
+
+Do not run a restore against the live production database as an in-place overwrite. Validate the isolated restored database and application compatibility first. Any later cutover is a separate, explicitly approved recovery operation with its own backup, rollback plan, and change window.
 
 ## 5. Final live acceptance
 
