@@ -42,6 +42,21 @@ def _sync_revision_matches(result, expected_revision):
     )
 
 
+def _sync_receipt_matches(result, expected_workspace_id, expected_revision):
+    """Bind a persisted Runner sync receipt to one exact workspace and revision."""
+    return (
+        isinstance(result, dict)
+        and type(expected_workspace_id) is int
+        and expected_workspace_id > 0
+        and type(expected_revision) is int
+        and expected_revision > 0
+        and type(result.get("workspace_id")) is int
+        and result.get("workspace_id") == expected_workspace_id
+        and type(result.get("revision")) is int
+        and result.get("revision") == expected_revision
+    )
+
+
 def _queue_agent_runner_resync(workspace, actor, verification_job_id):
     """Queue an authoritative snapshot after an execution may have changed Runner state."""
     key = f"agent-runner-resync:{workspace.id}:{workspace.revision}:{verification_job_id}"
@@ -208,7 +223,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
         if (
             sync_job.status != "succeeded"
             or sync_result.get("status") != "synced"
-            or not _sync_revision_matches(sync_result, revision)
+            or not _sync_receipt_matches(sync_result, workspace.id, revision)
             or not AuditLog.objects.filter(
                 user=request.user, action="ai_agent.runner_workspace_synced",
                 target_type="CodeWorkspace", target_id=str(workspace.id),
@@ -361,7 +376,7 @@ def execute_agent_task_verification(job):
         ).exists()
         if (
             not sync_job or sync_result.get("status") != "synced"
-            or not _sync_revision_matches(sync_result, workspace.revision)
+            or not _sync_receipt_matches(sync_result, workspace.id, workspace.revision)
             or not sync_audited
         ):
             raise RuntimeError("The verified workspace revision is not synchronized to Runner.")
@@ -766,8 +781,7 @@ def agent_task_accept_api(request, pk, task_pk):
         if (
             not sync_job
             or sync_result.get("status") != "synced"
-            or type(sync_result.get("revision")) is not int
-            or sync_result.get("revision") != evidence.get("revision")
+            or not _sync_receipt_matches(sync_result, run.workspace_id, evidence.get("revision"))
             or not AuditLog.objects.filter(
                 user=request.user,
                 action="ai_agent.runner_workspace_synced",
