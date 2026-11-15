@@ -131,14 +131,16 @@ _DIAGNOSTICS = {
 
 def analyze_repair_evidence(profile, evidence):
     """Build a bounded repair recommendation from trusted, allowlisted evidence."""
-    if profile not in _SUPPORTED_PROFILES or not isinstance(evidence, dict):
+    if not isinstance(profile, str) or profile not in _SUPPORTED_PROFILES or not isinstance(evidence, dict):
         raise ValueError("Repair analysis requires a supported verification profile and evidence object.")
 
     if evidence.get("profile") != profile:
         raise ValueError("Repair analysis profile does not match the recorded evidence.")
 
     state = evidence.get("state")
-    if state not in {"failed", "infrastructure_failed", "stale_workspace", "finalization_failed"}:
+    if not isinstance(state, str) or state not in {
+        "failed", "infrastructure_failed", "stale_workspace", "finalization_failed",
+    }:
         raise ValueError("Repair analysis is only available for failed verification evidence.")
 
     signals = evidence.get("diagnostic_signals", [])
@@ -152,8 +154,10 @@ def analyze_repair_evidence(profile, evidence):
             raise ValueError("Repair diagnostic signal has an invalid shape.")
         code, source = signal.get("code"), signal.get("source")
         if (
-            code not in _DIAGNOSTICS
+            not isinstance(code, str)
+            or code not in _DIAGNOSTICS
             or profile not in _DIAGNOSTIC_PROFILES.get(code, set())
+            or not isinstance(source, str)
             or source not in {"stdout", "stderr", "exit_status"}
         ):
             raise ValueError("Repair diagnostic signal is not allowlisted for this verification profile.")
