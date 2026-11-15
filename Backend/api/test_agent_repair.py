@@ -322,6 +322,25 @@ class AgentTaskRepairProposalTests(TestCase):
                 self.assertEqual(response.status_code, 409)
                 self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
 
+    def test_sync_job_payload_identity_requires_strict_integer_values(self):
+        for field, expected in (
+            ("workspace_id", self.workspace.id),
+            ("owner_id", self.user.id),
+            ("requested_revision", self.workspace.revision),
+        ):
+            for malformed in (True, str(expected)):
+                with self.subTest(sync_payload_field=field, malformed=repr(malformed)):
+                    payload = dict(self.sync_job.payload)
+                    payload[field] = malformed
+                    self.sync_job.payload = payload
+                    self.sync_job.save(update_fields=["payload"])
+                    response = self.client.post(self.url, {}, format="json")
+                    self.assertEqual(response.status_code, 409)
+                    self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+                    payload[field] = expected
+                    self.sync_job.payload = payload
+                    self.sync_job.save(update_fields=["payload"])
+
     def test_malformed_persisted_evidence_references_fail_closed(self):
         from copy import deepcopy
 
