@@ -55,6 +55,22 @@ The API readiness probe requires the dedicated Runner to answer `GET /capabiliti
 
 Do not set a compatibility/shared-container mode to bypass this requirement. The Runner must independently keep network egress disabled in managed production and enforce bounded resources/output. Validate Bubblewrap on the actual deployed runtime before enabling code execution.
 
+### Runner readiness diagnostics
+
+The API's Runner readiness probe now records a structured, secret-safe `runner_readiness_failed` event and returns a bounded diagnostic category alongside the existing `checks.runner` boolean. It never logs the Runner URL, bearer token, response body, or exception message.
+
+| Diagnostic | Meaning | Corrective action |
+|---|---|---|
+| `runner_url_missing` | `IDE_RUNNER_URL` is not configured | Set it to the dedicated Runner's private/internal service URL, reachable from the API service |
+| `runner_token_missing` | The API has no `IDE_RUNNER_TOKEN` | Set a high-entropy token on both API and Runner; compare by securely rotating both values, never by pasting them into logs |
+| `runner_request_error:Timeout` / `ConnectionError` | The API cannot reach the configured Runner endpoint | Verify service health, private networking, hostname/port, and service restart state |
+| `runner_http_status:401` | Runner rejected the control-plane credential | Rotate the same token on both services and redeploy both |
+| `runner_http_status:503` | Runner is reachable but its capabilities endpoint is unavailable | Inspect Runner startup/runtime logs and its own `/health` endpoint |
+| `runner_capability_contract_mismatch` | Runner responds, but does not advertise the required strict isolated execution contract | Inspect authenticated `/capabilities`; require strict Bubblewrap, execution enabled, no shared container, isolated network enforcement, and execute/process operations enabled |
+| `runner_invalid_response` | Runner returned a non-JSON or malformed capabilities response | Verify the API points to the Runner service, not a proxy, frontend, or unrelated endpoint |
+
+A `runner_capability_contract_mismatch` caused by blocked Linux namespaces is a host-runtime limitation. Keep execution blocked and move Runner to a compatible isolated Linux runtime. Do not switch to compatibility/shared-container mode, enable network egress, or weaken the capability checks.
+
 ## Background worker
 
 The Render background worker must run the project's `worker` management command and continuously refresh the `background-worker` heartbeat. The readiness probe requires a heartbeat no older than 90 seconds and rejects stale running jobs. Confirm the worker is healthy in Render logs; do not synthesize heartbeat rows manually.
