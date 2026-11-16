@@ -86,6 +86,9 @@ class AgentTaskImplementationProposalTests(TestCase):
         self.assertTrue(response.data["workspace_mutated"] is False)
         self.assertEqual(response.data["workspace_revision"], before_revision)
         self.assertEqual(response.data["proposal"], self.proposal)
+        provider.assert_called_once()
+        provider_context = provider.call_args.args[1]["agent_task_implementation"]
+        self.assertEqual(provider_context["task"]["acceptance_criteria"], self.task.acceptance_criteria)
         token = signing.loads(response.data["approval_token"])
         self.assertEqual(token["user_id"], self.user.id)
         self.assertEqual(token["workspace_id"], self.workspace.id)
