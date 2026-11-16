@@ -36,8 +36,8 @@ test("renders summary, health diagnostics, and per-check evidence", () => {
   assert.match(output, /Developer OS — Live SaaS Observability/);
   assert.match(output, /Checks passed \| 1\/2/);
   assert.match(output, /Sanitized dependency diagnostics/);
-  assert.match(output, /api-readiness \/ cache: cache_backend_error:TimeoutError/);
-  assert.match(output, /api-readiness \/ runner: runner_http_status:503/);
+  assert.match(output, /\*\*api-readiness \/ cache:\*\* cache_backend_error:TimeoutError/);
+  assert.match(output, /\*\*api-readiness \/ runner:\*\* runner_http_status:503/);
   assert.match(output, /api-readiness \| 503 \| 2 \| 4100 ms \| FAIL/);
 });
 
