@@ -22,13 +22,13 @@ from .models import AgentRun, AgentTask, AuditLog
 def agent_task_patch_proposal_api(request, pk, task_pk):
     """Generate a bounded, task-specific patch proposal; require human apply."""
     from .ai_engine import (
-        _agent_context_file_samples,
         _agent_parse_patch,
         _issue_patch_approval_token,
         _provider_safe_context_path,
         _valid_agent_task_acceptance_criteria,
     )
-    from .agent_repair import _valid_repair_proposal, _repairable_sample_paths
+    from .agent_repair import _valid_repair_proposal
+    from .agent_runtime import _redact_sensitive_content
     from .views import _consume_usage, _workspace_for_user, _workspace_write_allowed
 
     with transaction.atomic():
