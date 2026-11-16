@@ -1354,14 +1354,16 @@ test("workspace recovery warns that browser storage is not encrypted", () => {
 
 
 
-test("Agent task patching and human acceptance use task-specific acceptance criteria", () => {
+test("Agent task patching uses task-bound proposal and evidence-gated repair endpoints", () => {
   const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
-  assert.ok(assistant.includes('"Task acceptance criteria: " + JSON.stringify(task.acceptance_criteria || [])'));
   assert.ok(assistant.includes("function taskAcceptanceCriteria(task)"));
-  assert.ok(assistant.includes('accepted_criteria: criteria'));
-  assert.ok(assistant.includes('agent_run_id: agentRun.id, agent_task_id: task.id'));
+  assert.ok(assistant.includes('const action = task.status === "failed" ? "repair-proposal" : "proposal";'));
+  assert.ok(assistant.includes('"/ai/agent/runs/" + agentRun.id + "/tasks/" + task.id + "/" + action + "/"'));
+  assert.ok(assistant.includes("data.proposal.changes"));
+  assert.ok(assistant.includes("data.approval_token"));
   assert.ok(assistant.includes('Review every task-specific acceptance criterion before marking this task complete:'));
   assert.ok(assistant.includes("const criteria = taskAcceptanceCriteria(task);"));
+  assert.ok(assistant.includes('accepted_criteria: criteria'));
   assert.doesNotMatch(assistant, /accepted_criteria: agentRun\.plan\?\.acceptance_criteria/);
 });
 
