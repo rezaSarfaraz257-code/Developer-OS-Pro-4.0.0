@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   smoke:
-    name: Read-only production availability and route checks
+    name: Live SaaS monitor (PR contract tests; production probes on master/schedule)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     # This job performs unauthenticated, read-only probes only. Do not bind it
