@@ -6,6 +6,7 @@ isolated Runner verification pipeline. It never writes workspace files.
 from __future__ import annotations
 
 import json
+from itertools import islice
 from types import SimpleNamespace
 
 from django.db import transaction
@@ -61,7 +62,7 @@ def agent_task_patch_proposal_api(request, pk, task_pk):
         # it entirely so the model cannot propose a replacement from redacted code.
         safe_files = {}
         total_context_chars = 0
-        for path, content in list(workspace_files.items())[:120]:
+        for path, content in islice(workspace_files.items(), 120):
             if (
                 not isinstance(path, str)
                 or not isinstance(content, str)
