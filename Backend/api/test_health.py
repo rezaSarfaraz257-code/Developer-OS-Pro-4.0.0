@@ -317,7 +317,10 @@ class SecureRunnerReadinessTests(TestCase):
         with (
             patch("api.views.connection.cursor") as cursor_factory,
             patch("api.views._cache_readiness", return_value=(True, "")),
-            patch("api.views._secure_runner_ready", side_effect=[False, True]) as runner_ready,
+            patch(
+                "api.views._secure_runner_readiness",
+                side_effect=[(False, "runner_token_missing"), (True, "")],
+            ) as runner_ready,
             patch.object(WorkerHeartbeat.objects, "filter") as worker_filter,
             patch.object(BackgroundJob.objects, "filter") as job_filter,
         ):
