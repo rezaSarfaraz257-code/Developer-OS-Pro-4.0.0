@@ -242,7 +242,7 @@ export default function AIAssistantPage({ setPage }) {
       await refreshAgentRun(agentRun.id);
       setToolCalls((old) => [...old, { name: tool, state: "complete" }]);
       setAgentToolResult(JSON.stringify(data.result || {}, null, 2).slice(0, 12000));
-      setAnswer(`Task "${task.title}" completed using ${tool}. The tool is read-only; no workspace files were changed.`);
+      setAnswer(`Read-only analysis completed using ${tool}. Task "${task.title}" remains open; no workspace files were changed.`);
     } catch (err) {
       setError(err.message || "Agent evidence tool failed.");
     } finally {
