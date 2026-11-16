@@ -2,18 +2,22 @@
 
 This runbook documents the production dependencies enforced by the Django readiness probe. It is intentionally fail-closed: do not make readiness green by disabling checks, using a local-memory cache, or weakening the Runner isolation contract.
 
-## Current incident snapshot (2026-11-08)
+## Current incident snapshot (2026-11-16)
 
-The scheduled Live SaaS Smoke Monitor artifact reported 10/13 checks passing. The API reported:
+The latest scheduled Live SaaS Smoke Monitor run is `43904045597` (2026-11-16 16:11 UTC). It completed with **9/13 checks passing and 4 failing**. The deployed API still reports release `23f09da8a3cf3cd3ba27df666e191d1417ee6bb2`, while the expected `master` release is `a6d1b612229e391744f699cabd324cd6f52122ac` (62 commits behind at the time of the probe).
 
-- Database: healthy
-- Secret key: configured
-- Allowed hosts: valid
-- Email transport: configured
-- Cache: **failed**
-- Background worker heartbeat: healthy
+The latest probe confirms two distinct production blockers:
 
-The API was running release `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf`, while `master` was at `4bcd726f1cb49b9121b0baab34f97c03dd0d4a73`. The release mismatch and cache failure are separate issues.
+- **Release mismatch:** the API liveness and health responses return HTTP 200 but expose the old release SHA, so both fail the release-identity contract.
+- **Readiness failure:** `/api/health/ready/` returns HTTP 503. Safe diagnostics report `database: true`, `worker: true`, `cache: false`, and `runner: false`. The API security-header check also fails because its endpoint returned HTTP 503.
+
+The frontend root and Web IDE routes return HTTP 200. That does not establish API readiness or safe code execution. Cache and strict isolated Runner remain separate dependencies; fixing one does not imply the other is healthy.
+
+This is a live Render incident, not a PR-CI failure. Pull-request executions of the monitor run contract tests only and explicitly skip external production probes. A green pull-request monitor job is not evidence of production health. The incident remains open until the API release identity matches the intended deployed commit, readiness returns HTTP 200 with every mandatory check true, and the live monitor passes all 13 checks.
+
+Earlier 2026-11-16 snapshot (run `43815825025`): the same deployed release and cache/Runner readiness failures were observed. The later run `43904045597` confirms they remain unresolved.
+
+Historical snapshot (2026-11-08): an earlier monitor reported 10/13 checks passing, with cache failed and worker heartbeat healthy. Its release was `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf` versus then-`master` `4bcd726f1cb49b9121b0baab34f97c03dd0d4a73`.
 
 ## Required Backend service configuration
 
@@ -43,9 +47,23 @@ The current settings map `CACHE_URL` to Django's `django.core.cache.backends.red
 4. Redeploy/restart the Backend only after confirming the service and variable are configured.
 5. Recheck `/api/health/ready/`. The expected cache check must be `true`; do not accept an HTTP 200 from liveness as proof of readiness.
 
-## Runner security requirements
+## Dedicated Runner service configuration and security gate
 
-The API readiness probe requires the dedicated Runner to answer `GET /capabilities` using the configured bearer token and to report:
+Configure the dedicated Render Runner service from the repository's `Runner/Dockerfile` and `Runner/main.py` contract:
+
+| Variable | Required value / handling |
+|---|---|
+| `IDE_RUNNER_TOKEN` | Same high-entropy secret as the Backend service; never expose it in logs or client code |
+| `RUNNER_SECURITY_LEVEL` | `strict` |
+| `RUNNER_SANDBOX_MODE` | `bwrap`; only approve after namespace isolation works on the actual Render host |
+| `RUNNER_ALLOW_NETWORK` | `false`; managed production forces network access off regardless |
+| `RUNNER_TIMEOUT_SECONDS` | Keep bounded; application clamps the maximum to 120 seconds |
+| `RUNNER_MEMORY_MB` | Keep within the supported 128–2048 MB range and the service's actual memory budget |
+| `RUNNER_MAX_CONCURRENT` | Set conservatively for the allocated CPU/RAM; application bounds it to 1–64 |
+
+On the Backend service, set `IDE_RUNNER_URL` to the Runner service's private/internal URL, not a guessed hostname. Keep the Runner reachable only through the intended private service path; the Backend authenticates using the bearer token.
+
+The unauthenticated `GET /health` endpoint is only a process/health signal. It is not proof that code execution is safe or available. The Backend readiness gate authenticates to `GET /capabilities` and requires the exact strict Bubblewrap contract:
 
 - Bubblewrap isolation backend and strict security level
 - Execution available
@@ -53,7 +71,7 @@ The API readiness probe requires the dedicated Runner to answer `GET /capabiliti
 - Isolated network enforcement
 - Execute and process operations available
 
-Do not set a compatibility/shared-container mode to bypass this requirement. The Runner must independently keep network egress disabled in managed production and enforce bounded resources/output. Validate Bubblewrap on the actual deployed runtime before enabling code execution.
+Do not set compatibility/shared-container mode to bypass this requirement. If Render denies the namespaces required by Bubblewrap, keep execution blocked and move the Runner to a runtime that supports per-execution isolation. Never weaken the sandbox to make readiness green.
 
 ### Runner readiness diagnostics
 
@@ -73,7 +91,9 @@ A `runner_capability_contract_mismatch` caused by blocked Linux namespaces is a 
 
 ## Background worker
 
-The Render background worker must run the project's `worker` management command and continuously refresh the `background-worker` heartbeat. The readiness probe requires a heartbeat no older than 90 seconds and rejects stale running jobs. Confirm the worker is healthy in Render logs; do not synthesize heartbeat rows manually.
+The current Render configuration supports an embedded worker in the API service by default. Keep `BACKGROUND_WORKER_MODE` unset or `embedded` unless a separate worker service is intentionally deployed and verified. For a separate worker, use the same release and `DATABASE_URL`, and set `BACKGROUND_WORKER_MODE=external` on the API only after the external worker is healthy.
+
+In either mode, the worker must refresh the `background-worker` heartbeat continuously. The readiness probe requires a heartbeat no older than 90 seconds and rejects stale running jobs. Confirm the worker startup and heartbeat in Render logs; do not synthesize heartbeat rows manually.
 
 ## Release alignment and verification
 
