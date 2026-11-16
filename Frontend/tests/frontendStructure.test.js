@@ -1351,3 +1351,26 @@ test("workspace recovery warns that browser storage is not encrypted", () => {
   const ide = fs.readFileSync(path.join(srcDir, "ProIDE.jsx"), "utf8");
   assert.ok(ide.includes("Browser recovery storage is not encrypted; avoid secrets in recovered files."));
 });
+
+
+
+test("Agent task patching and human acceptance use task-specific acceptance criteria", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+  assert.ok(assistant.includes('"Task acceptance criteria: " + JSON.stringify(task.acceptance_criteria || [])'));
+  assert.ok(assistant.includes("function taskAcceptanceCriteria(task)"));
+  assert.ok(assistant.includes('accepted_criteria: criteria'));
+  assert.ok(assistant.includes('agent_run_id: agentRun.id, agent_task_id: task.id'));
+  assert.ok(assistant.includes('Review every task-specific acceptance criterion before marking this task complete:'));
+  assert.ok(assistant.includes("const criteria = taskAcceptanceCriteria(task);"));
+  assert.doesNotMatch(assistant, /accepted_criteria: agentRun\.plan\?\.acceptance_criteria/);
+});
+
+
+test("Agent human acceptance confirmation is bound to the exact criteria snapshot", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+  assert.ok(assistant.includes("function taskAcceptanceSignature(task)"));
+  assert.ok(assistant.includes("acceptanceConfirmed[task.id] !== acceptanceSignature"));
+  assert.ok(assistant.includes("acceptanceConfirmed[task.id] === taskAcceptanceSignature(task)"));
+  assert.ok(assistant.includes("event.target.checked ? taskAcceptanceSignature(task) : \"\""));
+  assert.ok(assistant.includes("disabled={busy || !taskAcceptanceSignature(task) || acceptanceConfirmed[task.id] !== taskAcceptanceSignature(task)}"));
+});
