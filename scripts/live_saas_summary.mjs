@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const SAFE_DEPENDENCY_DIAGNOSTIC = /^(?:cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable|runner_url_missing|runner_token_missing|runner_invalid_response|runner_capability_contract_mismatch|runner_http_status:[1-5][0-9]{2}|runner_request_error:[A-Za-z][A-Za-z0-9_]{0,63})$/;
+const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
 
 function cell(value) {
   return String(value ?? "—")
@@ -13,12 +14,22 @@ function cell(value) {
     .replace(/>/g, "&gt;")
     .replace(/\|/g, "&#124;")
     .replace(/[\r\n]+/g, " ")
+    // Prevent untrusted report values from creating Markdown links, images,
+    // emphasis, code spans, or headings in the GitHub job summary.
+    .replace(/[\x60*_{}\[\]()#+.!~]/g, character => ({
+      "\x60": "&#96;", "*": "&#42;", "_": "&#95;", "{": "&#123;",
+      "}": "&#125;", "[": "&#91;", "]": "&#93;", "(": "&#40;",
+      ")": "&#41;", "#": "&#35;", "+": "&#43;", ".": "&#46;",
+      "!": "&#33;", "~": "&#126;",
+    })[character])
     .trim();
 }
 
 export function renderLiveSaasSummary(report) {
-  if (!report || typeof report !== "object" || Array.isArray(report) ||
-      !Array.isArray(report.checks) || !report.summary || typeof report.summary !== "object") {
+  if (!isRecord(report) || !Array.isArray(report.checks) ||
+      !report.checks.every(isRecord) || !isRecord(report.summary) ||
+      (report.diagnostics !== undefined &&
+        (!Array.isArray(report.diagnostics) || !report.diagnostics.every(isRecord)))) {
     throw new TypeError("Invalid live SaaS smoke report.");
   }
 
@@ -37,7 +48,7 @@ export function renderLiveSaasSummary(report) {
     `| API | ${cell(report.apiBase)} |`,
   ];
 
-  if (Array.isArray(report.diagnostics) && report.diagnostics.length) {
+  if (report.diagnostics?.length) {
     lines.push("", "## Diagnostics", "");
     for (const diagnostic of report.diagnostics) {
       lines.push(`- **${cell(diagnostic.severity).toUpperCase()} / ${cell(diagnostic.code)}:** ${cell(diagnostic.message)} Action: ${cell(diagnostic.action)}`);
@@ -45,8 +56,8 @@ export function renderLiveSaasSummary(report) {
   }
 
   const dependencyDiagnostics = report.checks.flatMap(check => {
-    const source = check?.healthDiagnostics?.diagnostics;
-    if (!source || typeof source !== "object" || Array.isArray(source)) return [];
+    const source = check.healthDiagnostics?.diagnostics;
+    if (!isRecord(source)) return [];
     return Object.entries(source)
       .filter(([key, value]) =>
         (key === "cache" || key === "runner") &&
