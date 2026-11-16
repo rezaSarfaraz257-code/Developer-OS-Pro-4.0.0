@@ -2,7 +2,7 @@
 /** Render the read-only production smoke report for GitHub Actions. */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 const SAFE_DEPENDENCY_DIAGNOSTIC = /^(?:cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable|runner_url_missing|runner_token_missing|runner_invalid_response|runner_capability_contract_mismatch|runner_http_status:[1-5][0-9]{2}|runner_request_error:[A-Za-z][A-Za-z0-9_]{0,63})$/;
 
