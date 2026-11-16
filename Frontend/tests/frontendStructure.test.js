@@ -1381,5 +1381,5 @@ test("read-only Agent analysis never reports task completion", () => {
   const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
 
   assert.match(assistant, /Read-only analysis completed using \$\{tool\}\. Task "\$\{task\.title\}" remains open; no workspace files were changed\./);
-  assert.doesNotMatch(assistant, /setAnswer\(\`Task "\$\{task\.title\}" completed using \$\{tool\}/);
+  assert.doesNotMatch(assistant, /setAnswer\(`Task "\$\{task\.title\}" completed using \$\{tool\}/);
 });
