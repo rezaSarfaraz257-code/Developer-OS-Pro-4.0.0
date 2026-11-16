@@ -2,6 +2,21 @@
 
 This runbook documents the production dependencies enforced by the Django readiness probe. It is intentionally fail-closed: do not make readiness green by disabling checks, using a local-memory cache, or weakening the Runner isolation contract.
 
+## Latest verified live incident (2026-11-16 22:12 UTC)
+
+The scheduled/master Live SaaS monitor run `43966857836` completed with **10/13 checks passing and 3 failing**. The API returned release SHA `a6d1b612229e391744f699cabd324cd6f52122ac`, while the tested repository revision was `c693137951ec780f2294c2cde1b3aa481eb16918` (14 commits ahead of the deployed Backend revision at the time of comparison).
+
+The machine-readable evidence artifact is `live-saas-observability-43966857836`. It confirms:
+
+- **Release mismatch:** `/api/health/live/` and `/api/health/` returned HTTP 200 but reported the older release SHA. Do not alter the expected SHA or suppress this check; deploy the intended Backend revision from the correct Render-linked repository/branch and verify the runtime-reported SHA.
+- **Cache unavailable:** readiness returned HTTP 503 with `cache_url_missing`. Configure `CACHE_URL` from the actual Render Key Value service's internal connection details; never invent a Redis URL or replace Redis with local-memory cache in production.
+- **Runner not ready:** readiness reported `runner: false` but did not expose a safe diagnostic category in this response. Inspect the API's structured `runner_readiness_failed` event and the authenticated Runner `/capabilities` response in Render. Keep strict Bubblewrap isolation and network enforcement; do not use shared-container or compatibility fallback.
+- **Other observed checks:** database, secret key, allowed hosts, email, and worker were true. Frontend root and both Web IDE routes returned HTTP 200. These do not establish API readiness or safe execution.
+
+The incident remains open. The repository-side CI is green, including backend/frontend, strict Runner integration, Docker Compose, PostgreSQL backup/restore, CodeQL, and dependency checks; that evidence does not repair Render environment configuration or deploy a new release. Close this incident only after the API reports the intended deployed SHA, Redis and strict Runner checks pass, readiness returns HTTP 200 with all required checks true, and the live monitor passes all 13 checks.
+
+---
+
 ## Current incident snapshot (2026-11-16)
 
 The latest scheduled Live SaaS Smoke Monitor run is `43904045597` (2026-11-16 16:11 UTC). It completed with **9/13 checks passing and 4 failing**. The deployed API still reports release `23f09da8a3cf3cd3ba27df666e191d1417ee6bb2`, while the expected `master` release is `a6d1b612229e391744f699cabd324cd6f52122ac` (62 commits behind at the time of the probe).
