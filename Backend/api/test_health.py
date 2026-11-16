@@ -8,7 +8,7 @@ from django.test import Client as DjangoTestClient, RequestFactory, override_set
 from django.urls import reverse
 
 from .operational_health import liveness_api
-from .views import _cache_readiness, _secure_runner_ready
+from .views import _cache_readiness, _secure_runner_readiness, _secure_runner_ready
 
 
 class LivenessApiTests(TestCase):
@@ -317,7 +317,10 @@ class SecureRunnerReadinessTests(TestCase):
         with (
             patch("api.views.connection.cursor") as cursor_factory,
             patch("api.views._cache_readiness", return_value=(True, "")),
-            patch("api.views._secure_runner_ready", side_effect=[False, True]) as runner_ready,
+            patch(
+                "api.views._secure_runner_readiness",
+                side_effect=[(False, "runner_token_missing"), (True, "")],
+            ) as runner_ready,
             patch.object(WorkerHeartbeat.objects, "filter") as worker_filter,
             patch.object(BackgroundJob.objects, "filter") as job_filter,
         ):
@@ -332,6 +335,7 @@ class SecureRunnerReadinessTests(TestCase):
 
         self.assertEqual(blocked.status_code, 503)
         self.assertFalse(blocked.json()["checks"]["runner"])
+        self.assertEqual(blocked.json()["diagnostics"]["runner"], "runner_token_missing")
         self.assertEqual(blocked.json()["status"], "not_ready")
         self.assertEqual(allowed.status_code, 200)
         self.assertTrue(allowed.json()["checks"]["runner"])
@@ -399,6 +403,73 @@ class SecureRunnerReadinessTests(TestCase):
     @patch("api.views.requests.get", side_effect=requests.RequestException("offline"))
     def test_runner_network_failure_fails_closed(self, _get):
         self.assertFalse(_secure_runner_ready())
+
+
+    @patch("api.views.RUNNER_URL", "")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_reports_missing_runner_url_without_network_call(self, get):
+        self.assertEqual(_secure_runner_readiness(), (False, "runner_url_missing"))
+        get.assert_not_called()
+
+    @patch("api.views.RUNNER_URL", "http://runner.internal:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_reports_runner_http_status_without_exposing_response_body(self, get):
+        get.return_value.status_code = 503
+        get.return_value.text = "redis://private-user:private-password@internal"
+        self.assertEqual(_secure_runner_readiness(), (False, "runner_http_status:503"))
+
+    @patch("api.views.RUNNER_URL", "http://runner.internal:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get", side_effect=requests.Timeout("http://private-host/token-secret"))
+    def test_reports_runner_timeout_without_exposing_exception_message(self, _get):
+        ready, reason = _secure_runner_readiness()
+        self.assertFalse(ready)
+        self.assertEqual(reason, "runner_request_error:Timeout")
+        self.assertNotIn("private-host", reason)
+        self.assertNotIn("token-secret", reason)
+
+    @patch("api.views.RUNNER_URL", "http://runner.internal:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_reports_malformed_capability_json(self, get):
+        get.return_value.status_code = 200
+        get.return_value.json.side_effect = ValueError("private response body")
+        self.assertEqual(_secure_runner_readiness(), (False, "runner_invalid_response"))
+
+    @patch("api.views.RUNNER_URL", "http://runner.internal:8080")
+    @patch("api.views.RUNNER_TOKEN", "test-runner-token")
+    @patch("api.views.requests.get")
+    def test_reports_capability_contract_mismatch(self, get):
+        get.return_value.status_code = 200
+        get.return_value.json.return_value = {
+            "sandbox": {
+                "backend": "bwrap",
+                "mode": "bubblewrap",
+                "security_level": "strict",
+                "execution_available": False,
+                "trusted_shared_container": False,
+                "network_enforcement": "isolated",
+            },
+            "operations": {"execute": False, "process": False},
+        }
+        self.assertEqual(_secure_runner_readiness(), (False, "runner_capability_contract_mismatch"))
+
+    def test_public_runner_diagnostics_are_allowlisted(self):
+        from .views import _public_runner_diagnostic
+
+        self.assertEqual(_public_runner_diagnostic("runner_url_missing"), "runner_url_missing")
+        self.assertEqual(_public_runner_diagnostic("runner_http_status:503"), "runner_http_status:503")
+        self.assertEqual(_public_runner_diagnostic("runner_request_error:Timeout"), "runner_request_error:Timeout")
+        self.assertEqual(
+            _public_runner_diagnostic("runner_request_error:Timeout: private-token"),
+            "runner_unavailable",
+        )
+        self.assertEqual(
+            _public_runner_diagnostic("http://user:password@private-host"),
+            "runner_unavailable",
+        )
 
 
 class PublicCacheDiagnosticTests(TestCase):

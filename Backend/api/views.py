@@ -166,12 +166,14 @@ def health_api(request):
         ))
 
 
-def _secure_runner_ready():
-    """Require the isolated execution boundary; optional preview/install bridges have separate gates."""
+def _secure_runner_readiness():
+    """Return a strict Runner readiness result and a secret-safe diagnostic category."""
     runner_url = str(globals().get("RUNNER_URL", "") or "").strip().rstrip("/")
     runner_token = str(globals().get("RUNNER_TOKEN", "") or "").strip()
-    if not runner_url or not runner_token:
-        return False
+    if not runner_url:
+        return False, "runner_url_missing"
+    if not runner_token:
+        return False, "runner_token_missing"
 
     try:
         response = requests.get(
@@ -180,18 +182,24 @@ def _secure_runner_ready():
             timeout=(2, 4),
             allow_redirects=False,
         )
-        if response.status_code != 200:
-            return False
+    except requests.RequestException as exc:
+        # Exception messages may contain internal URLs or request headers.
+        return False, f"runner_request_error:{type(exc).__name__}"
+
+    if response.status_code != 200:
+        return False, f"runner_http_status:{response.status_code}"
+
+    try:
         payload = response.json()
-    except (requests.RequestException, ValueError, AttributeError):
-        return False
+    except (ValueError, AttributeError):
+        return False, "runner_invalid_response"
 
     sandbox = payload.get("sandbox") if isinstance(payload, dict) else None
     operations = payload.get("operations") if isinstance(payload, dict) else None
     # Strict Bubblewrap deliberately reports preview/install as unavailable until
     # dedicated network bridges exist. Those optional features must not make the
     # core execution service permanently unready; never weaken their own 503 gates.
-    return bool(
+    ready = bool(
         isinstance(sandbox, dict)
         and sandbox.get("backend") == "bwrap"
         and sandbox.get("mode") == "bubblewrap"
@@ -202,6 +210,33 @@ def _secure_runner_ready():
         and isinstance(operations, dict)
         and all(operations.get(name) is True for name in ("execute", "process"))
     )
+    return (True, "") if ready else (False, "runner_capability_contract_mismatch")
+
+
+def _secure_runner_ready():
+    """Compatibility wrapper for callers that need only the readiness boolean."""
+    ready, _ = _secure_runner_readiness()
+    return ready
+
+
+def _public_runner_diagnostic(reason):
+    """Allowlist safe Runner failure categories; never expose URLs, tokens or bodies."""
+    allowed = {
+        "runner_url_missing",
+        "runner_token_missing",
+        "runner_invalid_response",
+        "runner_capability_contract_mismatch",
+    }
+    if reason in allowed:
+        return reason
+    if isinstance(reason, str):
+        match = re.fullmatch(r"runner_http_status:([1-5][0-9]{2})", reason)
+        if match:
+            return reason
+        match = re.fullmatch(r"runner_request_error:([A-Za-z][A-Za-z0-9]{0,63})", reason)
+        if match:
+            return reason
+    return "runner_unavailable"
 
 
 def _email_transport_ready(strict_runtime):
@@ -351,7 +386,20 @@ def readiness_api(request):
 
     # A healthy API is not production-ready if its code-execution boundary is
     # unavailable, shared-container compatibility is active, or egress is open.
-    checks["runner"] = _secure_runner_ready() if strict_runtime else False
+    runner_failure_reason = ""
+    if strict_runtime:
+        checks["runner"], runner_failure_reason = _secure_runner_readiness()
+        if not checks["runner"]:
+            logger.warning(
+                "runner_readiness_failed",
+                extra={
+                    "event": "runner_readiness_failed",
+                    "failure_reason": _public_runner_diagnostic(runner_failure_reason),
+                    "strict_runtime": strict_runtime,
+                },
+            )
+    else:
+        checks["runner"] = False
 
     mandatory = ["database", "secret_key", "allowed_hosts", "email", "cache"]
     if strict_runtime:
@@ -392,10 +440,13 @@ def readiness_api(request):
     }
     # The readiness monitor needs a useful next diagnostic without exposing
     # Redis URLs, usernames, passwords, hostnames, or exception messages.
+    diagnostics = {}
     if not checks["cache"]:
-        payload["diagnostics"] = {
-            "cache": _public_cache_diagnostic(cache_failure_reason),
-        }
+        diagnostics["cache"] = _public_cache_diagnostic(cache_failure_reason)
+    if strict_runtime and not checks["runner"]:
+        diagnostics["runner"] = _public_runner_diagnostic(runner_failure_reason)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     return _no_store_health_response(Response(
         payload,
         status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,

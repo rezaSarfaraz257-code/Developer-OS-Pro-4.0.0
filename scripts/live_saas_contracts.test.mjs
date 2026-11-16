@@ -392,6 +392,11 @@ test("health diagnostics include only allowlisted fields and boolean readiness c
     version: "4.0.0",
     release_sha: "a".repeat(40),
     checks: { database: true, secret_key: false, worker: false, injected_secret: "must-not-leak" },
+    diagnostics: {
+      cache: "cache_backend_error:TimeoutError",
+      runner: "runner_http_status:503",
+      injected_secret: "must-not-leak",
+    },
     secret: "must-not-leak",
     arbitrary: { token: "must-not-leak" },
   }));
@@ -402,7 +407,29 @@ test("health diagnostics include only allowlisted fields and boolean readiness c
     version: "4.0.0",
     release_sha: "a".repeat(40),
     checks: { database: true, secret_key: false, worker: false },
+    diagnostics: {
+      cache: "cache_backend_error:TimeoutError",
+      runner: "runner_http_status:503",
+    },
   });
   assert.equal(summarizeHealthPayload("not-json"), null);
   assert.equal(summarizeHealthPayload(JSON.stringify({ secret: "no diagnostic fields" })), null);
+});
+
+
+test("health diagnostic summarizer rejects unsafe Runner diagnostic payloads", async () => {
+  const { summarizeHealthPayload } = await import("./live_saas_contracts.mjs");
+  const unsafe = [
+    "runner_request_error:Timeout: redis://user:password@private-host",
+    "https://private-runner.internal/token-secret",
+    "runner_http_status:999",
+    { token: "must-not-leak" },
+  ];
+  for (const runner of unsafe) {
+    const summary = summarizeHealthPayload(JSON.stringify({
+      status: "not_ready",
+      diagnostics: { runner },
+    }));
+    assert.deepEqual(summary, { status: "not_ready" });
+  }
 });
