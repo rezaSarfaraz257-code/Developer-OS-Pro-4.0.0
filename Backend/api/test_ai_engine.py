@@ -139,6 +139,20 @@ class AIEngineUnitTests(TestCase):
         self.assertEqual(cfg["protocol"], "responses")
 
 
+    @patch.dict(
+        "os.environ",
+        {
+            "OPENAI_API_KEY": "test-key",
+            "AI_API_URL": "https://api.openai.com/v1",
+            "AI_API_PROTOCOL": "responses",
+        },
+        clear=True,
+    )
+    def test_provider_config_defaults_to_supported_gpt_6_luna_model(self):
+        cfg = _provider_config()
+        self.assertEqual(cfg["model"], "gpt-6-luna")
+        self.assertEqual(cfg["protocol"], "responses")
+
     def test_provider_context_excludes_secret_paths_and_redacts_inline_credentials(self):
         context = {
             "workspace": {
