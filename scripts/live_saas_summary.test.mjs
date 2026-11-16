@@ -53,7 +53,7 @@ test("escapes untrusted table values and removes multiline table injection", () 
   const output = renderLiveSaasSummary(report);
   assert.doesNotMatch(output, /<script>/);
   assert.doesNotMatch(output, /\n\| injected/);
-  assert.match(output, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &#124; forged row \| injected/);
+  assert.match(output, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &#124; forged row &#124; injected/);
 });
 
 test("omits optional diagnostic sections when no diagnostics are present", () => {
