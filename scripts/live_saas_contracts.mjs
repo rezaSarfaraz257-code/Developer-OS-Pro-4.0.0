@@ -70,11 +70,18 @@ export function summarizeHealthPayload(body) {
     }
     if (Object.keys(checks).length) summary.checks = checks;
   }
+  const diagnostics = {};
   const cacheDiagnostic = payload.diagnostics?.cache;
   if (typeof cacheDiagnostic === "string" &&
       /^(cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable)$/.test(cacheDiagnostic)) {
-    summary.diagnostics = { cache: cacheDiagnostic };
+    diagnostics.cache = cacheDiagnostic;
   }
+  const runnerDiagnostic = payload.diagnostics?.runner;
+  if (typeof runnerDiagnostic === "string" &&
+      /^(runner_url_missing|runner_token_missing|runner_invalid_response|runner_capability_contract_mismatch|runner_http_status:[1-5][0-9]{2}|runner_request_error:[A-Za-z][A-Za-z0-9_]{0,63}|runner_unavailable)$/.test(runnerDiagnostic)) {
+    diagnostics.runner = runnerDiagnostic;
+  }
+  if (Object.keys(diagnostics).length) summary.diagnostics = diagnostics;
   return Object.keys(summary).length ? summary : null;
 }
 
