@@ -2,18 +2,15 @@
 
 This runbook documents the production dependencies enforced by the Django readiness probe. It is intentionally fail-closed: do not make readiness green by disabling checks, using a local-memory cache, or weakening the Runner isolation contract.
 
-## Current incident snapshot (2026-11-08)
+## Current incident snapshot (2026-11-16)
 
-The scheduled Live SaaS Smoke Monitor artifact reported 10/13 checks passing. The API reported:
+The scheduled Live SaaS Smoke Monitor run `43815825025` failed against the Render production target. Its expected release was `a6d1b612229e391744f699cabd324cd6f52122ac`; the deployed API reported release `23f09da8a3cf3cd3ba27df666e191d1417ee6bb2`, which was 62 commits behind `master` at the time of the probe.
 
-- Database: healthy
-- Secret key: configured
-- Allowed hosts: valid
-- Email transport: configured
-- Cache: **failed**
-- Background worker heartbeat: healthy
+The live `/api/health/ready/` endpoint returned HTTP 503. Safe diagnostics identified the cache and isolated Runner readiness gates as failed. Treat these as two separate deployment dependencies; do not infer that fixing one makes the other healthy. The API process being reachable or its liveness endpoint returning HTTP 200 does not establish production readiness.
 
-The API was running release `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf`, while `master` was at `4bcd726f1cb49b9121b0baab34f97c03dd0d4a73`. The release mismatch and cache failure are separate issues.
+This is a live Render incident, not a PR-CI failure. Pull-request executions of the monitor run contract tests only and explicitly skip external production probes. A green pull-request monitor job is not evidence of production health. The last observed live failure remains authoritative until a scheduled/manual production probe produces a new artifact with all 13 checks passing and the deployed release identity aligned.
+
+Historical snapshot (2026-11-08): an earlier monitor reported 10/13 checks passing, with cache failed and worker heartbeat healthy. Its release was `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf` versus then-`master` `4bcd726f1cb49b9121b0baab34f97c03dd0d4a73`.
 
 ## Required Backend service configuration
 
