@@ -1311,6 +1311,20 @@ def _valid_agent_task_acceptance_criteria(task):
     return True
 
 
+_MAX_AGENT_BINDING_ID = (1 << 63) - 1
+
+
+def _positive_agent_binding_id(value):
+    """Parse a bounded positive database ID without Unicode or huge-int coercion."""
+    if type(value) is int:
+        parsed = value
+    elif isinstance(value, str) and 1 <= len(value) <= 19 and re.fullmatch(r"[0-9]+", value):
+        parsed = int(value)
+    else:
+        return None
+    return parsed if 1 <= parsed <= _MAX_AGENT_BINDING_ID else None
+
+
 def _issue_patch_approval_token(request, answer):
     try:
         proposal = json.loads(answer)
@@ -1339,12 +1353,9 @@ def _issue_patch_approval_token(request, answer):
         # never silently degrade into an ordinary workspace-only approval.
         if raw_run_id is None or raw_task_id is None:
             return None
-        if isinstance(raw_run_id, bool) or isinstance(raw_task_id, bool):
-            return None
-        if not str(raw_run_id).isdigit() or not str(raw_task_id).isdigit():
-            return None
-        run_id, task_id = int(raw_run_id), int(raw_task_id)
-        if run_id < 1 or task_id < 1:
+        run_id = _positive_agent_binding_id(raw_run_id)
+        task_id = _positive_agent_binding_id(raw_task_id)
+        if run_id is None or task_id is None:
             return None
         from .models import AgentRun, AgentTask
         run = AgentRun.objects.filter(

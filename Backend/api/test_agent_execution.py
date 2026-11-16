@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_execution import (
-    VERIFICATION_PROFILES, _safe_diagnostic_signals,
+    VERIFICATION_PROFILES, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
 from .management.commands.worker import recover_stale_jobs
@@ -112,6 +112,121 @@ class AgentTaskVerificationAPITests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_verification_rejects_boolean_and_string_identity_values(self):
+        for field, invalid_value in (
+            ("sync_job_id", True),
+            ("sync_job_id", str(self.sync_job.id)),
+            ("revision", True),
+            ("revision", str(self.workspace.revision)),
+        ):
+            with self.subTest(field=field, value=invalid_value):
+                payload = {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }
+                payload[field] = invalid_value
+                response = self.client.post(self.url, payload, format="json")
+                self.assertEqual(response.status_code, 400)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_malformed_persisted_sync_revision_fails_closed(self):
+        for invalid_revision in (True, "1", [], {"revision": 1}, None):
+            with self.subTest(revision=invalid_revision):
+                self.sync_job.result = {"status": "synced", "revision": invalid_revision}
+                self.sync_job.save(update_fields=["result"])
+                response = self.client.post(self.url, {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }, format="json")
+                self.assertEqual(response.status_code, 409)
+                self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_mismatched_or_malformed_sync_workspace_fails_closed(self):
+        for invalid_workspace in (True, str(self.workspace.id), self.workspace.id + 1, None):
+            with self.subTest(workspace_id=invalid_workspace):
+                self.sync_job.result = {
+                    "status": "synced",
+                    "workspace_id": invalid_workspace,
+                    "revision": self.workspace.revision,
+                }
+                self.sync_job.save(update_fields=["result"])
+                response = self.client.post(self.url, {
+                    "sync_job_id": self.sync_job.id,
+                    "revision": self.workspace.revision,
+                    "profile": "python_pytest",
+                }, format="json")
+                self.assertEqual(response.status_code, 409)
+                self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    def test_sync_receipt_is_bound_to_exact_workspace_and_revision(self):
+        receipt = {"workspace_id": 12, "revision": 7, "status": "synced"}
+        self.assertTrue(_sync_receipt_matches(receipt, 12, 7))
+        for invalid_workspace in (True, "12", 12.0, [], {}, None, 13):
+            with self.subTest(workspace_id=invalid_workspace):
+                candidate = {**receipt, "workspace_id": invalid_workspace}
+                self.assertFalse(_sync_receipt_matches(candidate, 12, 7))
+        for invalid_revision in (True, "7", 7.0, [], {}, None, 8):
+            with self.subTest(revision=invalid_revision):
+                candidate = {**receipt, "revision": invalid_revision}
+                self.assertFalse(_sync_receipt_matches(candidate, 12, 7))
+
+    def test_persisted_id_comparison_rejects_boolean_aliases(self):
+        self.assertTrue(_matches_positive_id(1, 1))
+        self.assertFalse(_matches_positive_id(True, 1))
+        self.assertFalse(_matches_positive_id("1", 1))
+        self.assertFalse(_matches_positive_id(1, True))
+
+    def test_retry_rejects_malformed_persisted_history(self):
+        self.task.status = "failed"
+        self.task.execution_revision = self.workspace.revision - 1
+        self.task.execution_evidence = {"history": {"unexpected": "mapping"}}
+        self.task.save(update_fields=[
+            "status", "execution_revision", "execution_evidence", "updated_at",
+        ])
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
+
+    @patch("api.views._runner_request")
+    def test_worker_rejects_boolean_job_identity_before_runner(self, runner_request):
+        audit = AuditLog.objects.get(action="ai_agent.patch_applied")
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            payload={
+                "run_id": True, "task_id": self.task.id,
+                "workspace_id": self.workspace.id, "owner_id": self.user.id,
+                "revision": self.workspace.revision, "sync_job_id": self.sync_job.id,
+                "patch_audit_id": audit.id, "profile": "python_pytest",
+            },
+            idempotency_key="agent-task-malformed-identity",
+        )
+        with self.assertRaisesRegex(RuntimeError, "identity is malformed"):
+            execute_agent_task_verification(job)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_worker_rejects_non_string_profile_before_runner(self, runner_request):
+        audit = AuditLog.objects.get(action="ai_agent.patch_applied")
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            payload={
+                "run_id": self.run.id, "task_id": self.task.id,
+                "workspace_id": self.workspace.id, "owner_id": self.user.id,
+                "revision": self.workspace.revision, "sync_job_id": self.sync_job.id,
+                "patch_audit_id": audit.id, "profile": ["python_pytest"],
+            },
+            idempotency_key="agent-task-malformed-profile",
+        )
+        with self.assertRaisesRegex(RuntimeError, "Unsupported Agent verification profile"):
+            execute_agent_task_verification(job)
+        runner_request.assert_not_called()
 
     def test_dag_dependencies_are_enforced_even_if_task_status_is_stale(self):
         dependency = AgentTask.objects.create(
@@ -345,6 +460,18 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(rejected.status_code, 409)
         self.task.execution_evidence = valid_evidence
         self.task.save(update_fields=["execution_evidence", "updated_at"])
+
+        original_job_payload = dict(job.payload)
+        job.payload = {**original_job_payload, "profile": []}
+        job.save(update_fields=["payload"])
+        rejected = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/tasks/{self.task.id}/accept/",
+            {"accepted_criteria": self.task.acceptance_criteria},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 409)
+        job.payload = original_job_payload
+        job.save(update_fields=["payload"])
 
         patch_audit = AuditLog.objects.get(pk=job.payload["patch_audit_id"])
         original_patch_metadata = dict(patch_audit.metadata)

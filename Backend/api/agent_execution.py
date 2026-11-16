@@ -28,6 +28,31 @@ VERIFICATION_PROFILES = {
 }
 
 
+def _is_positive_int(value):
+    """Accept only real positive JSON integers; bool is an int subclass in Python."""
+    return type(value) is int and value > 0
+
+
+def _matches_positive_id(value, expected):
+    """Compare persisted JSON identifiers without Python bool/int coercion."""
+    return _is_positive_int(value) and type(expected) is int and expected > 0 and value == expected
+
+
+def _sync_receipt_matches(result, expected_workspace_id, expected_revision):
+    """Bind a persisted Runner sync receipt to one exact workspace and revision."""
+    return (
+        isinstance(result, dict)
+        and type(expected_workspace_id) is int
+        and expected_workspace_id > 0
+        and type(expected_revision) is int
+        and expected_revision > 0
+        and type(result.get("workspace_id")) is int
+        and result.get("workspace_id") == expected_workspace_id
+        and type(result.get("revision")) is int
+        and result.get("revision") == expected_revision
+    )
+
+
 def _queue_agent_runner_resync(workspace, actor, verification_job_id):
     """Queue an authoritative snapshot after an execution may have changed Runner state."""
     key = f"agent-runner-resync:{workspace.id}:{workspace.revision}:{verification_job_id}"
@@ -127,12 +152,9 @@ def agent_task_verification_start_api(request, pk, task_pk):
     profile = str(request.data.get("profile") or "").strip()
     if profile not in VERIFICATION_PROFILES:
         return Response({"error": "Choose a supported verification profile."}, status=400)
-    try:
-        sync_job_id = int(request.data.get("sync_job_id"))
-        revision = int(request.data.get("revision"))
-        if sync_job_id < 1 or revision < 1:
-            raise ValueError
-    except (TypeError, ValueError):
+    sync_job_id = request.data.get("sync_job_id")
+    revision = request.data.get("revision")
+    if not _is_positive_int(sync_job_id) or not _is_positive_int(revision):
         return Response({"error": "A successful Runner sync job and workspace revision are required."}, status=400)
 
     from .views import _workspace_for_user, _workspace_write_allowed
@@ -166,7 +188,16 @@ def agent_task_verification_start_api(request, pk, task_pk):
         if task.status == "failed" and task.execution_revision is not None and revision <= task.execution_revision:
             return Response({"error": "A retry requires a newly approved and synchronized workspace revision."}, status=409)
         previous_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
-        history = list(previous_evidence.get("history") or [])
+        raw_history = previous_evidence.get("history", [])
+        if (
+            not isinstance(raw_history, list)
+            or len(raw_history) > 3
+            or any(not isinstance(item, dict) for item in raw_history)
+        ):
+            return Response({
+                "error": "Stored verification history is invalid; manual review is required before retrying."
+            }, status=409)
+        history = list(raw_history)
         if task.status == "failed":
             if len(history) >= 3:
                 return Response({"error": "The task reached its four-iteration verification limit; manual intervention is required."}, status=409)
@@ -188,7 +219,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
         if (
             sync_job.status != "succeeded"
             or sync_result.get("status") != "synced"
-            or int(sync_result.get("revision") or 0) != revision
+            or not _sync_receipt_matches(sync_result, workspace.id, revision)
             or not AuditLog.objects.filter(
                 user=request.user, action="ai_agent.runner_workspace_synced",
                 target_type="CodeWorkspace", target_id=str(workspace.id),
@@ -285,8 +316,14 @@ def execute_agent_task_verification(job):
     )
 
     payload = job.payload if isinstance(job.payload, dict) else {}
+    required_ids = (
+        "run_id", "task_id", "workspace_id", "owner_id", "revision",
+        "sync_job_id", "patch_audit_id",
+    )
+    if any(not _is_positive_int(payload.get(key)) for key in required_ids):
+        raise RuntimeError("Agent verification job identity is malformed.")
     profile = payload.get("profile")
-    command = VERIFICATION_PROFILES.get(profile)
+    command = VERIFICATION_PROFILES.get(profile) if isinstance(profile, str) else None
     if not command:
         raise RuntimeError("Unsupported Agent verification profile.")
 
@@ -335,7 +372,7 @@ def execute_agent_task_verification(job):
         ).exists()
         if (
             not sync_job or sync_result.get("status") != "synced"
-            or int(sync_result.get("revision") or 0) != workspace.revision
+            or not _sync_receipt_matches(sync_result, workspace.id, workspace.revision)
             or not sync_audited
         ):
             raise RuntimeError("The verified workspace revision is not synchronized to Runner.")
@@ -672,8 +709,11 @@ def agent_task_accept_api(request, pk, task_pk):
         if task.depends_on.exclude(status="succeeded").exists():
             return Response({"error": "Complete every dependent task before accepting this task."}, status=409)
         if task.status == "succeeded":
-            acceptance = (task.execution_evidence or {}).get("human_acceptance", {})
-            if acceptance.get("user_id") == request.user.id:
+            stored_evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+            acceptance = stored_evidence.get("human_acceptance", {})
+            if not isinstance(acceptance, dict):
+                acceptance = {}
+            if _matches_positive_id(acceptance.get("user_id"), request.user.id):
                 return Response(_task_status_payload(task, task.execution_job), status=200)
             return Response({"error": "This task has already been accepted."}, status=409)
         if task.status != "awaiting_approval":
@@ -699,22 +739,24 @@ def agent_task_accept_api(request, pk, task_pk):
             not verification_job or verification_job.kind != "ai_agent_task_verify"
             or verification_job.status != "succeeded"
             or task.execution_job_id != verification_job.id
-            or job_payload.get("run_id") != run.id
-            or job_payload.get("task_id") != task.id
-            or job_payload.get("owner_id") != request.user.id
-            or job_payload.get("workspace_id") != run.workspace_id
-            or job_payload.get("revision") != evidence.get("revision")
-            or type(evidence.get("revision")) is not int
-            or evidence.get("revision") < 1
+            or not _matches_positive_id(job_payload.get("run_id"), run.id)
+            or not _matches_positive_id(job_payload.get("task_id"), task.id)
+            or not _matches_positive_id(job_payload.get("owner_id"), request.user.id)
+            or not _matches_positive_id(job_payload.get("workspace_id"), run.workspace_id)
+            or not _matches_positive_id(job_payload.get("revision"), evidence.get("revision"))
+            or not _is_positive_int(evidence.get("revision"))
             or task.execution_revision != evidence.get("revision")
+            or not isinstance(job_payload.get("profile"), str)
             or job_payload.get("profile") not in VERIFICATION_PROFILES
             or job_payload.get("profile") != task.execution_profile
             or job_payload.get("profile") != evidence.get("profile")
-            or job_payload.get("sync_job_id") != evidence.get("sync_job_id")
-            or job_payload.get("patch_audit_id") != evidence.get("patch_audit_id")
-            or evidence.get("verification_job_id") != verification_job.id
+            or not _matches_positive_id(job_payload.get("sync_job_id"), evidence.get("sync_job_id"))
+            or not _is_positive_int(evidence.get("sync_job_id"))
+            or not _matches_positive_id(job_payload.get("patch_audit_id"), evidence.get("patch_audit_id"))
+            or not _is_positive_int(evidence.get("patch_audit_id"))
+            or not _matches_positive_id(evidence.get("verification_job_id"), verification_job.id)
             or not isinstance(evidence.get("runner_job_id"), str)
-            or not evidence.get("runner_job_id")
+            or evidence.get("runner_job_id") != f"agent-{verification_job.id}"
             or job_result.get("status") != "verification_passed_pending_acceptance"
             or job_result.get("evidence") != evidence
             or evidence.get("state") != "passed"
@@ -740,8 +782,7 @@ def agent_task_accept_api(request, pk, task_pk):
         if (
             not sync_job
             or sync_result.get("status") != "synced"
-            or type(sync_result.get("revision")) is not int
-            or sync_result.get("revision") != evidence.get("revision")
+            or not _sync_receipt_matches(sync_result, run.workspace_id, evidence.get("revision"))
             or not AuditLog.objects.filter(
                 user=request.user,
                 action="ai_agent.runner_workspace_synced",
