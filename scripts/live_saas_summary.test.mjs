@@ -36,8 +36,8 @@ test("renders summary, health diagnostics, and per-check evidence", () => {
   assert.match(output, /Developer OS — Live SaaS Observability/);
   assert.match(output, /Checks passed \| 1\/2/);
   assert.match(output, /Sanitized dependency diagnostics/);
-  assert.match(output, /\*\*api-readiness \/ cache:\*\* cache_backend_error:TimeoutError/);
-  assert.match(output, /\*\*api-readiness \/ runner:\*\* runner_http_status:503/);
+  assert.match(output, /\*\*api-readiness \/ cache:\*\* cache&#95;backend&#95;error:TimeoutError/);
+  assert.match(output, /\*\*api-readiness \/ runner:\*\* runner&#95;http&#95;status:503/);
   assert.match(output, /api-readiness \| 503 \| 2 \| 4100 ms \| FAIL/);
 });
 
@@ -47,13 +47,14 @@ test("never renders unknown diagnostic keys or secret-like diagnostic values", (
   assert.doesNotMatch(output, /\| secret:/);
 });
 
-test("escapes untrusted table values and removes multiline table injection", () => {
+test("escapes HTML, Markdown links, formatting, and multiline table injection", () => {
   const report = baseReport();
-  report.checks[1].error = "<script>alert(1)</script> | forged row\n| injected";
+  report.checks[1].error = "<script>alert(1)</script> | forged row\n| injected [open](https://evil.example) ![img](https://evil.example/x.png) \`code\` **bold**";
   const output = renderLiveSaasSummary(report);
-  assert.doesNotMatch(output, /<script>/);
+  assert.doesNotMatch(output, /<script>|\]\(https:\/\/evil\.example|\`code\`|\*\*bold\*\*/);
   assert.doesNotMatch(output, /\n\| injected/);
-  assert.match(output, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &#124; forged row &#124; injected/);
+  assert.match(output, /&lt;script&gt;alert&#40;1&#41;&lt;\/script&gt; &#124; forged row &#124; injected/);
+  assert.match(output, /&#91;open&#93;&#40;https://evil&#46;example&#41;/);
 });
 
 test("omits optional diagnostic sections when no diagnostics are present", () => {
@@ -65,7 +66,10 @@ test("omits optional diagnostic sections when no diagnostics are present", () =>
   assert.doesNotMatch(output, /Sanitized dependency diagnostics/);
 });
 
-test("rejects malformed report structures", () => {
+test("rejects malformed report structures before rendering", () => {
   assert.throws(() => renderLiveSaasSummary(null), /Invalid live SaaS smoke report/);
   assert.throws(() => renderLiveSaasSummary({ checks: {} }), /Invalid live SaaS smoke report/);
+  assert.throws(() => renderLiveSaasSummary({ ...baseReport(), checks: [null] }), /Invalid live SaaS smoke report/);
+  assert.throws(() => renderLiveSaasSummary({ ...baseReport(), diagnostics: [null] }), /Invalid live SaaS smoke report/);
+  assert.throws(() => renderLiveSaasSummary({ ...baseReport(), summary: [] }), /Invalid live SaaS smoke report/);
 });
