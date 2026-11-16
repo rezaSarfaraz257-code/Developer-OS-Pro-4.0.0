@@ -56,12 +56,25 @@ def agent_task_patch_proposal_api(request, pk, task_pk):
 
         revision = workspace.revision
         workspace_files = dict(workspace.files or {})
-        sampled_files = _agent_context_file_samples(workspace_files)
-        safe_files = {
-            path: content for path, content in sampled_files.items()
-            if _provider_safe_context_path(path)
-        }
-        repairable_paths = _repairable_sample_paths(workspace_files, safe_files)
+        # Include complete source files (not truncated snippets) within a
+        # strict provider budget. If credential redaction changes a file, omit
+        # it entirely so the model cannot propose a replacement from redacted code.
+        safe_files = {}
+        total_context_chars = 0
+        for path, content in list(workspace_files.items())[:120]:
+            if (
+                not isinstance(path, str)
+                or not isinstance(content, str)
+                or len(content) > 8000
+                or not _provider_safe_context_path(path)
+            ):
+                continue
+            sanitized = _redact_sensitive_content(content)
+            if sanitized != content or total_context_chars + len(content) > 24000:
+                continue
+            safe_files[path] = content
+            total_context_chars += len(content)
+        repairable_paths = set(safe_files)
         context = {
             "agent_task_implementation": {
                 "run": {"id": run.id, "goal": run.goal[:8000]},
