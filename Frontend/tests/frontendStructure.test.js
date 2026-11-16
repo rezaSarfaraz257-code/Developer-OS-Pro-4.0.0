@@ -1376,3 +1376,10 @@ test("Agent human acceptance confirmation is bound to the exact criteria snapsho
   assert.ok(assistant.includes("event.target.checked ? taskAcceptanceSignature(task) : \"\""));
   assert.ok(assistant.includes("disabled={busy || !taskAcceptanceSignature(task) || acceptanceConfirmed[task.id] !== taskAcceptanceSignature(task)}"));
 });
+
+test("read-only Agent analysis never reports task completion", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+
+  assert.match(assistant, /Read-only analysis completed using \$\{tool\}\. Task "\$\{task\.title\}" remains open; no workspace files were changed\./);
+  assert.doesNotMatch(assistant, /setAnswer\(\`Task "\$\{task\.title\}" completed using \$\{tool\}/);
+});
