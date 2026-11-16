@@ -86,8 +86,7 @@ jobs:
               console.log("| Frontend | "+r.frontendBase+" |");
               console.log("| API | "+r.apiBase+" |");
               if (r.diagnostics?.length) {
-                console.log("\n## Diagnostics\n");
-                for (const d of r.diagnostics) console.log("- **"+d.severity.toUpperCase()+" / "+d.code+":** "+d.message+" Action: "+d.action);
+                }
               // Surface only allowlisted dependency categories so operators can diagnose
               // Runner/Cache readiness from the job summary without downloading artifacts.
               const safeDependencyDiagnostic = /^(?:cache_url_missing|redis_backend_not_configured|cache_roundtrip_mismatch|cache_backend_error:[A-Za-z][A-Za-z0-9_]{0,63}|cache_unavailable|runner_url_missing|runner_token_missing|runner_invalid_response|runner_capability_contract_mismatch|runner_http_status:[1-5][0-9]{2}|runner_request_error:[A-Za-z][A-Za-z0-9_]{0,63})$/;
@@ -98,10 +97,11 @@ jobs:
                   .map(([key, value]) => ({ check: c.name, key, value }))
               );
               if (dependencyDiagnostics.length) {
-                console.log("\\n## Sanitized dependency diagnostics\\n");
+                console.log("\n## Sanitized dependency diagnostics\n");
                 for (const d of dependencyDiagnostics) {
                   console.log("- **"+d.check+" / "+d.key+":** "+d.value);
                 }
+              }
               }
               }
               console.log("\n| Check | HTTP | Attempts | Duration | Status | Details |");
