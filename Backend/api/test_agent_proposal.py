@@ -127,6 +127,27 @@ class AgentTaskImplementationProposalTests(TestCase):
         self.assertEqual(self.workspace.revision, proposal_response.data["workspace_revision"] + 1)
 
     @patch("api.ai_engine._call_provider")
+    def test_provider_receives_complete_bounded_source_and_no_redacted_secret_file(self, provider):
+        large_source = "def calculate(value):\\n" + ("    value = value + 1\\n" * 220)
+        self.workspace.files = {
+            **self.workspace.files,
+            "large_module.py": large_source,
+            "settings.py": 'API_KEY = "sk-live-this-is-a-test-secret-value-123456"\\n',
+            ".env": "OPENAI_API_KEY=never-send-this\\n",
+        }
+        self.workspace.save(update_fields=["files"])
+        provider.return_value = (json.dumps(self.proposal), None)
+
+        response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        context = provider.call_args.args[1]["agent_task_implementation"]["workspace"]
+        self.assertEqual(context["files"]["large_module.py"], large_source)
+        self.assertIn("large_module.py", context["repairable_file_paths"])
+        self.assertNotIn("settings.py", context["files"])
+        self.assertNotIn(".env", context["files"])
+
+    @patch("api.ai_engine._call_provider")
     def test_unsafe_path_is_rejected_without_workspace_mutation(self, provider):
         unsafe = {**self.proposal, "changes": [{
             **self.proposal["changes"][0], "path": "../outside.py",
