@@ -4,11 +4,18 @@ This runbook documents the production dependencies enforced by the Django readin
 
 ## Current incident snapshot (2026-11-16)
 
-The scheduled Live SaaS Smoke Monitor run `43815825025` failed against the Render production target. Its expected release was `a6d1b612229e391744f699cabd324cd6f52122ac`; the deployed API reported release `23f09da8a3cf3cd3ba27df666e191d1417ee6bb2`, which was 62 commits behind `master` at the time of the probe.
+The latest scheduled Live SaaS Smoke Monitor run is `43904045597` (2026-11-16 16:11 UTC). It completed with **9/13 checks passing and 4 failing**. The deployed API still reports release `23f09da8a3cf3cd3ba27df666e191d1417ee6bb2`, while the expected `master` release is `a6d1b612229e391744f699cabd324cd6f52122ac` (62 commits behind at the time of the probe).
 
-The live `/api/health/ready/` endpoint returned HTTP 503. Safe diagnostics identified the cache and isolated Runner readiness gates as failed. Treat these as two separate deployment dependencies; do not infer that fixing one makes the other healthy. The API process being reachable or its liveness endpoint returning HTTP 200 does not establish production readiness.
+The latest probe confirms two distinct production blockers:
 
-This is a live Render incident, not a PR-CI failure. Pull-request executions of the monitor run contract tests only and explicitly skip external production probes. A green pull-request monitor job is not evidence of production health. The last observed live failure remains authoritative until a scheduled/manual production probe produces a new artifact with all 13 checks passing and the deployed release identity aligned.
+- **Release mismatch:** the API liveness and health responses return HTTP 200 but expose the old release SHA, so both fail the release-identity contract.
+- **Readiness failure:** `/api/health/ready/` returns HTTP 503. Safe diagnostics report `database: true`, `worker: true`, `cache: false`, and `runner: false`. The API security-header check also fails because its endpoint returned HTTP 503.
+
+The frontend root and Web IDE routes return HTTP 200. That does not establish API readiness or safe code execution. Cache and strict isolated Runner remain separate dependencies; fixing one does not imply the other is healthy.
+
+This is a live Render incident, not a PR-CI failure. Pull-request executions of the monitor run contract tests only and explicitly skip external production probes. A green pull-request monitor job is not evidence of production health. The incident remains open until the API release identity matches the intended deployed commit, readiness returns HTTP 200 with every mandatory check true, and the live monitor passes all 13 checks.
+
+Earlier 2026-11-16 snapshot (run `43815825025`): the same deployed release and cache/Runner readiness failures were observed. The later run `43904045597` confirms they remain unresolved.
 
 Historical snapshot (2026-11-08): an earlier monitor reported 10/13 checks passing, with cache failed and worker heartbeat healthy. Its release was `daed3bf4c8d843c2b568c4e154a22dfbdd5764cf` versus then-`master` `4bcd726f1cb49b9121b0baab34f97c03dd0d4a73`.
 
