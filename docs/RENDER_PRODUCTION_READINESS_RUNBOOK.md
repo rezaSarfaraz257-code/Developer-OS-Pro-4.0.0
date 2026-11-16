@@ -40,9 +40,23 @@ The current settings map `CACHE_URL` to Django's `django.core.cache.backends.red
 4. Redeploy/restart the Backend only after confirming the service and variable are configured.
 5. Recheck `/api/health/ready/`. The expected cache check must be `true`; do not accept an HTTP 200 from liveness as proof of readiness.
 
-## Runner security requirements
+## Dedicated Runner service configuration and security gate
 
-The API readiness probe requires the dedicated Runner to answer `GET /capabilities` using the configured bearer token and to report:
+Configure the dedicated Render Runner service from the repository's `Runner/Dockerfile` and `Runner/main.py` contract:
+
+| Variable | Required value / handling |
+|---|---|
+| `IDE_RUNNER_TOKEN` | Same high-entropy secret as the Backend service; never expose it in logs or client code |
+| `RUNNER_SECURITY_LEVEL` | `strict` |
+| `RUNNER_SANDBOX_MODE` | `bwrap`; only approve after namespace isolation works on the actual Render host |
+| `RUNNER_ALLOW_NETWORK` | `false`; managed production forces network access off regardless |
+| `RUNNER_TIMEOUT_SECONDS` | Keep bounded; application clamps the maximum to 120 seconds |
+| `RUNNER_MEMORY_MB` | Keep within the supported 128–2048 MB range and the service's actual memory budget |
+| `RUNNER_MAX_CONCURRENT` | Set conservatively for the allocated CPU/RAM; application bounds it to 1–64 |
+
+On the Backend service, set `IDE_RUNNER_URL` to the Runner service's private/internal URL, not a guessed hostname. Keep the Runner reachable only through the intended private service path; the Backend authenticates using the bearer token.
+
+The unauthenticated `GET /health` endpoint is only a process/health signal. It is not proof that code execution is safe or available. The Backend readiness gate authenticates to `GET /capabilities` and requires the exact strict Bubblewrap contract:
 
 - Bubblewrap isolation backend and strict security level
 - Execution available
@@ -50,11 +64,13 @@ The API readiness probe requires the dedicated Runner to answer `GET /capabiliti
 - Isolated network enforcement
 - Execute and process operations available
 
-Do not set a compatibility/shared-container mode to bypass this requirement. The Runner must independently keep network egress disabled in managed production and enforce bounded resources/output. Validate Bubblewrap on the actual deployed runtime before enabling code execution.
+Do not set compatibility/shared-container mode to bypass this requirement. If Render denies the namespaces required by Bubblewrap, keep execution blocked and move the Runner to a runtime that supports per-execution isolation. Never weaken the sandbox to make readiness green.
 
 ## Background worker
 
-The Render background worker must run the project's `worker` management command and continuously refresh the `background-worker` heartbeat. The readiness probe requires a heartbeat no older than 90 seconds and rejects stale running jobs. Confirm the worker is healthy in Render logs; do not synthesize heartbeat rows manually.
+The current Render configuration supports an embedded worker in the API service by default. Keep `BACKGROUND_WORKER_MODE` unset or `embedded` unless a separate worker service is intentionally deployed and verified. For a separate worker, use the same release and `DATABASE_URL`, and set `BACKGROUND_WORKER_MODE=external` on the API only after the external worker is healthy.
+
+In either mode, the worker must refresh the `background-worker` heartbeat continuously. The readiness probe requires a heartbeat no older than 90 seconds and rejects stale running jobs. Confirm the worker startup and heartbeat in Render logs; do not synthesize heartbeat rows manually.
 
 ## Release alignment and verification
 
