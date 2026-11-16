@@ -335,6 +335,7 @@ class SecureRunnerReadinessTests(TestCase):
 
         self.assertEqual(blocked.status_code, 503)
         self.assertFalse(blocked.json()["checks"]["runner"])
+        self.assertEqual(blocked.json()["diagnostics"]["runner"], "runner_token_missing")
         self.assertEqual(blocked.json()["status"], "not_ready")
         self.assertEqual(allowed.status_code, 200)
         self.assertTrue(allowed.json()["checks"]["runner"])
