@@ -16,7 +16,7 @@ function cell(value) {
     .replace(/[\r\n]+/g, " ")
     // Prevent untrusted report values from creating Markdown links, images,
     // emphasis, code spans, or headings in the GitHub job summary.
-    .replace(/[\x60*_{}\[\]()#+.!~]/g, character => ({
+    .replace(/[\x60*_{}\[\]()+.!~]/g, character => ({
       "\x60": "&#96;", "*": "&#42;", "_": "&#95;", "{": "&#123;",
       "}": "&#125;", "[": "&#91;", "]": "&#93;", "(": "&#40;",
       ")": "&#41;", "+": "&#43;", ".": "&#46;",
