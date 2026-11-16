@@ -1364,3 +1364,13 @@ test("Agent task patching and human acceptance use task-specific acceptance crit
   assert.ok(assistant.includes('(Array.isArray(task.acceptance_criteria) ? task.acceptance_criteria : [])'));
   assert.doesNotMatch(assistant, /accepted_criteria: agentRun\.plan\?\.acceptance_criteria/);
 });
+
+
+test("Agent human acceptance confirmation is bound to the exact criteria snapshot", () => {
+  const assistant = fs.readFileSync(path.join(srcDir, "Project/AIAssistant/AIAssistant.jsx"), "utf8");
+  assert.ok(assistant.includes("function taskAcceptanceSignature(task)"));
+  assert.ok(assistant.includes("acceptanceConfirmed[task.id] !== acceptanceSignature"));
+  assert.ok(assistant.includes("acceptanceConfirmed[task.id] === taskAcceptanceSignature(task)"));
+  assert.ok(assistant.includes("event.target.checked ? taskAcceptanceSignature(task) : \"\""));
+  assert.ok(assistant.includes("disabled={busy || !taskAcceptanceSignature(task) || acceptanceConfirmed[task.id] !== taskAcceptanceSignature(task)}"));
+});
