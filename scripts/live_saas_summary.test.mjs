@@ -54,7 +54,7 @@ test("escapes HTML, Markdown links, formatting, and multiline table injection", 
   assert.doesNotMatch(output, /<script>|\]\(https:\/\/evil\.example|\`code\`|\*\*bold\*\*/);
   assert.doesNotMatch(output, /\n\| injected/);
   assert.match(output, /&lt;script&gt;alert&#40;1&#41;&lt;\/script&gt; &#124; forged row &#124; injected/);
-  assert.match(output, /&#91;open&#93;&#40;https://evil&#46;example&#41;/);
+  assert.ok(output.includes("&#91;open&#93;&#40;https://evil&#46;example&#41;"));
 });
 
 test("omits optional diagnostic sections when no diagnostics are present", () => {
