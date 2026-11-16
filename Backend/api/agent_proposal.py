@@ -46,9 +46,9 @@ def agent_task_patch_proposal_api(request, pk, task_pk):
             return Response({"error": "Only a ready task can receive a new implementation proposal."}, status=409)
         if task.depends_on.exclude(status="succeeded").exists():
             return Response({"error": "Complete every prerequisite task before requesting this proposal."}, status=409)
-        criteria = _valid_agent_task_acceptance_criteria(task)
-        if not criteria:
+        if not _valid_agent_task_acceptance_criteria(task):
             return Response({"error": "Task-specific acceptance criteria are required."}, status=409)
+        criteria = list(task.acceptance_criteria)
 
         workspace = _workspace_for_user(run.workspace_id, request.user, for_update=True)
         if not _workspace_write_allowed(workspace, request.user):
