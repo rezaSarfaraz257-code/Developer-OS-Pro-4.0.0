@@ -142,3 +142,22 @@ class AgentTaskBoundPatchApprovalTests(TestCase):
         )
         self.assertEqual(event.metadata["agent_run_id"], self.run.id)
         self.assertEqual(event.metadata["agent_task_id"], self.task.id)
+
+    def test_malformed_task_binding_ids_fail_closed_without_integer_conversion_errors(self):
+        malformed_values = (
+            True,
+            False,
+            0,
+            -1,
+            1.0,
+            "0",
+            "²",
+            "١",
+            "9" * 5000,
+            str((1 << 63)),
+            1 << 63,
+        )
+        for field in ("agent_run_id", "agent_task_id"):
+            for malformed in malformed_values:
+                with self.subTest(field=field, malformed=repr(malformed)[:80]):
+                    self.assertIsNone(self._token(**{field: malformed}))
