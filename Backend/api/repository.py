@@ -229,7 +229,10 @@ def repository_push_api(request, pk):
             related_id=repo.id,
             metadata={"hash": commit_hash, "branch": branch, "parent": parent, "files": deepcopy(files)},
         )
-    return Response({"repository": _repo_payload(repo, request.user), "commit": _commit_payload(commit)}, status=status.HTTP_201_CREATED)
+        # Capture the response head before releasing the row lock; otherwise
+        # a following push could advance the branch before this response reads it.
+        repository_payload = _repo_payload(repo, request.user)
+    return Response({"repository": repository_payload, "commit": _commit_payload(commit)}, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])
