@@ -195,6 +195,100 @@ class NativeRepositoryEngineTests(APITestCase):
         self.assertEqual(tags.data[0]["name"], "v1.0.0")
 
 
+    def test_native_commit_uses_working_tree_after_acquiring_lock(self):
+        from unittest.mock import patch
+        from . import repository_engine
+
+        repo_id = self.repo()
+        original_locked_repo = repository_engine._locked_repo
+
+        def update_before_lock(user, pk):
+            CodeWorkspace.objects.filter(pk=pk).update(
+                files={"README.md": "# Latest\n", "app.py": "print('latest')"}
+            )
+            return original_locked_repo(user, pk)
+
+        with patch("api.repository_engine._locked_repo", side_effect=update_before_lock):
+            response = self.client.post(
+                f"/api/repositories/{repo_id}/native/commits/",
+                {"branch": "main", "message": "Commit latest working tree"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        locked_repo = repository_engine._repo(self.user, repo_id)
+        committed = repository_engine._commit_files(
+            self.user, locked_repo, response.data["commit"]["id"]
+        )
+        self.assertEqual(committed["app.py"], "print('latest')")
+
+    def test_native_tags_reject_unknown_commits_and_prevent_retargeting(self):
+        repo_id = self.repo()
+        missing = self.client.post(
+            f"/api/repositories/{repo_id}/native/tags/",
+            {"name": "v1.0.0", "commit": "f" * 64},
+            format="json",
+        )
+        self.assertEqual(missing.status_code, status.HTTP_404_NOT_FOUND)
+
+        first = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "First tag target", "files": {"app.py": "print(1)"}},
+            format="json",
+        )
+        second = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "Second tag target", "files": {"app.py": "print(2)"}},
+            format="json",
+        )
+        tag = self.client.post(
+            f"/api/repositories/{repo_id}/native/tags/",
+            {"name": "v1.0.0", "commit": first.data["commit"]["id"]},
+            format="json",
+        )
+        duplicate = self.client.post(
+            f"/api/repositories/{repo_id}/native/tags/",
+            {"name": "v1.0.0", "commit": second.data["commit"]["id"]},
+            format="json",
+        )
+        self.assertEqual(tag.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(duplicate.status_code, status.HTTP_409_CONFLICT)
+
+    def test_member_revocation_blocks_subsequent_native_mutations(self):
+        repo_id = self.repo()
+        member = User.objects.create_user(
+            username="native-member",
+            password="long-test-password-123",
+        )
+        added = self.client.post(
+            f"/api/repositories/{repo_id}/native/members/",
+            {"user_id": member.id},
+            format="json",
+        )
+        self.assertEqual(added.status_code, status.HTTP_201_CREATED)
+
+        collaborator = self.client.__class__()
+        collaborator.force_authenticate(user=member)
+        before_revoke = collaborator.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "Member commit", "files": {"app.py": "print(3)"}},
+            format="json",
+        )
+        self.assertEqual(before_revoke.status_code, status.HTTP_201_CREATED)
+
+        revoked = self.client.delete(
+            f"/api/repositories/{repo_id}/native/members/",
+            {"user_id": member.id},
+            format="json",
+        )
+        self.assertEqual(revoked.status_code, status.HTTP_204_NO_CONTENT)
+        after_revoke = collaborator.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"branch": "main", "message": "Must be rejected", "files": {"app.py": "print(4)"}},
+            format="json",
+        )
+        self.assertEqual(after_revoke.status_code, status.HTTP_404_NOT_FOUND)
+
+
 class RepositoryPushSerializationTests(TransactionTestCase):
     """The branch-head read must be protected by the repository row lock."""
 
