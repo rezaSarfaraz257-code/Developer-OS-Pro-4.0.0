@@ -248,8 +248,11 @@ def native_commit_api(request, pk):
     if not message or len(message) > 500:
         return Response({"error": "Commit message is required."}, status=400)
     files = request.data.get("files", repo.files or {})
-    parent = _head(request.user, repo, branch)
     with transaction.atomic():
+        # Every repository writer must serialize on this row before reading
+        # branch heads or mutating the working tree.
+        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        parent = _head(request.user, repo, branch)
         oid, tree, created = _commit(request.user, repo, branch, message, files, parent)
         repo.framework = branch
         repo.files = _files(files)
@@ -272,17 +275,20 @@ def native_branch_api(request, pk):
     if not SAFE_BRANCH.fullmatch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     source = str(request.data.get("from") or repo.framework or "main")
-    source_head = _head(request.user, repo, source)
-    if not source_head:
-        source_files = _files(repo.files or {})
-        source_head, _, _ = _commit(request.user, repo, source, "Initial repository snapshot", source_files, None, request.user.username)
-    if branch not in _branch_heads(request.user, repo):
-        files = _commit_files(request.user, repo, source_head)
-        _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
-    repo.framework = branch
-    repo.files = _commit_files(request.user, repo, _head(request.user, repo, branch) or source_head)
-    repo.save()
-    return Response({"branch": branch, "head": _head(request.user, repo, branch)})
+    with transaction.atomic():
+        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        source_head = _head(request.user, repo, source)
+        if not source_head:
+            source_files = _files(repo.files or {})
+            source_head, _, _ = _commit(request.user, repo, source, "Initial repository snapshot", source_files, None, request.user.username)
+        if branch not in _branch_heads(request.user, repo):
+            files = _commit_files(request.user, repo, source_head)
+            _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
+        repo.framework = branch
+        repo.files = _commit_files(request.user, repo, _head(request.user, repo, branch) or source_head)
+        repo.save()
+        branch_head = _head(request.user, repo, branch)
+    return Response({"branch": branch, "head": branch_head})
 
 
 @api_view(["POST"])
@@ -294,32 +300,36 @@ def native_merge_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     source = str(request.data.get("source") or "").strip()
     target = str(request.data.get("target") or repo.framework or "main").strip()
-    source_head, target_head = _head(request.user, repo, source), _head(request.user, repo, target)
-    if not source_head or not target_head:
-        return Response({"error": "Both branches must contain commits."}, status=400)
-    if source_head == target_head:
-        return Response({"merged": True, "message": "Already up to date.", "head": target_head})
-    source_chain = _ancestor_chain(request.user, repo, source_head)
-    target_chain = set(_ancestor_chain(request.user, repo, target_head))
-    base = next((oid for oid in source_chain if oid in target_chain), None)
-    if not base:
-        return Response({"error": "No common ancestor."}, status=409)
-    merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
-    if conflicts:
-        return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
-    merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
-    oid, tree, _ = _commit(request.user, repo, target, merge_message, merged, target_head)
-    merge_row = _commits(request.user, repo.id, target).filter(metadata__oid=oid).first()
-    if merge_row:
-        meta = merge_row.metadata or {}
-        payload = meta.get("payload") or {}
-        payload["parents"] = [target_head, source_head]
-        meta["payload"] = payload
-        merge_row.metadata = meta
-        merge_row.save(update_fields=["metadata"])
-    repo.framework = target
-    repo.files = merged
-    repo.save()
+    with transaction.atomic():
+        # Re-read both branch heads only after taking the same repository lock
+        # used by native commits and branch changes.
+        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        source_head, target_head = _head(request.user, repo, source), _head(request.user, repo, target)
+        if not source_head or not target_head:
+            return Response({"error": "Both branches must contain commits."}, status=400)
+        if source_head == target_head:
+            return Response({"merged": True, "message": "Already up to date.", "head": target_head})
+        source_chain = _ancestor_chain(request.user, repo, source_head)
+        target_chain = set(_ancestor_chain(request.user, repo, target_head))
+        base = next((oid for oid in source_chain if oid in target_chain), None)
+        if not base:
+            return Response({"error": "No common ancestor."}, status=409)
+        merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
+        if conflicts:
+            return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
+        merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
+        oid, tree, _ = _commit(request.user, repo, target, merge_message, merged, target_head)
+        merge_row = _commits(request.user, repo.id, target).filter(metadata__oid=oid).first()
+        if merge_row:
+            meta = merge_row.metadata or {}
+            payload = meta.get("payload") or {}
+            payload["parents"] = [target_head, source_head]
+            meta["payload"] = payload
+            merge_row.metadata = meta
+            merge_row.save(update_fields=["metadata"])
+        repo.framework = target
+        repo.files = merged
+        repo.save()
     return Response({"merged": True, "head": oid, "tree": tree, "branch": target})
 
 
