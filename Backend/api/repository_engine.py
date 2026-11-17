@@ -32,13 +32,10 @@ def _repo(user, pk):
     repo = CodeWorkspace.objects.get(pk=pk, runtime=RUNTIME)
     if repo.owner_id == user.id:
         return repo
-    member = Activity.objects.filter(
-        related_type="repo_member",
-        related_id=repo.id,
-        metadata__user_id=user.id,
-        metadata__revoked=False,
-    ).exists()
-    if not member:
+    # Membership is an append-only event stream. An older grant must not
+    # remain effective after a newer revocation event.
+    latest_membership = _member_rows(repo).filter(metadata__user_id=user.id).first()
+    if not latest_membership or (latest_membership.metadata or {}).get("revoked", False):
         raise CodeWorkspace.DoesNotExist
     return repo
 
