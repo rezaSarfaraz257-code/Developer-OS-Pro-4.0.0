@@ -1,10 +1,11 @@
 import json
 import os
 import runpy
-import requests
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
+
+import requests
 
 from django.test import Client as DjangoTestClient, RequestFactory, override_settings
 from django.urls import reverse
@@ -582,6 +583,7 @@ class CacheReadinessProbeTests(TestCase):
         self.assertNotIn("secret", reason)
         self.assertNotIn("cache.internal", reason)
         cache_mock.delete.assert_called_once()
+
 
 class GunicornWorkerSizingTests(TestCase):
     def _load_worker_count(self, cpu_count, web_concurrency=None):
