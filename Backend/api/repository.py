@@ -162,13 +162,30 @@ def repositories_api(request):
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def repository_detail_api(request, pk):
-    repo = _repo(request.user, pk)
     if request.method == "GET":
+        repo = _repo(request.user, pk)
         return Response(_repo_payload(repo, request.user, include_files=True))
     if request.method == "DELETE":
-        name = repo.name
-        repo.delete()
-        Activity.objects.create(actor=request.user, verb="deleted a repository", message=name, related_type="repository_deleted", related_id=pk)
+        # Deletion participates in the same per-repository lock protocol as
+        # commits, pushes, pulls, branch changes, and collaborator mutations.
+        # This prevents a delete racing a writer that has already authorized
+        # against a stale repository instance.
+        with transaction.atomic():
+            repo = get_object_or_404(
+                CodeWorkspace.objects.select_for_update(),
+                pk=pk,
+                owner=request.user,
+                runtime=REPOSITORY_RUNTIME,
+            )
+            name = repo.name
+            repo.delete()
+            Activity.objects.create(
+                actor=request.user,
+                verb="deleted a repository",
+                message=name,
+                related_type="repository_deleted",
+                related_id=pk,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     with transaction.atomic():
