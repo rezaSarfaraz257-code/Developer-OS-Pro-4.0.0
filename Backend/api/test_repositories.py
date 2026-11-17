@@ -180,3 +180,53 @@ class NativeRepositoryEngineTests(APITestCase):
         tags = self.client.get(f"/api/repositories/{repo_id}/native/tags/list/")
         self.assertEqual(tags.status_code, status.HTTP_200_OK)
         self.assertEqual(tags.data[0]["name"], "v1.0.0")
+
+
+class RepositoryPushSerializationTests(__import__("django.test", fromlist=["TransactionTestCase"]).TransactionTestCase):
+    """The branch-head read must be protected by the repository row lock."""
+
+    def test_push_reads_branch_head_inside_the_locking_transaction(self):
+        from unittest.mock import patch
+        from django.db import connection
+        from django.test import Client as DjangoClient
+        from rest_framework.test import APIClient
+        from . import repository
+
+        user = User.objects.create_user(
+            username="repo-serialized-push",
+            password="long-test-password-123",
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        created = client.post(
+            "/api/repositories/",
+            {"name": "Serialized Push", "files": {"main.py": "print(1)"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        repo_id = created.data["id"]
+
+        original_commit_qs = repository._commit_qs
+
+        def assert_branch_head_read_is_atomic(*args, **kwargs):
+            self.assertTrue(
+                connection.in_atomic_block,
+                "The branch head must be read after the repository row lock is acquired.",
+            )
+            return original_commit_qs(*args, **kwargs)
+
+        with patch("api.repository._commit_qs", side_effect=assert_branch_head_read_is_atomic):
+            response = client.post(
+                f"/api/repositories/{repo_id}/push/",
+                {"branch": "main", "message": "Serialized commit"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        commit = Activity.objects.get(
+            actor=user,
+            related_type="repository_commit",
+            related_id=repo_id,
+            message="Serialized commit",
+        )
+        self.assertIsNotNone(commit.metadata.get("parent"))
