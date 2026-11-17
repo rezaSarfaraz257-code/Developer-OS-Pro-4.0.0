@@ -3,7 +3,7 @@ import os
 
 bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 worker_class = "uvicorn.workers.UvicornWorker"
-workers = int(os.getenv("WEB_CONCURRENCY", str(max(2, min(4, multiprocessing.cpu_count() * 2 + 1)))))
+workers = int(os.getenv("WEB_CONCURRENCY", str(max(1, min(2, multiprocessing.cpu_count())))))
 threads = 1
 worker_connections = 1000
 keepalive = int(os.getenv("GUNICORN_KEEPALIVE", "5"))
