@@ -414,7 +414,7 @@ def native_tag_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     name = str(request.data.get("name") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", name):
+    if not _valid_branch(name):
         return Response({"error": "Invalid tag name."}, status=400)
     with transaction.atomic():
         repo = _locked_repo(request.user, repo.pk)
