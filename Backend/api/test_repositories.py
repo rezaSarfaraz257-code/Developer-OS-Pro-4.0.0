@@ -135,6 +135,24 @@ class IndependentRepositoryApiTests(APITestCase):
 
 
 class NativeRepositoryEngineTests(APITestCase):
+
+    def test_locked_repository_returns_not_found_after_concurrent_delete(self):
+        from django.http import Http404
+        from .repository_engine import _locked_repo
+
+        repo = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Deleted during mutation preflight",
+            runtime="developer-os-repository",
+            framework="main",
+            files={"README.md": "# race"},
+        )
+        repo_id = repo.pk
+        repo.delete()
+
+        with self.assertRaises(Http404):
+            _locked_repo(self.user, repo_id)
+
     def setUp(self):
         self.user = User.objects.create_user(username="native-user", password="long-test-password-123")
         self.client.force_authenticate(user=self.user)
