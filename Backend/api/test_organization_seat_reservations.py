@@ -197,3 +197,53 @@ class OrganizationSeatReservationTests(TestCase):
             email=invited_user.email,
         )
         self.assertIsNone(invite.accepted_at)
+    def test_member_add_rechecks_actor_role_after_organization_lock(self):
+        target = User.objects.create_user(
+            username="revoked-admin-target",
+            email="revoked-target@example.test",
+            password="StrongPass123!",
+        )
+        stale_membership = OrganizationMembership.objects.get(
+            organization=self.org,
+            user=self.owner,
+        )
+
+        def revoke_before_locked_check(*args, **kwargs):
+            OrganizationMembership.objects.filter(pk=stale_membership.pk).delete()
+            return stale_membership
+
+        with patch("api.views._org_access", side_effect=revoke_before_locked_check):
+            response = self.client.post(
+                self.members_url,
+                {"username": target.username, "role": "developer"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 403, response.json())
+        self.assertFalse(
+            OrganizationMembership.objects.filter(
+                organization=self.org,
+                user=target,
+            ).exists()
+        )
+
+    def test_invitation_creation_rechecks_actor_role_after_organization_lock(self):
+        stale_membership = OrganizationMembership.objects.get(
+            organization=self.org,
+            user=self.owner,
+        )
+
+        def revoke_before_locked_check(*args, **kwargs):
+            OrganizationMembership.objects.filter(pk=stale_membership.pk).delete()
+            return stale_membership
+
+        with patch("api.views._org_access", side_effect=revoke_before_locked_check):
+            response = self.create_invite("revoked-admin@example.test")
+
+        self.assertEqual(response.status_code, 403, response.json())
+        self.assertFalse(
+            OrganizationInvite.objects.filter(
+                organization=self.org,
+                email="revoked-admin@example.test",
+            ).exists()
+        )
