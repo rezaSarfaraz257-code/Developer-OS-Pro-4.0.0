@@ -30,8 +30,8 @@ jobs:
       - uses: github/codeql-action/autobuild@v4
       - uses: github/codeql-action/analyze@v4
 
-  dependency-audit:
-    name: Dependency vulnerability audit
+  frontend-dependency-audit:
+    name: Frontend dependency vulnerability audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,6 +41,14 @@ jobs:
       - name: Audit frontend dependencies
         working-directory: Frontend
         run: npm audit --audit-level=high
+
+  backend-dependency-audit:
+    name: Backend dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -174,7 +182,7 @@ jobs:
 
   release-gate:
     name: Release gate
-    needs: [codeql, dependency-audit, backend-validation, frontend-validation, runner-validation]
+    needs: [codeql, frontend-dependency-audit, backend-dependency-audit, backend-validation, frontend-validation, runner-validation]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
