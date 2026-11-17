@@ -27,7 +27,7 @@ DEFAULT_BRANCH = "main"
 MAX_FILES = 2000
 MAX_FILE_BYTES = 1_500_000
 MAX_TOTAL_BYTES = 25_000_000
-SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._@+\\- /]+$")
+SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._@+\- /]+$")
 SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
 
 
