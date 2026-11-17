@@ -1,14 +1,17 @@
 # Render Production Readiness Runbook
 
-## Latest verified live incident (2026-11-18)
+## Latest verified live incident (2026-11-18; updated after partial recovery)
 
-A fresh read-only production probe on 2026-11-18 confirmed that the public Frontend route `/ide` returned HTTP 200 and rendered the Developer OS sign-in page, while the Backend origin itself returned HTTP 503 on all three of these requests:
+A follow-up read-only production probe confirmed **partial recovery, not full service recovery**:
 
-- `/`
-- `/api/health/live/`
-- `/api/health/ready/`
+- Frontend `/ide`: HTTP 200; the sign-in page is served.
+- Backend `/api/health/live/`: HTTP 200; the Django process responds to liveness checks.
+- Backend `/api/health/ready/`: HTTP 503; the service is still not operationally ready.
+- Backend `/api/token/`: HTTP 503; authentication is unavailable through this endpoint.
 
-The API root returning 503 is significant: this is broader than a readiness-only failure. Do not interpret it as proof that Redis or Runner alone caused the outage. The origin response body and Render service logs were not available to this probe, so the underlying cause is **undetermined**.
+The deployed Backend reports release SHA `a6d1b612229e391744f699cabd324cd6f52122ac`; repository `master` is at `3c6f39f008f9b607a906ce6b577fbc3fd29409f4` (16 commits ahead at the time of comparison). This is a release-alignment gap as well as a readiness failure.
+
+Liveness HTTP 200 proves only that the process responds. It does **not** prove database/cache/worker/Runner readiness or working authentication. The response body and Render service logs were not available to this probe, so the exact failing readiness dependency and root cause remain **undetermined**. Do not attribute the 503 to Redis, Runner, or worker without the sanitized readiness diagnostics and Render runtime logs.
 
 ### Required recovery procedure
 
