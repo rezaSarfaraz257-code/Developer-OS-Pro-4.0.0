@@ -189,25 +189,35 @@ def repository_detail_api(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_push_api(request, pk):
-    repo = _repo(request.user, pk)
-    branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH).strip()
     message = str(request.data.get("message") or "Update repository").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
-        return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
     if not message or len(message) > 500:
         return Response({"error": "A commit message between 1 and 500 characters is required."}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        files = _clean_files(repo.files or {})
-    except ValueError as exc:
-        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    previous = _commit_qs(request.user, repo.id, branch).first()
-    parent = (previous.metadata or {}).get("hash") if previous else None
-    commit_hash = _commit_hash(repo.id, branch, message, parent, files)
-    if previous and (previous.metadata or {}).get("hash") == commit_hash:
-        return Response({"error": "Nothing to push.", "commit": _commit_payload(previous)}, status=status.HTTP_409_CONFLICT)
-
+    # Serialize the branch-head read, working-tree snapshot, revision update,
+    # and commit insert on the repository row. Reading the previous commit
+    # before acquiring this lock lets concurrent pushes fork from the same
+    # parent and overwrite each other's working-tree state.
     with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
+            return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            files = _clean_files(repo.files or {})
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        previous = _commit_qs(request.user, repo.id, branch).first()
+        parent = (previous.metadata or {}).get("hash") if previous else None
+        commit_hash = _commit_hash(repo.id, branch, message, parent, files)
+        if previous and (previous.metadata or {}).get("hash") == commit_hash:
+            return Response({"error": "Nothing to push.", "commit": _commit_payload(previous)}, status=status.HTTP_409_CONFLICT)
+
         repo.framework = branch
         repo.files = files
         repo.save(update_fields=["framework", "files", "revision", "updated_at"])
