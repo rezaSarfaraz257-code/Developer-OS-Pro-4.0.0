@@ -173,6 +173,27 @@ class BillingEntitlementTests(TestCase):
 
 
 
+    def test_default_workspace_readme_uses_real_newlines(self):
+        user = User.objects.create_user(
+            username="workspace-default-readme-user",
+            password="StrongPass123!",
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+
+        response = client.post(
+            "/api/ide/workspaces/",
+            {"name": "Default README workspace"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.json())
+        workspace = user.code_workspaces.get()
+        self.assertEqual(
+            workspace.files["README.md"],
+            "# Workspace\n\nBuild, test and ship from the Developer OS command center.\n",
+        )
+
 class WorkspaceQuotaAtomicityTests(TransactionTestCase):
     def test_workspace_insert_stays_inside_the_locked_quota_transaction(self):
         user = User.objects.create_user(
