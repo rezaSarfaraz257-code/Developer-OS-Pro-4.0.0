@@ -171,19 +171,27 @@ def repository_detail_api(request, pk):
         Activity.objects.create(actor=request.user, verb="deleted a repository", message=name, related_type="repository_deleted", related_id=pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    if "files" in request.data:
-        try:
-            files = _clean_files(request.data["files"])
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        repo.files = files
-    if "active_file" in request.data:
-        active = str(request.data.get("active_file") or "")
-        if active and active not in (repo.files or {}):
-            return Response({"error": "active_file does not exist in the working tree."}, status=status.HTTP_400_BAD_REQUEST)
-        repo.active_file = active
-    repo.save()
-    return Response(_repo_payload(repo, request.user, include_files=True))
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        if "files" in request.data:
+            try:
+                files = _clean_files(request.data["files"])
+            except ValueError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            repo.files = files
+        if "active_file" in request.data:
+            active = str(request.data.get("active_file") or "")
+            if active and active not in (repo.files or {}):
+                return Response({"error": "active_file does not exist in the working tree."}, status=status.HTTP_400_BAD_REQUEST)
+            repo.active_file = active
+        repo.save()
+        payload = _repo_payload(repo, request.user, include_files=True)
+    return Response(payload)
 
 
 @api_view(["POST"])
@@ -253,36 +261,51 @@ def repository_history_api(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_pull_api(request, pk):
-    repo = _repo(request.user, pk)
-    branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH)
-    commit_hash = str(request.data.get("commit") or "").strip()
-    commits = _commit_qs(request.user, repo.id, branch)
-    commit = commits.filter(metadata__hash=commit_hash).first() if commit_hash else commits.first()
-    if not commit:
-        return Response({"error": "No remote commit exists for this branch."}, status=status.HTTP_404_NOT_FOUND)
-    files = _clean_files((commit.metadata or {}).get("files") or {})
-    repo.framework = branch
-    repo.files = files
-    repo.active_file = next(iter(files), "")
-    repo.save()
-    Activity.objects.create(actor=request.user, verb="pulled repository commit", message=commit.message, related_type="repository_pull", related_id=repo.id, metadata={"hash": (commit.metadata or {}).get("hash"), "branch": branch})
-    return Response({"repository": _repo_payload(repo, request.user, include_files=True), "commit": _commit_payload(commit)})
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH)
+        commit_hash = str(request.data.get("commit") or "").strip()
+        commits = _commit_qs(request.user, repo.id, branch)
+        commit = commits.filter(metadata__hash=commit_hash).first() if commit_hash else commits.first()
+        if not commit:
+            return Response({"error": "No remote commit exists for this branch."}, status=status.HTTP_404_NOT_FOUND)
+        files = _clean_files((commit.metadata or {}).get("files") or {})
+        repo.framework = branch
+        repo.files = files
+        repo.active_file = next(iter(files), "")
+        repo.save()
+        Activity.objects.create(actor=request.user, verb="pulled repository commit", message=commit.message, related_type="repository_pull", related_id=repo.id, metadata={"hash": (commit.metadata or {}).get("hash"), "branch": branch})
+        payload = _repo_payload(repo, request.user, include_files=True)
+        commit_payload = _commit_payload(commit)
+    return Response({"repository": payload, "commit": commit_payload})
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_branch_api(request, pk):
-    repo = _repo(request.user, pk)
     branch = str(request.data.get("branch") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
         return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
-    existing = _commit_qs(request.user, repo.id, branch).first()
-    repo.framework = branch
-    if existing and request.data.get("pull", True):
-        repo.files = _clean_files((existing.metadata or {}).get("files") or {})
-        repo.active_file = next(iter(repo.files), "")
-    repo.save()
-    return Response(_repo_payload(repo, request.user, include_files=True))
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        existing = _commit_qs(request.user, repo.id, branch).first()
+        repo.framework = branch
+        if existing and request.data.get("pull", True):
+            repo.files = _clean_files((existing.metadata or {}).get("files") or {})
+            repo.active_file = next(iter(repo.files), "")
+        repo.save()
+        payload = _repo_payload(repo, request.user, include_files=True)
+    return Response(payload)
 
 
 @api_view(["POST"])
@@ -328,17 +351,26 @@ def repository_sync_workspace_api(request, pk):
         return Response({"error": "direction must be push or pull."}, status=status.HTTP_400_BAD_REQUEST)
 
     if direction == "push":
-        try:
-            files = _clean_files(workspace.files or {})
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        repo.files = files
-        repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
-        repo.framework = repo.framework or DEFAULT_BRANCH
-        repo.save()
+        with transaction.atomic():
+            repo = get_object_or_404(
+                CodeWorkspace.objects.select_for_update(),
+                pk=pk,
+                owner=request.user,
+                runtime=REPOSITORY_RUNTIME,
+            )
+            workspace = get_object_or_404(CodeWorkspace, pk=workspace_id, owner=request.user)
+            try:
+                files = _clean_files(workspace.files or {})
+            except ValueError:
+                return Response({"error": "Workspace files are invalid."}, status=status.HTTP_400_BAD_REQUEST)
+            repo.files = files
+            repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
+            repo.framework = repo.framework or DEFAULT_BRANCH
+            repo.save()
+            payload = _repo_payload(repo, request.user, include_files=True)
         return Response({
             "direction": "push",
-            "repository": _repo_payload(repo, request.user, include_files=True),
+            "repository": payload,
             "workspace_id": workspace.id,
             "file_count": len(files),
         })
