@@ -4022,6 +4022,11 @@ def organization_members_api(request, pk):
         ).first()
         if actor_membership is None:
             return Response({"error": "Forbidden"}, status=403)
+        if user.pk == locked_org.owner_id:
+            return Response(
+                {"error": "The organization owner's role cannot be changed."},
+                status=400,
+            )
         existing = OrganizationMembership.objects.filter(organization=locked_org, user=user).first()
         if existing is None:
             seat_limit = _organization_seat_limit(locked_org)
