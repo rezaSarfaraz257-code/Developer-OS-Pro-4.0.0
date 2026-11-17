@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import deque
 from copy import deepcopy
 
 from django.db import transaction
@@ -190,9 +191,9 @@ def _ancestor_chain(user, repo, oid, limit=1000):
     # retain reachable history from both sides.
     result = []
     seen = set()
-    pending = [oid] if oid else []
+    pending = deque([oid] if oid else [])
     while pending and len(result) < limit:
-        current = pending.pop(0)
+        current = pending.popleft()
         if not current or current in seen:
             continue
         seen.add(current)
@@ -266,11 +267,16 @@ def native_commit_api(request, pk):
     message = str(request.data.get("message") or "").strip()
     if not message or len(message) > 500:
         return Response({"error": "Commit message is required."}, status=400)
-    files = request.data.get("files", repo.files or {})
     with transaction.atomic():
         # Every repository writer must serialize on this row before reading
-        # branch heads or mutating the working tree.
+        # branch heads or mutating the working tree. Read the default working
+        # tree only after acquiring the lock to avoid committing a stale copy.
         repo = _locked_repo(request.user, repo.pk)
+        files = request.data.get("files", repo.files or {})
+        try:
+            files = _files(files)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
         parent = _head(request.user, repo, branch)
         oid, tree, created = _commit(request.user, repo, branch, message, files, parent)
         repo.framework = branch
@@ -336,7 +342,9 @@ def native_merge_api(request, pk):
         merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
         if conflicts:
             return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
-        merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
+        merge_message = str(request.data.get("message") or f"Merge {source} into {target}").strip()
+        if not merge_message or len(merge_message) > 500:
+            return Response({"error": "Merge message must be between 1 and 500 characters."}, status=400)
         oid, tree, _ = _commit(
             request.user,
             repo,
@@ -383,12 +391,22 @@ def native_tag_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     name = str(request.data.get("name") or "").strip()
-    head = str(request.data.get("commit") or _head(request.user, repo, repo.framework or "main") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", name):
         return Response({"error": "Invalid tag name."}, status=400)
-    if not head:
-        return Response({"error": "Repository has no commits."}, status=400)
-    _write_object(request.user, repo.id, "tag", {"name": name, "commit": head})
+    with transaction.atomic():
+        repo = _locked_repo(request.user, repo.pk)
+        head = str(request.data.get("commit") or _head(request.user, repo, repo.framework or "main") or "").strip()
+        if not head:
+            return Response({"error": "Repository has no commits."}, status=400)
+        if not _read_object(request.user, repo.id, "commit", head):
+            return Response({"error": "Commit does not exist in this repository."}, status=404)
+        for row in _objects(request.user, repo.id, "tag"):
+            payload = (row.metadata or {}).get("payload") or {}
+            if payload.get("name") == name:
+                if payload.get("commit") == head:
+                    return Response({"name": name, "commit": head}, status=200)
+                return Response({"error": "Tag name already exists."}, status=409)
+        _write_object(request.user, repo.id, "tag", {"name": name, "commit": head})
     return Response({"name": name, "commit": head}, status=201)
 
 
@@ -416,15 +434,19 @@ def native_members_api(request, pk):
     if request.method == "GET":
         rows = _member_rows(repo)
         return Response([{"user_id": (r.metadata or {}).get("user_id"), "username": (r.metadata or {}).get("username"), "revoked": (r.metadata or {}).get("revoked", False), "created_at": r.created_at} for r in rows])
-    if not _is_owner(request.user, repo):
-        return Response({"error": "Only the repository owner can manage members."}, status=403)
-    user_id = request.data.get("user_id")
-    try:
-        member = User.objects.get(pk=user_id)
-    except (User.DoesNotExist, TypeError, ValueError):
-        return Response({"error": "User not found."}, status=404)
-    if request.method == "POST":
-        Activity.objects.create(actor=request.user, verb="added repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": False})
-        return Response({"user_id": member.id, "username": member.username, "revoked": False}, status=201)
-    Activity.objects.create(actor=request.user, verb="revoked repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": True})
+    with transaction.atomic():
+        # Membership changes share the repository lock with collaborator writes.
+        # This makes revocation linearizable with _locked_repo membership checks.
+        repo = _locked_repo(request.user, repo.pk)
+        if not _is_owner(request.user, repo):
+            return Response({"error": "Only the repository owner can manage members."}, status=403)
+        user_id = request.data.get("user_id")
+        try:
+            member = User.objects.get(pk=user_id)
+        except (User.DoesNotExist, TypeError, ValueError):
+            return Response({"error": "User not found."}, status=404)
+        if request.method == "POST":
+            Activity.objects.create(actor=request.user, verb="added repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": False})
+            return Response({"user_id": member.id, "username": member.username, "revoked": False}, status=201)
+        Activity.objects.create(actor=request.user, verb="revoked repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": True})
     return Response(status=204)
