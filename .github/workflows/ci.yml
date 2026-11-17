@@ -89,10 +89,9 @@ jobs:
           EMAIL_USE_TLS: "true"
           GITHUB_TOKEN_ENCRYPTION_KEY: ci-only-encryption-key
           IDE_RUNNER_TOKEN: ci-runner-token
-          SECURE_SSL_REDIRECT: "false"
         run: |
           python3 manage.py check --deploy
-          python3 manage.py shell -c 'from django.conf import settings; assert settings.IS_PRODUCTION; assert settings.DB_POOL_ENABLED; print("production configuration contract: OK")'
+          python3 manage.py shell -c 'from django.conf import settings; assert settings.IS_PRODUCTION; assert settings.DB_POOL_ENABLED; assert settings.SECURE_SSL_REDIRECT; assert settings.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https"); print("production configuration contract: OK")'
 
   frontend:
     name: Frontend lint build and tests
