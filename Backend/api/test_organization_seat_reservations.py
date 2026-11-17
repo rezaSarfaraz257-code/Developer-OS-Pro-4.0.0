@@ -161,3 +161,39 @@ class OrganizationSeatReservationTests(TestCase):
             email=invited_user.email,
         )
         self.assertIsNotNone(invite.accepted_at)
+
+
+    def test_invitation_acceptance_respects_a_reduced_seat_limit(self):
+        from unittest.mock import patch
+
+        invited_user = User.objects.create_user(
+            username="seat-downgraded-invitee",
+            email="downgraded-invitee@example.test",
+            password="StrongPass123!",
+        )
+        with patch("api.views._organization_seat_limit", return_value=2):
+            invite_response = self.create_invite(invited_user.email)
+            self.assertEqual(invite_response.status_code, 201, invite_response.json())
+
+        invite_client = APIClient()
+        invite_client.force_authenticate(invited_user)
+        with patch("api.views._organization_seat_limit", return_value=1):
+            response = invite_client.post(
+                "/api/organizations/invites/accept/",
+                {"token": invite_response.data["token"]},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 403, response.json())
+        self.assertEqual(response.data["code"], "seat_limit_reached")
+        self.assertFalse(
+            OrganizationMembership.objects.filter(
+                organization=self.org,
+                user=invited_user,
+            ).exists()
+        )
+        invite = OrganizationInvite.objects.get(
+            organization=self.org,
+            email=invited_user.email,
+        )
+        self.assertIsNone(invite.accepted_at)
