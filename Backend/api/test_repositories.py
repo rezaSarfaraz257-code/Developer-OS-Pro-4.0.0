@@ -183,6 +183,40 @@ class NativeRepositoryEngineTests(APITestCase):
         self.assertEqual(refs.status_code, status.HTTP_200_OK)
         self.assertEqual(refs.data["head"], response.data["commit"]["id"])
 
+    def test_native_commit_defaults_to_repository_branch_when_branch_is_omitted(self):
+        repo_id = self.repo()
+        CodeWorkspace.objects.filter(pk=repo_id).update(framework="feature/default")
+        response = self.client.post(
+            f"/api/repositories/{repo_id}/native/commits/",
+            {"message": "Use configured branch", "files": {"app.py": "print('branch default')"}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["commit"]["branch"], "feature/default")
+        self.assertEqual(
+            CodeWorkspace.objects.get(pk=repo_id).framework,
+            "feature/default",
+        )
+
+    def test_native_branch_endpoints_reject_invalid_branch_references(self):
+        repo_id = self.repo()
+        invalid_source = self.client.post(
+            f"/api/repositories/{repo_id}/native/branches/",
+            {"branch": "feature/safe", "from": "../main"},
+            format="json",
+        )
+        invalid_merge = self.client.post(
+            f"/api/repositories/{repo_id}/native/merge/",
+            {"source": "../feature", "target": "main"},
+            format="json",
+        )
+        invalid_diff = self.client.get(
+            f"/api/repositories/{repo_id}/native/diff/?branch=..%2Fmain"
+        )
+        self.assertEqual(invalid_source.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(invalid_merge.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(invalid_diff.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_native_branch_and_merge_with_conflict_detection(self):
         repo_id = self.repo()
         branch = self.client.post(
