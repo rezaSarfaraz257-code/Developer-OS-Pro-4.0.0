@@ -209,8 +209,9 @@ def repository_push_api(request, pk):
             return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             files = _clean_files(repo.files or {})
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            # Do not reflect exception details from persisted working-tree data.
+            return Response({"error": "Repository working tree is invalid."}, status=status.HTTP_400_BAD_REQUEST)
 
         previous = _commit_qs(request.user, repo.id, branch).first()
         parent = (previous.metadata or {}).get("hash") if previous else None
