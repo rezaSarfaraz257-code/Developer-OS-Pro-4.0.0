@@ -1,5 +1,33 @@
 # Render Production Readiness Runbook
 
+## Latest verified live incident (2026-11-18)
+
+A fresh read-only production probe on 2026-11-18 confirmed that the public Frontend route `/ide` returned HTTP 200 and rendered the Developer OS sign-in page, while the Backend origin itself returned HTTP 503 on all three of these requests:
+
+- `/`
+- `/api/health/live/`
+- `/api/health/ready/`
+
+The API root returning 503 is significant: this is broader than a readiness-only failure. Do not interpret it as proof that Redis or Runner alone caused the outage. The origin response body and Render service logs were not available to this probe, so the underlying cause is **undetermined**.
+
+### Required recovery procedure
+
+1. In Render, inspect the Backend web service event timeline and deploy logs around the first observed 503. Confirm whether the service is suspended, failing startup, repeatedly restarting, or failing its health check.
+2. Inspect the latest deploy's build/start command, runtime release SHA, environment configuration, and database connectivity. Do not print or copy secret values into GitHub issues, chat, or logs.
+3. Once the API responds again, request `/api/health/live/`, `/api/health/`, and `/api/health/ready/` independently. Record HTTP status and sanitized diagnostic categories.
+4. If liveness is healthy but readiness is 503, fix each reported dependency at its source: Redis/CACHE_URL, database, worker heartbeat, and strict isolated Runner capability. Do not weaken readiness checks or enable shared-container Runner fallback.
+5. Re-run the Live SaaS Smoke Monitor against the deployed release. Require release SHA agreement and all 13 checks passing before declaring recovery.
+
+### Evidence boundaries
+
+- Frontend HTTP 200 proves only that the static frontend route is reachable; it does not prove API, authentication, workspace persistence, or Runner execution.
+- API HTTP 503 on the root and health endpoints establishes current Backend unavailability, but does not identify its root cause.
+- The prior 2026-11-16 monitor artifact recorded 10/13 checks passing, with release mismatch and cache/Runner readiness failures. That historical evidence must not be substituted for a new post-recovery run.
+- This incident remains open until the API is reachable, readiness is healthy, deployed release identity matches the intended revision, and the complete live monitor passes.
+
+---
+
+
 This runbook documents the production dependencies enforced by the Django readiness probe. It is intentionally fail-closed: do not make readiness green by disabling checks, using a local-memory cache, or weakening the Runner isolation contract.
 
 ## Latest verified live incident (2026-11-16 22:12 UTC)
