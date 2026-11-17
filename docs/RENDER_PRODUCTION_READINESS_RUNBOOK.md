@@ -186,3 +186,11 @@ After changing Render configuration, restart/redeploy the Backend and require al
 4. The deployed `release_sha` matches the intended Backend revision.
 
 Do not post raw Render logs or connection strings. Share only the failure category, backend class, HTTP status, and release SHA.
+
+## Repository validation evidence (2026-11-18)
+
+The PR validation run `44165362652` completed successfully. Verified jobs: Backend checks/tests, PostgreSQL backup/restore, secure Runner tests, Frontend lint/build/tests, full Docker Compose validation, and static release/operational gates. This establishes repository/CI integration health only; it does not establish that the deployed Render API is healthy.
+
+The separate Security workflow run `44165362688` completed with Frontend validation, JavaScript CodeQL, Backend validation, Runner validation, and Python CodeQL successful. The dependency vulnerability audit failed on the high-severity picomatch ReDoS advisory `GHSA-fc5q-39xc-vjpf`; the release gate was skipped. Keep this as a release blocker until a compatible upstream fix is available and verified. Do not use `npm audit fix --force` as an automatic remedy: the current audit output proposes a breaking Vite downgrade to `vite@6.2.7`.
+
+These two CI results are independent of the live Render incident above. Neither a green Docker Compose run nor successful static analysis repairs the observed Backend HTTP 503. Production recovery still requires Render service-event/log inspection, dependency configuration verification, healthy API readiness, release-SHA alignment, and a fresh passing live smoke monitor.
