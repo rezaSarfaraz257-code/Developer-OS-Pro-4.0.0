@@ -4220,10 +4220,12 @@ def organization_invite_accept_api(request):
                     "limit": seat_limit,
                 }, status=403)
 
-        membership, _ = OrganizationMembership.objects.update_or_create(
+        # A pending invitation must never overwrite a role assigned after it
+        # was issued (for example, by a direct member-add operation).
+        membership = existing or OrganizationMembership.objects.create(
             organization=locked_org,
             user=request.user,
-            defaults={"role": invite.role},
+            role=invite.role,
         )
         invite.accepted_at = now
         invite.save(update_fields=["accepted_at"])
