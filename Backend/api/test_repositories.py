@@ -315,3 +315,118 @@ class RepositoryPushSerializationTests(TransactionTestCase):
                 )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertGreaterEqual(head_calls, 1)
+
+
+    def test_concurrent_snapshot_pushes_form_one_parent_chain(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from django.db import close_old_connections
+        from rest_framework.test import APIClient
+
+        user = User.objects.create_user(
+            username="snapshot-concurrent-push",
+            password="long-test-password-123",
+        )
+        setup = APIClient()
+        setup.force_authenticate(user=user)
+        created = setup.post(
+            "/api/repositories/",
+            {"name": "Concurrent Snapshot", "files": {"main.py": "print(0)"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        repo_id = created.data["id"]
+        barrier = Barrier(2)
+
+        def push(message, content):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(user=user)
+                barrier.wait(timeout=15)
+                response = client.post(
+                    f"/api/repositories/{repo_id}/push/",
+                    {"branch": "main", "message": message},
+                    format="json",
+                )
+                return response.status_code, response.data
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(push, "Concurrent A", "print('A')")
+            second = pool.submit(push, "Concurrent B", "print('B')")
+            results = [first.result(timeout=30), second.result(timeout=30)]
+
+        self.assertTrue(all(code == status.HTTP_201_CREATED for code, _ in results), results)
+        hashes = {
+            data["commit"]["hash"]
+            for _, data in results
+        }
+        parents = {
+            data["commit"]["parent"]
+            for _, data in results
+        }
+        self.assertTrue(
+            any(parent in hashes for parent in parents),
+            "Concurrent snapshot pushes must serialize into a single parent chain.",
+        )
+
+    def test_concurrent_native_commits_form_one_parent_chain(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from django.db import close_old_connections
+        from rest_framework.test import APIClient
+
+        user = User.objects.create_user(
+            username="native-concurrent-commit",
+            password="long-test-password-123",
+        )
+        setup = APIClient()
+        setup.force_authenticate(user=user)
+        created = setup.post(
+            "/api/repositories/",
+            {"name": "Concurrent Native", "files": {"main.py": "print(0)"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        repo_id = created.data["id"]
+        barrier = Barrier(2)
+
+        def commit(message, content):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(user=user)
+                barrier.wait(timeout=15)
+                response = client.post(
+                    f"/api/repositories/{repo_id}/native/commits/",
+                    {
+                        "branch": "main",
+                        "message": message,
+                        "files": {"main.py": content},
+                    },
+                    format="json",
+                )
+                return response.status_code, response.data
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(commit, "Native concurrent A", "print('A')")
+            second = pool.submit(commit, "Native concurrent B", "print('B')")
+            results = [first.result(timeout=30), second.result(timeout=30)]
+
+        self.assertTrue(all(code == status.HTTP_201_CREATED for code, _ in results), results)
+        hashes = {
+            data["commit"]["id"]
+            for _, data in results
+        }
+        parents = {
+            data["commit"]["parent"]
+            for _, data in results
+        }
+        self.assertTrue(
+            any(parent in hashes for parent in parents),
+            "Concurrent native commits must serialize into a single parent chain.",
+        )
