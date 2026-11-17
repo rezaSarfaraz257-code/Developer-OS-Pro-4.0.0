@@ -109,6 +109,42 @@ class IndependentRepositoryApiTests(APITestCase):
         self.assertEqual(response.data["repository"]["revision"], revision_before + 1)
         self.assertEqual(response.data["repository"]["files"]["main.py"], "print('workspace')")
 
+    def test_snapshot_repository_endpoints_reject_invalid_branch_refs(self):
+        created = self.client.post(
+            "/api/repositories/",
+            {"name": "Invalid refs", "files": {"main.py": "print(1)"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        repo_id = created.data["id"]
+
+        invalid_checkout = self.client.post(
+            f"/api/repositories/{repo_id}/branch/",
+            {"branch": "../main"},
+            format="json",
+        )
+        invalid_push = self.client.post(
+            f"/api/repositories/{repo_id}/push/",
+            {"branch": "feature//bad", "message": "Reject invalid ref"},
+            format="json",
+        )
+        invalid_history = self.client.get(
+            f"/api/repositories/{repo_id}/history/?branch=.hidden"
+        )
+        invalid_pull = self.client.post(
+            f"/api/repositories/{repo_id}/pull/",
+            {"branch": "main.lock"},
+            format="json",
+        )
+
+        for response in (
+            invalid_checkout,
+            invalid_push,
+            invalid_history,
+            invalid_pull,
+        ):
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
     def test_repository_isolation(self):
         created = self.client.post("/api/repositories/", {"name": "Private"}, format="json")
         repo_id = created.data["id"]
@@ -250,6 +286,16 @@ class NativeRepositoryEngineTests(APITestCase):
             update.data["commit"]["id"],
             repository_engine._ancestor_chain(self.user, repository_engine._repo(self.user, repo_id), merge.data["head"]),
         )
+
+    def test_native_tags_reject_invalid_git_refs(self):
+        repo_id = self.repo()
+        for invalid_name in ("../release", "feature//release", ".hidden", "release.lock"):
+            response = self.client.post(
+                f"/api/repositories/{repo_id}/native/tags/",
+                {"name": invalid_name},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
 
     def test_native_diff_and_tags(self):
         repo_id = self.repo()
