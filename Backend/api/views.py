@@ -4114,18 +4114,37 @@ def organization_invites_api(request, pk):
 @permission_classes([IsAuthenticated])
 def organization_invite_accept_api(request):
     token = str(request.data.get("token") or "").strip()
+    if not token:
+        return Response({"error": "A valid invitation token is required."}, status=400)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    # Use the same lock order as invitation creation/member additions:
+    # organization first, then invitation. This avoids an org<->invite
+    # lock-order inversion under concurrent acceptance and administration.
+    organization_id = OrganizationInvite.objects.filter(
+        token_hash=token_hash,
+        accepted_at__isnull=True,
+    ).values_list("organization_id", flat=True).first()
+    if organization_id is None:
+        return Response({"error": "This invitation is invalid or has already been used."}, status=404)
+
     with transaction.atomic():
+        locked_org = get_object_or_404(
+            Organization.objects.select_for_update(),
+            pk=organization_id,
+        )
         invite = get_object_or_404(
             OrganizationInvite.objects.select_for_update(),
             token_hash=token_hash,
+            organization=locked_org,
             accepted_at__isnull=True,
         )
-        locked_org = Organization.objects.select_for_update().get(pk=invite.organization_id)
         now = timezone.now()
         if invite.expires_at <= now:
             return Response({"error": "This invitation has expired."}, status=400)
-        if request.user.email.lower() != invite.email.lower():
+        account_email = (request.user.email or "").strip().casefold()
+        invite_email = (invite.email or "").strip().casefold()
+        if not account_email or account_email != invite_email:
             return Response({"error": "This invitation is for a different email address."}, status=403)
 
         existing = OrganizationMembership.objects.filter(
