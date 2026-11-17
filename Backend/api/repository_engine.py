@@ -136,7 +136,7 @@ def _head(user, repo, branch):
     return (row.metadata or {}).get("oid") if row else None
 
 
-def _commit(user, repo, branch, message, files, parent=None, author=None):
+def _commit(user, repo, branch, message, files, parent=None, author=None, parents=None):
     files = _files(files)
     tree = _tree(user, repo.id, files)
     payload = {
@@ -146,6 +146,9 @@ def _commit(user, repo, branch, message, files, parent=None, author=None):
         "message": message,
         "author": author or user.username,
     }
+    if parents:
+        # Preserve both merge parents inside the hashed commit payload.
+        payload["parents"] = list(parents)
     oid = _hash("commit", payload)
     existing = _commits(user, repo.id, branch).filter(metadata__oid=oid).first()
     if existing:
@@ -174,13 +177,20 @@ def _commit_files(user, repo, oid):
 
 
 def _ancestor_chain(user, repo, oid, limit=1000):
+    # Walk the full commit DAG, not only the first parent, so merge commits
+    # retain reachable history from both sides.
     result = []
     seen = set()
-    while oid and oid not in seen and len(result) < limit:
-        seen.add(oid)
-        result.append(oid)
-        payload = _read_object(user, repo.id, "commit", oid) or {}
-        oid = payload.get("parent")
+    pending = [oid] if oid else []
+    while pending and len(result) < limit:
+        current = pending.pop(0)
+        if not current or current in seen:
+            continue
+        seen.add(current)
+        result.append(current)
+        payload = _read_object(user, repo.id, "commit", current) or {}
+        parents = payload.get("parents") or ([payload.get("parent")] if payload.get("parent") else [])
+        pending.extend(parent for parent in parents if parent and parent not in seen)
     return result
 
 
@@ -318,15 +328,15 @@ def native_merge_api(request, pk):
         if conflicts:
             return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
         merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
-        oid, tree, _ = _commit(request.user, repo, target, merge_message, merged, target_head)
-        merge_row = _commits(request.user, repo.id, target).filter(metadata__oid=oid).first()
-        if merge_row:
-            meta = merge_row.metadata or {}
-            payload = meta.get("payload") or {}
-            payload["parents"] = [target_head, source_head]
-            meta["payload"] = payload
-            merge_row.metadata = meta
-            merge_row.save(update_fields=["metadata"])
+        oid, tree, _ = _commit(
+            request.user,
+            repo,
+            target,
+            merge_message,
+            merged,
+            target_head,
+            parents=[target_head, source_head],
+        )
         repo.framework = target
         repo.files = merged
         repo.save()
