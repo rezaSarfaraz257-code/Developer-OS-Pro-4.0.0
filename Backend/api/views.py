@@ -3988,10 +3988,23 @@ def organization_members_api(request, pk):
     if request.method == "GET":
         return Response(OrganizationMembershipSerializer(org.memberships.select_related("user"), many=True).data)
     if request.method == "DELETE":
-        m = get_object_or_404(OrganizationMembership, pk=request.data.get("id"), organization=org)
-        if m.user_id == org.owner_id:
-            return Response({"error": "Owner cannot be removed."}, status=400)
-        m.delete()
+        with transaction.atomic():
+            locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+            actor_membership = OrganizationMembership.objects.filter(
+                organization=locked_org,
+                user=request.user,
+                role__in=["owner", "admin"],
+            ).first()
+            if actor_membership is None:
+                return Response({"error": "Forbidden"}, status=403)
+            m = get_object_or_404(
+                OrganizationMembership,
+                pk=request.data.get("id"),
+                organization=locked_org,
+            )
+            if m.user_id == locked_org.owner_id:
+                return Response({"error": "Owner cannot be removed."}, status=400)
+            m.delete()
         return Response(status=204)
 
     identifier = str(request.data.get("username") or request.data.get("email") or "").strip()
@@ -4002,6 +4015,13 @@ def organization_members_api(request, pk):
 
     with transaction.atomic():
         locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+        actor_membership = OrganizationMembership.objects.filter(
+            organization=locked_org,
+            user=request.user,
+            role__in=["owner", "admin"],
+        ).first()
+        if actor_membership is None:
+            return Response({"error": "Forbidden"}, status=403)
         existing = OrganizationMembership.objects.filter(organization=locked_org, user=user).first()
         if existing is None:
             seat_limit = _organization_seat_limit(locked_org)
@@ -4049,9 +4069,29 @@ def organization_invites_api(request, pk):
         invites = org.invites.filter(accepted_at__isnull=True, expires_at__gt=timezone.now()).order_by("-created_at")[:100]
         return Response([{"id": i.id, "email": i.email, "role": i.role, "expires_at": i.expires_at, "created_at": i.created_at} for i in invites])
     if request.method == "DELETE":
-        invite = get_object_or_404(OrganizationInvite, pk=request.data.get("id"), organization=org)
-        invite.delete()
-        _audit(request.user, "organization.invite_revoked", "invite", invite.id, organization=org)
+        with transaction.atomic():
+            locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+            actor_membership = OrganizationMembership.objects.filter(
+                organization=locked_org,
+                user=request.user,
+                role__in=["owner", "admin"],
+            ).first()
+            if actor_membership is None:
+                return Response({"error": "Forbidden"}, status=403)
+            invite = get_object_or_404(
+                OrganizationInvite,
+                pk=request.data.get("id"),
+                organization=locked_org,
+            )
+            invite_id = invite.id
+            invite.delete()
+            _audit(
+                request.user,
+                "organization.invite_revoked",
+                "invite",
+                invite_id,
+                organization=locked_org,
+            )
         return Response(status=204)
 
     email = str(request.data.get("email") or "").strip().lower()
@@ -4064,6 +4104,13 @@ def organization_invites_api(request, pk):
     now = timezone.now()
     with transaction.atomic():
         locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+        actor_membership = OrganizationMembership.objects.filter(
+            organization=locked_org,
+            user=request.user,
+            role__in=["owner", "admin"],
+        ).first()
+        if actor_membership is None:
+            return Response({"error": "Forbidden"}, status=403)
         if OrganizationMembership.objects.filter(
             organization=locked_org,
             user__email__iexact=email,
