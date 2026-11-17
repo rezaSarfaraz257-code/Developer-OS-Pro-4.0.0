@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.test import TransactionTestCase
 
 from .models import Activity, CodeWorkspace
 
@@ -182,13 +183,12 @@ class NativeRepositoryEngineTests(APITestCase):
         self.assertEqual(tags.data[0]["name"], "v1.0.0")
 
 
-class RepositoryPushSerializationTests(__import__("django.test", fromlist=["TransactionTestCase"]).TransactionTestCase):
+class RepositoryPushSerializationTests(TransactionTestCase):
     """The branch-head read must be protected by the repository row lock."""
 
     def test_push_reads_branch_head_inside_the_locking_transaction(self):
         from unittest.mock import patch
         from django.db import connection
-        from django.test import Client as DjangoClient
         from rest_framework.test import APIClient
         from . import repository
 
@@ -207,12 +207,16 @@ class RepositoryPushSerializationTests(__import__("django.test", fromlist=["Tran
         repo_id = created.data["id"]
 
         original_commit_qs = repository._commit_qs
+        commit_qs_calls = 0
 
         def assert_branch_head_read_is_atomic(*args, **kwargs):
-            self.assertTrue(
-                connection.in_atomic_block,
-                "The branch head must be read after the repository row lock is acquired.",
-            )
+            nonlocal commit_qs_calls
+            commit_qs_calls += 1
+            if commit_qs_calls == 1:
+                self.assertTrue(
+                    connection.in_atomic_block,
+                    "The branch head must be read after the repository row lock is acquired.",
+                )
             return original_commit_qs(*args, **kwargs)
 
         with patch("api.repository._commit_qs", side_effect=assert_branch_head_read_is_atomic):
@@ -223,6 +227,7 @@ class RepositoryPushSerializationTests(__import__("django.test", fromlist=["Tran
             )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertGreaterEqual(commit_qs_calls, 2)
         commit = Activity.objects.get(
             actor=user,
             related_type="repository_commit",
