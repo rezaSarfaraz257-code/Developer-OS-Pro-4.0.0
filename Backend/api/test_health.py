@@ -1,6 +1,8 @@
 import json
 import os
+import runpy
 import requests
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -580,3 +582,25 @@ class CacheReadinessProbeTests(TestCase):
         self.assertNotIn("secret", reason)
         self.assertNotIn("cache.internal", reason)
         cache_mock.delete.assert_called_once()
+
+class GunicornWorkerSizingTests(TestCase):
+    def _load_worker_count(self, cpu_count, web_concurrency=None):
+        environment = {}
+        if web_concurrency is not None:
+            environment["WEB_CONCURRENCY"] = str(web_concurrency)
+        with patch.dict(os.environ, environment, clear=False):
+            if web_concurrency is None:
+                os.environ.pop("WEB_CONCURRENCY", None)
+            with patch("multiprocessing.cpu_count", return_value=cpu_count):
+                config_path = Path(__file__).resolve().parents[1] / "gunicorn.conf.py"
+                return runpy.run_path(str(config_path))["workers"]
+
+    def test_single_cpu_defaults_to_one_asgi_worker(self):
+        self.assertEqual(self._load_worker_count(cpu_count=1), 1)
+
+    def test_multi_cpu_default_is_bounded_to_two_workers(self):
+        self.assertEqual(self._load_worker_count(cpu_count=8), 2)
+
+    def test_explicit_deployment_override_is_respected(self):
+        self.assertEqual(self._load_worker_count(cpu_count=1, web_concurrency=3), 3)
+
