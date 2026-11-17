@@ -35,7 +35,7 @@ def _valid_branch(value):
     if ".." in value or "//" in value or "@{" in value or value == "@":
         return False
     parts = value.split("/")
-    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in parts)
+    return all(part and not part.startswith(".") and not part.endswith(".") and not part.endswith(".lock") for part in parts)
 
 
 MAX_FILES = 2000
