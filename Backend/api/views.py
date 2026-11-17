@@ -2411,7 +2411,7 @@ def ide_workspaces_api(request):
             elif project_id in ("", 0, "0"):
                 payload["project"] = None
             payload.setdefault("files", {
-                "README.md": "# Workspace\\n\\nBuild, test and ship from the Developer OS command center.\\n"
+                "README.md": "# Workspace\n\nBuild, test and ship from the Developer OS command center.\n"
             })
             serializer = CodeWorkspaceSerializer(data=payload, context={"request": request})
             serializer.is_valid(raise_exception=True)
