@@ -3983,29 +3983,60 @@ def organizations_api(request):
 def organization_members_api(request, pk):
     membership = _org_access(request.user, pk, roles=["owner", "admin"])
     if not membership:
-        return Response({"error":"Forbidden"}, status=403)
+        return Response({"error": "Forbidden"}, status=403)
     org = membership.organization
     if request.method == "GET":
         return Response(OrganizationMembershipSerializer(org.memberships.select_related("user"), many=True).data)
     if request.method == "DELETE":
         m = get_object_or_404(OrganizationMembership, pk=request.data.get("id"), organization=org)
-        if m.user_id == org.owner_id: return Response({"error":"Owner cannot be removed."}, status=400)
-        m.delete(); return Response(status=204)
+        if m.user_id == org.owner_id:
+            return Response({"error": "Owner cannot be removed."}, status=400)
+        m.delete()
+        return Response(status=204)
+
     identifier = str(request.data.get("username") or request.data.get("email") or "").strip()
     user = get_object_or_404(User, Q(username__iexact=identifier) | Q(email__iexact=identifier))
     role = str(request.data.get("role") or "developer")
-    if role not in {"admin","developer","viewer"}:
-        return Response({"error":"Invalid role"}, status=400)
-    if not OrganizationMembership.objects.filter(organization=org, user=user).exists():
-        seat_limit = _organization_seat_limit(org)
-        if seat_limit <= 0:
-            return Response({"error":"Member management requires a Team or Enterprise subscription.", "code":"plan_upgrade_required", "required_plan":"team"}, status=403)
-        if org.memberships.count() >= seat_limit:
-            return Response({"error":"Your organization has reached its purchased seat limit.", "code":"seat_limit_reached", "limit":seat_limit}, status=403)
-    m, created = OrganizationMembership.objects.update_or_create(organization=org, user=user, defaults={"role":role})
-    _audit(request.user, "organization.member_added" if created else "organization.member_role_updated", "membership", m.id, organization=org, metadata={"role":role})
-    return Response(OrganizationMembershipSerializer(m).data, status=201 if created else 200)
+    if role not in {"admin", "developer", "viewer"}:
+        return Response({"error": "Invalid role"}, status=400)
 
+    with transaction.atomic():
+        locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+        existing = OrganizationMembership.objects.filter(organization=locked_org, user=user).first()
+        if existing is None:
+            seat_limit = _organization_seat_limit(locked_org)
+            if seat_limit <= 0:
+                return Response({
+                    "error": "Member management requires a Team or Enterprise subscription.",
+                    "code": "plan_upgrade_required",
+                    "required_plan": "team",
+                }, status=403)
+            now = timezone.now()
+            pending_invites = OrganizationInvite.objects.filter(
+                organization=locked_org,
+                accepted_at__isnull=True,
+                expires_at__gt=now,
+            ).count()
+            if locked_org.memberships.count() + pending_invites >= seat_limit:
+                return Response({
+                    "error": "Your organization has reached its purchased or reserved seat limit.",
+                    "code": "seat_limit_reached",
+                    "limit": seat_limit,
+                }, status=403)
+        m, created = OrganizationMembership.objects.update_or_create(
+            organization=locked_org,
+            user=user,
+            defaults={"role": role},
+        )
+        _audit(
+            request.user,
+            "organization.member_added" if created else "organization.member_role_updated",
+            "membership",
+            m.id,
+            organization=locked_org,
+            metadata={"role": role},
+        )
+    return Response(OrganizationMembershipSerializer(m).data, status=201 if created else 200)
 
 @api_view(["GET", "POST", "DELETE"])
 @permission_classes([IsAuthenticated])
@@ -4019,52 +4050,114 @@ def organization_invites_api(request, pk):
         return Response([{"id": i.id, "email": i.email, "role": i.role, "expires_at": i.expires_at, "created_at": i.created_at} for i in invites])
     if request.method == "DELETE":
         invite = get_object_or_404(OrganizationInvite, pk=request.data.get("id"), organization=org)
-        invite.delete(); _audit(request.user, "organization.invite_revoked", "invite", invite.id, organization=org)
+        invite.delete()
+        _audit(request.user, "organization.invite_revoked", "invite", invite.id, organization=org)
         return Response(status=204)
+
     email = str(request.data.get("email") or "").strip().lower()
     role = str(request.data.get("role") or "developer")
     if not email or "@" not in email:
         return Response({"error": "A valid email is required."}, status=400)
     if role not in {"admin", "developer", "viewer"}:
         return Response({"error": "Invalid role."}, status=400)
-    with transaction.atomic():
-        org = Organization.objects.select_for_update().get(pk=org.pk)
-        plan = org.plan
-        member_count = org.memberships.count()
-        org_sub = OrganizationSubscription.objects.filter(organization=org).first()
-        seat_limit = _organization_seat_limit(org)
-        if plan == "free":
-            seat_limit = max(seat_limit, 1)
-        if member_count >= seat_limit:
-            return Response({"error": "Your organization plan has reached its member limit.", "limit": seat_limit}, status=403)
-        raw_token = secrets.token_urlsafe(48)
-    invite = OrganizationInvite.objects.create(
-        organization=org, inviter=request.user, email=email, role=role,
-        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
-        expires_at=timezone.now()+timedelta(days=7),
-    )
-    _audit(request.user, "organization.invite_created", "invite", invite.id, organization=org, metadata={"email": email, "role": role})
-    return Response({"id": invite.id, "email": invite.email, "role": invite.role, "expires_at": invite.expires_at, "token": raw_token}, status=201)
 
+    now = timezone.now()
+    with transaction.atomic():
+        locked_org = Organization.objects.select_for_update().get(pk=org.pk)
+        if OrganizationMembership.objects.filter(
+            organization=locked_org,
+            user__email__iexact=email,
+        ).exists():
+            return Response({"error": "This user is already an organization member."}, status=409)
+        if OrganizationInvite.objects.filter(
+            organization=locked_org,
+            email__iexact=email,
+            accepted_at__isnull=True,
+            expires_at__gt=now,
+        ).exists():
+            return Response({"error": "An active invitation already exists for this email."}, status=409)
+
+        seat_limit = _organization_seat_limit(locked_org)
+        if locked_org.plan == "free":
+            seat_limit = max(seat_limit, 1)
+        pending_invites = OrganizationInvite.objects.filter(
+            organization=locked_org,
+            accepted_at__isnull=True,
+            expires_at__gt=now,
+        ).count()
+        if locked_org.memberships.count() + pending_invites >= seat_limit:
+            return Response({
+                "error": "Your organization has reached its purchased or reserved seat limit.",
+                "limit": seat_limit,
+            }, status=403)
+
+        raw_token = secrets.token_urlsafe(48)
+        invite = OrganizationInvite.objects.create(
+            organization=locked_org,
+            inviter=request.user,
+            email=email,
+            role=role,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=now + timedelta(days=7),
+        )
+        _audit(
+            request.user,
+            "organization.invite_created",
+            "invite",
+            invite.id,
+            organization=locked_org,
+            metadata={"email": email, "role": role},
+        )
+    return Response({"id": invite.id, "email": invite.email, "role": invite.role, "expires_at": invite.expires_at, "token": raw_token}, status=201)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def organization_invite_accept_api(request):
     token = str(request.data.get("token") or "").strip()
-    invite = get_object_or_404(
-        OrganizationInvite.objects.select_related("organization"),
-        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
-        accepted_at__isnull=True,
-    )
-    if invite.expires_at <= timezone.now():
-        return Response({"error": "This invitation has expired."}, status=400)
-    if request.user.email.lower() != invite.email.lower():
-        return Response({"error": "This invitation is for a different email address."}, status=403)
-    membership, _ = OrganizationMembership.objects.update_or_create(organization=invite.organization, user=request.user, defaults={"role": invite.role})
-    invite.accepted_at = timezone.now(); invite.save(update_fields=["accepted_at"])
-    _audit(request.user, "organization.invite_accepted", "organization", invite.organization_id, organization=invite.organization)
-    return Response(OrganizationMembershipSerializer(membership).data)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with transaction.atomic():
+        invite = get_object_or_404(
+            OrganizationInvite.objects.select_for_update(),
+            token_hash=token_hash,
+            accepted_at__isnull=True,
+        )
+        locked_org = Organization.objects.select_for_update().get(pk=invite.organization_id)
+        now = timezone.now()
+        if invite.expires_at <= now:
+            return Response({"error": "This invitation has expired."}, status=400)
+        if request.user.email.lower() != invite.email.lower():
+            return Response({"error": "This invitation is for a different email address."}, status=403)
 
+        existing = OrganizationMembership.objects.filter(
+            organization=locked_org,
+            user=request.user,
+        ).first()
+        if existing is None:
+            seat_limit = _organization_seat_limit(locked_org)
+            if locked_org.plan == "free":
+                seat_limit = max(seat_limit, 1)
+            if locked_org.memberships.count() >= seat_limit:
+                return Response({
+                    "error": "This organization no longer has an available seat for the invitation.",
+                    "code": "seat_limit_reached",
+                    "limit": seat_limit,
+                }, status=403)
+
+        membership, _ = OrganizationMembership.objects.update_or_create(
+            organization=locked_org,
+            user=request.user,
+            defaults={"role": invite.role},
+        )
+        invite.accepted_at = now
+        invite.save(update_fields=["accepted_at"])
+        _audit(
+            request.user,
+            "organization.invite_accepted",
+            "organization",
+            locked_org.id,
+            organization=locked_org,
+        )
+    return Response(OrganizationMembershipSerializer(membership).data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
