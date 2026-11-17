@@ -219,7 +219,15 @@ class RepositoryPushSerializationTests(TransactionTestCase):
             if commit_qs_calls == 1:
                 self.assertTrue(
                     connection.in_atomic_block,
-                    "The branch head must be read after the repository row lock is acquired.",
+                    "The branch head must be read inside the locking transaction.",
+                )
+                self.assertTrue(
+                    any(
+                        "FOR UPDATE" in query["sql"].upper()
+                        and "CODEWORKSPACE" in query["sql"].upper()
+                        for query in captured_queries.captured_queries
+                    ),
+                    "The repository row lock must be acquired before reading the branch head.",
                 )
             return original_commit_qs(*args, **kwargs)
 
