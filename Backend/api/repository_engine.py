@@ -24,6 +24,20 @@ from django.contrib.auth.models import User
 
 RUNTIME = "developer-os-repository"
 SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
+
+
+def _valid_branch(value):
+    """Accept conservative Git-style branch refs, not path-like or ambiguous names."""
+    if not isinstance(value, str) or not SAFE_BRANCH.fullmatch(value):
+        return False
+    if value.startswith(("-", "/")) or value.endswith(("/", ".")):
+        return False
+    if ".." in value or "//" in value or "@{" in value or value == "@":
+        return False
+    parts = value.split("/")
+    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in parts)
+
+
 MAX_FILES = 2000
 MAX_FILE_BYTES = 1_500_000
 MAX_TOTAL_BYTES = 25_000_000
@@ -262,7 +276,7 @@ def native_commit_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     requested_branch = request.data.get("branch") if request.method == "POST" else request.query_params.get("branch")
     branch = str(requested_branch or repo.framework or "main").strip()
-    if not SAFE_BRANCH.fullmatch(branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     if request.method == "GET":
         rows = _commits(request.user, repo.id, branch)[:100]
@@ -300,10 +314,10 @@ def native_branch_api(request, pk):
     if request.method == "GET":
         return Response({"branches": _branch_heads(request.user, repo), "current": repo.framework or "main"})
     branch = str(request.data.get("branch") or "").strip()
-    if not SAFE_BRANCH.fullmatch(branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     source = str(request.data.get("from") or repo.framework or "main").strip()
-    if not SAFE_BRANCH.fullmatch(source):
+    if not _valid_branch(source):
         return Response({"error": "Invalid source branch."}, status=400)
     with transaction.atomic():
         repo = _locked_repo(request.user, repo.pk)
@@ -330,7 +344,7 @@ def native_merge_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     source = str(request.data.get("source") or "").strip()
     target = str(request.data.get("target") or repo.framework or "main").strip()
-    if not SAFE_BRANCH.fullmatch(source) or not SAFE_BRANCH.fullmatch(target):
+    if not _valid_branch(source) or not _valid_branch(target):
         return Response({"error": "Invalid source or target branch."}, status=400)
     with transaction.atomic():
         # Re-read both branch heads only after taking the same repository lock
@@ -375,7 +389,7 @@ def native_diff_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     branch = str(request.query_params.get("branch") or repo.framework or "main").strip()
-    if not SAFE_BRANCH.fullmatch(branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     head = _head(request.user, repo, branch)
     if not head:
