@@ -2393,27 +2393,30 @@ def ide_workspaces_api(request):
         qs = _workspace_access_queryset(request.user).order_by("-updated_at")
         return Response(CodeWorkspaceSerializer(qs[:30], many=True).data)
     if request.method == "POST":
+        # Serialize the quota check and insert on the same locked user row.
+        # Releasing this transaction before serializer.save() would allow two
+        # concurrent requests to both pass the limit and over-create workspaces.
         with transaction.atomic():
             locked_user = User.objects.select_for_update().get(pk=request.user.pk)
             plan, _ = _plan_for(locked_user)
             limit = PLAN_LIMITS[plan]["workspaces"]
             if CodeWorkspace.objects.filter(owner=locked_user).count() >= limit:
                 return Response({"error": f"Your {plan} plan allows {limit} workspace(s).", "limit": limit}, status=403)
-        payload = request.data.copy()
-        project_id = payload.get("project")
-        if project_id not in (None, "", 0, "0"):
-            project = get_object_or_404(Project, pk=project_id)
-            if not _project_access(project, request.user):
-                return Response({"error": "You do not have access to this project."}, status=403)
-        elif project_id in ("", 0, "0"):
-            payload["project"] = None
-        payload.setdefault("files", {
-            "README.md": "# Workspace\n\nBuild, test and ship from the Developer OS command center.\n"
-        })
-        serializer = CodeWorkspaceSerializer(data=payload, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save(owner=request.user)
-        return Response(CodeWorkspaceSerializer(ws).data, status=201)
+            payload = request.data.copy()
+            project_id = payload.get("project")
+            if project_id not in (None, "", 0, "0"):
+                project = get_object_or_404(Project, pk=project_id)
+                if not _project_access(project, request.user):
+                    return Response({"error": "You do not have access to this project."}, status=403)
+            elif project_id in ("", 0, "0"):
+                payload["project"] = None
+            payload.setdefault("files", {
+                "README.md": "# Workspace\\n\\nBuild, test and ship from the Developer OS command center.\\n"
+            })
+            serializer = CodeWorkspaceSerializer(data=payload, context={"request": request})
+            serializer.is_valid(raise_exception=True)
+            ws = serializer.save(owner=locked_user)
+            return Response(CodeWorkspaceSerializer(ws).data, status=201)
     ws = get_object_or_404(CodeWorkspace, pk=request.data.get("id"), owner=request.user)
     if "project" in request.data and request.data.get("project") not in (None, "", 0, "0"):
         project = get_object_or_404(Project, pk=request.data.get("project"))
