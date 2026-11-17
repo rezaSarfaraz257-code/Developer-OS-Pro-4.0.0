@@ -318,6 +318,9 @@ class RepositoryPushSerializationTests(TransactionTestCase):
 
 
     def test_concurrent_snapshot_pushes_form_one_parent_chain(self):
+        from django.db import connection
+        if not connection.features.has_select_for_update:
+            self.skipTest("Requires PostgreSQL-style row-level SELECT FOR UPDATE locks.")
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
         from django.db import close_old_connections
@@ -373,6 +376,9 @@ class RepositoryPushSerializationTests(TransactionTestCase):
         )
 
     def test_concurrent_native_commits_form_one_parent_chain(self):
+        from django.db import connection
+        if not connection.features.has_select_for_update:
+            self.skipTest("Requires PostgreSQL-style row-level SELECT FOR UPDATE locks.")
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
         from django.db import close_old_connections
