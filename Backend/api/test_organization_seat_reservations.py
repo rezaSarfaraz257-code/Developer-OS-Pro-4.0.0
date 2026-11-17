@@ -107,7 +107,9 @@ class OrganizationSeatReservationTests(TestCase):
                     role="developer",
                 )
 
-            invite_response = self.client.post(
+            invite_client = APIClient()
+            invite_client.force_authenticate(invited_user)
+            invite_response = invite_client.post(
                 "/api/organizations/invites/accept/",
                 {"token": invite_response.data["token"]},
                 format="json",
@@ -139,7 +141,9 @@ class OrganizationSeatReservationTests(TestCase):
             invite_response = self.create_invite(invited_user.email)
             self.assertEqual(invite_response.status_code, 201, invite_response.json())
 
-            response = self.client.post(
+            invite_client = APIClient()
+            invite_client.force_authenticate(invited_user)
+            response = invite_client.post(
                 "/api/organizations/invites/accept/",
                 {"token": invite_response.data["token"]},
                 format="json",
