@@ -46,6 +46,15 @@ def _is_owner(user, repo):
     return repo.owner_id == user.id
 
 
+def _locked_repo(user, pk):
+    """Acquire the repository mutation lock and revalidate membership."""
+    repo = CodeWorkspace.objects.select_for_update().get(pk=pk, runtime=RUNTIME)
+    if repo.owner_id != user.id:
+        # Re-check membership after acquiring the repository lock so a
+        # concurrent revocation cannot authorize a stale mutation request.
+        _repo(user, repo.pk)
+    return repo
+
 def _member_rows(repo):
     return Activity.objects.filter(
         related_type="repo_member", related_id=repo.id
@@ -261,7 +270,7 @@ def native_commit_api(request, pk):
     with transaction.atomic():
         # Every repository writer must serialize on this row before reading
         # branch heads or mutating the working tree.
-        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        repo = _locked_repo(request.user, repo.pk)
         parent = _head(request.user, repo, branch)
         oid, tree, created = _commit(request.user, repo, branch, message, files, parent)
         repo.framework = branch
@@ -286,7 +295,7 @@ def native_branch_api(request, pk):
         return Response({"error": "Invalid branch."}, status=400)
     source = str(request.data.get("from") or repo.framework or "main")
     with transaction.atomic():
-        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        repo = _locked_repo(request.user, repo.pk)
         source_head = _head(request.user, repo, source)
         if not source_head:
             source_files = _files(repo.files or {})
@@ -313,7 +322,7 @@ def native_merge_api(request, pk):
     with transaction.atomic():
         # Re-read both branch heads only after taking the same repository lock
         # used by native commits and branch changes.
-        repo = CodeWorkspace.objects.select_for_update().get(pk=repo.pk, runtime=RUNTIME)
+        repo = _locked_repo(request.user, repo.pk)
         source_head, target_head = _head(request.user, repo, source), _head(request.user, repo, target)
         if not source_head or not target_head:
             return Response({"error": "Both branches must contain commits."}, status=400)
