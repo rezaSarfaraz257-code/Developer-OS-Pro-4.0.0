@@ -166,7 +166,7 @@ class NativeRepositoryEngineTests(APITestCase):
         )
         self.assertEqual(
             merge_payload.get("parents"),
-            [merge.data["head"] if False else merge_payload.get("parent"), update.data["commit"]["id"]],
+            [merge_payload.get("parent"), update.data["commit"]["id"]],
         )
         self.assertIn(
             update.data["commit"]["id"],
