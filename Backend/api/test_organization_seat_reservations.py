@@ -265,3 +265,35 @@ class OrganizationSeatReservationTests(TestCase):
             "owner",
         )
 
+    def test_accepting_stale_invite_does_not_overwrite_existing_member_role(self):
+        invited_user = User.objects.create_user(
+            username="seat-existing-invitee",
+            email="existing-invitee@example.test",
+            password="StrongPass123!",
+        )
+        with patch("api.views._organization_seat_limit", return_value=3):
+            invite_response = self.create_invite(invited_user.email)
+            self.assertEqual(invite_response.status_code, 201, invite_response.json())
+
+            existing_membership = OrganizationMembership.objects.create(
+                organization=self.org,
+                user=invited_user,
+                role="viewer",
+            )
+            invite_client = APIClient()
+            invite_client.force_authenticate(invited_user)
+            response = invite_client.post(
+                "/api/organizations/invites/accept/",
+                {"token": invite_response.data["token"]},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.json())
+        existing_membership.refresh_from_db()
+        self.assertEqual(existing_membership.role, "viewer")
+        invite = OrganizationInvite.objects.get(
+            organization=self.org,
+            email=invited_user.email,
+        )
+        self.assertIsNotNone(invite.accepted_at)
+
