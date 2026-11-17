@@ -260,7 +260,8 @@ def native_commit_api(request, pk):
         repo = _repo(request.user, pk)
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
-    branch = str(request.data.get("branch") if request.method == "POST" else request.query_params.get("branch") or repo.framework or "main").strip()
+    requested_branch = request.data.get("branch") if request.method == "POST" else request.query_params.get("branch")
+    branch = str(requested_branch or repo.framework or "main").strip()
     if not SAFE_BRANCH.fullmatch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     if request.method == "GET":
@@ -301,7 +302,9 @@ def native_branch_api(request, pk):
     branch = str(request.data.get("branch") or "").strip()
     if not SAFE_BRANCH.fullmatch(branch):
         return Response({"error": "Invalid branch."}, status=400)
-    source = str(request.data.get("from") or repo.framework or "main")
+    source = str(request.data.get("from") or repo.framework or "main").strip()
+    if not SAFE_BRANCH.fullmatch(source):
+        return Response({"error": "Invalid source branch."}, status=400)
     with transaction.atomic():
         repo = _locked_repo(request.user, repo.pk)
         source_head = _head(request.user, repo, source)
@@ -327,6 +330,8 @@ def native_merge_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     source = str(request.data.get("source") or "").strip()
     target = str(request.data.get("target") or repo.framework or "main").strip()
+    if not SAFE_BRANCH.fullmatch(source) or not SAFE_BRANCH.fullmatch(target):
+        return Response({"error": "Invalid source or target branch."}, status=400)
     with transaction.atomic():
         # Re-read both branch heads only after taking the same repository lock
         # used by native commits and branch changes.
@@ -369,7 +374,9 @@ def native_diff_api(request, pk):
         repo = _repo(request.user, pk)
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
-    branch = str(request.query_params.get("branch") or repo.framework or "main")
+    branch = str(request.query_params.get("branch") or repo.framework or "main").strip()
+    if not SAFE_BRANCH.fullmatch(branch):
+        return Response({"error": "Invalid branch."}, status=400)
     head = _head(request.user, repo, branch)
     if not head:
         return Response({"branch": branch, "files": [], "head": None})
