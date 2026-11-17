@@ -42,6 +42,18 @@ jobs:
         working-directory: Frontend
         run: npm audit --audit-level=high
 
+  frontend-production-dependency-audit:
+    name: Frontend production dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Audit production-only frontend dependency graph
+        working-directory: Frontend
+        run: npm audit --omit=dev --audit-level=high
+
   backend-dependency-audit:
     name: Backend dependency vulnerability audit
     runs-on: ubuntu-latest
@@ -182,7 +194,7 @@ jobs:
 
   release-gate:
     name: Release gate
-    needs: [codeql, frontend-dependency-audit, backend-dependency-audit, backend-validation, frontend-validation, runner-validation]
+    needs: [codeql, frontend-dependency-audit, frontend-production-dependency-audit, backend-dependency-audit, backend-validation, frontend-validation, runner-validation]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
