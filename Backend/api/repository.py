@@ -27,7 +27,26 @@ DEFAULT_BRANCH = "main"
 MAX_FILES = 2000
 MAX_FILE_BYTES = 1_500_000
 MAX_TOTAL_BYTES = 25_000_000
-SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._@+\- /]+$")
+SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._@+\\- /]+$")
+SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
+
+
+def _valid_branch(value):
+    """Validate a conservative Git-style branch ref for snapshot APIs."""
+    if not isinstance(value, str) or not SAFE_BRANCH.fullmatch(value):
+        return False
+    if value.startswith(("-", "/")) or value.endswith(("/", ".")):
+        return False
+    if ".." in value or "//" in value or "@{" in value or value == "@":
+        return False
+    parts = value.split("/")
+    return all(
+        part
+        and not part.startswith(".")
+        and not part.endswith(".")
+        and not part.endswith(".lock")
+        for part in parts
+    )
 
 
 def _clean_files(raw):
@@ -230,7 +249,7 @@ def repository_push_api(request, pk):
             runtime=REPOSITORY_RUNTIME,
         )
         branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH).strip()
-        if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
+        if not _valid_branch(branch):
             return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             files = _clean_files(repo.files or {})
@@ -266,6 +285,8 @@ def repository_push_api(request, pk):
 def repository_history_api(request, pk):
     repo = _repo(request.user, pk)
     branch = str(request.query_params.get("branch") or repo.framework or DEFAULT_BRANCH)
+    if not _valid_branch(branch):
+        return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
     try:
         requested_limit = int(request.query_params.get("limit") or 50)
     except (TypeError, ValueError):
@@ -286,6 +307,8 @@ def repository_pull_api(request, pk):
             runtime=REPOSITORY_RUNTIME,
         )
         branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH)
+        if not _valid_branch(branch):
+            return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
         commit_hash = str(request.data.get("commit") or "").strip()
         commits = _commit_qs(request.user, repo.id, branch)
         commit = commits.filter(metadata__hash=commit_hash).first() if commit_hash else commits.first()
@@ -306,7 +329,7 @@ def repository_pull_api(request, pk):
 @permission_classes([IsAuthenticated])
 def repository_branch_api(request, pk):
     branch = str(request.data.get("branch") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
         repo = get_object_or_404(
