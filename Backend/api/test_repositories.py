@@ -160,6 +160,18 @@ class NativeRepositoryEngineTests(APITestCase):
         )
         self.assertEqual(merge.status_code, status.HTTP_200_OK)
         self.assertTrue(merge.data["merged"])
+        from . import repository_engine
+        merge_payload = repository_engine._read_object(
+            self.user, repo_id, "commit", merge.data["head"]
+        )
+        self.assertEqual(
+            merge_payload.get("parents"),
+            [merge.data["head"] if False else merge_payload.get("parent"), update.data["commit"]["id"]],
+        )
+        self.assertIn(
+            update.data["commit"]["id"],
+            repository_engine._ancestor_chain(self.user, repository_engine._repo(self.user, repo_id), merge.data["head"]),
+        )
 
     def test_native_diff_and_tags(self):
         repo_id = self.repo()
@@ -252,3 +264,54 @@ class RepositoryPushSerializationTests(TransactionTestCase):
             message="Serialized commit",
         )
         self.assertIsNotNone(commit.metadata.get("parent"))
+
+    def test_native_commit_reads_head_after_repository_row_lock(self):
+        from unittest.mock import patch
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from rest_framework.test import APIClient
+        from . import repository_engine
+
+        if not connection.features.has_select_for_update:
+            self.skipTest("Requires PostgreSQL-style row-level SELECT FOR UPDATE locks.")
+
+        user = User.objects.create_user(
+            username="native-serialized-commit",
+            password="long-test-password-123",
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        created = client.post(
+            "/api/repositories/",
+            {"name": "Native Serialized", "files": {"main.py": "print(1)"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        repo_id = created.data["id"]
+        original_head = repository_engine._head
+        head_calls = 0
+
+        def assert_head_read_is_locked(*args, **kwargs):
+            nonlocal head_calls
+            head_calls += 1
+            if head_calls == 1:
+                self.assertTrue(connection.in_atomic_block)
+                self.assertTrue(
+                    any(
+                        "FOR UPDATE" in query["sql"].upper()
+                        and "CODEWORKSPACE" in query["sql"].upper()
+                        for query in captured_queries.captured_queries
+                    ),
+                    "Native branch head must be read after locking CodeWorkspace.",
+                )
+            return original_head(*args, **kwargs)
+
+        with CaptureQueriesContext(connection) as captured_queries:
+            with patch("api.repository_engine._head", side_effect=assert_head_read_is_locked):
+                response = client.post(
+                    f"/api/repositories/{repo_id}/native/commits/",
+                    {"branch": "main", "message": "Locked native commit", "files": {"main.py": "print(2)"}},
+                    format="json",
+                )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertGreaterEqual(head_calls, 1)
