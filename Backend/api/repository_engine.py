@@ -13,6 +13,7 @@ from collections import deque
 from copy import deepcopy
 
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -46,7 +47,11 @@ def _is_owner(user, repo):
 
 def _locked_repo(user, pk):
     """Acquire the repository mutation lock and revalidate membership."""
-    repo = CodeWorkspace.objects.select_for_update().get(pk=pk, runtime=RUNTIME)
+    repo = get_object_or_404(
+        CodeWorkspace.objects.select_for_update(),
+        pk=pk,
+        runtime=RUNTIME,
+    )
     if repo.owner_id != user.id:
         # Re-check membership after acquiring the repository lock so a
         # concurrent revocation cannot authorize a stale mutation request.
