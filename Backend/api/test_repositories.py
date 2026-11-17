@@ -140,8 +140,12 @@ class NativeRepositoryEngineTests(APITestCase):
         from django.http import Http404
         from .repository_engine import _locked_repo
 
+        user = User.objects.create_user(
+            username="deleted-repo-lock-test",
+            password="long-test-password-123",
+        )
         repo = CodeWorkspace.objects.create(
-            owner=self.user,
+            owner=user,
             name="Deleted during mutation preflight",
             runtime="developer-os-repository",
             framework="main",
@@ -151,7 +155,7 @@ class NativeRepositoryEngineTests(APITestCase):
         repo.delete()
 
         with self.assertRaises(Http404):
-            _locked_repo(self.user, repo_id)
+            _locked_repo(user, repo_id)
 
     def setUp(self):
         self.user = User.objects.create_user(username="native-user", password="long-test-password-123")
