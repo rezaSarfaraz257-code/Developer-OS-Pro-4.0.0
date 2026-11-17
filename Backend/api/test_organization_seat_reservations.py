@@ -248,3 +248,20 @@ class OrganizationSeatReservationTests(TestCase):
                 email="revoked-admin@example.test",
             ).exists()
         )
+
+    def test_organization_owner_role_cannot_be_demoted(self):
+        response = self.client.post(
+            self.members_url,
+            {"username": self.owner.username, "role": "developer"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.json())
+        self.assertEqual(
+            OrganizationMembership.objects.get(
+                organization=self.org,
+                user=self.owner,
+            ).role,
+            "owner",
+        )
+
