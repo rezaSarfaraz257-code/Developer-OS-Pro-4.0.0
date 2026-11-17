@@ -4155,9 +4155,15 @@ def organization_invite_accept_api(request):
             seat_limit = _organization_seat_limit(locked_org)
             if locked_org.plan == "free":
                 seat_limit = max(seat_limit, 1)
-            if locked_org.memberships.count() >= seat_limit:
+            pending_invites = OrganizationInvite.objects.filter(
+                organization=locked_org,
+                accepted_at__isnull=True,
+                expires_at__gt=now,
+            ).count()
+            reserved_seats = locked_org.memberships.count() + pending_invites
+            if reserved_seats > seat_limit:
                 return Response({
-                    "error": "This organization no longer has an available seat for the invitation.",
+                    "error": "This organization no longer has enough purchased seats to accept the invitation.",
                     "code": "seat_limit_reached",
                     "limit": seat_limit,
                 }, status=403)
