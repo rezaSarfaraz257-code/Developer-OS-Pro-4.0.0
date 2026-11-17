@@ -22,6 +22,28 @@ class IndependentRepositoryApiTests(APITestCase):
         self.assertEqual(response.data["file_count"], 1)
         self.assertTrue(CodeWorkspace.objects.filter(owner=self.user, runtime="developer-os-repository").exists())
 
+    def test_delete_repository_is_serialized_and_records_audit_event(self):
+        created = self.client.post(
+            "/api/repositories/",
+            {"name": "Delete safely", "files": {"README.md": "# Delete safely"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        repo_id = created.data["id"]
+
+        deleted = self.client.delete(f"/api/repositories/{repo_id}/")
+
+        self.assertEqual(deleted.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(CodeWorkspace.objects.filter(pk=repo_id).exists())
+        self.assertTrue(
+            Activity.objects.filter(
+                actor=self.user,
+                verb="deleted a repository",
+                related_type="repository_deleted",
+                related_id=repo_id,
+            ).exists()
+        )
+
     def test_push_history_and_pull_restore_a_snapshot(self):
         created = self.client.post(
             "/api/repositories/",
