@@ -189,6 +189,7 @@ class RepositoryPushSerializationTests(TransactionTestCase):
     def test_push_reads_branch_head_inside_the_locking_transaction(self):
         from unittest.mock import patch
         from django.db import connection
+        from django.test.utils import CaptureQueriesContext
         from rest_framework.test import APIClient
         from . import repository
 
@@ -206,6 +207,9 @@ class RepositoryPushSerializationTests(TransactionTestCase):
         self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
         repo_id = created.data["id"]
 
+        if not connection.features.has_select_for_update:
+            self.skipTest("This regression requires PostgreSQL-style row-level SELECT FOR UPDATE locks.")
+
         original_commit_qs = repository._commit_qs
         commit_qs_calls = 0
 
@@ -219,13 +223,18 @@ class RepositoryPushSerializationTests(TransactionTestCase):
                 )
             return original_commit_qs(*args, **kwargs)
 
-        with patch("api.repository._commit_qs", side_effect=assert_branch_head_read_is_atomic):
-            response = client.post(
-                f"/api/repositories/{repo_id}/push/",
-                {"branch": "main", "message": "Serialized commit"},
-                format="json",
-            )
+        with CaptureQueriesContext(connection) as captured_queries:
+            with patch("api.repository._commit_qs", side_effect=assert_branch_head_read_is_atomic):
+                response = client.post(
+                    f"/api/repositories/{repo_id}/push/",
+                    {"branch": "main", "message": "Serialized commit"},
+                    format="json",
+                )
 
+        self.assertTrue(
+            any("FOR UPDATE" in query["sql"].upper() and "CODEWORKSPACE" in query["sql"].upper() for query in captured_queries),
+            "Push must issue SELECT FOR UPDATE against the repository row.",
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertGreaterEqual(commit_qs_calls, 2)
         commit = Activity.objects.get(
