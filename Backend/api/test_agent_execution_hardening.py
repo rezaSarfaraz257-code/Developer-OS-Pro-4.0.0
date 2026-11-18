@@ -1,6 +1,8 @@
+from types import SimpleNamespace
+
 from django.test import SimpleTestCase
 
-from .agent_execution import _safe_diagnostic_signals
+from .agent_execution import _job_lease_is_current, _safe_diagnostic_signals
 
 
 class SafeAgentDiagnosticBoundaryTests(SimpleTestCase):
@@ -26,3 +28,29 @@ class SafeAgentDiagnosticBoundaryTests(SimpleTestCase):
     def test_non_failure_and_invalid_exit_code_remain_empty(self):
         self.assertEqual(_safe_diagnostic_signals("python_pytest", "", "", 0), [])
         self.assertEqual(_safe_diagnostic_signals("python_pytest", "", "", True), [])
+
+
+
+class AgentWorkerLeaseFencingTests(SimpleTestCase):
+    def test_only_exact_current_worker_lease_is_accepted(self):
+        claimed = SimpleNamespace(locked_by="worker-a:token-123")
+        current = SimpleNamespace(status="running", locked_by="worker-a:token-123")
+        self.assertTrue(_job_lease_is_current(current, claimed))
+
+    def test_reclaimed_job_rejects_previous_worker_token(self):
+        claimed = SimpleNamespace(locked_by="worker-a:old-token")
+        current = SimpleNamespace(status="running", locked_by="worker-a:new-token")
+        self.assertFalse(_job_lease_is_current(current, claimed))
+
+    def test_non_running_or_empty_lease_is_never_current(self):
+        claimed = SimpleNamespace(locked_by="worker-a:token")
+        for status, token in (("queued", "worker-a:token"), ("failed", "worker-a:token"), ("running", "")):
+            with self.subTest(status=status, token=token):
+                current = SimpleNamespace(status=status, locked_by=token)
+                self.assertFalse(_job_lease_is_current(current, claimed))
+
+    def test_missing_job_or_claim_is_never_current(self):
+        claimed = SimpleNamespace(locked_by="worker-a:token")
+        current = SimpleNamespace(status="running", locked_by="worker-a:token")
+        self.assertFalse(_job_lease_is_current(None, claimed))
+        self.assertFalse(_job_lease_is_current(current, None))
