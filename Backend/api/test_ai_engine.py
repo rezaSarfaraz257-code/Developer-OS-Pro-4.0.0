@@ -102,8 +102,8 @@ class AIEngineUnitTests(TestCase):
         proposal = {
             "type": "patch_proposal",
             "changes": [
-                {"path": "src/caf\\u00e9.py", "operation": "create", "content": "one"},
-                {"path": "src/cafe\\u0301.py", "operation": "create", "content": "two"},
+                {"path": "src/Straße.py", "operation": "create", "content": "one"},
+                {"path": "src/STRASSE.py", "operation": "create", "content": "two"},
             ],
         }
         self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
