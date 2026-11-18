@@ -12,6 +12,7 @@ MAX_WORKSPACE_FILES = 500
 MAX_FILE_BYTES = 256_000
 MAX_WORKSPACE_TOTAL_BYTES = 2_000_000
 MAX_FINDINGS = 50
+MAX_DEPENDENCY_RESULTS = 300
 
 
 def _safe_path(path):
@@ -111,7 +112,20 @@ def inspect_workspace(workspace):
 def analyze_dependencies(workspace):
     files = _files(workspace)
     dependencies = []
+    dependency_count = 0
     manifests = []
+
+    def record_dependency(name, version, group):
+        nonlocal dependency_count
+        dependency_count += 1
+        # Bound response memory/output even for adversarial dependency manifests.
+        if len(dependencies) < MAX_DEPENDENCY_RESULTS:
+            dependencies.append({
+                "name": str(name)[:120],
+                "version": str(version)[:80],
+                "group": group,
+            })
+
     for path, content in files.items():
         name = path.rsplit("/", 1)[-1].lower()
         if name == "package.json":
@@ -127,23 +141,27 @@ def analyze_dependencies(workspace):
             for group in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
                 values = data.get(group, {})
                 if isinstance(values, dict):
-                    dependencies.extend({"name": str(key)[:120], "version": str(value)[:80], "group": group}
-                                        for key, value in values.items())
+                    for key, value in values.items():
+                        record_dependency(key, value, group)
         elif name in {"requirements.txt", "requirements-dev.txt"}:
             manifests.append({"path": path, "status": "parsed"})
             for line in content.splitlines():
                 line = line.strip()
                 if not line or line.startswith(("#", "-")):
                     continue
-                match = re.match(r"^([A-Za-z0-9_.-]+)\s*(.*)$", line)
+                match = re.match(r"^([A-Za-z0-9_.-]+)\\s*(.*)$", line)
                 if match:
-                    dependencies.append({"name": match.group(1)[:120], "version": match.group(2)[:80], "group": "python"})
+                    record_dependency(match.group(1), match.group(2), "python")
         elif name == "pyproject.toml":
             manifests.append({"path": path, "status": "detected_static_only"})
-    return {"tool": "analyze_dependencies", "manifests": manifests[:50],
-            "dependency_count": len(dependencies), "dependencies": dependencies[:300], "read_only": True}
-
-
+    return {
+        "tool": "analyze_dependencies",
+        "manifests": manifests[:50],
+        "dependency_count": dependency_count,
+        "dependencies": dependencies,
+        "dependencies_truncated": dependency_count > len(dependencies),
+        "read_only": True,
+    }
 def review_security(workspace):
     files = _files(workspace)
     rules = [
