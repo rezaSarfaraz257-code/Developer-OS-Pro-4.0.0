@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from itertools import islice
 from typing import Any
 
@@ -586,9 +587,10 @@ def _agent_parse_patch(answer: str) -> dict[str, Any] | None:
         full_content = change.get("content")
         if not _agent_safe_patch_path(path):
             return None
-        if path.casefold() in seen_paths:
+        canonical_path = unicodedata.normalize("NFC", path).casefold()
+        if canonical_path in seen_paths:
             return None
-        seen_paths.add(path.casefold())
+        seen_paths.add(canonical_path)
         if not isinstance(operation, str) or operation not in {"modify", "create", "delete"}:
             return None
         if full_content is not None and (
@@ -1464,6 +1466,12 @@ def ai_agent_apply_api(request):
             previous_revision = workspace.revision
             current = dict(workspace.files or {})
             updated = dict(current)
+            # Match path identity across common case-insensitive and Unicode-normalizing filesystems.
+            canonical_workspace_paths = {
+                unicodedata.normalize("NFC", existing_path).casefold()
+                for existing_path in updated
+                if isinstance(existing_path, str)
+            }
             for change in parsed_proposal.get("changes", []):
                 path = change["path"]
                 operation = change["operation"]
@@ -1479,10 +1487,12 @@ def ai_agent_apply_api(request):
                     after = change["content"]
                     updated[path] = after
                 elif operation == "create":
-                    if path in updated:
-                        return Response({"error": f"Cannot create existing file: {path}"}, status=400)
+                    canonical_path = unicodedata.normalize("NFC", path).casefold()
+                    if canonical_path in canonical_workspace_paths:
+                        return Response({"error": f"Cannot create an existing or conflicting file path: {path}"}, status=400)
                     after = change["content"]
                     updated[path] = after
+                    canonical_workspace_paths.add(canonical_path)
                 else:
                     return Response({"error": "Unsupported patch operation."}, status=400)
                 diffs.append({
