@@ -2635,10 +2635,22 @@ def ide_frameworks_api(request):
     ])
 
 def _safe_ide_path(value):
+    """Apply the same virtual-path contract used by workspace serialization and Runner."""
     path = str(value or "").replace("\\", "/").strip()
-    if not path or len(path) > 500 or any(part in {"", ".", ".."} for part in path.split("/")):
+    if not path or len(path) > 500 or path.startswith("/") or re.match(r"^[A-Za-z]:", path):
         return None
-    if ".git" in path.split("/"):
+    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    reserved_runtime_roots = {
+        ".git", "node_modules", ".venv", ".home", ".tmp",
+        ".cache", ".npm-cache", ".pip-cache",
+    }
+    parts = path.split("/")
+    if any(
+        part in {"", ".", ".."}
+        or part.casefold() in reserved_runtime_roots
+        or not component_pattern.fullmatch(part)
+        for part in parts
+    ):
         return None
     return path
 
