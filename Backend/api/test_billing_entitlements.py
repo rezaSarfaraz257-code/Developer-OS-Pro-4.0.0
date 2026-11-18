@@ -1,7 +1,8 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 
 from .models import Organization, OrganizationMembership, OrganizationSubscription, Subscription
@@ -169,3 +170,56 @@ class BillingEntitlementTests(TestCase):
             capabilities = self.client.get("/api/ide/capabilities/")
             self.assertEqual(capabilities.status_code, 200)
             self.assertEqual(capabilities.json()["plan"], plan)
+
+
+
+    def test_default_workspace_readme_uses_real_newlines(self):
+        user = User.objects.create_user(
+            username="workspace-default-readme-user",
+            password="StrongPass123!",
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+
+        response = client.post(
+            "/api/ide/workspaces/",
+            {"name": "Default README workspace"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.json())
+        workspace = user.code_workspaces.get()
+        self.assertEqual(
+            workspace.files["README.md"],
+            "# Workspace\n\nBuild, test and ship from the Developer OS command center.\n",
+        )
+
+class WorkspaceQuotaAtomicityTests(TransactionTestCase):
+    def test_workspace_insert_stays_inside_the_locked_quota_transaction(self):
+        user = User.objects.create_user(
+            username="workspace-atomic-user",
+            password="StrongPass123!",
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+
+        from .serializers import CodeWorkspaceSerializer
+
+        original_save = CodeWorkspaceSerializer.save
+
+        def assert_transaction_is_open(serializer, *args, **kwargs):
+            self.assertTrue(
+                connection.in_atomic_block,
+                "Workspace creation must persist before the user quota lock is released.",
+            )
+            return original_save(serializer, *args, **kwargs)
+
+        with patch.object(CodeWorkspaceSerializer, "save", new=assert_transaction_is_open):
+            response = client.post(
+                "/api/ide/workspaces/",
+                {"name": "Atomic workspace", "files": {"README.md": "# Atomic"}},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.json())
+        self.assertEqual(user.code_workspaces.count(), 1)
