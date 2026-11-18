@@ -16,8 +16,12 @@ env:
 
 jobs:
   backend:
-    name: Backend checks and tests
+    name: Backend checks and tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.15"]
     services:
       postgres:
         image: postgres:17-alpine
@@ -38,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: Backend/requirements.txt
       - name: Install backend dependencies
@@ -86,10 +90,9 @@ jobs:
           EMAIL_USE_TLS: "true"
           GITHUB_TOKEN_ENCRYPTION_KEY: ci-only-encryption-key
           IDE_RUNNER_TOKEN: ci-runner-token
-          SECURE_SSL_REDIRECT: "false"
         run: |
           python3 manage.py check --deploy
-          python3 manage.py shell -c 'from django.conf import settings; assert settings.IS_PRODUCTION; assert settings.DB_POOL_ENABLED; print("production configuration contract: OK")'
+          python3 manage.py shell -c 'from django.conf import settings; assert settings.IS_PRODUCTION; assert settings.DB_POOL_ENABLED; assert settings.SECURE_SSL_REDIRECT; assert settings.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https"); print("production configuration contract: OK")'
 
   frontend:
     name: Frontend lint build and tests
