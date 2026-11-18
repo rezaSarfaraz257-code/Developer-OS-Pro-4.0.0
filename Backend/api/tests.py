@@ -812,6 +812,41 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("new.txt", response.data["files"])
         self.assertGreater(response.data["revision"], revision)
 
+    def test_ide_workspace_paths_reject_casefold_aliases_for_create_and_rename(self):
+        response = self.client.post(
+            "/api/ide/workspaces/",
+            {
+                "name": "Casefold path collision checks",
+                "files": {"main.py": "print('main')", "docs/readme.md": "# Docs"},
+                "active_file": "main.py",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workspace_id = response.data["id"]
+        endpoint = f"/api/ide/workspaces/{workspace_id}/files/"
+        original_files = dict(response.data["files"])
+
+        response = self.client.post(
+            endpoint,
+            {"action": "create", "path": "MAIN.py", "content": "print('shadow')"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        response = self.client.post(
+            endpoint,
+            {"action": "rename", "path": "docs/readme.md", "to": "Main.PY"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        current = self.client.get(endpoint)
+        self.assertEqual(current.status_code, status.HTTP_200_OK)
+        self.assertEqual(current.data["files"], original_files)
+
     def test_ide_workspace_paths_reject_file_directory_collisions(self):
         response = self.client.post(
             "/api/ide/workspaces/",
