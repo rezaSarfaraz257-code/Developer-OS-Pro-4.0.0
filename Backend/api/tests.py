@@ -788,6 +788,12 @@ class IDEControlPlaneRateLimitRegressionTests(APITestCase):
         endpoint_names = [
             "ide_capabilities_api",
             "ide_workspace_sync_api",
+            "ide_install_framework_api",
+            "ide_install_packages_api",
+            "ide_debug_api",
+            "ide_execute_api",
+            "ide_build_api",
+            "ide_process_start_api",
             "ide_symbols_api",
             "ide_lsp_api",
             "ide_replace_preview_api",
