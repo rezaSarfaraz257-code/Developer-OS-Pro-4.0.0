@@ -25,6 +25,69 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import APIKey, BackgroundJob, BillingEvent, DataExportRequest, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
 
 
+class RunnerResourceIdentifierSecurityTests(APITestCase):
+    def setUp(self):
+        from .models import CodeWorkspace
+
+        self.user = User.objects.create_user(
+            username="runner-resource-id-security",
+            password="long-test-password-123",
+        )
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Runner resource identifier security",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    def _request(self, method, view, resource_id):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+
+        factory = APIRequestFactory()
+        request = getattr(factory, method)("/")
+        force_authenticate(request, user=self.user)
+        return view(request, self.workspace.pk, resource_id)
+
+    @patch("api.views._runner_request")
+    def test_job_endpoints_reject_path_and_query_injection_before_runner_call(self, runner_request):
+        from . import views
+
+        for view, method in (
+            (views.ide_job_status_api, "get"),
+            (views.ide_job_stream_api, "get"),
+            (views.ide_job_cancel_api, "post"),
+        ):
+            for resource_id in ("../admin", "job?workspace_id=other", "job/other", "job\\\\other", "x" * 129):
+                with self.subTest(view=view.__name__, resource_id=resource_id):
+                    response = self._request(method, view, resource_id)
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    self.assertEqual(response.data["code"], "invalid_runner_resource_id")
+
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_process_endpoint_rejects_path_injection_before_runner_call(self, runner_request):
+        from . import views
+
+        response = self._request("get", views.ide_process_detail_api, "../other")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_runner_resource_id")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"status": "running"}, None))
+    def test_valid_runner_job_identifier_is_forwarded_unchanged(self, runner_request):
+        from . import views
+
+        response = self._request("get", views.ide_job_status_api, "job-contract-test")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        runner_request.assert_called_once_with(
+            "GET",
+            "/jobs/job-contract-test",
+            {"workspace_id": str(self.workspace.id)},
+            timeout=15,
+        )
+
+
 class RunnerRequestRetrySafetyTests(APITestCase):
     @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated lost response"))
     @patch("api.views.time.sleep")
