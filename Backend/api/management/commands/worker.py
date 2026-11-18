@@ -51,7 +51,7 @@ def recover_stale_jobs():
             locked.locked_at = None
             locked.locked_by = ""
             locked.error = (locked.error or "") + "\nRecovered stale worker lease."
-            locked.last_error_at = now
+            locked.last_error_at = recovery_now
             locked.save(update_fields=[
                 "status", "available_at", "locked_at", "locked_by",
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
