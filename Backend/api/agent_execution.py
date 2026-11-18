@@ -38,6 +38,18 @@ def _matches_positive_id(value, expected):
     return _is_positive_int(value) and type(expected) is int and expected > 0 and value == expected
 
 
+def _job_lease_is_current(current_job, claimed_job):
+    """Fence an execution to the exact worker identity that claimed its job."""
+    return bool(
+        current_job
+        and claimed_job
+        and current_job.status == "running"
+        and isinstance(claimed_job.locked_by, str)
+        and claimed_job.locked_by
+        and current_job.locked_by == claimed_job.locked_by
+    )
+
+
 def _sync_receipt_matches(result, expected_workspace_id, expected_revision):
     """Bind a persisted Runner sync receipt to one exact workspace and revision."""
     return (
@@ -340,7 +352,7 @@ def execute_agent_task_verification(job):
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
         if (
-            not current_job or current_job.status != "running"
+            not _job_lease_is_current(current_job, job)
             or not run or run.status == "canceled" or not task
         ):
             raise RuntimeError("Agent task verification lease is no longer current.")
@@ -474,7 +486,7 @@ def execute_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
-        if not current_job or current_job.status != "running" or not run or not task:
+        if not _job_lease_is_current(current_job, job) or not run or not task:
             return {"status": "verification_superseded", "task_id": payload.get("task_id")}
         if run.status == "canceled" or task.status == "canceled":
             resync_job = None
