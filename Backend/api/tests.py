@@ -444,6 +444,87 @@ class IDEProcessAuthorizationTests(APITestCase):
         runner_request.assert_not_called()
 
 
+class IDEDiagnosticsTruthfulnessTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-diagnostics-truthfulness",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Diagnostics truthfulness",
+            files={
+                "main.ts": "const answer: number = 'not a number';",
+                "package.json": json.dumps({"scripts": {"build": "vite build"}}),
+                "tsconfig.json": json.dumps({"compilerOptions": {"strict": True}}),
+            },
+            active_file="main.ts",
+        )
+
+    @patch("api.views._runner_request")
+    def test_typescript_failure_is_not_hidden_by_a_build_fallback(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": 2, "stdout": "", "stderr": "TS2322: Type error"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "typescript", "path": "main.ts"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "error")
+        self.assertEqual(response.data["exit_code"], 2)
+        diagnostic_call = runner_request.call_args_list[1]
+        self.assertIn("npx --no-install tsc --noEmit --pretty false", diagnostic_call.args[2]["command"])
+        self.assertNotIn("||", diagnostic_call.args[2]["command"])
+
+    @patch("api.views._runner_request")
+    def test_missing_runner_exit_code_is_not_reported_as_success(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"stdout": "looks fine"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "python", "path": "main.ts"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_diagnostics_result")
+
+    @patch("api.views._runner_request", return_value=({"synced": True}, None))
+    def test_javascript_diagnostics_skip_when_no_real_checker_is_configured(self, runner_request):
+        self.workspace.files = {
+            "main.js": "console.log('hello');",
+            "package.json": json.dumps({"scripts": {}}),
+        }
+        self.workspace.save(update_fields=["files"])
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "javascript", "path": "main.js"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "skipped")
+        self.assertIn("No TypeScript configuration", response.data["message"])
+        runner_request.assert_called_once_with(
+            "POST",
+            "/sync",
+            {
+                "workspace_id": str(self.workspace.pk),
+                "files": self.workspace.files,
+                "active_file": self.workspace.active_file,
+            },
+            timeout=30,
+        )
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
