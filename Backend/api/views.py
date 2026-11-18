@@ -4253,7 +4253,8 @@ def ide_diagnostics_api(request, pk):
                     "code": "invalid_package_manifest",
                 }, status=400)
         if "tsconfig.json" in workspace_files:
-            command = "npx --no-install tsc --noEmit --pretty false"
+            # Invoke only the workspace-local compiler; never download tooling during diagnostics.
+            command = "./node_modules/.bin/tsc --noEmit --pretty false"
         else:
             scripts = manifest.get("scripts", {})
             if not isinstance(scripts, dict):
@@ -4274,13 +4275,33 @@ def ide_diagnostics_api(request, pk):
                     "diagnostics": [],
                     "message": "No TypeScript configuration or typecheck/build script is configured.",
                 })
-            command = "npm run " + shlex.quote(check_script)
+            manager = str(ws.package_manager or "").strip().lower()
+            if not manager:
+                manager = (
+                    "pnpm" if "pnpm-lock.yaml" in workspace_files
+                    else "yarn" if "yarn.lock" in workspace_files
+                    else "bun" if {"bun.lock", "bun.lockb"} & set(workspace_files)
+                    else "npm"
+                )
+            run_prefix = {
+                "npm": "npm run",
+                "pnpm": "pnpm run",
+                "yarn": "yarn run",
+                "bun": "bun run",
+            }.get(manager)
+            if not run_prefix:
+                return Response({
+                    "status": "skipped",
+                    "diagnostics": [],
+                    "message": "The configured package manager is not supported for diagnostics.",
+                })
+            command = run_prefix + " " + shlex.quote(check_script)
     else:
         return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
     data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
     if error:
         return Response(error, status=503)
-    if not isinstance(data, dict) or not isinstance(data.get("exit_code"), int):
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
         return Response({
             "error": "Runner did not provide a verifiable diagnostic exit code.",
             "code": "runner_invalid_diagnostics_result",
