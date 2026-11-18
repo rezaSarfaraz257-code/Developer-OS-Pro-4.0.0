@@ -479,8 +479,47 @@ class IDEDiagnosticsTruthfulnessTests(APITestCase):
         self.assertEqual(response.data["status"], "error")
         self.assertEqual(response.data["exit_code"], 2)
         diagnostic_call = runner_request.call_args_list[1]
-        self.assertIn("npx --no-install tsc --noEmit --pretty false", diagnostic_call.args[2]["command"])
+        self.assertIn("./node_modules/.bin/tsc --noEmit --pretty false", diagnostic_call.args[2]["command"])
         self.assertNotIn("||", diagnostic_call.args[2]["command"])
+
+    @patch("api.views._runner_request")
+    def test_package_script_uses_the_workspace_package_manager(self, runner_request):
+        self.workspace.files = {
+            "main.js": "console.log('hello');",
+            "package.json": json.dumps({"scripts": {"typecheck": "tsc --noEmit"}}),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'",
+        }
+        self.workspace.package_manager = "pnpm"
+        self.workspace.save(update_fields=["files", "package_manager"])
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": 0, "stdout": "", "stderr": ""}, None),
+        ]
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "javascript", "path": "main.js"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(runner_request.call_args_list[1].args[2]["command"], "pnpm run typecheck")
+
+    @patch("api.views._runner_request")
+    def test_boolean_exit_code_is_not_accepted_as_a_verifiable_result(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": False, "stdout": "looks fine"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "python", "path": "main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_diagnostics_result")
 
     @patch("api.views._runner_request")
     def test_missing_runner_exit_code_is_not_reported_as_success(self, runner_request):
