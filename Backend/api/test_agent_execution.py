@@ -622,6 +622,26 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         self.assertGreater(job.available_at, recovery_now)
 
+    @patch("api.management.commands.worker.BackgroundJob.objects.select_for_update")
+    def test_stale_recovery_skips_candidate_deleted_before_row_lock(self, select_for_update):
+        job = BackgroundJob.objects.create(
+            kind="test_deleted_recovery_candidate",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=11),
+            locked_by="worker-that-crashed",
+            payload={},
+            idempotency_key="test-deleted-recovery-candidate",
+        )
+        select_for_update.return_value = BackgroundJob.objects.none()
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        select_for_update.assert_called_once()
+
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-\u00e9", "status": "completed", "exit_code": 0,
          "duration_ms": 1, "stdout": "", "stderr": ""}, None,
