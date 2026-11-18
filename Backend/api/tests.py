@@ -1597,6 +1597,12 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertFalse(refresh_job_lease(job.pk, first_token))
         self.assertTrue(refresh_job_lease(job.pk, second_token))
 
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            status="queued", locked_at=None, locked_by=""
+        )
+        long_host_claim = claim_job("worker-" + ("x" * 300))
+        self.assertLessEqual(len(long_host_claim.locked_by), 120)
+
     def test_job_lease_refresh_does_not_revive_completed_jobs(self):
         from .management.commands.worker import refresh_job_lease
 
