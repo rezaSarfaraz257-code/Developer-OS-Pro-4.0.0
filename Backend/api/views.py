@@ -2800,6 +2800,7 @@ def ide_workspace_files_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_workspace_sync_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2963,6 +2964,7 @@ def ide_install_packages_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_symbols_api(request, pk):
     """Static workspace intelligence delegated to the isolated runner."""
     ws = _workspace_for_user(pk, request.user)
@@ -2991,6 +2993,7 @@ def ide_symbols_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_lsp_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     language = str(request.data.get("language") or "python").strip().lower()
@@ -3010,6 +3013,7 @@ def ide_lsp_api(request, pk):
     return Response(data)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_replace_preview_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     path = str(request.data.get("path") or "").strip()
@@ -3025,6 +3029,7 @@ def ide_replace_preview_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_format_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     path = str(request.data.get("path") or "").strip()
@@ -3039,6 +3044,7 @@ def ide_format_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_lsp_notifications_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     language = str(request.data.get("language") or "python").strip().lower()
@@ -4246,6 +4252,7 @@ def ai_chat_api(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_diagnostics_api(request, pk):
     """Run a read-only project check and return editor-friendly diagnostics."""
     ws = _workspace_for_user(pk, request.user)
@@ -4355,6 +4362,7 @@ def ide_diagnostics_api(request, pk):
 # CLOUD IDE CONTROL PLANE
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_build_plan_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -4421,6 +4429,7 @@ def ide_process_start_api(request, pk):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_processes_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     data,error=_runner_request("GET","/processes",{"workspace_id":str(ws.id)},timeout=15)
@@ -4437,6 +4446,7 @@ def _safe_runner_resource_id(value):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_stream_api(request, pk, job_id):
     if not _safe_runner_resource_id(job_id):
         return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
@@ -4460,6 +4470,7 @@ def ide_job_stream_api(request, pk, job_id):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_status_api(request, pk, job_id):
     if not _safe_runner_resource_id(job_id):
         return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
@@ -4471,6 +4482,7 @@ def ide_job_status_api(request, pk, job_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_cancel_api(request, pk, job_id):
     if not _safe_runner_resource_id(job_id):
         return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
@@ -4484,6 +4496,7 @@ def ide_job_cancel_api(request, pk, job_id):
 
 @api_view(["GET","POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_process_detail_api(request, pk, process_id):
     if not _safe_runner_resource_id(process_id):
         return Response({"error": "Invalid runner process identifier.", "code": "invalid_runner_resource_id"}, status=400)
@@ -4500,6 +4513,7 @@ def ide_process_detail_api(request, pk, process_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_git_file_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user): return Response({"error":"Read-only workspace."},status=403)
@@ -4515,6 +4529,7 @@ def ide_git_file_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_git_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user):return Response({"error":"Read-only workspace."},status=403)
@@ -4530,6 +4545,7 @@ def ide_git_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_preview_start_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user):return Response({"error":"Read-only workspace."},status=403)
@@ -4561,6 +4577,7 @@ def _safe_preview_proxy_path(path):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws = _workspace_for_user(pk, request.user)
     safe_path = _safe_preview_proxy_path(preview_path)
