@@ -98,7 +98,7 @@ class AIEngineUnitTests(TestCase):
         }
         self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
 
-    def test_patch_contract_rejects_unicode_normalization_equivalent_paths(self):
+    def test_patch_contract_rejects_unicode_casefold_equivalent_paths(self):
         proposal = {
             "type": "patch_proposal",
             "changes": [
