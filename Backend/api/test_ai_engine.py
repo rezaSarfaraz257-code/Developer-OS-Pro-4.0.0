@@ -98,6 +98,16 @@ class AIEngineUnitTests(TestCase):
         }
         self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
 
+    def test_patch_contract_rejects_unicode_normalization_equivalent_paths(self):
+        proposal = {
+            "type": "patch_proposal",
+            "changes": [
+                {"path": "src/caf\\u00e9.py", "operation": "create", "content": "one"},
+                {"path": "src/cafe\\u0301.py", "operation": "create", "content": "two"},
+            ],
+        }
+        self.assertIsNone(_agent_parse_patch(json.dumps(proposal)))
+
     def test_patch_contract_rejects_oversized_single_file(self):
         proposal = {
             "type": "patch_proposal",
