@@ -1578,6 +1578,25 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertEqual(job.locked_by, "worker-current")
         self.assertEqual(job.locked_at, refreshed_lease)
 
+    def test_each_job_reclaim_receives_a_unique_fencing_token(self):
+        from .management.commands.worker import claim_job, refresh_job_lease
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=3)
+        first_claim = claim_job("worker-reused")
+        self.assertEqual(first_claim.pk, job.pk)
+        first_token = first_claim.locked_by
+        self.assertTrue(first_token.startswith("worker-reused:"))
+
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            status="queued", locked_at=None, locked_by=""
+        )
+        second_claim = claim_job("worker-reused")
+        second_token = second_claim.locked_by
+
+        self.assertNotEqual(first_token, second_token)
+        self.assertFalse(refresh_job_lease(job.pk, first_token))
+        self.assertTrue(refresh_job_lease(job.pk, second_token))
+
     def test_job_lease_refresh_does_not_revive_completed_jobs(self):
         from .management.commands.worker import refresh_job_lease
 
