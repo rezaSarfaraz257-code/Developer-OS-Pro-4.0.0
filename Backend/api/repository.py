@@ -28,6 +28,25 @@ MAX_FILES = 2000
 MAX_FILE_BYTES = 1_500_000
 MAX_TOTAL_BYTES = 25_000_000
 SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._@+\- /]+$")
+SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
+
+
+def _valid_branch(value):
+    """Validate a conservative Git-style branch ref for snapshot APIs."""
+    if not isinstance(value, str) or not SAFE_BRANCH.fullmatch(value):
+        return False
+    if value.startswith(("-", "/")) or value.endswith(("/", ".")):
+        return False
+    if ".." in value or "//" in value or "@{" in value or value == "@":
+        return False
+    parts = value.split("/")
+    return all(
+        part
+        and not part.startswith(".")
+        and not part.endswith(".")
+        and not part.endswith(".lock")
+        for part in parts
+    )
 
 
 def _clean_files(raw):
@@ -162,52 +181,88 @@ def repositories_api(request):
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def repository_detail_api(request, pk):
-    repo = _repo(request.user, pk)
     if request.method == "GET":
+        repo = _repo(request.user, pk)
         return Response(_repo_payload(repo, request.user, include_files=True))
     if request.method == "DELETE":
-        name = repo.name
-        repo.delete()
-        Activity.objects.create(actor=request.user, verb="deleted a repository", message=name, related_type="repository_deleted", related_id=pk)
+        # Deletion participates in the same per-repository lock protocol as
+        # commits, pushes, pulls, branch changes, and collaborator mutations.
+        # This prevents a delete racing a writer that has already authorized
+        # against a stale repository instance.
+        with transaction.atomic():
+            repo = get_object_or_404(
+                CodeWorkspace.objects.select_for_update(),
+                pk=pk,
+                owner=request.user,
+                runtime=REPOSITORY_RUNTIME,
+            )
+            name = repo.name
+            repo.delete()
+            Activity.objects.create(
+                actor=request.user,
+                verb="deleted a repository",
+                message=name,
+                related_type="repository_deleted",
+                related_id=pk,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    if "files" in request.data:
-        try:
-            files = _clean_files(request.data["files"])
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        repo.files = files
-    if "active_file" in request.data:
-        active = str(request.data.get("active_file") or "")
-        if active and active not in (repo.files or {}):
-            return Response({"error": "active_file does not exist in the working tree."}, status=status.HTTP_400_BAD_REQUEST)
-        repo.active_file = active
-    repo.save()
-    return Response(_repo_payload(repo, request.user, include_files=True))
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        if "files" in request.data:
+            try:
+                files = _clean_files(request.data["files"])
+            except ValueError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            repo.files = files
+        if "active_file" in request.data:
+            active = str(request.data.get("active_file") or "")
+            if active and active not in (repo.files or {}):
+                return Response({"error": "active_file does not exist in the working tree."}, status=status.HTTP_400_BAD_REQUEST)
+            repo.active_file = active
+        repo.save()
+        payload = _repo_payload(repo, request.user, include_files=True)
+    return Response(payload)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_push_api(request, pk):
-    repo = _repo(request.user, pk)
-    branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH).strip()
     message = str(request.data.get("message") or "Update repository").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
-        return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
     if not message or len(message) > 500:
         return Response({"error": "A commit message between 1 and 500 characters is required."}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        files = _clean_files(repo.files or {})
-    except ValueError as exc:
-        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    previous = _commit_qs(request.user, repo.id, branch).first()
-    parent = (previous.metadata or {}).get("hash") if previous else None
-    commit_hash = _commit_hash(repo.id, branch, message, parent, files)
-    if previous and (previous.metadata or {}).get("hash") == commit_hash:
-        return Response({"error": "Nothing to push.", "commit": _commit_payload(previous)}, status=status.HTTP_409_CONFLICT)
-
+    # Serialize the branch-head read, working-tree snapshot, revision update,
+    # and commit insert on the repository row. Reading the previous commit
+    # before acquiring this lock lets concurrent pushes fork from the same
+    # parent and overwrite each other's working-tree state.
     with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH).strip()
+        if not _valid_branch(branch):
+            return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            files = _clean_files(repo.files or {})
+        except ValueError:
+            # Do not reflect exception details from persisted working-tree data.
+            return Response({"error": "Repository working tree is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+
+        previous = _commit_qs(request.user, repo.id, branch).first()
+        parent = (previous.metadata or {}).get("hash") if previous else None
+        commit_hash = _commit_hash(repo.id, branch, message, parent, files)
+        if previous and (previous.metadata or {}).get("hash") == commit_hash:
+            return Response({"error": "Nothing to push.", "commit": _commit_payload(previous)}, status=status.HTTP_409_CONFLICT)
+
         repo.framework = branch
         repo.files = files
         repo.save(update_fields=["framework", "files", "revision", "updated_at"])
@@ -219,7 +274,10 @@ def repository_push_api(request, pk):
             related_id=repo.id,
             metadata={"hash": commit_hash, "branch": branch, "parent": parent, "files": deepcopy(files)},
         )
-    return Response({"repository": _repo_payload(repo, request.user), "commit": _commit_payload(commit)}, status=status.HTTP_201_CREATED)
+        # Capture the response head before releasing the row lock; otherwise
+        # a following push could advance the branch before this response reads it.
+        repository_payload = _repo_payload(repo, request.user)
+    return Response({"repository": repository_payload, "commit": _commit_payload(commit)}, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])
@@ -227,6 +285,8 @@ def repository_push_api(request, pk):
 def repository_history_api(request, pk):
     repo = _repo(request.user, pk)
     branch = str(request.query_params.get("branch") or repo.framework or DEFAULT_BRANCH)
+    if not _valid_branch(branch):
+        return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
     try:
         requested_limit = int(request.query_params.get("limit") or 50)
     except (TypeError, ValueError):
@@ -239,36 +299,53 @@ def repository_history_api(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_pull_api(request, pk):
-    repo = _repo(request.user, pk)
-    branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH)
-    commit_hash = str(request.data.get("commit") or "").strip()
-    commits = _commit_qs(request.user, repo.id, branch)
-    commit = commits.filter(metadata__hash=commit_hash).first() if commit_hash else commits.first()
-    if not commit:
-        return Response({"error": "No remote commit exists for this branch."}, status=status.HTTP_404_NOT_FOUND)
-    files = _clean_files((commit.metadata or {}).get("files") or {})
-    repo.framework = branch
-    repo.files = files
-    repo.active_file = next(iter(files), "")
-    repo.save()
-    Activity.objects.create(actor=request.user, verb="pulled repository commit", message=commit.message, related_type="repository_pull", related_id=repo.id, metadata={"hash": (commit.metadata or {}).get("hash"), "branch": branch})
-    return Response({"repository": _repo_payload(repo, request.user, include_files=True), "commit": _commit_payload(commit)})
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        branch = str(request.data.get("branch") or repo.framework or DEFAULT_BRANCH)
+        if not _valid_branch(branch):
+            return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
+        commit_hash = str(request.data.get("commit") or "").strip()
+        commits = _commit_qs(request.user, repo.id, branch)
+        commit = commits.filter(metadata__hash=commit_hash).first() if commit_hash else commits.first()
+        if not commit:
+            return Response({"error": "No remote commit exists for this branch."}, status=status.HTTP_404_NOT_FOUND)
+        files = _clean_files((commit.metadata or {}).get("files") or {})
+        repo.framework = branch
+        repo.files = files
+        repo.active_file = next(iter(files), "")
+        repo.save()
+        Activity.objects.create(actor=request.user, verb="pulled repository commit", message=commit.message, related_type="repository_pull", related_id=repo.id, metadata={"hash": (commit.metadata or {}).get("hash"), "branch": branch})
+        payload = _repo_payload(repo, request.user, include_files=True)
+        commit_payload = _commit_payload(commit)
+    return Response({"repository": payload, "commit": commit_payload})
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def repository_branch_api(request, pk):
-    repo = _repo(request.user, pk)
     branch = str(request.data.get("branch") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch name."}, status=status.HTTP_400_BAD_REQUEST)
-    existing = _commit_qs(request.user, repo.id, branch).first()
-    repo.framework = branch
-    if existing and request.data.get("pull", True):
-        repo.files = _clean_files((existing.metadata or {}).get("files") or {})
-        repo.active_file = next(iter(repo.files), "")
-    repo.save()
-    return Response(_repo_payload(repo, request.user, include_files=True))
+    with transaction.atomic():
+        repo = get_object_or_404(
+            CodeWorkspace.objects.select_for_update(),
+            pk=pk,
+            owner=request.user,
+            runtime=REPOSITORY_RUNTIME,
+        )
+        existing = _commit_qs(request.user, repo.id, branch).first()
+        repo.framework = branch
+        if existing and request.data.get("pull", True):
+            repo.files = _clean_files((existing.metadata or {}).get("files") or {})
+            repo.active_file = next(iter(repo.files), "")
+        repo.save()
+        payload = _repo_payload(repo, request.user, include_files=True)
+    return Response(payload)
 
 
 @api_view(["POST"])
@@ -314,17 +391,26 @@ def repository_sync_workspace_api(request, pk):
         return Response({"error": "direction must be push or pull."}, status=status.HTTP_400_BAD_REQUEST)
 
     if direction == "push":
-        try:
-            files = _clean_files(workspace.files or {})
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        repo.files = files
-        repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
-        repo.framework = repo.framework or DEFAULT_BRANCH
-        repo.save()
+        with transaction.atomic():
+            repo = get_object_or_404(
+                CodeWorkspace.objects.select_for_update(),
+                pk=pk,
+                owner=request.user,
+                runtime=REPOSITORY_RUNTIME,
+            )
+            workspace = get_object_or_404(CodeWorkspace, pk=workspace_id, owner=request.user)
+            try:
+                files = _clean_files(workspace.files or {})
+            except ValueError:
+                return Response({"error": "Workspace files are invalid."}, status=status.HTTP_400_BAD_REQUEST)
+            repo.files = files
+            repo.active_file = workspace.active_file if workspace.active_file in files else next(iter(files), "")
+            repo.framework = repo.framework or DEFAULT_BRANCH
+            repo.save()
+            payload = _repo_payload(repo, request.user, include_files=True)
         return Response({
             "direction": "push",
-            "repository": _repo_payload(repo, request.user, include_files=True),
+            "repository": payload,
             "workspace_id": workspace.id,
             "file_count": len(files),
         })

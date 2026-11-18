@@ -9,9 +9,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import deque
 from copy import deepcopy
 
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +24,20 @@ from django.contrib.auth.models import User
 
 RUNTIME = "developer-os-repository"
 SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,80}$")
+
+
+def _valid_branch(value):
+    """Accept conservative Git-style branch refs, not path-like or ambiguous names."""
+    if not isinstance(value, str) or not SAFE_BRANCH.fullmatch(value):
+        return False
+    if value.startswith(("-", "/")) or value.endswith(("/", ".")):
+        return False
+    if ".." in value or "//" in value or "@{" in value or value == "@":
+        return False
+    parts = value.split("/")
+    return all(part and not part.startswith(".") and not part.endswith(".") and not part.endswith(".lock") for part in parts)
+
+
 MAX_FILES = 2000
 MAX_FILE_BYTES = 1_500_000
 MAX_TOTAL_BYTES = 25_000_000
@@ -31,13 +47,10 @@ def _repo(user, pk):
     repo = CodeWorkspace.objects.get(pk=pk, runtime=RUNTIME)
     if repo.owner_id == user.id:
         return repo
-    member = Activity.objects.filter(
-        related_type="repo_member",
-        related_id=repo.id,
-        metadata__user_id=user.id,
-        metadata__revoked=False,
-    ).exists()
-    if not member:
+    # Membership is an append-only event stream. An older grant must not
+    # remain effective after a newer revocation event.
+    latest_membership = _member_rows(repo).filter(metadata__user_id=user.id).first()
+    if not latest_membership or (latest_membership.metadata or {}).get("revoked", False):
         raise CodeWorkspace.DoesNotExist
     return repo
 
@@ -45,6 +58,19 @@ def _repo(user, pk):
 def _is_owner(user, repo):
     return repo.owner_id == user.id
 
+
+def _locked_repo(user, pk):
+    """Acquire the repository mutation lock and revalidate membership."""
+    repo = get_object_or_404(
+        CodeWorkspace.objects.select_for_update(),
+        pk=pk,
+        runtime=RUNTIME,
+    )
+    if repo.owner_id != user.id:
+        # Re-check membership after acquiring the repository lock so a
+        # concurrent revocation cannot authorize a stale mutation request.
+        _repo(user, repo.pk)
+    return repo
 
 def _member_rows(repo):
     return Activity.objects.filter(
@@ -136,7 +162,7 @@ def _head(user, repo, branch):
     return (row.metadata or {}).get("oid") if row else None
 
 
-def _commit(user, repo, branch, message, files, parent=None, author=None):
+def _commit(user, repo, branch, message, files, parent=None, author=None, parents=None):
     files = _files(files)
     tree = _tree(user, repo.id, files)
     payload = {
@@ -146,6 +172,9 @@ def _commit(user, repo, branch, message, files, parent=None, author=None):
         "message": message,
         "author": author or user.username,
     }
+    if parents:
+        # Preserve both merge parents inside the hashed commit payload.
+        payload["parents"] = list(parents)
     oid = _hash("commit", payload)
     existing = _commits(user, repo.id, branch).filter(metadata__oid=oid).first()
     if existing:
@@ -174,13 +203,20 @@ def _commit_files(user, repo, oid):
 
 
 def _ancestor_chain(user, repo, oid, limit=1000):
+    # Walk the full commit DAG, not only the first parent, so merge commits
+    # retain reachable history from both sides.
     result = []
     seen = set()
-    while oid and oid not in seen and len(result) < limit:
-        seen.add(oid)
-        result.append(oid)
-        payload = _read_object(user, repo.id, "commit", oid) or {}
-        oid = payload.get("parent")
+    pending = deque([oid] if oid else [])
+    while pending and len(result) < limit:
+        current = pending.popleft()
+        if not current or current in seen:
+            continue
+        seen.add(current)
+        result.append(current)
+        payload = _read_object(user, repo.id, "commit", current) or {}
+        parents = payload.get("parents") or ([payload.get("parent")] if payload.get("parent") else [])
+        pending.extend(parent for parent in parents if parent and parent not in seen)
     return result
 
 
@@ -238,8 +274,9 @@ def native_commit_api(request, pk):
         repo = _repo(request.user, pk)
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
-    branch = str(request.data.get("branch") if request.method == "POST" else request.query_params.get("branch") or repo.framework or "main").strip()
-    if not SAFE_BRANCH.fullmatch(branch):
+    requested_branch = request.data.get("branch") if request.method == "POST" else request.query_params.get("branch")
+    branch = str(requested_branch or repo.framework or "main").strip()
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch."}, status=400)
     if request.method == "GET":
         rows = _commits(request.user, repo.id, branch)[:100]
@@ -247,9 +284,17 @@ def native_commit_api(request, pk):
     message = str(request.data.get("message") or "").strip()
     if not message or len(message) > 500:
         return Response({"error": "Commit message is required."}, status=400)
-    files = request.data.get("files", repo.files or {})
-    parent = _head(request.user, repo, branch)
     with transaction.atomic():
+        # Every repository writer must serialize on this row before reading
+        # branch heads or mutating the working tree. Read the default working
+        # tree only after acquiring the lock to avoid committing a stale copy.
+        repo = _locked_repo(request.user, repo.pk)
+        files = request.data.get("files", repo.files or {})
+        try:
+            files = _files(files)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+        parent = _head(request.user, repo, branch)
         oid, tree, created = _commit(request.user, repo, branch, message, files, parent)
         repo.framework = branch
         repo.files = _files(files)
@@ -269,20 +314,25 @@ def native_branch_api(request, pk):
     if request.method == "GET":
         return Response({"branches": _branch_heads(request.user, repo), "current": repo.framework or "main"})
     branch = str(request.data.get("branch") or "").strip()
-    if not SAFE_BRANCH.fullmatch(branch):
+    if not _valid_branch(branch):
         return Response({"error": "Invalid branch."}, status=400)
-    source = str(request.data.get("from") or repo.framework or "main")
-    source_head = _head(request.user, repo, source)
-    if not source_head:
-        source_files = _files(repo.files or {})
-        source_head, _, _ = _commit(request.user, repo, source, "Initial repository snapshot", source_files, None, request.user.username)
-    if branch not in _branch_heads(request.user, repo):
-        files = _commit_files(request.user, repo, source_head)
-        _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
-    repo.framework = branch
-    repo.files = _commit_files(request.user, repo, _head(request.user, repo, branch) or source_head)
-    repo.save()
-    return Response({"branch": branch, "head": _head(request.user, repo, branch)})
+    source = str(request.data.get("from") or repo.framework or "main").strip()
+    if not _valid_branch(source):
+        return Response({"error": "Invalid source branch."}, status=400)
+    with transaction.atomic():
+        repo = _locked_repo(request.user, repo.pk)
+        source_head = _head(request.user, repo, source)
+        if not source_head:
+            source_files = _files(repo.files or {})
+            source_head, _, _ = _commit(request.user, repo, source, "Initial repository snapshot", source_files, None, request.user.username)
+        if branch not in _branch_heads(request.user, repo):
+            files = _commit_files(request.user, repo, source_head)
+            _commit(request.user, repo, branch, f"Branch {branch} from {source}", files, source_head, request.user.username)
+        repo.framework = branch
+        repo.files = _commit_files(request.user, repo, _head(request.user, repo, branch) or source_head)
+        repo.save()
+        branch_head = _head(request.user, repo, branch)
+    return Response({"branch": branch, "head": branch_head})
 
 
 @api_view(["POST"])
@@ -294,32 +344,40 @@ def native_merge_api(request, pk):
         return Response({"error": "Repository not found."}, status=404)
     source = str(request.data.get("source") or "").strip()
     target = str(request.data.get("target") or repo.framework or "main").strip()
-    source_head, target_head = _head(request.user, repo, source), _head(request.user, repo, target)
-    if not source_head or not target_head:
-        return Response({"error": "Both branches must contain commits."}, status=400)
-    if source_head == target_head:
-        return Response({"merged": True, "message": "Already up to date.", "head": target_head})
-    source_chain = _ancestor_chain(request.user, repo, source_head)
-    target_chain = set(_ancestor_chain(request.user, repo, target_head))
-    base = next((oid for oid in source_chain if oid in target_chain), None)
-    if not base:
-        return Response({"error": "No common ancestor."}, status=409)
-    merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
-    if conflicts:
-        return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
-    merge_message = str(request.data.get("message") or f"Merge {source} into {target}")
-    oid, tree, _ = _commit(request.user, repo, target, merge_message, merged, target_head)
-    merge_row = _commits(request.user, repo.id, target).filter(metadata__oid=oid).first()
-    if merge_row:
-        meta = merge_row.metadata or {}
-        payload = meta.get("payload") or {}
-        payload["parents"] = [target_head, source_head]
-        meta["payload"] = payload
-        merge_row.metadata = meta
-        merge_row.save(update_fields=["metadata"])
-    repo.framework = target
-    repo.files = merged
-    repo.save()
+    if not _valid_branch(source) or not _valid_branch(target):
+        return Response({"error": "Invalid source or target branch."}, status=400)
+    with transaction.atomic():
+        # Re-read both branch heads only after taking the same repository lock
+        # used by native commits and branch changes.
+        repo = _locked_repo(request.user, repo.pk)
+        source_head, target_head = _head(request.user, repo, source), _head(request.user, repo, target)
+        if not source_head or not target_head:
+            return Response({"error": "Both branches must contain commits."}, status=400)
+        if source_head == target_head:
+            return Response({"merged": True, "message": "Already up to date.", "head": target_head})
+        source_chain = _ancestor_chain(request.user, repo, source_head)
+        target_chain = set(_ancestor_chain(request.user, repo, target_head))
+        base = next((oid for oid in source_chain if oid in target_chain), None)
+        if not base:
+            return Response({"error": "No common ancestor."}, status=409)
+        merged, conflicts = _three_way(_commit_files(request.user, repo, base), _commit_files(request.user, repo, target_head), _commit_files(request.user, repo, source_head))
+        if conflicts:
+            return Response({"merged": False, "conflicts": conflicts, "base": base, "ours": target_head, "theirs": source_head}, status=409)
+        merge_message = str(request.data.get("message") or f"Merge {source} into {target}").strip()
+        if not merge_message or len(merge_message) > 500:
+            return Response({"error": "Merge message must be between 1 and 500 characters."}, status=400)
+        oid, tree, _ = _commit(
+            request.user,
+            repo,
+            target,
+            merge_message,
+            merged,
+            target_head,
+            parents=[target_head, source_head],
+        )
+        repo.framework = target
+        repo.files = merged
+        repo.save()
     return Response({"merged": True, "head": oid, "tree": tree, "branch": target})
 
 
@@ -330,7 +388,9 @@ def native_diff_api(request, pk):
         repo = _repo(request.user, pk)
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
-    branch = str(request.query_params.get("branch") or repo.framework or "main")
+    branch = str(request.query_params.get("branch") or repo.framework or "main").strip()
+    if not _valid_branch(branch):
+        return Response({"error": "Invalid branch."}, status=400)
     head = _head(request.user, repo, branch)
     if not head:
         return Response({"branch": branch, "files": [], "head": None})
@@ -354,12 +414,22 @@ def native_tag_api(request, pk):
     except CodeWorkspace.DoesNotExist:
         return Response({"error": "Repository not found."}, status=404)
     name = str(request.data.get("name") or "").strip()
-    head = str(request.data.get("commit") or _head(request.user, repo, repo.framework or "main") or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", name):
+    if not _valid_branch(name):
         return Response({"error": "Invalid tag name."}, status=400)
-    if not head:
-        return Response({"error": "Repository has no commits."}, status=400)
-    _write_object(request.user, repo.id, "tag", {"name": name, "commit": head})
+    with transaction.atomic():
+        repo = _locked_repo(request.user, repo.pk)
+        head = str(request.data.get("commit") or _head(request.user, repo, repo.framework or "main") or "").strip()
+        if not head:
+            return Response({"error": "Repository has no commits."}, status=400)
+        if not _read_object(request.user, repo.id, "commit", head):
+            return Response({"error": "Commit does not exist in this repository."}, status=404)
+        for row in _objects(request.user, repo.id, "tag"):
+            payload = (row.metadata or {}).get("payload") or {}
+            if payload.get("name") == name:
+                if payload.get("commit") == head:
+                    return Response({"name": name, "commit": head}, status=200)
+                return Response({"error": "Tag name already exists."}, status=409)
+        _write_object(request.user, repo.id, "tag", {"name": name, "commit": head})
     return Response({"name": name, "commit": head}, status=201)
 
 
@@ -387,15 +457,19 @@ def native_members_api(request, pk):
     if request.method == "GET":
         rows = _member_rows(repo)
         return Response([{"user_id": (r.metadata or {}).get("user_id"), "username": (r.metadata or {}).get("username"), "revoked": (r.metadata or {}).get("revoked", False), "created_at": r.created_at} for r in rows])
-    if not _is_owner(request.user, repo):
-        return Response({"error": "Only the repository owner can manage members."}, status=403)
-    user_id = request.data.get("user_id")
-    try:
-        member = User.objects.get(pk=user_id)
-    except (User.DoesNotExist, TypeError, ValueError):
-        return Response({"error": "User not found."}, status=404)
-    if request.method == "POST":
-        Activity.objects.create(actor=request.user, verb="added repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": False})
-        return Response({"user_id": member.id, "username": member.username, "revoked": False}, status=201)
-    Activity.objects.create(actor=request.user, verb="revoked repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": True})
+    with transaction.atomic():
+        # Membership changes share the repository lock with collaborator writes.
+        # This makes revocation linearizable with _locked_repo membership checks.
+        repo = _locked_repo(request.user, repo.pk)
+        if not _is_owner(request.user, repo):
+            return Response({"error": "Only the repository owner can manage members."}, status=403)
+        user_id = request.data.get("user_id")
+        try:
+            member = User.objects.get(pk=user_id)
+        except (User.DoesNotExist, TypeError, ValueError):
+            return Response({"error": "User not found."}, status=404)
+        if request.method == "POST":
+            Activity.objects.create(actor=request.user, verb="added repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": False})
+            return Response({"user_id": member.id, "username": member.username, "revoked": False}, status=201)
+        Activity.objects.create(actor=request.user, verb="revoked repository member", message=member.username, related_type="repo_member", related_id=repo.id, metadata={"user_id": member.id, "username": member.username, "revoked": True})
     return Response(status=204)
