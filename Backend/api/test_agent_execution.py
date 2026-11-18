@@ -929,6 +929,64 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
 
 class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
     @patch("api.views._runner_request")
+    def test_reclaimed_job_lease_is_rejected_before_runner_execution(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-old:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
+        BackgroundJob.objects.filter(pk=job.pk).update(locked_by="worker-new:lease-2")
+
+        with self.assertRaisesRegex(RuntimeError, "lease is no longer current"):
+            execute_agent_task_verification(job)
+
+        runner_request.assert_not_called()
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence, {})
+
+    @patch("api.views._runner_request")
+    def test_reclaimed_job_lease_cannot_finalize_old_runner_result(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-old:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
+
+        def reclaim_before_runner_returns(method, path, payload, timeout):
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                locked_by="worker-new:lease-2"
+            )
+            return ({
+                "job_id": payload["execution_id"],
+                "status": "completed",
+                "exit_code": 0,
+                "duration_ms": 12,
+                "stdout": "",
+                "stderr": "",
+            }, None)
+
+        runner_request.side_effect = reclaim_before_runner_returns
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_superseded")
+        runner_request.assert_called_once()
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence, {})
+
+
+    @patch("api.views._runner_request")
     def test_runner_call_occurs_outside_database_transaction(self, runner_request):
         baseline_atomic_depth = len(connection.atomic_blocks)
 
