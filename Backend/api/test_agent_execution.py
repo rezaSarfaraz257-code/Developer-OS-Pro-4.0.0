@@ -596,6 +596,32 @@ class AgentTaskVerificationAPITests(TestCase):
             "ai_agent_runner_sync",
         )
 
+    @patch("api.management.commands.worker.timezone.now")
+    def test_stale_job_retry_backoff_uses_time_after_row_lock(self, mocked_now):
+        initial_now = timezone.now()
+        recovery_now = initial_now + timedelta(seconds=5)
+        mocked_now.side_effect = [initial_now, recovery_now]
+        job = BackgroundJob.objects.create(
+            kind="test_recovery_clock",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=initial_now - timedelta(minutes=11),
+            locked_by="worker-that-paused",
+            payload={},
+            idempotency_key="test-recovery-clock-fresh-time",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(
+            job.available_at,
+            recovery_now + timedelta(seconds=2),
+        )
+        self.assertGreater(job.available_at, recovery_now)
+
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-\u00e9", "status": "completed", "exit_code": 0,
          "duration_ms": 1, "stdout": "", "stderr": ""}, None,
