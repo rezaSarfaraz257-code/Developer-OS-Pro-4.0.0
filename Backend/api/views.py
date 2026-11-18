@@ -2768,12 +2768,31 @@ def ide_workspace_files_api(request, pk):
     # make Explorer file creation fail.
     if len(path) > 500:
         return Response({"error": "File path is too long.", "code": "invalid_path"}, status=400)
-    content_bytes = len(content.encode("utf-8"))
+    try:
+        content_bytes = len(content.encode("utf-8"))
+    except UnicodeEncodeError:
+        return Response(
+            {"error": "File content must contain valid UTF-8 text.", "code": "invalid_utf8_content"},
+            status=400,
+        )
     if content_bytes > 1_000_000:
         return Response({"error": "Each text file must be 1 MB or smaller.", "code": "file_too_large"}, status=413)
     projected = dict(files)
     projected[path] = content
-    total_bytes = sum(len(str(value).encode("utf-8")) for value in projected.values())
+    total_bytes = 0
+    for existing_content in projected.values():
+        if not isinstance(existing_content, str):
+            return Response(
+                {"error": "Workspace contains an invalid text file.", "code": "invalid_workspace_content"},
+                status=409,
+            )
+        try:
+            total_bytes += len(existing_content.encode("utf-8"))
+        except UnicodeEncodeError:
+            return Response(
+                {"error": "Workspace contains text that is not valid UTF-8.", "code": "invalid_workspace_content"},
+                status=409,
+            )
     if len(projected) > 2000:
         return Response({"error": "A workspace can contain at most 2,000 source files.", "code": "file_limit"}, status=413)
     if total_bytes > 50_000_000:
