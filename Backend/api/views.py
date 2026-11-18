@@ -4268,17 +4268,67 @@ def ide_diagnostics_api(request, pk):
     if language in {"python", "py"} or path.endswith(".py"):
         command = "python3 -m py_compile " + shlex.quote(path)
     elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
-        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
+        # Never hide a failed TypeScript check behind a successful build fallback.
+        # npx is explicitly offline so diagnostics cannot trigger package downloads.
+        workspace_files = ws.files if isinstance(ws.files, dict) else {}
+        manifest_text = workspace_files.get("package.json")
+        manifest = {}
+        if manifest_text is not None:
+            try:
+                manifest = json.loads(manifest_text)
+            except (TypeError, ValueError):
+                return Response({
+                    "error": "package.json is not valid JSON.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+            if not isinstance(manifest, dict):
+                return Response({
+                    "error": "package.json must contain a JSON object.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+        if "tsconfig.json" in workspace_files:
+            command = "npx --no-install tsc --noEmit --pretty false"
+        else:
+            scripts = manifest.get("scripts", {})
+            if not isinstance(scripts, dict):
+                return Response({
+                    "error": "package.json scripts must be a JSON object.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+            check_script = "typecheck" if scripts.get("typecheck") else "build" if scripts.get("build") else None
+            if not check_script:
+                return Response({
+                    "status": "skipped",
+                    "diagnostics": [],
+                    "message": "No TypeScript configuration or typecheck/build script is configured.",
+                })
+            command = "npm run " + shlex.quote(check_script)
     else:
         return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
     data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
     if error:
         return Response(error, status=503)
-    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
+    if not isinstance(data, dict) or not isinstance(data.get("exit_code"), int):
+        return Response({
+            "error": "Runner did not provide a verifiable diagnostic exit code.",
+            "code": "runner_invalid_diagnostics_result",
+        }, status=503)
+    stdout = data.get("stdout") if isinstance(data.get("stdout"), str) else ""
+    stderr = data.get("stderr") if isinstance(data.get("stderr"), str) else ""
+    output = "\n".join(x for x in [stdout, stderr] if x)
+    output_truncated = len(output) > 100_000
+    if output_truncated:
+        output = output[:100_000]
     diagnostics = []
-    if data.get("exit_code") not in (0, None):
+    if data["exit_code"] != 0:
         diagnostics.append({"severity": "error", "message": output or "Diagnostic command failed.", "path": path})
-    return Response({"status": "ok" if not diagnostics else "error", "diagnostics": diagnostics, "output": output, "exit_code": data.get("exit_code")})
+    return Response({
+        "status": "ok" if not diagnostics else "error",
+        "diagnostics": diagnostics,
+        "output": output,
+        "output_truncated": output_truncated,
+        "exit_code": data["exit_code"],
+    })
 
 
 # ---------------------------------------------------------------------------
