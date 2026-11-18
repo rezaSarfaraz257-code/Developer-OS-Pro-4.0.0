@@ -438,7 +438,7 @@ def build_agent_plan(run_id):
     try:
         plan = _validate_plan(json.loads(text))
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"AI planner returned an invalid task graph: {str(exc)[:300]}") from exc
+        raise RuntimeError("AI planner returned an invalid task graph.") from None
 
     with transaction.atomic():
         run = AgentRun.objects.select_for_update().select_related("owner").get(pk=run_id)
