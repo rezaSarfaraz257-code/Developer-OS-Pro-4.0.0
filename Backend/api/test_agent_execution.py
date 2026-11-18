@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -598,7 +598,7 @@ class AgentTaskVerificationAPITests(TestCase):
 
     @patch("api.management.commands.worker.timezone.now")
     def test_stale_job_retry_backoff_uses_time_after_row_lock(self, mocked_now):
-        initial_now = timezone.now()
+        initial_now = datetime.now(datetime_timezone.utc)
         recovery_now = initial_now + timedelta(seconds=5)
         mocked_now.side_effect = [initial_now, recovery_now]
         job = BackgroundJob.objects.create(
