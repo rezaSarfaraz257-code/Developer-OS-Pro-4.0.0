@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import unicodedata
 
 from django.contrib.auth.models import User
 from django.db import connection, DatabaseError
@@ -2641,17 +2642,21 @@ def _safe_ide_path(value):
     return path
 
 def _ide_path_conflicts(files, path):
-    """Return True when a virtual path would collide with a file/directory."""
-    normalized = str(path or "").rstrip("/")
+    """Return True when a virtual path aliases or overlaps a file/directory."""
+    normalized = unicodedata.normalize("NFC", str(path or "")).casefold().rstrip("/")
     if not normalized:
         return True
     for existing in files:
-        existing = str(existing or "").rstrip("/")
+        existing = unicodedata.normalize("NFC", str(existing or "")).casefold().rstrip("/")
         if not existing:
             continue
-        # A file cannot be placed below an existing file, or replace a
-        # directory that is represented by one or more descendant paths.
-        if normalized.startswith(existing + "/") or existing.startswith(normalized + "/"):
+        # Virtual paths must remain unambiguous on case-insensitive and
+        # Unicode-normalizing filesystems as well as on the current host.
+        if (
+            normalized == existing
+            or normalized.startswith(existing + "/")
+            or existing.startswith(normalized + "/")
+        ):
             return True
     return False
 
