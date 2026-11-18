@@ -117,9 +117,16 @@ def _safe_diagnostic_signals(profile, stdout, stderr, exit_code):
     """Return bounded, non-content diagnostic enums; never retain process output."""
     if type(exit_code) is not int or exit_code == 0:
         return []
+    # Keep this helper safe even when called outside the validated Runner path.
+    # Never let malformed provider data raise here or trigger unbounded scanning.
+    if not isinstance(stdout, str) or not isinstance(stderr, str):
+        return [{"code": "command_failed", "source": "exit_status"}]
+    stdout = stdout[:50_000]
+    stderr = stderr[:50_000]
+    patterns = _DIAGNOSTIC_PATTERNS.get(profile, ())
     signals = []
     for source, output in (("stderr", stderr), ("stdout", stdout)):
-        for code, pattern in _DIAGNOSTIC_PATTERNS.get(profile, ()):
+        for code, pattern in patterns:
             if pattern.search(output) and {"code": code, "source": source} not in signals:
                 signals.append({"code": code, "source": source})
                 if len(signals) == 4:
