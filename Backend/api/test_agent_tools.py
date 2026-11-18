@@ -288,3 +288,19 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertTrue(result["dependencies_truncated"])
         self.assertTrue(result["read_only"])
 
+    def test_dependency_analyzer_parses_python_requirements_and_dev_requirements(self):
+        self.workspace.files = {
+            "requirements.txt": "Django>=5.0\nrequests==2.32.0\n# comment\n",
+            "requirements-dev.txt": "pytest>=8.0\n",
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 3)
+        self.assertEqual(
+            result["dependencies"],
+            [
+                {"name": "Django", "version": ">=5.0", "group": "python"},
+                {"name": "requests", "version": "==2.32.0", "group": "python"},
+                {"name": "pytest", "version": ">=8.0", "group": "python"},
+            ],
+        )
+        self.assertFalse(result["dependencies_truncated"])
