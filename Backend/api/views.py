@@ -4295,7 +4295,13 @@ def ide_diagnostics_api(request, pk):
                     "error": "package.json scripts must be a JSON object.",
                     "code": "invalid_package_manifest",
                 }, status=400)
-            check_script = "typecheck" if scripts.get("typecheck") else "build" if scripts.get("build") else None
+            typecheck_script = scripts.get("typecheck")
+            build_script = scripts.get("build")
+            check_script = (
+                "typecheck" if isinstance(typecheck_script, str) and typecheck_script.strip()
+                else "build" if isinstance(build_script, str) and build_script.strip()
+                else None
+            )
             if not check_script:
                 return Response({
                     "status": "skipped",
