@@ -674,6 +674,90 @@ class IDEPackageInstallSafetyTests(APITestCase):
 
 
     @patch("api.views._runner_request")
+    def test_failed_framework_install_does_not_mutate_workspace(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.return_value = ({
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": "registry unavailable",
+            "files": {
+                "package.json": json.dumps({"dependencies": {"react": "latest"}}),
+                "main.js": "stale failed output",
+            },
+        }, None)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["installation"]["status"], "failed")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.framework, "")
+        self.assertEqual(self.workspace.package_manager, "npm")
+
+    @patch("api.views._runner_request")
+    def test_framework_install_rejects_unverifiable_runner_result(self, runner_request):
+        runner_request.return_value = ({
+            "stdout": "installation appears complete",
+            "files": {"main.js": "unverified"},
+        }, None)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_install_result")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.framework, "")
+        self.assertEqual(self.workspace.files["main.js"], "console.log('safe')")
+
+    @patch("api.views._runner_request")
+    def test_late_framework_install_cannot_overwrite_concurrent_edits(self, runner_request):
+        original_revision = self.workspace.revision
+        concurrent_files = {
+            "package.json": json.dumps({"dependencies": {"newer-edit": "1.0.0"}}),
+            "main.js": "concurrent edit",
+        }
+
+        def runner_response(method, path, payload, timeout):
+            from .models import CodeWorkspace
+
+            CodeWorkspace.objects.filter(pk=self.workspace.pk).update(
+                files=concurrent_files,
+                revision=original_revision + 1,
+            )
+            return ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {
+                    "package.json": json.dumps({"dependencies": {"react": "latest"}}),
+                    "main.js": "stale runner output",
+                },
+            }, None)
+
+        runner_request.side_effect = runner_response
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "workspace_revision_conflict")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, concurrent_files)
+        self.assertEqual(self.workspace.framework, "")
+
+
+    @patch("api.views._runner_request")
     def test_unverifiable_install_result_never_persists_workspace_snapshot(self, runner_request):
         original_files = dict(self.workspace.files)
         runner_request.side_effect = [
@@ -701,6 +785,7 @@ class IDEControlPlaneRateLimitRegressionTests(APITestCase):
         from . import views
 
         endpoint_names = [
+            "ide_capabilities_api",
             "ide_workspace_sync_api",
             "ide_symbols_api",
             "ide_lsp_api",
