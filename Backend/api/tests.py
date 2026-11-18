@@ -1982,6 +1982,32 @@ class IDEWorkspaceLifecycleRegressionTests(APITestCase):
         self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
         self.client.force_authenticate(user=self.owner)
 
+    def test_explorer_rejects_invalid_utf8_without_mutating_workspace(self):
+        from .models import CodeWorkspace
+
+        created = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "UTF-8 validation", "files": {"README.md": "safe"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        workspace_id = created.data["id"]
+        original = CodeWorkspace.objects.get(pk=workspace_id)
+        original_files = dict(original.files)
+        original_revision = original.revision
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace_id}/files/",
+            {"action": "write", "path": "README.md", "content": "\ud800"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_utf8_content")
+        original.refresh_from_db()
+        self.assertEqual(original.files, original_files)
+        self.assertEqual(original.revision, original_revision)
+
     def test_workspace_delete_endpoint_deletes_only_the_owners_workspace(self):
         from .models import CodeWorkspace
 
