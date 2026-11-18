@@ -2639,7 +2639,7 @@ def _safe_ide_path(value):
     path = str(value or "").replace("\\", "/").strip()
     if not path or len(path) > 500 or path.startswith("/") or re.match(r"^[A-Za-z]:", path):
         return None
-    component_pattern = re.compile(r"^[\\w .@()+,\\[\\]-]+$", re.UNICODE)
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
     reserved_runtime_roots = {
         ".git", "node_modules", ".venv", ".home", ".tmp",
         ".cache", ".npm-cache", ".pip-cache",
