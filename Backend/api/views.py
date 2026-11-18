@@ -4357,9 +4357,19 @@ def ide_processes_api(request, pk):
     if error:return Response(error,status=503)
     return Response(data)
 
+def _safe_runner_resource_id(value):
+    """Accept only opaque runner IDs that cannot alter an upstream URL path."""
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value) is not None
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ide_job_stream_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     raw_cursor = request.query_params.get("cursor", "0")
     try:
@@ -4381,6 +4391,8 @@ def ide_job_stream_api(request, pk, job_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ide_job_status_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     data, error = _runner_request("GET", f"/jobs/{job_id}", {"workspace_id": str(ws.id)}, timeout=15)
     if error:
@@ -4390,6 +4402,8 @@ def ide_job_status_api(request, pk, job_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ide_job_cancel_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
@@ -4401,6 +4415,8 @@ def ide_job_cancel_api(request, pk, job_id):
 @api_view(["GET","POST"])
 @permission_classes([IsAuthenticated])
 def ide_process_detail_api(request, pk, process_id):
+    if not _safe_runner_resource_id(process_id):
+        return Response({"error": "Invalid runner process identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     if request.method == "POST" and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
