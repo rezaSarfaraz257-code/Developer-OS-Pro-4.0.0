@@ -2542,6 +2542,7 @@ def _runner_request(method, path, payload, timeout=30):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_capabilities_api(request):
     """Expose runner capabilities so the IDE can adapt instead of guessing."""
     data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
@@ -2817,33 +2818,117 @@ def ide_install_framework_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    framework = str(request.data.get("framework") or "").lower()
+
+    framework = str(request.data.get("framework") or "").strip().lower()
     spec = FRAMEWORK_CATALOG.get(framework)
     if not spec:
         return Response({"error": "Unsupported framework preset."}, status=400)
+
+    starting_revision = ws.revision
     installation = FrameworkInstallation.objects.create(
-        workspace=ws, framework=framework, package_manager=spec["package_manager"], status="running"
+        workspace=ws,
+        framework=framework,
+        package_manager=spec["package_manager"],
+        status="running",
     )
-    data, error = _runner_request("POST", "/install", {
-        **_workspace_payload(ws), "command": spec["install"], "framework": framework,
-        "package_manager": spec["package_manager"],
-    }, timeout=240)
+    data, error = _runner_request(
+        "POST",
+        "/install",
+        {
+            **_workspace_payload(ws),
+            "command": spec["install"],
+            "framework": framework,
+            "package_manager": spec["package_manager"],
+        },
+        timeout=240,
+    )
     if error:
-        installation.status = "failed"; installation.output = json.dumps(error); installation.finished_at = timezone.now(); installation.save()
+        installation.status = "failed"
+        installation.output = json.dumps(error, ensure_ascii=False)[:30000]
+        installation.finished_at = timezone.now()
+        installation.save(update_fields=["status", "output", "finished_at"])
         return Response(error, status=503)
+
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
+        installation.status = "failed"
+        installation.output = "Runner returned an unverifiable installation result."
+        installation.finished_at = timezone.now()
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "error": "Framework installation result could not be verified.",
+            "code": "runner_invalid_install_result",
+        }, status=503)
+
+    stdout = data.get("stdout") if isinstance(data.get("stdout"), str) else ""
+    stderr = data.get("stderr") if isinstance(data.get("stderr"), str) else ""
+    installation.output = (stdout + "\n" + stderr)[-30000:]
+    installation.finished_at = timezone.now()
+
+    if data["exit_code"] != 0:
+        installation.status = "failed"
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "installation": {
+                "id": installation.id,
+                "status": installation.status,
+                "output": installation.output,
+            },
+            "workspace": CodeWorkspaceSerializer(ws).data,
+        })
+
     runner_files = data.get("files")
-    if isinstance(runner_files, dict):
-        serializer = CodeWorkspaceSerializer(ws, data={"files": runner_files}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-    installation.status = "success" if data.get("exit_code", 1) == 0 else "failed"
-    installation.output = (data.get("stdout", "") + "\n" + data.get("stderr", ""))[-30000:]
-    installation.finished_at = timezone.now(); installation.save()
-    ws.framework = framework
-    ws.runtime = spec["runtime"]
-    ws.package_manager = spec["package_manager"]
-    ws.save(update_fields=["framework", "runtime", "package_manager", "updated_at"])
-    return Response({"installation": {"id": installation.id, "status": installation.status, "output": installation.output}, "workspace": CodeWorkspaceSerializer(ws).data})
+    if runner_files is not None:
+        serializer = CodeWorkspaceSerializer(
+            ws,
+            data={"files": runner_files},
+            partial=True,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            installation.status = "failed"
+            installation.output = (installation.output + "\nInvalid workspace snapshot returned by Runner.")[-30000:]
+            installation.save(update_fields=["status", "output", "finished_at"])
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+                "details": serializer.errors,
+            }, status=503)
+        files_to_save = serializer.validated_data["files"]
+    else:
+        files_to_save = ws.files
+
+    updated = CodeWorkspace.objects.filter(
+        pk=ws.pk,
+        revision=starting_revision,
+    ).update(
+        files=files_to_save,
+        framework=framework,
+        runtime=spec["runtime"],
+        package_manager=spec["package_manager"],
+        revision=F("revision") + 1,
+        updated_at=timezone.now(),
+    )
+    if updated != 1:
+        installation.status = "failed"
+        installation.output = (installation.output + "\nWorkspace changed during installation; stale result discarded.")[-30000:]
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "error": "Workspace changed while the framework was being installed. Refresh and retry.",
+            "code": "workspace_revision_conflict",
+        }, status=409)
+
+    ws.refresh_from_db()
+    installation.status = "success"
+    installation.save(update_fields=["status", "output", "finished_at"])
+    return Response({
+        "installation": {
+            "id": installation.id,
+            "status": installation.status,
+            "output": installation.output,
+        },
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
