@@ -149,7 +149,7 @@ def analyze_dependencies(workspace):
                 line = line.strip()
                 if not line or line.startswith(("#", "-")):
                     continue
-                match = re.match(r"^([A-Za-z0-9_.-]+)\\s*(.*)$", line)
+                match = re.match(r"^([A-Za-z0-9_.-]+)\s*(.*)$", line)
                 if match:
                     record_dependency(match.group(1), match.group(2), "python")
         elif name == "pyproject.toml":
