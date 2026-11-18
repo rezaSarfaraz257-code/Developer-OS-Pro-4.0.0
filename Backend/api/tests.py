@@ -1689,6 +1689,35 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertEqual(job.result, {})
         execute.assert_called_once()
 
+    @patch("api.agent_execution.fail_agent_task_verification")
+    @patch("api.management.commands.worker.execute")
+    def test_stale_verification_failure_cannot_finalize_task_state(self, execute, finalize):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            payload={"run_id": 1, "task_id": 1, "owner_id": 1},
+            status="queued",
+            max_attempts=1,
+        )
+
+        def lose_lease_then_fail(claimed_job):
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-worker",
+            )
+            raise RuntimeError("stale worker failure")
+
+        execute.side_effect = lose_lease_then_fail
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "replacement-worker")
+        finalize.assert_not_called()
+        execute.assert_called_once()
+
     @patch("api.management.commands.worker.execute", return_value={"ok": True})
     def test_successful_job_persistence_releases_worker_lease(self, execute):
         from .management.commands.worker import Command
