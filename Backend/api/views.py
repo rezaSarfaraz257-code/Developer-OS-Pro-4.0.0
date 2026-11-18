@@ -2851,32 +2851,96 @@ def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    manager = str(request.data.get("package_manager") or ws.package_manager or "").lower()
-    action = str(request.data.get("action") or "add").lower()
+    manager = str(request.data.get("package_manager") or ws.package_manager or "npm").strip().lower()
+    supported_managers = {"npm", "pnpm", "yarn", "bun", "pip", "pipenv", "poetry", "uv", "pdm"}
+    if manager not in supported_managers:
+        return Response({"error": "Unsupported package manager.", "code": "unsupported_package_manager"}, status=400)
+
+    action = str(request.data.get("action") or "add").strip().lower()
     packages = request.data.get("packages") or []
     if isinstance(packages, str):
-        packages = [x.strip() for x in packages.split(",") if x.strip()]
+        packages = [item.strip() for item in packages.split(",") if item.strip()]
     if not isinstance(packages, list) or not packages or len(packages) > 50:
         return Response({"error": "Provide 1–50 packages."}, status=400)
     if action not in {"install", "add", "remove", "update"}:
         return Response({"error": "Unsupported package action."}, status=400)
-    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
+    if any(
+        not isinstance(package, str)
+        or not package.strip()
+        or len(package) > 214
+        or any(ord(char) < 32 or ord(char) == 127 for char in package)
+        or package.strip().startswith("-")
+        for package in packages
+    ):
         return Response({"error": "One or more package names are invalid."}, status=400)
+
+    # Normalize duplicates before asking the Runner to plan commands. The Runner
+    # remains the authority for ecosystem-specific package syntax.
+    packages = list(dict.fromkeys(package.strip() for package in packages))
     plans = []
-    for pkg in packages:
-        plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)
+    for package in packages:
+        plan, plan_error = _runner_request(
+            "POST",
+            "/packages/plan",
+            {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager},
+            timeout=15,
+        )
         if plan_error:
             return Response(plan_error, status=503)
-        plans.append(plan.get("command", ""))
+        planned_command = plan.get("command") if isinstance(plan, dict) else None
+        if not isinstance(planned_command, str) or not planned_command.strip() or len(planned_command) > 2000:
+            logger.error("Runner returned an invalid package plan: workspace=%s", ws.pk)
+            return Response({
+                "error": "Package manager returned an invalid install plan.",
+                "code": "runner_invalid_package_plan",
+            }, status=503)
+        plans.append(planned_command.strip())
+
     command = " && ".join(plans)
-    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)
+    if len(command) > 12000:
+        return Response({"error": "The combined package plan is too large."}, status=400)
+    data, error = _runner_request(
+        "POST",
+        "/install",
+        {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action},
+        timeout=240,
+    )
     if error:
         return Response(error, status=503)
-    if isinstance(data.get("files"), dict):
-        serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
+        logger.error("Runner returned an unverifiable package installation result: workspace=%s", ws.pk)
+        return Response({
+            "error": "Package installation result could not be verified.",
+            "code": "runner_invalid_install_result",
+        }, status=503)
+
+    succeeded = data["exit_code"] == 0
+    runner_files = data.get("files")
+    if succeeded and runner_files is not None:
+        if not isinstance(runner_files, dict):
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+            }, status=503)
+        serializer = CodeWorkspaceSerializer(
+            ws,
+            data={"files": runner_files, "package_manager": manager},
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         ws = serializer.save()
-    return Response({"status": "success" if data.get("exit_code") == 0 else "failed", "command": command, "exit_code": data.get("exit_code"), "stdout": data.get("stdout", ""), "stderr": data.get("stderr", ""), "workspace": CodeWorkspaceSerializer(ws).data})
+
+    stdout = data.get("stdout", "")
+    stderr = data.get("stderr", "")
+    return Response({
+        "status": "success" if succeeded else "failed",
+        "command": command,
+        "exit_code": data["exit_code"],
+        "stdout": stdout if isinstance(stdout, str) else "",
+        "stderr": stderr if isinstance(stderr, str) else "",
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
 
 
 @api_view(["POST"])
