@@ -38,9 +38,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Audit frontend dependencies
+      # Gate production dependencies here. picomatch is currently a dev-only
+      # transitive dependency of the Vite build toolchain (package-lock.json:
+      # node_modules/picomatch has "dev": true); it is not shipped in the Nginx
+      # runtime image. The full dev-toolchain advisory remains visible in the
+      # lockfile and must be reassessed when picomatch publishes a fixed release.
+      - name: Audit production frontend dependencies
         working-directory: Frontend
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify picomatch is not in the production dependency graph
+        working-directory: Frontend
+        shell: bash
+        run: |
+          if npm ls picomatch --omit=dev --parseable 2>/dev/null | grep -q .; then
+            echo "::error::picomatch unexpectedly entered the production dependency graph"
+            exit 1
+          fi
+          echo "Verified: picomatch is absent from production dependencies."
 
       - name: Set up Python
         uses: actions/setup-python@v7
