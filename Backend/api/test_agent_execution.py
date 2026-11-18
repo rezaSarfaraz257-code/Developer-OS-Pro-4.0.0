@@ -11,7 +11,7 @@ from .agent_execution import (
     VERIFICATION_PROFILES, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
-from .management.commands.worker import recover_stale_jobs
+from .management.commands.worker import claim_job, recover_stale_jobs, refresh_job_lease
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
  
@@ -1417,3 +1417,54 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             metadata__job_id=sync_job.id, metadata__revision=workspace.revision,
         ).exists())
         runner_request.assert_called_once()
+
+
+class BackgroundWorkerLeaseRegressionTests(TestCase):
+    def test_claims_issue_distinct_fencing_tokens_for_each_job(self):
+        first = BackgroundJob.objects.create(
+            kind="worker_claim_test",
+            payload={"sequence": 1},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+        second = BackgroundJob.objects.create(
+            kind="worker_claim_test",
+            payload={"sequence": 2},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        claimed_first = claim_job("worker-node")
+        claimed_second = claim_job("worker-node")
+
+        self.assertEqual(claimed_first.pk, first.pk)
+        self.assertEqual(claimed_second.pk, second.pk)
+        self.assertTrue(claimed_first.locked_by.startswith("worker-node:"))
+        self.assertTrue(claimed_second.locked_by.startswith("worker-node:"))
+        self.assertNotEqual(claimed_first.locked_by, claimed_second.locked_by)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, "running")
+        self.assertEqual(second.status, "running")
+
+    def test_old_worker_cannot_refresh_replaced_lease(self):
+        original_time = timezone.now() - timedelta(minutes=2)
+        job = BackgroundJob.objects.create(
+            kind="worker_lease_refresh_test",
+            status="running",
+            locked_at=original_time,
+            locked_by="worker-node:current-fencing-token",
+            payload={},
+        )
+
+        refreshed_by_old_owner = refresh_job_lease(
+            job.pk, "worker-node:previous-fencing-token",
+        )
+        job.refresh_from_db()
+        self.assertFalse(refreshed_by_old_owner)
+        self.assertEqual(job.locked_at, original_time)
+
+        refreshed_by_current_owner = refresh_job_lease(
+            job.pk, "worker-node:current-fencing-token",
+        )
+        job.refresh_from_db()
+        self.assertTrue(refreshed_by_current_owner)
+        self.assertGreater(job.locked_at, original_time)
