@@ -564,6 +564,16 @@ class IDEDiagnosticsTruthfulnessTests(APITestCase):
         )
 
 
+class IDEPackageInstallRateLimitRegressionTests(APITestCase):
+    def test_package_install_endpoint_retains_runner_rate_throttle(self):
+        from . import views
+
+        self.assertEqual(
+            (views.ide_install_packages_api.cls.throttle_classes or []),
+            [views.RunnerRateThrottle],
+        )
+
+
 class IDECapabilitiesReadinessTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
