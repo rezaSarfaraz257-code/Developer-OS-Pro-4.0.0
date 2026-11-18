@@ -610,6 +610,20 @@ class AgentRunLifecycleTests(TestCase):
         self.assertEqual(job.status, "canceled")
 
     @patch("api.ai_engine._call_provider")
+    def test_invalid_provider_plan_error_does_not_expose_parse_details(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Create a plan",
+            idempotency_key="invalid-plan-error-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        provider.return_value = ("{malformed-provider-response", None)
+        with self.assertRaisesRegex(RuntimeError, "AI planner returned an invalid task graph") as caught:
+            build_agent_plan(run.id)
+        self.assertNotIn("malformed-provider-response", str(caught.exception))
+
+    @patch("api.ai_engine._call_provider")
     def test_worker_persists_plan_and_dependency_graph_without_mutating_workspace(self, provider):
         conversation = AIConversation.objects.create(owner=self.user, title="Agent plan")
         AIMessage.objects.create(
