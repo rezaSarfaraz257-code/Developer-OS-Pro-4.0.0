@@ -2851,6 +2851,7 @@ def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
+    starting_revision = ws.revision
     manager = str(request.data.get("package_manager") or ws.package_manager or "npm").strip().lower()
     supported_managers = {"npm", "pnpm", "yarn", "bun", "pip", "pipenv", "poetry", "uv", "pdm"}
     if manager not in supported_managers:
@@ -2924,12 +2925,29 @@ def ide_install_packages_api(request, pk):
             }, status=503)
         serializer = CodeWorkspaceSerializer(
             ws,
-            data={"files": runner_files, "package_manager": manager},
+            data={"files": runner_files},
             partial=True,
             context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
+        # Package installation can take minutes. Commit its snapshot only if the
+        # workspace has not changed since this request began; otherwise a late
+        # Runner response could erase edits made in another browser session.
+        updated = CodeWorkspace.objects.filter(
+            pk=ws.pk,
+            revision=starting_revision,
+        ).update(
+            files=serializer.validated_data["files"],
+            package_manager=manager,
+            revision=F("revision") + 1,
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            return Response({
+                "error": "Workspace changed while packages were being installed. Refresh and retry.",
+                "code": "workspace_revision_conflict",
+            }, status=409)
+        ws.refresh_from_db()
 
     stdout = data.get("stdout", "")
     stderr = data.get("stderr", "")
