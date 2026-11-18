@@ -564,6 +564,98 @@ class IDEDiagnosticsTruthfulnessTests(APITestCase):
         )
 
 
+class IDEPackageInstallSafetyTests(APITestCase):
+    def setUp(self):
+        from .models import CodeWorkspace
+
+        self.user = User.objects.create_user(
+            username="ide-package-install-safety",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Package install safety",
+            files={"package.json": json.dumps({"dependencies": {}}), "main.js": "console.log('safe')"},
+            active_file="main.js",
+            package_manager="npm",
+        )
+        self.url = f"/api/ide/workspaces/{self.workspace.pk}/packages/"
+
+    @patch("api.views._runner_request")
+    def test_unsupported_package_manager_is_rejected_before_runner_call(self, runner_request):
+        response = self.client.post(
+            self.url,
+            {"package_manager": "custom-shell", "packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "unsupported_package_manager")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"command": ""}, None))
+    def test_empty_runner_package_plan_fails_closed(self, runner_request):
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_package_plan")
+        runner_request.assert_called_once()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files["package.json"], json.dumps({"dependencies": {}}))
+
+    @patch("api.views._runner_request")
+    def test_failed_install_never_persists_runner_workspace_snapshot(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "exit_code": 1,
+                "stdout": "",
+                "stderr": "registry unavailable",
+                "files": {"package.json": json.dumps({"dependencies": {"left-pad": "1.3.0"}})},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["exit_code"], 1)
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+    @patch("api.views._runner_request")
+    def test_unverifiable_install_result_never_persists_workspace_snapshot(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "stdout": "looks successful",
+                "files": {"main.js": "unverified mutation"},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_install_result")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+
 class IDEPackageInstallRateLimitRegressionTests(APITestCase):
     def test_package_install_endpoint_retains_runner_rate_throttle(self):
         from . import views
