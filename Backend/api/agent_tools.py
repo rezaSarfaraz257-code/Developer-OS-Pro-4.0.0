@@ -117,12 +117,18 @@ def analyze_dependencies(workspace):
 
     def record_dependency(name, version, group):
         nonlocal dependency_count
+        # Manifests are untrusted workspace input. Do not coerce malformed
+        # objects into misleading dependency names or versions.
+        if not isinstance(name, str) or not name.strip():
+            return
+        if not isinstance(version, str) or not version.strip():
+            return
         dependency_count += 1
         # Bound response memory/output even for adversarial dependency manifests.
         if len(dependencies) < MAX_DEPENDENCY_RESULTS:
             dependencies.append({
-                "name": str(name)[:120],
-                "version": str(version)[:80],
+                "name": name.strip()[:120],
+                "version": version.strip()[:80],
                 "group": group,
             })
 
