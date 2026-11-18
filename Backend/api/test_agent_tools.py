@@ -279,3 +279,12 @@ class ReadOnlyAgentToolTests(TestCase):
         manifest = next(item for item in result["manifests"] if item["path"] == "package.json")
         self.assertEqual(manifest["status"], "invalid_manifest_shape")
         self.assertEqual(result["dependency_count"], 0)
+    def test_dependency_analyzer_bounds_results_but_preserves_exact_count(self):
+        dependencies = {f"package_{index}": f"^{index}.0.0" for index in range(350)}
+        self.workspace.files = {"package.json": json.dumps({"dependencies": dependencies})}
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 350)
+        self.assertEqual(len(result["dependencies"]), 300)
+        self.assertTrue(result["dependencies_truncated"])
+        self.assertTrue(result["read_only"])
+
