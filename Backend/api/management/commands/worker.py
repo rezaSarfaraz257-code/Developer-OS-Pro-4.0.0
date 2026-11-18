@@ -145,7 +145,7 @@ def claim_job(worker):
         # A worker identity can be reused after a process restart/PID reuse.
         # Give every claim a fresh fencing token so an old execution can never
         # regain ownership merely because the same worker name appears again.
-        job.locked_by = f"{worker}:{uuid.uuid4().hex}"
+        job.locked_by = f"{worker[:80]}:{uuid.uuid4().hex}"
         job.attempts += 1
         job.save(update_fields=["status", "locked_at", "locked_by", "attempts"])
         return job
