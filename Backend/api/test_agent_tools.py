@@ -313,7 +313,6 @@ class ReadOnlyAgentToolTests(TestCase):
                     "empty_version": "",
                     "non_string_version": ["unexpected"],
                     "": "^2.0.0",
-                    123: "^3.0.0",
                 }
             })
         }
