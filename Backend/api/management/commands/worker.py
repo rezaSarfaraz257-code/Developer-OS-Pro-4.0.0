@@ -383,16 +383,45 @@ class Command(BaseCommand):
             job.locked_by = ""
             try:
                 with transaction.atomic():
-                    job.save(update_fields=[
+                    # A lease can expire while execute() is blocked in an external
+                    # service. Stale recovery may then fail/requeue the job and a
+                    # different worker may claim it. Never let this worker's stale
+                    # in-memory outcome overwrite that newer durable state.
+                    persisted_job = (
+                        BackgroundJob.objects.select_for_update()
+                        .filter(pk=job.pk).first()
+                    )
+                    if (
+                        not persisted_job
+                        or persisted_job.status != "running"
+                        or persisted_job.locked_by != worker
+                    ):
+                        logger.warning(
+                            "Discarding worker outcome after lease ownership changed job_id=%s worker_id=%s",
+                            job.pk,
+                            worker,
+                        )
+                        continue
+
+                    persisted_job.status = job.status
+                    persisted_job.result = job.result
+                    persisted_job.error = job.error
+                    persisted_job.available_at = job.available_at
+                    persisted_job.finished_at = job.finished_at
+                    persisted_job.last_error_at = job.last_error_at
+                    persisted_job.dead_lettered_at = job.dead_lettered_at
+                    persisted_job.locked_at = None
+                    persisted_job.locked_by = ""
+                    persisted_job.save(update_fields=[
                         "status", "result", "error", "available_at", "finished_at",
                         "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
                     ])
-                    if job.kind == "ai_agent_plan" and job.status in {"queued", "failed"}:
+                    if persisted_job.kind == "ai_agent_plan" and persisted_job.status in {"queued", "failed"}:
                         run = AgentRun.objects.select_for_update().filter(
-                            pk=job.payload.get("run_id")
+                            pk=persisted_job.payload.get("run_id")
                         ).first()
                         if run and run.status in {"queued", "planning"}:
-                            if job.status == "queued":
+                            if persisted_job.status == "queued":
                                 run.status = "queued"
                                 run.started_at = None
                                 run.error = ""
@@ -407,12 +436,12 @@ class Command(BaseCommand):
                                     action="agent_run.failed",
                                     target_type="AgentRun",
                                     target_id=str(run.id),
-                                    metadata={"reason": "planning_failed", "attempts": job.attempts},
+                                    metadata={"reason": "planning_failed", "attempts": persisted_job.attempts},
                                 )
-                    if job.kind == "data_export" and job.status == "failed":
+                    if persisted_job.kind == "data_export" and persisted_job.status == "failed":
                         DataExportRequest.objects.filter(
-                            pk=job.payload.get("export_id"),
-                            user_id=job.payload.get("user_id"),
+                            pk=persisted_job.payload.get("export_id"),
+                            user_id=persisted_job.payload.get("user_id"),
                         ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the
