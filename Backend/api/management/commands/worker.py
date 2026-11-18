@@ -150,7 +150,7 @@ def claim_job(worker):
     with transaction.atomic():
         job = (BackgroundJob.objects.select_for_update(skip_locked=True)
                .filter(status="queued", available_at__lte=timezone.now())
-               .order_by("created_at").first())
+               .order_by("created_at", "pk").first())
         if not job:
             return None
         job.status = "running"
