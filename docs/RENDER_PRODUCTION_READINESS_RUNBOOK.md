@@ -1,5 +1,36 @@
 # Render Production Readiness Runbook
 
+## Latest verified live incident (2026-11-18; updated after partial recovery)
+
+A follow-up read-only production probe confirmed **partial recovery, not full service recovery**:
+
+- Frontend `/ide`: HTTP 200; the sign-in page is served.
+- Backend `/api/health/live/`: HTTP 200; the Django process responds to liveness checks.
+- Backend `/api/health/ready/`: HTTP 503; the service is still not operationally ready.
+- Backend `/api/token/`: HTTP 503; authentication is unavailable through this endpoint.
+
+The deployed Backend reports release SHA `a6d1b612229e391744f699cabd324cd6f52122ac`; repository `master` is at `3c6f39f008f9b607a906ce6b577fbc3fd29409f4` (16 commits ahead at the time of comparison). This is a release-alignment gap as well as a readiness failure.
+
+Liveness HTTP 200 proves only that the process responds. It does **not** prove database/cache/worker/Runner readiness or working authentication. The response body and Render service logs were not available to this probe, so the exact failing readiness dependency and root cause remain **undetermined**. Do not attribute the 503 to Redis, Runner, or worker without the sanitized readiness diagnostics and Render runtime logs.
+
+### Required recovery procedure
+
+1. In Render, inspect the Backend web service event timeline and deploy logs around the first observed 503. Confirm whether the service is suspended, failing startup, repeatedly restarting, or failing its health check.
+2. Inspect the latest deploy's build/start command, runtime release SHA, environment configuration, and database connectivity. Do not print or copy secret values into GitHub issues, chat, or logs.
+3. Once the API responds again, request `/api/health/live/`, `/api/health/`, and `/api/health/ready/` independently. Record HTTP status and sanitized diagnostic categories.
+4. If liveness is healthy but readiness is 503, fix each reported dependency at its source: Redis/CACHE_URL, database, worker heartbeat, and strict isolated Runner capability. Do not weaken readiness checks or enable shared-container Runner fallback.
+5. Re-run the Live SaaS Smoke Monitor against the deployed release. Require release SHA agreement and all 13 checks passing before declaring recovery.
+
+### Evidence boundaries
+
+- Frontend HTTP 200 proves only that the static frontend route is reachable; it does not prove API, authentication, workspace persistence, or Runner execution.
+- API HTTP 503 on the root and health endpoints establishes current Backend unavailability, but does not identify its root cause.
+- The prior 2026-11-16 monitor artifact recorded 10/13 checks passing, with release mismatch and cache/Runner readiness failures. That historical evidence must not be substituted for a new post-recovery run.
+- This incident remains open until the API is reachable, readiness is healthy, deployed release identity matches the intended revision, and the complete live monitor passes.
+
+---
+
+
 This runbook documents the production dependencies enforced by the Django readiness probe. It is intentionally fail-closed: do not make readiness green by disabling checks, using a local-memory cache, or weakening the Runner isolation contract.
 
 ## Latest verified live incident (2026-11-16 22:12 UTC)
@@ -158,3 +189,11 @@ After changing Render configuration, restart/redeploy the Backend and require al
 4. The deployed `release_sha` matches the intended Backend revision.
 
 Do not post raw Render logs or connection strings. Share only the failure category, backend class, HTTP status, and release SHA.
+
+## Repository validation evidence (2026-11-18)
+
+The PR validation run `44165362652` completed successfully. Verified jobs: Backend checks/tests, PostgreSQL backup/restore, secure Runner tests, Frontend lint/build/tests, full Docker Compose validation, and static release/operational gates. This establishes repository/CI integration health only; it does not establish that the deployed Render API is healthy.
+
+The separate Security workflow run `44165362688` completed with Frontend validation, JavaScript CodeQL, Backend validation, Runner validation, and Python CodeQL successful. The dependency vulnerability audit failed on the high-severity picomatch ReDoS advisory `GHSA-fc5q-39xc-vjpf`; the release gate was skipped. Keep this as a release blocker until a compatible upstream fix is available and verified. Do not use `npm audit fix --force` as an automatic remedy: the current audit output proposes a breaking Vite downgrade to `vite@6.2.7`.
+
+These two CI results are independent of the live Render incident above. Neither a green Docker Compose run nor successful static analysis repairs the observed Backend HTTP 503. Production recovery still requires Render service-event/log inspection, dependency configuration verification, healthy API readiness, release-SHA alignment, and a fresh passing live smoke monitor.
