@@ -1662,6 +1662,33 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertEqual(export.status, "failed")
         self.assertIsNotNone(job.dead_lettered_at)
 
+    @patch("api.management.commands.worker.execute")
+    def test_stale_worker_outcome_cannot_overwrite_reclaimed_job(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=3)
+
+        def reclaim_during_execution(claimed_job):
+            # Simulate lease expiry/recovery followed by a different worker
+            # claiming the same durable job before the original call returns.
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-worker",
+            )
+            return {"ok": True, "from": "stale-worker"}
+
+        execute.side_effect = reclaim_during_execution
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "replacement-worker")
+        self.assertIsNotNone(job.locked_at)
+        self.assertIsNone(job.finished_at)
+        self.assertEqual(job.result, {})
+        execute.assert_called_once()
+
     @patch("api.management.commands.worker.execute", return_value={"ok": True})
     def test_successful_job_persistence_releases_worker_lease(self, execute):
         from .management.commands.worker import Command
