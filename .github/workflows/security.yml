@@ -30,8 +30,8 @@ jobs:
       - uses: github/codeql-action/autobuild@v4
       - uses: github/codeql-action/analyze@v4
 
-  dependency-audit:
-    name: Dependency vulnerability audit
+  frontend-dependency-audit:
+    name: Frontend dependency vulnerability audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,6 +56,26 @@ jobs:
             exit 1
           fi
           echo "Verified: picomatch is absent from production dependencies."
+
+  frontend-production-dependency-audit:
+    name: Frontend production dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Audit production-only frontend dependency graph
+        working-directory: Frontend
+        run: npm audit --omit=dev --audit-level=high
+
+  backend-dependency-audit:
+    name: Backend dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -189,7 +209,7 @@ jobs:
 
   release-gate:
     name: Release gate
-    needs: [codeql, dependency-audit, backend-validation, frontend-validation, runner-validation]
+    needs: [codeql, frontend-dependency-audit, frontend-production-dependency-audit, backend-dependency-audit, backend-validation, frontend-validation, runner-validation]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
