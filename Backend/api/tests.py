@@ -634,6 +634,31 @@ class IDEPackageInstallSafetyTests(APITestCase):
         self.assertEqual(self.workspace.files, original_files)
 
     @patch("api.views._runner_request")
+    def test_invalid_runner_snapshot_is_reported_as_upstream_failure(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {"../escape.py": "must never persist"},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_workspace_snapshot")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+
+    @patch("api.views._runner_request")
     def test_late_install_result_cannot_overwrite_concurrent_workspace_edits(self, runner_request):
         from .models import CodeWorkspace
 
