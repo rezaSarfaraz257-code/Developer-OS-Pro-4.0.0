@@ -75,7 +75,12 @@ def _files(workspace):
         # Cheap character bound avoids encoding arbitrarily large strings.
         if len(value) > MAX_FILE_BYTES:
             continue
-        size_bytes = len(value.encode("utf-8"))
+        try:
+            size_bytes = len(value.encode("utf-8"))
+        except UnicodeEncodeError:
+            # JSON strings may contain lone surrogate code points; skip malformed
+            # text rather than crashing every read-only agent tool invocation.
+            continue
         if size_bytes > MAX_FILE_BYTES:
             continue
         if total_bytes + size_bytes > MAX_WORKSPACE_TOTAL_BYTES:
