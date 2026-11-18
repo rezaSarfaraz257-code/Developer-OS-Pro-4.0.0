@@ -1286,6 +1286,43 @@ class PlatformUpgradeTests(APITestCase):
         self.assertIn("new.txt", response.data["files"])
         self.assertGreater(response.data["revision"], revision)
 
+    def test_explorer_rejects_runner_reserved_and_nonportable_paths(self):
+        created = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Reserved path checks", "files": {"README.md": "safe"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        endpoint = f"/api/ide/workspaces/{created.data['id']}/files/"
+        original_files = dict(created.data["files"])
+        invalid_paths = [
+            "node_modules/pkg/index.js",
+            ".venv/lib/site.py",
+            ".git/config",
+            "C:/Windows/system.ini",
+            "/absolute/path.py",
+            "src/file?.py",
+        ]
+
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                response = self.client.post(
+                    endpoint,
+                    {"action": "create", "path": path, "content": "unsafe"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.data["error"], "Invalid path.")
+
+        rename = self.client.post(
+            endpoint,
+            {"action": "rename", "path": "README.md", "to": "node_modules/README.md"},
+            format="json",
+        )
+        self.assertEqual(rename.status_code, status.HTTP_400_BAD_REQUEST)
+        current = self.client.get(endpoint)
+        self.assertEqual(current.data["files"], original_files)
+
     def test_ide_workspace_paths_reject_casefold_aliases_for_create_and_rename(self):
         response = self.client.post(
             "/api/ide/workspaces/",
