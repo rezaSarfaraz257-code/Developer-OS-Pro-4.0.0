@@ -3015,7 +3015,13 @@ def ide_install_packages_api(request, pk):
             partial=True,
             context={"request": request},
         )
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            logger.error("Runner returned an invalid package installation snapshot: workspace=%s", ws.pk)
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+                "details": serializer.errors,
+            }, status=503)
         # Package installation can take minutes. Commit its snapshot only if the
         # workspace has not changed since this request began; otherwise a late
         # Runner response could erase edits made in another browser session.
