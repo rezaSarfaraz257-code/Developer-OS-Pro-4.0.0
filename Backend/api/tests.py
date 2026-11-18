@@ -696,6 +696,38 @@ class IDEPackageInstallSafetyTests(APITestCase):
         self.assertEqual(self.workspace.files, original_files)
 
 
+class IDEControlPlaneRateLimitRegressionTests(APITestCase):
+    def test_runner_backed_endpoints_all_enforce_runner_rate_throttle(self):
+        from . import views
+
+        endpoint_names = [
+            "ide_workspace_sync_api",
+            "ide_symbols_api",
+            "ide_lsp_api",
+            "ide_replace_preview_api",
+            "ide_format_api",
+            "ide_lsp_notifications_api",
+            "ide_diagnostics_api",
+            "ide_build_plan_api",
+            "ide_processes_api",
+            "ide_job_stream_api",
+            "ide_job_status_api",
+            "ide_job_cancel_api",
+            "ide_process_detail_api",
+            "ide_git_file_api",
+            "ide_git_api",
+            "ide_preview_start_api",
+            "ide_preview_proxy_api",
+        ]
+        for endpoint_name in endpoint_names:
+            with self.subTest(endpoint=endpoint_name):
+                endpoint = getattr(views, endpoint_name)
+                self.assertIn(
+                    views.RunnerRateThrottle,
+                    endpoint.cls.throttle_classes or [],
+                )
+
+
 class IDEPackageInstallRateLimitRegressionTests(APITestCase):
     def test_package_install_endpoint_retains_runner_rate_throttle(self):
         from . import views
