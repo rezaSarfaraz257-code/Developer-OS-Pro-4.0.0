@@ -17,6 +17,34 @@ from .agent_tools import TOOL_REGISTRY
 from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
+class AgentExecutionLeaseFenceTests(TestCase):
+    def test_verification_requires_the_exact_current_worker_lease(self):
+        from types import SimpleNamespace
+        from .agent_execution import _job_lease_is_current
+
+        claimed = SimpleNamespace(locked_by="worker-old")
+        current = SimpleNamespace(status="running", locked_by="worker-old")
+        self.assertTrue(_job_lease_is_current(current, claimed))
+
+        # A reclaimed job is still "running", but belongs to another worker.
+        current.locked_by = "worker-new"
+        self.assertFalse(_job_lease_is_current(current, claimed))
+
+    def test_verification_rejects_missing_or_terminal_leases(self):
+        from types import SimpleNamespace
+        from .agent_execution import _job_lease_is_current
+
+        claimed = SimpleNamespace(locked_by="")
+        self.assertFalse(_job_lease_is_current(
+            SimpleNamespace(status="running", locked_by=""), claimed
+        ))
+        claimed.locked_by = "worker-current"
+        self.assertFalse(_job_lease_is_current(
+            SimpleNamespace(status="queued", locked_by="worker-current"), claimed
+        ))
+        self.assertFalse(_job_lease_is_current(None, claimed))
+
+
 class AgentContextRedactionTests(TestCase):
     def test_workspace_samples_reject_malformed_and_traversal_paths(self):
         samples = _agent_context_file_samples({
