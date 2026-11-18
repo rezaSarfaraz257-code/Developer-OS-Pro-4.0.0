@@ -634,6 +634,46 @@ class IDEPackageInstallSafetyTests(APITestCase):
         self.assertEqual(self.workspace.files, original_files)
 
     @patch("api.views._runner_request")
+    def test_late_install_result_cannot_overwrite_concurrent_workspace_edits(self, runner_request):
+        from .models import CodeWorkspace
+
+        original_revision = self.workspace.revision
+        concurrent_files = {
+            "package.json": json.dumps({"dependencies": {"newer-edit": "1.0.0"}}),
+            "main.js": "console.log('concurrent edit')",
+        }
+
+        def runner_response(method, path, payload, timeout):
+            if path == "/packages/plan":
+                return ({"command": "npm install left-pad"}, None)
+            CodeWorkspace.objects.filter(pk=self.workspace.pk).update(
+                files=concurrent_files,
+                revision=original_revision + 1,
+            )
+            return ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {
+                    "package.json": json.dumps({"dependencies": {"left-pad": "1.3.0"}}),
+                    "main.js": "console.log('stale runner snapshot')",
+                },
+            }, None)
+
+        runner_request.side_effect = runner_response
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "workspace_revision_conflict")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, concurrent_files)
+
+
+    @patch("api.views._runner_request")
     def test_unverifiable_install_result_never_persists_workspace_snapshot(self, runner_request):
         original_files = dict(self.workspace.files)
         runner_request.side_effect = [
