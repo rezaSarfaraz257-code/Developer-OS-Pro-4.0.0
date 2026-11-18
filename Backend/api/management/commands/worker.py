@@ -32,18 +32,22 @@ def recover_stale_jobs():
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
             locked = BackgroundJob.objects.select_for_update().get(pk=job.pk)
+            # Re-evaluate the lease after acquiring the row lock. The initial
+            # queryset is only a candidate scan; its timestamp may be stale by
+            # the time this worker reaches and locks the row.
+            recovery_now = timezone.now()
             if (
                 locked.status != "running"
-                or (locked.locked_at and locked.locked_at >= now - STALE_AFTER)
+                or (locked.locked_at and locked.locked_at >= recovery_now - STALE_AFTER)
             ):
                 continue
             if locked.attempts < locked.max_attempts:
                 locked.status = "queued"
-                locked.available_at = now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
+                locked.available_at = recovery_now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
             else:
                 locked.status = "failed"
-                locked.dead_lettered_at = now
-                locked.finished_at = now
+                locked.dead_lettered_at = recovery_now
+                locked.finished_at = recovery_now
             locked.locked_at = None
             locked.locked_by = ""
             locked.error = (locked.error or "") + "\nRecovered stale worker lease."
