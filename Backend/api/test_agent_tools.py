@@ -304,3 +304,22 @@ class ReadOnlyAgentToolTests(TestCase):
             ],
         )
         self.assertFalse(result["dependencies_truncated"])
+
+    def test_dependency_analyzer_ignores_malformed_dependency_entries(self):
+        self.workspace.files = {
+            "package.json": json.dumps({
+                "dependencies": {
+                    "valid": "^1.0.0",
+                    "empty_version": "",
+                    "non_string_version": ["unexpected"],
+                    "": "^2.0.0",
+                    123: "^3.0.0",
+                }
+            })
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 1)
+        self.assertEqual(
+            result["dependencies"],
+            [{"name": "valid", "version": "^1.0.0", "group": "dependencies"}],
+        )
