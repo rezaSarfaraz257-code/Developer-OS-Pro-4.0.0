@@ -697,6 +697,7 @@ class IDEPackageInstallSafetyTests(APITestCase):
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, original_files)
         self.assertEqual(self.workspace.framework, "")
+        self.assertEqual(self.workspace.runtime, "python")
         self.assertEqual(self.workspace.package_manager, "npm")
 
     @patch("api.views._runner_request")
