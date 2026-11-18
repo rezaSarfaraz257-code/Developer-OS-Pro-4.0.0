@@ -369,9 +369,6 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
-                if job.status == "failed" and job.kind == "ai_agent_task_verify":
-                    from api.agent_execution import fail_agent_task_verification
-                    fail_agent_task_verification(job)
             finally:
                 lease_stop.set()
                 lease_thread.join(timeout=2)
@@ -416,6 +413,11 @@ class Command(BaseCommand):
                         "status", "result", "error", "available_at", "finished_at",
                         "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
                     ])
+                    if persisted_job.status == "failed" and persisted_job.kind == "ai_agent_task_verify":
+                        # Finalize task state only after this worker has proved
+                        # it still owns the durable job lease.
+                        from api.agent_execution import fail_agent_task_verification
+                        fail_agent_task_verification(persisted_job)
                     if persisted_job.kind == "ai_agent_plan" and persisted_job.status in {"queued", "failed"}:
                         run = AgentRun.objects.select_for_update().filter(
                             pk=persisted_job.payload.get("run_id")
