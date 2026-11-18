@@ -4,6 +4,7 @@ import os
 import socket
 import threading
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from django.conf import settings
@@ -141,7 +142,10 @@ def claim_job(worker):
             return None
         job.status = "running"
         job.locked_at = timezone.now()
-        job.locked_by = worker
+        # A worker identity can be reused after a process restart/PID reuse.
+        # Give every claim a fresh fencing token so an old execution can never
+        # regain ownership merely because the same worker name appears again.
+        job.locked_by = f"{worker}:{uuid.uuid4().hex}"
         job.attempts += 1
         job.save(update_fields=["status", "locked_at", "locked_by", "attempts"])
         return job
@@ -329,10 +333,11 @@ class Command(BaseCommand):
                 time.sleep(max(0.1, options["sleep"]))
                 continue
 
+            claimed_lease = job.locked_by
             lease_stop = threading.Event()
             lease_thread = threading.Thread(
                 target=_job_lease_loop,
-                args=(job.pk, worker, lease_stop),
+                args=(job.pk, claimed_lease, lease_stop),
                 name=f"developer-os-job-lease-{job.pk}",
                 daemon=True,
             )
@@ -391,7 +396,7 @@ class Command(BaseCommand):
                     if (
                         not persisted_job
                         or persisted_job.status != "running"
-                        or persisted_job.locked_by != worker
+                        or persisted_job.locked_by != claimed_lease
                     ):
                         logger.warning(
                             "Discarding worker outcome after lease ownership changed job_id=%s worker_id=%s",
