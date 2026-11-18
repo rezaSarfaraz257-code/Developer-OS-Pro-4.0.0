@@ -99,6 +99,12 @@ class ReadOnlyAgentToolTests(TestCase):
         })()
         self.assertEqual(_files(workspace), {"safe/main.py": "value = 1"})
 
+    def test_workspace_snapshot_skips_invalid_unicode_and_continues(self):
+        workspace = type("Workspace", (), {
+            "files": {"invalid.py": "value = \\ud800", "safe.py": "value = 1"}
+        })()
+        self.assertEqual(_files(workspace), {"safe.py": "value = 1"})
+
     def test_workspace_snapshot_enforces_aggregate_byte_budget(self):
         workspace = type("Workspace", (), {
             "files": {f"module_{index}.py": "x" * 150_000 for index in range(20)}
