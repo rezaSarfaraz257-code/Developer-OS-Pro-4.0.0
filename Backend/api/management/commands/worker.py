@@ -31,7 +31,16 @@ def recover_stale_jobs():
     )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
-            locked = BackgroundJob.objects.select_for_update().get(pk=job.pk)
+            locked = (
+                BackgroundJob.objects.select_for_update()
+                .filter(pk=job.pk)
+                .first()
+            )
+            # A job can be deleted after the candidate scan (for example, by
+            # administrative cleanup). Treat that as a vanished candidate,
+            # not a fatal queue-poll error.
+            if locked is None:
+                continue
             # Re-evaluate the lease after acquiring the row lock. The initial
             # queryset is only a candidate scan; its timestamp may be stale by
             # the time this worker reaches and locks the row.
@@ -69,7 +78,7 @@ def recover_stale_jobs():
                     else:
                         run.status = "failed"
                         run.error = "WorkerLeaseExpired: planning could not be recovered."
-                        run.finished_at = now
+                        run.finished_at = recovery_now
                         run.save(update_fields=["status", "error", "finished_at", "updated_at"])
                         AuditLog.objects.create(
                             user_id=run.owner_id,
