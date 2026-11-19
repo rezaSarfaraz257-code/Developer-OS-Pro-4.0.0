@@ -101,7 +101,7 @@ class ReadOnlyAgentToolTests(TestCase):
 
     def test_workspace_snapshot_skips_invalid_unicode_and_continues(self):
         workspace = type("Workspace", (), {
-            "files": {"invalid.py": "value = \\ud800", "safe.py": "value = 1"}
+            "files": {"invalid.py": "value = \ud800", "safe.py": "value = 1"}
         })()
         self.assertEqual(_files(workspace), {"safe.py": "value = 1"})
 
