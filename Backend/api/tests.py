@@ -2036,8 +2036,8 @@ class IDEWorkspaceLifecycleRegressionTests(APITestCase):
 
         response = self.client.post(
             f"/api/ide/workspaces/{workspace_id}/files/",
-            {"action": "write", "path": "README.md", "content": "\ud800"},
-            format="json",
+            '{"action":"write","path":"README.md","content":"\\ud800"}',
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
