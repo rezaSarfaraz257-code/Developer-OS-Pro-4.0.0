@@ -74,7 +74,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertIsNone(run.started_at)
         self.assertFalse(AuditLog.objects.filter(target_id=str(run.id), action="agent_run.failed").exists())
 
-    @patch("api.views._runner_request", return_value=({"status": "synced"}, None))
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {"main.py": "print('v2')\\n"}}, None))
     def test_agent_runner_sync_job_coalesces_to_latest_locked_workspace_revision(self, runner_request):
         owner = User.objects.create_user(username="agent-runner-sync-owner")
         workspace = CodeWorkspace.objects.create(
