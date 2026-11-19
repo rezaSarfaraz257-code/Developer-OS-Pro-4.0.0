@@ -272,6 +272,68 @@ class ReadOnlyAgentToolTests(TestCase):
         self.assertEqual(response.data["error"], "The requested analysis could not be completed.")
         self.assertNotIn("internal path", json.dumps(response.data))
 
+    def test_pyproject_analyzer_reads_pep621_optional_and_dependency_groups(self):
+        self.workspace.files = {
+            "pyproject.toml": """[project]
+name = "sample"
+dependencies = ["Django>=5.0", "requests"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[dependency-groups]
+lint = ["ruff>=0.5"]
+""",
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["manifests"], [{"path": "pyproject.toml", "status": "parsed"}])
+        self.assertEqual(result["dependency_count"], 4)
+        self.assertEqual(
+            result["dependencies"],
+            [
+                {"name": "Django", "version": ">=5.0", "group": "project"},
+                {"name": "requests", "version": "*", "group": "project"},
+                {"name": "pytest", "version": ">=8.0", "group": "optional:test"},
+                {"name": "ruff", "version": ">=0.5", "group": "group:lint"},
+            ],
+        )
+
+    def test_pyproject_analyzer_reads_poetry_dependency_groups_without_execution(self):
+        self.workspace.files = {
+            "pyproject.toml": """[tool.poetry.dependencies]
+python = "^3.12"
+Django = "^5.0"
+requests = { version = ">=2.31", optional = true }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+""",
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 3)
+        self.assertEqual(
+            result["dependencies"],
+            [
+                {"name": "Django", "version": "^5.0", "group": "poetry"},
+                {"name": "requests", "version": ">=2.31", "group": "poetry"},
+                {"name": "pytest", "version": "^8.0", "group": "poetry:dev"},
+            ],
+        )
+        self.assertNotIn("python", [item["name"].casefold() for item in result["dependencies"]])
+
+    def test_pyproject_analyzer_reports_invalid_toml_and_keeps_other_manifests(self):
+        self.workspace.files = {
+            "pyproject.toml": "[project\ndependencies = [",
+            "requirements.txt": "requests\n",
+        }
+        result = analyze_dependencies(self.workspace)
+        statuses = {item["path"]: item["status"] for item in result["manifests"]}
+        self.assertEqual(statuses["pyproject.toml"], "invalid_toml")
+        self.assertEqual(statuses["requirements.txt"], "parsed")
+        self.assertEqual(result["dependencies"], [
+            {"name": "requests", "version": "*", "group": "python"},
+        ])
+
     def test_dependency_analyzer_rejects_valid_json_with_wrong_manifest_shape(self):
         self.workspace.files = {**self.workspace.files, "package.json": "[]"}
         self.workspace.save(update_fields=["files"])

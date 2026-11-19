@@ -109,7 +109,38 @@ def inspect_workspace(workspace):
     }
 
 
+def _record_python_requirement(requirement, group, record_dependency):
+    """Record a PEP 508-like requirement without evaluating markers or URLs."""
+    if not isinstance(requirement, str):
+        return
+    value = requirement.strip()
+    if not value or value.startswith(("-", "#")):
+        return
+    match = re.match(
+        r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]+\])?\s*(.*)$",
+        value,
+    )
+    if match:
+        # An unpinned requirement is valid; preserve that fact explicitly.
+        record_dependency(match.group(1), match.group(2).strip() or "*", group)
+
+
+def _record_poetry_dependency(name, value, group, record_dependency):
+    """Read only the declarative version field from Poetry dependency tables."""
+    if not isinstance(name, str) or name.casefold() == "python":
+        return
+    if isinstance(value, str):
+        record_dependency(name, value, group)
+    elif isinstance(value, dict):
+        version = value.get("version")
+        if isinstance(version, str):
+            record_dependency(name, version, group)
+
+
 def analyze_dependencies(workspace):
+    """Parse bounded JSON, requirements, and TOML manifests without executing code."""
+    import tomllib
+
     files = _files(workspace)
     dependencies = []
     dependency_count = 0
@@ -128,8 +159,8 @@ def analyze_dependencies(workspace):
         if len(dependencies) < MAX_DEPENDENCY_RESULTS:
             dependencies.append({
                 "name": name.strip()[:120],
-                "version": version.strip()[:80],
-                "group": group,
+                "version": version.strip()[:160],
+                "group": str(group)[:80],
             })
 
     for path, content in files.items():
@@ -152,14 +183,62 @@ def analyze_dependencies(workspace):
         elif name in {"requirements.txt", "requirements-dev.txt"}:
             manifests.append({"path": path, "status": "parsed"})
             for line in content.splitlines():
-                line = line.strip()
-                if not line or line.startswith(("#", "-")):
-                    continue
-                match = re.match(r"^([A-Za-z0-9_.-]+)\s*(.*)$", line)
-                if match:
-                    record_dependency(match.group(1), match.group(2), "python")
+                _record_python_requirement(line, "python", record_dependency)
         elif name == "pyproject.toml":
-            manifests.append({"path": path, "status": "detected_static_only"})
+            try:
+                data = tomllib.loads(content)
+            except (TypeError, ValueError, RecursionError):
+                manifests.append({"path": path, "status": "invalid_toml"})
+                continue
+            if not isinstance(data, dict):
+                manifests.append({"path": path, "status": "invalid_manifest_shape"})
+                continue
+            manifests.append({"path": path, "status": "parsed"})
+
+            # PEP 621 project dependencies and optional dependency groups.
+            project = data.get("project", {})
+            if isinstance(project, dict):
+                project_dependencies = project.get("dependencies", [])
+                if isinstance(project_dependencies, list):
+                    for requirement in project_dependencies:
+                        _record_python_requirement(requirement, "project", record_dependency)
+                optional = project.get("optional-dependencies", {})
+                if isinstance(optional, dict):
+                    for group, requirements in optional.items():
+                        if isinstance(requirements, list):
+                            for requirement in requirements:
+                                _record_python_requirement(requirement, f"optional:{group}", record_dependency)
+
+            # PEP 735 dependency groups. Only literal requirement strings are
+            # interpreted; include-group directives and arbitrary objects are
+            # deliberately not expanded or executed.
+            groups = data.get("dependency-groups", {})
+            if isinstance(groups, dict):
+                for group, requirements in groups.items():
+                    if isinstance(requirements, list):
+                        for requirement in requirements:
+                            _record_python_requirement(requirement, f"group:{group}", record_dependency)
+
+            # Poetry's legacy and named dependency groups.
+            tool = data.get("tool", {})
+            poetry = tool.get("poetry", {}) if isinstance(tool, dict) else {}
+            if isinstance(poetry, dict):
+                poetry_dependencies = poetry.get("dependencies", {})
+                if isinstance(poetry_dependencies, dict):
+                    for dependency_name, value in poetry_dependencies.items():
+                        _record_poetry_dependency(dependency_name, value, "poetry", record_dependency)
+                legacy_dev = poetry.get("dev-dependencies", {})
+                if isinstance(legacy_dev, dict):
+                    for dependency_name, value in legacy_dev.items():
+                        _record_poetry_dependency(dependency_name, value, "poetry:dev", record_dependency)
+                poetry_groups = poetry.get("group", {})
+                if isinstance(poetry_groups, dict):
+                    for group, group_data in poetry_groups.items():
+                        group_dependencies = group_data.get("dependencies", {}) if isinstance(group_data, dict) else {}
+                        if isinstance(group_dependencies, dict):
+                            for dependency_name, value in group_dependencies.items():
+                                _record_poetry_dependency(dependency_name, value, f"poetry:{group}", record_dependency)
+
     return {
         "tool": "analyze_dependencies",
         "manifests": manifests[:50],
@@ -168,6 +247,7 @@ def analyze_dependencies(workspace):
         "dependencies_truncated": dependency_count > len(dependencies),
         "read_only": True,
     }
+
 def review_security(workspace):
     files = _files(workspace)
     rules = [
