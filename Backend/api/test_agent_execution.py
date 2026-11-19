@@ -601,7 +601,8 @@ class AgentTaskVerificationAPITests(TestCase):
     def test_stale_job_retry_backoff_uses_time_after_row_lock(self, mocked_now):
         initial_now = datetime.now(datetime_timezone.utc)
         recovery_now = initial_now + timedelta(seconds=5)
-        mocked_now.side_effect = [initial_now, recovery_now]
+        clock_values = iter((initial_now, recovery_now))
+        mocked_now.side_effect = lambda: next(clock_values, recovery_now)
         job = BackgroundJob.objects.create(
             kind="test_recovery_clock",
             status="running",
@@ -995,7 +996,9 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         runner_request.assert_not_called()
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "running")
-        self.assertEqual(self.task.execution_evidence, {})
+        self.assertEqual(self.task.execution_evidence.get("state"), "queued")
+        self.assertEqual(self.task.execution_evidence.get("sync_job_id"), self.sync_job.id)
+        self.assertEqual(self.task.execution_evidence.get("iteration"), 1)
 
     @patch("api.views._runner_request")
     def test_reclaimed_job_lease_cannot_finalize_old_runner_result(self, runner_request):
@@ -1030,7 +1033,9 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         runner_request.assert_called_once()
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "running")
-        self.assertEqual(self.task.execution_evidence, {})
+        self.assertEqual(self.task.execution_evidence.get("state"), "queued")
+        self.assertEqual(self.task.execution_evidence.get("sync_job_id"), self.sync_job.id)
+        self.assertEqual(self.task.execution_evidence.get("iteration"), 1)
 
 
     @patch("api.views._runner_request")
@@ -1386,7 +1391,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
 
 
-    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {}}, None))
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {"main.py": "print('shared')"}}, None))
     def test_runner_sync_worker_honors_project_collaborator_access(self, runner_request):
         from .management.commands.worker import execute as execute_background_job
 
