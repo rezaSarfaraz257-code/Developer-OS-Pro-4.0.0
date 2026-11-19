@@ -1419,6 +1419,60 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         ).exists())
         runner_request.assert_called_once()
 
+    @patch("api.views._runner_request", return_value=({"status": "failed", "files": {}}, None))
+    def test_runner_sync_worker_rejects_http_success_without_synced_status(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Invalid Runner sync receipt",
+            files={"main.py": "print('safe')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync-invalid-status:{workspace.id}:{workspace.revision}",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "invalid receipt"):
+            execute_background_job(sync_job)
+
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id,
+        ).exists())
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": []}, None))
+    def test_runner_sync_worker_rejects_malformed_file_snapshot_receipt(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Malformed Runner sync receipt",
+            files={"main.py": "print('safe')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync-invalid-files:{workspace.id}:{workspace.revision}",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "invalid receipt"):
+            execute_background_job(sync_job)
+
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id,
+        ).exists())
+        runner_request.assert_called_once()
+
 
 class BackgroundWorkerLeaseRegressionTests(TestCase):
     def test_claims_issue_distinct_fencing_tokens_for_each_job(self):
