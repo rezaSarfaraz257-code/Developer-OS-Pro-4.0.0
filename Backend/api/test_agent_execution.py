@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
+import threading
 
 from django.contrib.auth.models import User
-from django.db import connection
-from django.test import TestCase
+from django.db import close_old_connections, connection, transaction
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -1468,3 +1469,62 @@ class BackgroundWorkerLeaseRegressionTests(TestCase):
         job.refresh_from_db()
         self.assertTrue(refreshed_by_current_owner)
         self.assertGreater(job.locked_at, original_time)
+
+
+class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_claim_skips_a_job_locked_by_another_transaction(self):
+        if not connection.features.has_select_for_update_skip_locked:
+            self.skipTest("Database backend does not support SELECT FOR UPDATE SKIP LOCKED.")
+
+        first = BackgroundJob.objects.create(
+            kind="worker_concurrency_test",
+            payload={"sequence": 1},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+        second = BackgroundJob.objects.create(
+            kind="worker_concurrency_test",
+            payload={"sequence": 2},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+        thread_errors = []
+
+        def hold_first_job_lock():
+            close_old_connections()
+            try:
+                with transaction.atomic():
+                    BackgroundJob.objects.select_for_update().get(pk=first.pk)
+                    lock_acquired.set()
+                    if not release_lock.wait(timeout=10):
+                        raise TimeoutError("Timed out waiting to release the test row lock.")
+            except Exception as exc:
+                thread_errors.append(exc)
+                lock_acquired.set()
+            finally:
+                close_old_connections()
+
+        lock_thread = threading.Thread(target=hold_first_job_lock, daemon=True)
+        lock_thread.start()
+        try:
+            self.assertTrue(lock_acquired.wait(timeout=10), "Locking thread did not acquire the row lock.")
+            if thread_errors:
+                raise thread_errors[0]
+
+            claimed = claim_job("concurrent-worker")
+
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed.pk, second.pk)
+            first.refresh_from_db()
+            second.refresh_from_db()
+            self.assertEqual(first.status, "queued")
+            self.assertEqual(second.status, "running")
+        finally:
+            release_lock.set()
+            lock_thread.join(timeout=10)
+            self.assertFalse(lock_thread.is_alive(), "Locking thread did not terminate.")
+        if thread_errors:
+            raise thread_errors[0]
