@@ -200,7 +200,10 @@ class AgentRunnerIntegrationTests(TestCase):
         verification_job = BackgroundJob.objects.get(pk=queue_response.data["job_id"])
         verification_job.status = "running"
         verification_job.attempts = 1
-        verification_job.save(update_fields=["status", "attempts"])
+        # The worker's fencing token is part of the execution contract. A
+        # direct integration invocation must model a real successful claim.
+        verification_job.locked_by = "runner-integration-worker:lease-1"
+        verification_job.save(update_fields=["status", "attempts", "locked_by"])
 
         # This call reaches the actual Runner /exec endpoint. The Runner uses
         # strict Bubblewrap isolation and returns its real execution job ID.
