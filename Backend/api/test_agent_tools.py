@@ -99,6 +99,12 @@ class ReadOnlyAgentToolTests(TestCase):
         })()
         self.assertEqual(_files(workspace), {"safe/main.py": "value = 1"})
 
+    def test_workspace_snapshot_skips_invalid_unicode_and_continues(self):
+        workspace = type("Workspace", (), {
+            "files": {"invalid.py": "value = \ud800", "safe.py": "value = 1"}
+        })()
+        self.assertEqual(_files(workspace), {"safe.py": "value = 1"})
+
     def test_workspace_snapshot_enforces_aggregate_byte_budget(self):
         workspace = type("Workspace", (), {
             "files": {f"module_{index}.py": "x" * 150_000 for index in range(20)}
@@ -273,3 +279,46 @@ class ReadOnlyAgentToolTests(TestCase):
         manifest = next(item for item in result["manifests"] if item["path"] == "package.json")
         self.assertEqual(manifest["status"], "invalid_manifest_shape")
         self.assertEqual(result["dependency_count"], 0)
+    def test_dependency_analyzer_bounds_results_but_preserves_exact_count(self):
+        dependencies = {f"package_{index}": f"^{index}.0.0" for index in range(350)}
+        self.workspace.files = {"package.json": json.dumps({"dependencies": dependencies})}
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 350)
+        self.assertEqual(len(result["dependencies"]), 300)
+        self.assertTrue(result["dependencies_truncated"])
+        self.assertTrue(result["read_only"])
+
+    def test_dependency_analyzer_parses_python_requirements_and_dev_requirements(self):
+        self.workspace.files = {
+            "requirements.txt": "Django>=5.0\nrequests==2.32.0\n# comment\n",
+            "requirements-dev.txt": "pytest>=8.0\n",
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 3)
+        self.assertEqual(
+            result["dependencies"],
+            [
+                {"name": "Django", "version": ">=5.0", "group": "python"},
+                {"name": "requests", "version": "==2.32.0", "group": "python"},
+                {"name": "pytest", "version": ">=8.0", "group": "python"},
+            ],
+        )
+        self.assertFalse(result["dependencies_truncated"])
+
+    def test_dependency_analyzer_ignores_malformed_dependency_entries(self):
+        self.workspace.files = {
+            "package.json": json.dumps({
+                "dependencies": {
+                    "valid": "^1.0.0",
+                    "empty_version": "",
+                    "non_string_version": ["unexpected"],
+                    "": "^2.0.0",
+                }
+            })
+        }
+        result = analyze_dependencies(self.workspace)
+        self.assertEqual(result["dependency_count"], 1)
+        self.assertEqual(
+            result["dependencies"],
+            [{"name": "valid", "version": "^1.0.0", "group": "dependencies"}],
+        )

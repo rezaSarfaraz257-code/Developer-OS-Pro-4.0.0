@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import unicodedata
 
 from django.contrib.auth.models import User
 from django.db import connection, DatabaseError
@@ -53,7 +54,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution, CommunityPost, CommunityPostComment,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution, FrameworkInstallation, CommunityPost, CommunityPostComment,
 )
 
 from .serializers import (
@@ -2541,6 +2542,7 @@ def _runner_request(method, path, payload, timeout=30):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_capabilities_api(request):
     """Expose runner capabilities so the IDE can adapt instead of guessing."""
     data, error = _runner_request("GET", "/capabilities", {}, timeout=10)
@@ -2633,25 +2635,41 @@ def ide_frameworks_api(request):
     ])
 
 def _safe_ide_path(value):
+    """Apply the same virtual-path contract used by workspace serialization and Runner."""
     path = str(value or "").replace("\\", "/").strip()
-    if not path or len(path) > 500 or any(part in {"", ".", ".."} for part in path.split("/")):
+    if not path or len(path) > 500 or path.startswith("/") or re.match(r"^[A-Za-z]:", path):
         return None
-    if ".git" in path.split("/"):
+    component_pattern = re.compile(r"^[\w .@()+,\[\]-]+$", re.UNICODE)
+    reserved_runtime_roots = {
+        ".git", "node_modules", ".venv", ".home", ".tmp",
+        ".cache", ".npm-cache", ".pip-cache",
+    }
+    parts = path.split("/")
+    if any(
+        part in {"", ".", ".."}
+        or part.casefold() in reserved_runtime_roots
+        or not component_pattern.fullmatch(part)
+        for part in parts
+    ):
         return None
     return path
 
 def _ide_path_conflicts(files, path):
-    """Return True when a virtual path would collide with a file/directory."""
-    normalized = str(path or "").rstrip("/")
+    """Return True when a virtual path aliases or overlaps a file/directory."""
+    normalized = unicodedata.normalize("NFC", str(path or "")).casefold().rstrip("/")
     if not normalized:
         return True
     for existing in files:
-        existing = str(existing or "").rstrip("/")
+        existing = unicodedata.normalize("NFC", str(existing or "")).casefold().rstrip("/")
         if not existing:
             continue
-        # A file cannot be placed below an existing file, or replace a
-        # directory that is represented by one or more descendant paths.
-        if normalized.startswith(existing + "/") or existing.startswith(normalized + "/"):
+        # Virtual paths must remain unambiguous on case-insensitive and
+        # Unicode-normalizing filesystems as well as on the current host.
+        if (
+            normalized == existing
+            or normalized.startswith(existing + "/")
+            or existing.startswith(normalized + "/")
+        ):
             return True
     return False
 
@@ -2749,8 +2767,10 @@ def ide_workspace_files_api(request, pk):
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     content = request.data.get("content", "")
-    if not path or not isinstance(content, str):
-        return Response({"error": "Valid path and text content are required."}, status=400)
+    if not path:
+        return Response({"error": "Invalid path."}, status=400)
+    if not isinstance(content, str):
+        return Response({"error": "Valid text content is required."}, status=400)
     if path in files and action == "create":
         return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
     conflict_files = {key: value for key, value in files.items() if not (action == "write" and key == path)}
@@ -2762,12 +2782,31 @@ def ide_workspace_files_api(request, pk):
     # make Explorer file creation fail.
     if len(path) > 500:
         return Response({"error": "File path is too long.", "code": "invalid_path"}, status=400)
-    content_bytes = len(content.encode("utf-8"))
+    try:
+        content_bytes = len(content.encode("utf-8"))
+    except UnicodeEncodeError:
+        return Response(
+            {"error": "File content must contain valid UTF-8 text.", "code": "invalid_utf8_content"},
+            status=400,
+        )
     if content_bytes > 1_000_000:
         return Response({"error": "Each text file must be 1 MB or smaller.", "code": "file_too_large"}, status=413)
     projected = dict(files)
     projected[path] = content
-    total_bytes = sum(len(str(value).encode("utf-8")) for value in projected.values())
+    total_bytes = 0
+    for existing_content in projected.values():
+        if not isinstance(existing_content, str):
+            return Response(
+                {"error": "Workspace contains an invalid text file.", "code": "invalid_workspace_content"},
+                status=409,
+            )
+        try:
+            total_bytes += len(existing_content.encode("utf-8"))
+        except UnicodeEncodeError:
+            return Response(
+                {"error": "Workspace contains text that is not valid UTF-8.", "code": "invalid_workspace_content"},
+                status=409,
+            )
     if len(projected) > 2000:
         return Response({"error": "A workspace can contain at most 2,000 source files.", "code": "file_limit"}, status=413)
     if total_bytes > 50_000_000:
@@ -2795,6 +2834,7 @@ def ide_workspace_files_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_workspace_sync_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -2811,33 +2851,117 @@ def ide_install_framework_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    framework = str(request.data.get("framework") or "").lower()
+
+    framework = str(request.data.get("framework") or "").strip().lower()
     spec = FRAMEWORK_CATALOG.get(framework)
     if not spec:
         return Response({"error": "Unsupported framework preset."}, status=400)
+
+    starting_revision = ws.revision
     installation = FrameworkInstallation.objects.create(
-        workspace=ws, framework=framework, package_manager=spec["package_manager"], status="running"
+        workspace=ws,
+        framework=framework,
+        package_manager=spec["package_manager"],
+        status="running",
     )
-    data, error = _runner_request("POST", "/install", {
-        **_workspace_payload(ws), "command": spec["install"], "framework": framework,
-        "package_manager": spec["package_manager"],
-    }, timeout=240)
+    data, error = _runner_request(
+        "POST",
+        "/install",
+        {
+            **_workspace_payload(ws),
+            "command": spec["install"],
+            "framework": framework,
+            "package_manager": spec["package_manager"],
+        },
+        timeout=240,
+    )
     if error:
-        installation.status = "failed"; installation.output = json.dumps(error); installation.finished_at = timezone.now(); installation.save()
+        installation.status = "failed"
+        installation.output = json.dumps(error, ensure_ascii=False)[:30000]
+        installation.finished_at = timezone.now()
+        installation.save(update_fields=["status", "output", "finished_at"])
         return Response(error, status=503)
+
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
+        installation.status = "failed"
+        installation.output = "Runner returned an unverifiable installation result."
+        installation.finished_at = timezone.now()
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "error": "Framework installation result could not be verified.",
+            "code": "runner_invalid_install_result",
+        }, status=503)
+
+    stdout = data.get("stdout") if isinstance(data.get("stdout"), str) else ""
+    stderr = data.get("stderr") if isinstance(data.get("stderr"), str) else ""
+    installation.output = (stdout + "\n" + stderr)[-30000:]
+    installation.finished_at = timezone.now()
+
+    if data["exit_code"] != 0:
+        installation.status = "failed"
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "installation": {
+                "id": installation.id,
+                "status": installation.status,
+                "output": installation.output,
+            },
+            "workspace": CodeWorkspaceSerializer(ws).data,
+        })
+
     runner_files = data.get("files")
-    if isinstance(runner_files, dict):
-        serializer = CodeWorkspaceSerializer(ws, data={"files": runner_files}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-    installation.status = "success" if data.get("exit_code", 1) == 0 else "failed"
-    installation.output = (data.get("stdout", "") + "\n" + data.get("stderr", ""))[-30000:]
-    installation.finished_at = timezone.now(); installation.save()
-    ws.framework = framework
-    ws.runtime = spec["runtime"]
-    ws.package_manager = spec["package_manager"]
-    ws.save(update_fields=["framework", "runtime", "package_manager", "updated_at"])
-    return Response({"installation": {"id": installation.id, "status": installation.status, "output": installation.output}, "workspace": CodeWorkspaceSerializer(ws).data})
+    if runner_files is not None:
+        serializer = CodeWorkspaceSerializer(
+            ws,
+            data={"files": runner_files},
+            partial=True,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            installation.status = "failed"
+            installation.output = (installation.output + "\nInvalid workspace snapshot returned by Runner.")[-30000:]
+            installation.save(update_fields=["status", "output", "finished_at"])
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+                "details": serializer.errors,
+            }, status=503)
+        files_to_save = serializer.validated_data["files"]
+    else:
+        files_to_save = ws.files
+
+    updated = CodeWorkspace.objects.filter(
+        pk=ws.pk,
+        revision=starting_revision,
+    ).update(
+        files=files_to_save,
+        framework=framework,
+        runtime=spec["runtime"],
+        package_manager=spec["package_manager"],
+        revision=F("revision") + 1,
+        updated_at=timezone.now(),
+    )
+    if updated != 1:
+        installation.status = "failed"
+        installation.output = (installation.output + "\nWorkspace changed during installation; stale result discarded.")[-30000:]
+        installation.save(update_fields=["status", "output", "finished_at"])
+        return Response({
+            "error": "Workspace changed while the framework was being installed. Refresh and retry.",
+            "code": "workspace_revision_conflict",
+        }, status=409)
+
+    ws.refresh_from_db()
+    installation.status = "success"
+    installation.save(update_fields=["status", "output", "finished_at"])
+    return Response({
+        "installation": {
+            "id": installation.id,
+            "status": installation.status,
+            "output": installation.output,
+        },
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -2846,70 +2970,125 @@ def ide_install_packages_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
-    manager = str(request.data.get("package_manager") or ws.package_manager or "").lower()
-    action = str(request.data.get("action") or "add").lower()
+    starting_revision = ws.revision
+    manager = str(request.data.get("package_manager") or ws.package_manager or "npm").strip().lower()
+    supported_managers = {"npm", "pnpm", "yarn", "bun", "pip", "pipenv", "poetry", "uv", "pdm"}
+    if manager not in supported_managers:
+        return Response({"error": "Unsupported package manager.", "code": "unsupported_package_manager"}, status=400)
+
+    action = str(request.data.get("action") or "add").strip().lower()
     packages = request.data.get("packages") or []
     if isinstance(packages, str):
-        packages = [x.strip() for x in packages.split(",") if x.strip()]
+        packages = [item.strip() for item in packages.split(",") if item.strip()]
     if not isinstance(packages, list) or not packages or len(packages) > 50:
         return Response({"error": "Provide 1–50 packages."}, status=400)
     if action not in {"install", "add", "remove", "update"}:
         return Response({"error": "Unsupported package action."}, status=400)
-    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
+    if any(
+        not isinstance(package, str)
+        or not package.strip()
+        or len(package) > 214
+        or any(ord(char) < 32 or ord(char) == 127 for char in package)
+        or package.strip().startswith("-")
+        for package in packages
+    ):
         return Response({"error": "One or more package names are invalid."}, status=400)
+
+    # Normalize duplicates before asking the Runner to plan commands. The Runner
+    # remains the authority for ecosystem-specific package syntax.
+    packages = list(dict.fromkeys(package.strip() for package in packages))
     plans = []
-    for pkg in packages:
-        plan, plan_error = _runner_request("POST", "/packages/plan", {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager}, timeout=15)
+    for package in packages:
+        plan, plan_error = _runner_request(
+            "POST",
+            "/packages/plan",
+            {**_workspace_payload(ws), "action": action, "package": package, "package_manager": manager},
+            timeout=15,
+        )
         if plan_error:
             return Response(plan_error, status=503)
-        plans.append(plan.get("command", ""))
+        planned_command = plan.get("command") if isinstance(plan, dict) else None
+        if not isinstance(planned_command, str) or not planned_command.strip() or len(planned_command) > 2000:
+            logger.error("Runner returned an invalid package plan: workspace=%s", ws.pk)
+            return Response({
+                "error": "Package manager returned an invalid install plan.",
+                "code": "runner_invalid_package_plan",
+            }, status=503)
+        plans.append(planned_command.strip())
+
     command = " && ".join(plans)
-    data, error = _runner_request("POST", "/install", {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action}, timeout=240)
+    if len(command) > 12000:
+        return Response({"error": "The combined package plan is too large."}, status=400)
+    data, error = _runner_request(
+        "POST",
+        "/install",
+        {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action},
+        timeout=240,
+    )
     if error:
         return Response(error, status=503)
-    if isinstance(data.get("files"), dict):
-        serializer = CodeWorkspaceSerializer(ws, data={"files": data["files"], "package_manager": manager}, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-    return Response({"status": "success" if data.get("exit_code") == 0 else "failed", "command": command, "exit_code": data.get("exit_code"), "stdout": data.get("stdout", ""), "stderr": data.get("stderr", ""), "workspace": CodeWorkspaceSerializer(ws).data})
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
+        logger.error("Runner returned an unverifiable package installation result: workspace=%s", ws.pk)
+        return Response({
+            "error": "Package installation result could not be verified.",
+            "code": "runner_invalid_install_result",
+        }, status=503)
+
+    succeeded = data["exit_code"] == 0
+    runner_files = data.get("files")
+    if succeeded and runner_files is not None:
+        if not isinstance(runner_files, dict):
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+            }, status=503)
+        serializer = CodeWorkspaceSerializer(
+            ws,
+            data={"files": runner_files},
+            partial=True,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            logger.error("Runner returned an invalid package installation snapshot: workspace=%s", ws.pk)
+            return Response({
+                "error": "Runner returned an invalid workspace snapshot.",
+                "code": "runner_invalid_workspace_snapshot",
+                "details": serializer.errors,
+            }, status=503)
+        # Package installation can take minutes. Commit its snapshot only if the
+        # workspace has not changed since this request began; otherwise a late
+        # Runner response could erase edits made in another browser session.
+        updated = CodeWorkspace.objects.filter(
+            pk=ws.pk,
+            revision=starting_revision,
+        ).update(
+            files=serializer.validated_data["files"],
+            package_manager=manager,
+            revision=F("revision") + 1,
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            return Response({
+                "error": "Workspace changed while packages were being installed. Refresh and retry.",
+                "code": "workspace_revision_conflict",
+            }, status=409)
+        ws.refresh_from_db()
+
+    stdout = data.get("stdout", "")
+    stderr = data.get("stderr", "")
+    return Response({
+        "status": "success" if succeeded else "failed",
+        "command": command,
+        "exit_code": data["exit_code"],
+        "stdout": stdout if isinstance(stdout, str) else "",
+        "stderr": stderr if isinstance(stderr, str) else "",
+        "workspace": CodeWorkspaceSerializer(ws).data,
+    })
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def ide_diagnostics_api(request, pk):
-    """Run a read-only project check and return editor-friendly diagnostics."""
-    ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user):
-        return Response({"error": "You have read-only access to this workspace."}, status=403)
-    language = str(request.data.get("language") or "").lower()
-    path = _safe_ide_path(request.data.get("path") or "")
-    if not path:
-        return Response({"error": "A valid file path is required."}, status=400)
-    _, sync_error = _runner_request("POST", "/sync", _workspace_payload(ws), timeout=30)
-    if sync_error:
-        return Response(sync_error, status=503)
-    if language in {"python", "py"} or path.endswith(".py"):
-        command = "python3 -m py_compile " + shlex.quote(path)
-    elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
-        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
-    else:
-        return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
-    data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
-    if error:
-        return Response(error, status=503)
-    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
-    diagnostics = []
-    pattern = re.compile(r"(?P<file>[^:\\n]+?)[(:](?P<line>\d+)(?:[:,](?P<column>\d+))?\)?[: -]+(?P<message>.+)")
-    for raw in output.splitlines():
-        match = pattern.search(raw.strip())
-        if not match:
-            continue
-        diagnostics.append({"path": _safe_ide_path(match.group("file")) or path, "line": max(1, int(match.group("line") or 1)), "column": max(1, int(match.group("column") or 1)), "severity": "error" if data.get("exit_code") not in (0, None) else "warning", "message": match.group("message")[:1000]})
-    if data.get("exit_code") not in (0, None) and not diagnostics:
-        diagnostics.append({"path": path, "line": 1, "column": 1, "severity": "error", "message": (output or "Project check failed.")[-1000:]})
-    return Response({"status": "success" if data.get("exit_code") == 0 else "failed", "command": command, "diagnostics": diagnostics[:100], "stdout": str(data.get("stdout") or "")[-10000:], "stderr": str(data.get("stderr") or "")[-10000:]})
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_symbols_api(request, pk):
     """Static workspace intelligence delegated to the isolated runner."""
     ws = _workspace_for_user(pk, request.user)
@@ -2938,6 +3117,7 @@ def ide_symbols_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_lsp_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     language = str(request.data.get("language") or "python").strip().lower()
@@ -2957,6 +3137,7 @@ def ide_lsp_api(request, pk):
     return Response(data)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_replace_preview_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     path = str(request.data.get("path") or "").strip()
@@ -2972,6 +3153,7 @@ def ide_replace_preview_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_format_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     path = str(request.data.get("path") or "").strip()
@@ -2986,6 +3168,7 @@ def ide_format_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_lsp_notifications_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     language = str(request.data.get("language") or "python").strip().lower()
@@ -4190,64 +4373,10 @@ def ai_chat_api(request):
 
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def ide_install_packages_api(request, pk):
-    ws = _workspace_for_user(pk, request.user)
-    if not _workspace_write_allowed(ws, request.user):
-        return Response({"error": "You have read-only access to this workspace."}, status=403)
-    manager = str(request.data.get("package_manager") or ws.package_manager or "").lower()
-    action = str(request.data.get("action") or "add").lower()
-    packages = request.data.get("packages") or []
-    if isinstance(packages, str):
-        packages = [x.strip() for x in packages.split(",") if x.strip()]
-    if not isinstance(packages, list) or not packages or len(packages) > 50:
-        return Response({"error": "Provide 1–50 packages."}, status=400)
-    if action not in {"install", "add", "remove", "update"}:
-        return Response({"error": "Unsupported package action."}, status=400)
-    if any(not isinstance(pkg, str) or len(pkg) > 214 for pkg in packages):
-        return Response({"error": "One or more package names are invalid."}, status=400)
-    plans = []
-    for pkg in packages:
-        plan, plan_error = _runner_request(
-            "POST",
-            "/packages/plan",
-            {**_workspace_payload(ws), "action": action, "package": pkg, "package_manager": manager},
-            timeout=15,
-        )
-        if plan_error:
-            return Response(plan_error, status=503)
-        plans.append(plan.get("command", ""))
-    command = " && ".join(plans)
-    data, error = _runner_request(
-        "POST",
-        "/install",
-        {**_workspace_payload(ws), "command": command, "package_manager": manager, "action": action},
-        timeout=240,
-    )
-    if error:
-        return Response(error, status=503)
-    if isinstance(data.get("files"), dict):
-        serializer = CodeWorkspaceSerializer(
-            ws,
-            data={"files": data["files"], "package_manager": manager},
-            partial=True,
-            context={"request": request},
-        )
-        serializer.is_valid(raise_exception=True)
-        ws = serializer.save()
-    return Response({
-        "status": "success" if data.get("exit_code") == 0 else "failed",
-        "command": command,
-        "exit_code": data.get("exit_code"),
-        "stdout": data.get("stdout", ""),
-        "stderr": data.get("stderr", ""),
-        "workspace": CodeWorkspaceSerializer(ws).data,
-    })
-
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_diagnostics_api(request, pk):
     """Run a read-only project check and return editor-friendly diagnostics."""
     ws = _workspace_for_user(pk, request.user)
@@ -4263,23 +4392,101 @@ def ide_diagnostics_api(request, pk):
     if language in {"python", "py"} or path.endswith(".py"):
         command = "python3 -m py_compile " + shlex.quote(path)
     elif language in {"javascript", "typescript", "javascriptreact", "typescriptreact"} or re.search(r"\.(js|jsx|ts|tsx)$", path):
-        command = "npx tsc --noEmit --pretty false 2>/dev/null || npm run build --if-present"
+        # Never hide a failed TypeScript check behind a successful build fallback.
+        # npx is explicitly offline so diagnostics cannot trigger package downloads.
+        workspace_files = ws.files if isinstance(ws.files, dict) else {}
+        manifest_text = workspace_files.get("package.json")
+        manifest = {}
+        if manifest_text is not None:
+            try:
+                manifest = json.loads(manifest_text)
+            except (TypeError, ValueError):
+                return Response({
+                    "error": "package.json is not valid JSON.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+            if not isinstance(manifest, dict):
+                return Response({
+                    "error": "package.json must contain a JSON object.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+        if "tsconfig.json" in workspace_files:
+            # Invoke only the workspace-local compiler; never download tooling during diagnostics.
+            command = "./node_modules/.bin/tsc --noEmit --pretty false"
+        else:
+            scripts = manifest.get("scripts", {})
+            if not isinstance(scripts, dict):
+                return Response({
+                    "error": "package.json scripts must be a JSON object.",
+                    "code": "invalid_package_manifest",
+                }, status=400)
+            typecheck_script = scripts.get("typecheck")
+            build_script = scripts.get("build")
+            check_script = (
+                "typecheck" if isinstance(typecheck_script, str) and typecheck_script.strip()
+                else "build" if isinstance(build_script, str) and build_script.strip()
+                else None
+            )
+            if not check_script:
+                return Response({
+                    "status": "skipped",
+                    "diagnostics": [],
+                    "message": "No TypeScript configuration or typecheck/build script is configured.",
+                })
+            manager = str(ws.package_manager or "").strip().lower()
+            if not manager:
+                manager = (
+                    "pnpm" if "pnpm-lock.yaml" in workspace_files
+                    else "yarn" if "yarn.lock" in workspace_files
+                    else "bun" if {"bun.lock", "bun.lockb"} & set(workspace_files)
+                    else "npm"
+                )
+            run_prefix = {
+                "npm": "npm run",
+                "pnpm": "pnpm run",
+                "yarn": "yarn run",
+                "bun": "bun run",
+            }.get(manager)
+            if not run_prefix:
+                return Response({
+                    "status": "skipped",
+                    "diagnostics": [],
+                    "message": "The configured package manager is not supported for diagnostics.",
+                })
+            command = run_prefix + " " + shlex.quote(check_script)
     else:
         return Response({"status": "skipped", "diagnostics": [], "message": "No language checker configured for this file."})
     data, error = _runner_request("POST", "/exec", {**_workspace_payload(ws), "command": command}, timeout=125)
     if error:
         return Response(error, status=503)
-    output = "\n".join(x for x in [str(data.get("stdout") or ""), str(data.get("stderr") or "")] if x)
+    if not isinstance(data, dict) or type(data.get("exit_code")) is not int:
+        return Response({
+            "error": "Runner did not provide a verifiable diagnostic exit code.",
+            "code": "runner_invalid_diagnostics_result",
+        }, status=503)
+    stdout = data.get("stdout") if isinstance(data.get("stdout"), str) else ""
+    stderr = data.get("stderr") if isinstance(data.get("stderr"), str) else ""
+    output = "\n".join(x for x in [stdout, stderr] if x)
+    output_truncated = len(output) > 100_000
+    if output_truncated:
+        output = output[:100_000]
     diagnostics = []
-    if data.get("exit_code") not in (0, None):
+    if data["exit_code"] != 0:
         diagnostics.append({"severity": "error", "message": output or "Diagnostic command failed.", "path": path})
-    return Response({"status": "ok" if not diagnostics else "error", "diagnostics": diagnostics, "output": output, "exit_code": data.get("exit_code")})
+    return Response({
+        "status": "ok" if not diagnostics else "error",
+        "diagnostics": diagnostics,
+        "output": output,
+        "output_truncated": output_truncated,
+        "exit_code": data["exit_code"],
+    })
 
 
 # ---------------------------------------------------------------------------
 # CLOUD IDE CONTROL PLANE
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_build_plan_api(request, pk):
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
@@ -4346,15 +4553,27 @@ def ide_process_start_api(request, pk):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_processes_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     data,error=_runner_request("GET","/processes",{"workspace_id":str(ws.id)},timeout=15)
     if error:return Response(error,status=503)
     return Response(data)
 
+def _safe_runner_resource_id(value):
+    """Accept only opaque runner IDs that cannot alter an upstream URL path."""
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value) is not None
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_stream_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     raw_cursor = request.query_params.get("cursor", "0")
     try:
@@ -4375,7 +4594,10 @@ def ide_job_stream_api(request, pk, job_id):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_status_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     data, error = _runner_request("GET", f"/jobs/{job_id}", {"workspace_id": str(ws.id)}, timeout=15)
     if error:
@@ -4384,7 +4606,10 @@ def ide_job_status_api(request, pk, job_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_job_cancel_api(request, pk, job_id):
+    if not _safe_runner_resource_id(job_id):
+        return Response({"error": "Invalid runner job identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     if not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
@@ -4395,7 +4620,10 @@ def ide_job_cancel_api(request, pk, job_id):
 
 @api_view(["GET","POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_process_detail_api(request, pk, process_id):
+    if not _safe_runner_resource_id(process_id):
+        return Response({"error": "Invalid runner process identifier.", "code": "invalid_runner_resource_id"}, status=400)
     ws = _workspace_for_user(pk, request.user)
     if request.method == "POST" and not _workspace_write_allowed(ws, request.user):
         return Response({"error": "You have read-only access to this workspace."}, status=403)
@@ -4409,6 +4637,7 @@ def ide_process_detail_api(request, pk, process_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_git_file_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user): return Response({"error":"Read-only workspace."},status=403)
@@ -4424,6 +4653,7 @@ def ide_git_file_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_git_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user):return Response({"error":"Read-only workspace."},status=403)
@@ -4439,6 +4669,7 @@ def ide_git_api(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_preview_start_api(request, pk):
     ws=_workspace_for_user(pk,request.user)
     if not _workspace_write_allowed(ws,request.user):return Response({"error":"Read-only workspace."},status=403)
@@ -4470,6 +4701,7 @@ def _safe_preview_proxy_path(path):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([RunnerRateThrottle])
 def ide_preview_proxy_api(request, pk, preview_path=""):
     ws = _workspace_for_user(pk, request.user)
     safe_path = _safe_preview_proxy_path(preview_path)

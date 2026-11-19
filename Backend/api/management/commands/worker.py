@@ -4,6 +4,7 @@ import os
 import socket
 import threading
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from django.conf import settings
@@ -30,23 +31,36 @@ def recover_stale_jobs():
     )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
-            locked = BackgroundJob.objects.select_for_update().get(pk=job.pk)
+            locked = (
+                BackgroundJob.objects.select_for_update()
+                .filter(pk=job.pk)
+                .first()
+            )
+            # A job can be deleted after the candidate scan (for example, by
+            # administrative cleanup). Treat that as a vanished candidate,
+            # not a fatal queue-poll error.
+            if locked is None:
+                continue
+            # Re-evaluate the lease after acquiring the row lock. The initial
+            # queryset is only a candidate scan; its timestamp may be stale by
+            # the time this worker reaches and locks the row.
+            recovery_now = timezone.now()
             if (
                 locked.status != "running"
-                or (locked.locked_at and locked.locked_at >= now - STALE_AFTER)
+                or (locked.locked_at and locked.locked_at >= recovery_now - STALE_AFTER)
             ):
                 continue
             if locked.attempts < locked.max_attempts:
                 locked.status = "queued"
-                locked.available_at = now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
+                locked.available_at = recovery_now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
             else:
                 locked.status = "failed"
-                locked.dead_lettered_at = now
-                locked.finished_at = now
+                locked.dead_lettered_at = recovery_now
+                locked.finished_at = recovery_now
             locked.locked_at = None
             locked.locked_by = ""
             locked.error = (locked.error or "") + "\nRecovered stale worker lease."
-            locked.last_error_at = now
+            locked.last_error_at = recovery_now
             locked.save(update_fields=[
                 "status", "available_at", "locked_at", "locked_by",
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
@@ -64,7 +78,7 @@ def recover_stale_jobs():
                     else:
                         run.status = "failed"
                         run.error = "WorkerLeaseExpired: planning could not be recovered."
-                        run.finished_at = now
+                        run.finished_at = recovery_now
                         run.save(update_fields=["status", "error", "finished_at", "updated_at"])
                         AuditLog.objects.create(
                             user_id=run.owner_id,
@@ -136,12 +150,15 @@ def claim_job(worker):
     with transaction.atomic():
         job = (BackgroundJob.objects.select_for_update(skip_locked=True)
                .filter(status="queued", available_at__lte=timezone.now())
-               .order_by("created_at").first())
+               .order_by("created_at", "pk").first())
         if not job:
             return None
         job.status = "running"
         job.locked_at = timezone.now()
-        job.locked_by = worker
+        # A worker identity can be reused after a process restart/PID reuse.
+        # Give every claim a fresh fencing token so an old execution can never
+        # regain ownership merely because the same worker name appears again.
+        job.locked_by = f"{worker[:80]}:{uuid.uuid4().hex}"
         job.attempts += 1
         job.save(update_fields=["status", "locked_at", "locked_by", "attempts"])
         return job
@@ -231,12 +248,23 @@ def execute(job):
             if not _workspace_write_allowed(workspace, actor):
                 raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
             synced_revision = int(workspace.revision)
+            sync_payload = _workspace_payload(workspace)
+            expected_files = sync_payload["files"]
             runner_data, runner_error = _runner_request(
-                "POST", "/sync", _workspace_payload(workspace), timeout=30
+                "POST", "/sync", sync_payload, timeout=30
             )
             if runner_error:
                 # Keep provider/Runner diagnostics out of durable job errors.
                 raise RuntimeError("Runner workspace synchronization failed.")
+            # HTTP success alone is not proof that the Runner applied the
+            # snapshot. Accept only the documented /sync receipt shape.
+            if (
+                not isinstance(runner_data, dict)
+                or runner_data.get("status") != "synced"
+                or not isinstance(runner_data.get("files"), dict)
+                or runner_data.get("files") != expected_files
+            ):
+                raise RuntimeError("Runner workspace synchronization returned an invalid receipt.")
             AuditLog.objects.create(
                 user=actor,
                 action="ai_agent.runner_workspace_synced",
@@ -329,10 +357,11 @@ class Command(BaseCommand):
                 time.sleep(max(0.1, options["sleep"]))
                 continue
 
+            claimed_lease = job.locked_by
             lease_stop = threading.Event()
             lease_thread = threading.Thread(
                 target=_job_lease_loop,
-                args=(job.pk, worker, lease_stop),
+                args=(job.pk, claimed_lease, lease_stop),
                 name=f"developer-os-job-lease-{job.pk}",
                 daemon=True,
             )
@@ -369,9 +398,6 @@ class Command(BaseCommand):
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
-                if job.status == "failed" and job.kind == "ai_agent_task_verify":
-                    from api.agent_execution import fail_agent_task_verification
-                    fail_agent_task_verification(job)
             finally:
                 lease_stop.set()
                 lease_thread.join(timeout=2)
@@ -383,16 +409,50 @@ class Command(BaseCommand):
             job.locked_by = ""
             try:
                 with transaction.atomic():
-                    job.save(update_fields=[
+                    # A lease can expire while execute() is blocked in an external
+                    # service. Stale recovery may then fail/requeue the job and a
+                    # different worker may claim it. Never let this worker's stale
+                    # in-memory outcome overwrite that newer durable state.
+                    persisted_job = (
+                        BackgroundJob.objects.select_for_update()
+                        .filter(pk=job.pk).first()
+                    )
+                    if (
+                        not persisted_job
+                        or persisted_job.status != "running"
+                        or persisted_job.locked_by != claimed_lease
+                    ):
+                        logger.warning(
+                            "Discarding worker outcome after lease ownership changed job_id=%s worker_id=%s",
+                            job.pk,
+                            worker,
+                        )
+                        continue
+
+                    persisted_job.status = job.status
+                    persisted_job.result = job.result
+                    persisted_job.error = job.error
+                    persisted_job.available_at = job.available_at
+                    persisted_job.finished_at = job.finished_at
+                    persisted_job.last_error_at = job.last_error_at
+                    persisted_job.dead_lettered_at = job.dead_lettered_at
+                    persisted_job.locked_at = None
+                    persisted_job.locked_by = ""
+                    persisted_job.save(update_fields=[
                         "status", "result", "error", "available_at", "finished_at",
                         "last_error_at", "dead_lettered_at", "locked_at", "locked_by",
                     ])
-                    if job.kind == "ai_agent_plan" and job.status in {"queued", "failed"}:
+                    if persisted_job.status == "failed" and persisted_job.kind == "ai_agent_task_verify":
+                        # Finalize task state only after this worker has proved
+                        # it still owns the durable job lease.
+                        from api.agent_execution import fail_agent_task_verification
+                        fail_agent_task_verification(persisted_job)
+                    if persisted_job.kind == "ai_agent_plan" and persisted_job.status in {"queued", "failed"}:
                         run = AgentRun.objects.select_for_update().filter(
-                            pk=job.payload.get("run_id")
+                            pk=persisted_job.payload.get("run_id")
                         ).first()
                         if run and run.status in {"queued", "planning"}:
-                            if job.status == "queued":
+                            if persisted_job.status == "queued":
                                 run.status = "queued"
                                 run.started_at = None
                                 run.error = ""
@@ -407,12 +467,12 @@ class Command(BaseCommand):
                                     action="agent_run.failed",
                                     target_type="AgentRun",
                                     target_id=str(run.id),
-                                    metadata={"reason": "planning_failed", "attempts": job.attempts},
+                                    metadata={"reason": "planning_failed", "attempts": persisted_job.attempts},
                                 )
-                    if job.kind == "data_export" and job.status == "failed":
+                    if persisted_job.kind == "data_export" and persisted_job.status == "failed":
                         DataExportRequest.objects.filter(
-                            pk=job.payload.get("export_id"),
-                            user_id=job.payload.get("user_id"),
+                            pk=persisted_job.payload.get("export_id"),
+                            user_id=persisted_job.payload.get("user_id"),
                         ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the

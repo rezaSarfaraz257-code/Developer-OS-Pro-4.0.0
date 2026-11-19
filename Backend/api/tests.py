@@ -25,6 +25,69 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import APIKey, BackgroundJob, BillingEvent, DataExportRequest, GitHubAccount, GitHubOAuthState, Project, Subscription, Tag, Tool, Task, UsageRecord, SecuritySession, UserProfile, WorkerHeartbeat
 
 
+class RunnerResourceIdentifierSecurityTests(APITestCase):
+    def setUp(self):
+        from .models import CodeWorkspace
+
+        self.user = User.objects.create_user(
+            username="runner-resource-id-security",
+            password="long-test-password-123",
+        )
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Runner resource identifier security",
+            files={"main.py": "print('safe')"},
+            active_file="main.py",
+        )
+
+    def _request(self, method, view, resource_id):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+
+        factory = APIRequestFactory()
+        request = getattr(factory, method)("/")
+        force_authenticate(request, user=self.user)
+        return view(request, self.workspace.pk, resource_id)
+
+    @patch("api.views._runner_request")
+    def test_job_endpoints_reject_path_and_query_injection_before_runner_call(self, runner_request):
+        from . import views
+
+        for view, method in (
+            (views.ide_job_status_api, "get"),
+            (views.ide_job_stream_api, "get"),
+            (views.ide_job_cancel_api, "post"),
+        ):
+            for resource_id in ("../admin", "job?workspace_id=other", "job/other", "job\\\\other", "x" * 129):
+                with self.subTest(view=view.__name__, resource_id=resource_id):
+                    response = self._request(method, view, resource_id)
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    self.assertEqual(response.data["code"], "invalid_runner_resource_id")
+
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_process_endpoint_rejects_path_injection_before_runner_call(self, runner_request):
+        from . import views
+
+        response = self._request("get", views.ide_process_detail_api, "../other")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_runner_resource_id")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"status": "running"}, None))
+    def test_valid_runner_job_identifier_is_forwarded_unchanged(self, runner_request):
+        from . import views
+
+        response = self._request("get", views.ide_job_status_api, "job-contract-test")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        runner_request.assert_called_once_with(
+            "GET",
+            "/jobs/job-contract-test",
+            {"workspace_id": str(self.workspace.id)},
+            timeout=15,
+        )
+
+
 class RunnerRequestRetrySafetyTests(APITestCase):
     @patch("api.views.requests.request", side_effect=requests.ConnectionError("simulated lost response"))
     @patch("api.views.time.sleep")
@@ -133,6 +196,7 @@ class ProductionReadinessTests(APITestCase):
 
 class IDEExecutionQuotaFailClosedTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-quota-fail-closed",
             password="long-test-password-123",
@@ -379,6 +443,417 @@ class IDEProcessAuthorizationTests(APITestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         runner_request.assert_not_called()
+
+
+class IDEDiagnosticsTruthfulnessTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="ide-diagnostics-truthfulness",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        from .models import CodeWorkspace
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Diagnostics truthfulness",
+            files={
+                "main.ts": "const answer: number = 'not a number';",
+                "package.json": json.dumps({"scripts": {"build": "vite build"}}),
+                "tsconfig.json": json.dumps({"compilerOptions": {"strict": True}}),
+            },
+            active_file="main.ts",
+        )
+
+    @patch("api.views._runner_request")
+    def test_typescript_failure_is_not_hidden_by_a_build_fallback(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": 2, "stdout": "", "stderr": "TS2322: Type error"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "typescript", "path": "main.ts"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "error")
+        self.assertEqual(response.data["exit_code"], 2)
+        diagnostic_call = runner_request.call_args_list[1]
+        self.assertIn("./node_modules/.bin/tsc --noEmit --pretty false", diagnostic_call.args[2]["command"])
+        self.assertNotIn("||", diagnostic_call.args[2]["command"])
+
+    @patch("api.views._runner_request")
+    def test_package_script_uses_the_workspace_package_manager(self, runner_request):
+        self.workspace.files = {
+            "main.js": "console.log('hello');",
+            "package.json": json.dumps({"scripts": {"typecheck": "tsc --noEmit"}}),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'",
+        }
+        self.workspace.package_manager = "pnpm"
+        self.workspace.save(update_fields=["files", "package_manager"])
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": 0, "stdout": "", "stderr": ""}, None),
+        ]
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "javascript", "path": "main.js"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(runner_request.call_args_list[1].args[2]["command"], "pnpm run typecheck")
+
+    @patch("api.views._runner_request")
+    def test_boolean_exit_code_is_not_accepted_as_a_verifiable_result(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"exit_code": False, "stdout": "looks fine"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "python", "path": "main.py"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_diagnostics_result")
+
+    @patch("api.views._runner_request")
+    def test_missing_runner_exit_code_is_not_reported_as_success(self, runner_request):
+        runner_request.side_effect = [
+            ({"synced": True}, None),
+            ({"stdout": "looks fine"}, None),
+        ]
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "python", "path": "main.ts"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_diagnostics_result")
+
+    @patch("api.views._runner_request", return_value=({"synced": True}, None))
+    def test_javascript_diagnostics_skip_when_no_real_checker_is_configured(self, runner_request):
+        self.workspace.files = {
+            "main.js": "console.log('hello');",
+            "package.json": json.dumps({"scripts": {}}),
+        }
+        self.workspace.save(update_fields=["files"])
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/diagnostics/",
+            {"language": "javascript", "path": "main.js"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "skipped")
+        self.assertIn("No TypeScript configuration", response.data["message"])
+        runner_request.assert_called_once_with(
+            "POST",
+            "/sync",
+            {
+                "workspace_id": str(self.workspace.pk),
+                "files": self.workspace.files,
+                "active_file": self.workspace.active_file,
+            },
+            timeout=30,
+        )
+
+
+class IDEPackageInstallSafetyTests(APITestCase):
+    def setUp(self):
+        from .models import CodeWorkspace
+
+        self.user = User.objects.create_user(
+            username="ide-package-install-safety",
+            password="long-test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        self.workspace = CodeWorkspace.objects.create(
+            owner=self.user,
+            name="Package install safety",
+            files={"package.json": json.dumps({"dependencies": {}}), "main.js": "console.log('safe')"},
+            active_file="main.js",
+            package_manager="npm",
+        )
+        self.url = f"/api/ide/workspaces/{self.workspace.pk}/packages/"
+
+    @patch("api.views._runner_request")
+    def test_unsupported_package_manager_is_rejected_before_runner_call(self, runner_request):
+        response = self.client.post(
+            self.url,
+            {"package_manager": "custom-shell", "packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "unsupported_package_manager")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request", return_value=({"command": ""}, None))
+    def test_empty_runner_package_plan_fails_closed(self, runner_request):
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_package_plan")
+        runner_request.assert_called_once()
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files["package.json"], json.dumps({"dependencies": {}}))
+
+    @patch("api.views._runner_request")
+    def test_failed_install_never_persists_runner_workspace_snapshot(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "exit_code": 1,
+                "stdout": "",
+                "stderr": "registry unavailable",
+                "files": {"package.json": json.dumps({"dependencies": {"left-pad": "1.3.0"}})},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["exit_code"], 1)
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+    @patch("api.views._runner_request")
+    def test_invalid_runner_snapshot_is_reported_as_upstream_failure(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {"../escape.py": "must never persist"},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_workspace_snapshot")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+
+    @patch("api.views._runner_request")
+    def test_late_install_result_cannot_overwrite_concurrent_workspace_edits(self, runner_request):
+        from .models import CodeWorkspace
+
+        original_revision = self.workspace.revision
+        concurrent_files = {
+            "package.json": json.dumps({"dependencies": {"newer-edit": "1.0.0"}}),
+            "main.js": "console.log('concurrent edit')",
+        }
+
+        def runner_response(method, path, payload, timeout):
+            if path == "/packages/plan":
+                return ({"command": "npm install left-pad"}, None)
+            CodeWorkspace.objects.filter(pk=self.workspace.pk).update(
+                files=concurrent_files,
+                revision=original_revision + 1,
+            )
+            return ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {
+                    "package.json": json.dumps({"dependencies": {"left-pad": "1.3.0"}}),
+                    "main.js": "console.log('stale runner snapshot')",
+                },
+            }, None)
+
+        runner_request.side_effect = runner_response
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "workspace_revision_conflict")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, concurrent_files)
+
+
+    @patch("api.views._runner_request")
+    def test_failed_framework_install_does_not_mutate_workspace(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.return_value = ({
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": "registry unavailable",
+            "files": {
+                "package.json": json.dumps({"dependencies": {"react": "latest"}}),
+                "main.js": "stale failed output",
+            },
+        }, None)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["installation"]["status"], "failed")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(self.workspace.framework, "")
+        self.assertEqual(self.workspace.runtime, "python")
+        self.assertEqual(self.workspace.package_manager, "npm")
+
+    @patch("api.views._runner_request")
+    def test_framework_install_rejects_unverifiable_runner_result(self, runner_request):
+        runner_request.return_value = ({
+            "stdout": "installation appears complete",
+            "files": {"main.js": "unverified"},
+        }, None)
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_install_result")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.framework, "")
+        self.assertEqual(self.workspace.files["main.js"], "console.log('safe')")
+
+    @patch("api.views._runner_request")
+    def test_late_framework_install_cannot_overwrite_concurrent_edits(self, runner_request):
+        original_revision = self.workspace.revision
+        concurrent_files = {
+            "package.json": json.dumps({"dependencies": {"newer-edit": "1.0.0"}}),
+            "main.js": "concurrent edit",
+        }
+
+        def runner_response(method, path, payload, timeout):
+            from .models import CodeWorkspace
+
+            CodeWorkspace.objects.filter(pk=self.workspace.pk).update(
+                files=concurrent_files,
+                revision=original_revision + 1,
+            )
+            return ({
+                "exit_code": 0,
+                "stdout": "installed",
+                "stderr": "",
+                "files": {
+                    "package.json": json.dumps({"dependencies": {"react": "latest"}}),
+                    "main.js": "stale runner output",
+                },
+            }, None)
+
+        runner_request.side_effect = runner_response
+        response = self.client.post(
+            f"/api/ide/workspaces/{self.workspace.pk}/install/",
+            {"framework": "react-vite"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "workspace_revision_conflict")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, concurrent_files)
+        self.assertEqual(self.workspace.framework, "")
+
+
+    @patch("api.views._runner_request")
+    def test_unverifiable_install_result_never_persists_workspace_snapshot(self, runner_request):
+        original_files = dict(self.workspace.files)
+        runner_request.side_effect = [
+            ({"command": "npm install left-pad"}, None),
+            ({
+                "stdout": "looks successful",
+                "files": {"main.js": "unverified mutation"},
+            }, None),
+        ]
+
+        response = self.client.post(
+            self.url,
+            {"packages": ["left-pad"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["code"], "runner_invalid_install_result")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, original_files)
+
+
+class IDEControlPlaneRateLimitRegressionTests(APITestCase):
+    def test_runner_backed_endpoints_all_enforce_runner_rate_throttle(self):
+        from . import views
+
+        endpoint_names = [
+            "ide_capabilities_api",
+            "ide_workspace_sync_api",
+            "ide_install_framework_api",
+            "ide_install_packages_api",
+            "ide_debug_api",
+            "ide_execute_api",
+            "ide_build_api",
+            "ide_process_start_api",
+            "ide_symbols_api",
+            "ide_lsp_api",
+            "ide_replace_preview_api",
+            "ide_format_api",
+            "ide_lsp_notifications_api",
+            "ide_diagnostics_api",
+            "ide_build_plan_api",
+            "ide_processes_api",
+            "ide_job_stream_api",
+            "ide_job_status_api",
+            "ide_job_cancel_api",
+            "ide_process_detail_api",
+            "ide_git_file_api",
+            "ide_git_api",
+            "ide_preview_start_api",
+            "ide_preview_proxy_api",
+        ]
+        for endpoint_name in endpoint_names:
+            with self.subTest(endpoint=endpoint_name):
+                endpoint = getattr(views, endpoint_name)
+                self.assertIn(
+                    views.RunnerRateThrottle,
+                    endpoint.cls.throttle_classes or [],
+                )
+
+
+class IDEPackageInstallRateLimitRegressionTests(APITestCase):
+    def test_package_install_endpoint_retains_runner_rate_throttle(self):
+        from . import views
+
+        self.assertEqual(
+            (views.ide_install_packages_api.cls.throttle_classes or []),
+            [views.RunnerRateThrottle],
+        )
 
 
 class IDECapabilitiesReadinessTests(APITestCase):
@@ -811,6 +1286,78 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn("new.txt", response.data["files"])
         self.assertGreater(response.data["revision"], revision)
+
+    def test_explorer_rejects_runner_reserved_and_nonportable_paths(self):
+        created = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "Reserved path checks", "files": {"README.md": "safe"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        endpoint = f"/api/ide/workspaces/{created.data['id']}/files/"
+        original_files = dict(created.data["files"])
+        invalid_paths = [
+            "node_modules/pkg/index.js",
+            ".venv/lib/site.py",
+            ".git/config",
+            "C:/Windows/system.ini",
+            "/absolute/path.py",
+            "src/file?.py",
+        ]
+
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                response = self.client.post(
+                    endpoint,
+                    {"action": "create", "path": path, "content": "unsafe"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.data["error"], "Invalid path.")
+
+        rename = self.client.post(
+            endpoint,
+            {"action": "rename", "path": "README.md", "to": "node_modules/README.md"},
+            format="json",
+        )
+        self.assertEqual(rename.status_code, status.HTTP_400_BAD_REQUEST)
+        current = self.client.get(endpoint)
+        self.assertEqual(current.data["files"], original_files)
+
+    def test_ide_workspace_paths_reject_casefold_aliases_for_create_and_rename(self):
+        response = self.client.post(
+            "/api/ide/workspaces/",
+            {
+                "name": "Casefold path collision checks",
+                "files": {"main.py": "print('main')", "docs/readme.md": "# Docs"},
+                "active_file": "main.py",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workspace_id = response.data["id"]
+        endpoint = f"/api/ide/workspaces/{workspace_id}/files/"
+        original_files = dict(response.data["files"])
+
+        response = self.client.post(
+            endpoint,
+            {"action": "create", "path": "MAIN.py", "content": "print('shadow')"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        response = self.client.post(
+            endpoint,
+            {"action": "rename", "path": "docs/readme.md", "to": "Main.PY"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "path_conflict")
+
+        current = self.client.get(endpoint)
+        self.assertEqual(current.status_code, status.HTTP_200_OK)
+        self.assertEqual(current.data["files"], original_files)
 
     def test_ide_workspace_paths_reject_file_directory_collisions(self):
         response = self.client.post(
@@ -1473,6 +2020,32 @@ class IDEWorkspaceLifecycleRegressionTests(APITestCase):
         self.owner = User.objects.create_user(username="workspace-delete-owner", password="long-test-password-123")
         self.client.force_authenticate(user=self.owner)
 
+    def test_explorer_rejects_invalid_utf8_without_mutating_workspace(self):
+        from .models import CodeWorkspace
+
+        created = self.client.post(
+            "/api/ide/workspaces/",
+            {"name": "UTF-8 validation", "files": {"README.md": "safe"}},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        workspace_id = created.data["id"]
+        original = CodeWorkspace.objects.get(pk=workspace_id)
+        original_files = dict(original.files)
+        original_revision = original.revision
+
+        response = self.client.post(
+            f"/api/ide/workspaces/{workspace_id}/files/",
+            '{"action":"write","path":"README.md","content":"\\ud800"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "invalid_utf8_content")
+        original.refresh_from_db()
+        self.assertEqual(original.files, original_files)
+        self.assertEqual(original.revision, original_revision)
+
     def test_workspace_delete_endpoint_deletes_only_the_owners_workspace(self):
         from .models import CodeWorkspace
 
@@ -1578,6 +2151,31 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertEqual(job.locked_by, "worker-current")
         self.assertEqual(job.locked_at, refreshed_lease)
 
+    def test_each_job_reclaim_receives_a_unique_fencing_token(self):
+        from .management.commands.worker import claim_job, refresh_job_lease
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=3)
+        first_claim = claim_job("worker-reused")
+        self.assertEqual(first_claim.pk, job.pk)
+        first_token = first_claim.locked_by
+        self.assertTrue(first_token.startswith("worker-reused:"))
+
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            status="queued", locked_at=None, locked_by=""
+        )
+        second_claim = claim_job("worker-reused")
+        second_token = second_claim.locked_by
+
+        self.assertNotEqual(first_token, second_token)
+        self.assertFalse(refresh_job_lease(job.pk, first_token))
+        self.assertTrue(refresh_job_lease(job.pk, second_token))
+
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            status="queued", locked_at=None, locked_by=""
+        )
+        long_host_claim = claim_job("worker-" + ("x" * 300))
+        self.assertLessEqual(len(long_host_claim.locked_by), 120)
+
     def test_job_lease_refresh_does_not_revive_completed_jobs(self):
         from .management.commands.worker import refresh_job_lease
 
@@ -1661,6 +2259,62 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertEqual(job.status, "failed")
         self.assertEqual(export.status, "failed")
         self.assertIsNotNone(job.dead_lettered_at)
+
+    @patch("api.management.commands.worker.execute")
+    def test_stale_worker_outcome_cannot_overwrite_reclaimed_job(self, execute):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(kind="test", status="queued", max_attempts=3)
+
+        def reclaim_during_execution(claimed_job):
+            # Simulate lease expiry/recovery followed by a different worker
+            # claiming the same durable job before the original call returns.
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-worker",
+            )
+            return {"ok": True, "from": "stale-worker"}
+
+        execute.side_effect = reclaim_during_execution
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "replacement-worker")
+        self.assertIsNotNone(job.locked_at)
+        self.assertIsNone(job.finished_at)
+        self.assertEqual(job.result, {})
+        execute.assert_called_once()
+
+    @patch("api.agent_execution.fail_agent_task_verification")
+    @patch("api.management.commands.worker.execute")
+    def test_stale_verification_failure_cannot_finalize_task_state(self, execute, finalize):
+        from .management.commands.worker import Command
+
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            payload={"run_id": 1, "task_id": 1, "owner_id": 1},
+            status="queued",
+            max_attempts=1,
+        )
+
+        def lose_lease_then_fail(claimed_job):
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-worker",
+            )
+            raise RuntimeError("stale worker failure")
+
+        execute.side_effect = lose_lease_then_fail
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "replacement-worker")
+        finalize.assert_not_called()
+        execute.assert_called_once()
 
     @patch("api.management.commands.worker.execute", return_value={"ok": True})
     def test_successful_job_persistence_releases_worker_lease(self, execute):

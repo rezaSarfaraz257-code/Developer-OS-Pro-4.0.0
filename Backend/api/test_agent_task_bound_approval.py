@@ -127,6 +127,36 @@ class AgentTaskBoundPatchApprovalTests(TestCase):
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.revision, previous_revision)
 
+    def test_apply_rejects_case_insensitive_create_collision_without_mutation(self):
+        self.proposal = {
+            "type": "patch_proposal",
+            "changes": [{
+                "path": "MAIN.py",
+                "operation": "create",
+                "reason": "must not alias an existing file on case-insensitive filesystems",
+                "content": "print('shadow')\\n",
+            }],
+        }
+        token = self._token()
+        self.assertTrue(token)
+        previous_files = dict(self.workspace.files)
+        previous_revision = self.workspace.revision
+
+        response = self.client.post(
+            "/api/ai/agent/apply/",
+            {"approval_token": token},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.files, previous_files)
+        self.assertEqual(self.workspace.revision, previous_revision)
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.patch_applied",
+            target_id=str(self.workspace.id),
+        ).exists())
+
     def test_apply_audit_is_bound_to_exact_run_and_task(self):
         token = self._token()
         response = self.client.post(

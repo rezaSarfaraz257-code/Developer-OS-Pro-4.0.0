@@ -1,9 +1,10 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
+import threading
 
 from django.contrib.auth.models import User
-from django.db import connection
-from django.test import TestCase
+from django.db import close_old_connections, connection, transaction
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -11,7 +12,7 @@ from .agent_execution import (
     VERIFICATION_PROFILES, _matches_positive_id, _safe_diagnostic_signals, _sync_receipt_matches,
     execute_agent_task_verification, fail_agent_task_verification,
 )
-from .management.commands.worker import recover_stale_jobs
+from .management.commands.worker import claim_job, recover_stale_jobs, refresh_job_lease
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace, Project
 
  
@@ -199,6 +200,7 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_by="test-worker:lease-1",
             payload={
                 "run_id": True, "task_id": self.task.id,
                 "workspace_id": self.workspace.id, "owner_id": self.user.id,
@@ -216,6 +218,7 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_by="test-worker:lease-1",
             payload={
                 "run_id": self.run.id, "task_id": self.task.id,
                 "workspace_id": self.workspace.id, "owner_id": self.user.id,
@@ -271,7 +274,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         # Simulate the approval being revoked while the durable job is queued.
         AuditLog.objects.filter(
@@ -307,7 +311,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         # Simulate a prerequisite becoming incomplete while the verification
         # job is waiting in the durable worker queue.
@@ -425,7 +430,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         runner_request.assert_called_once()
@@ -551,7 +557,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         with self.assertRaisesRegex(RuntimeError, "output exceeded the control-plane limit"):
             execute_agent_task_verification(job)
@@ -590,6 +597,53 @@ class AgentTaskVerificationAPITests(TestCase):
             "ai_agent_runner_sync",
         )
 
+    @patch("api.management.commands.worker.timezone.now")
+    def test_stale_job_retry_backoff_uses_time_after_row_lock(self, mocked_now):
+        initial_now = datetime.now(datetime_timezone.utc)
+        recovery_now = initial_now + timedelta(seconds=5)
+        clock_values = iter((initial_now, recovery_now))
+        mocked_now.side_effect = lambda: next(clock_values, recovery_now)
+        job = BackgroundJob.objects.create(
+            kind="test_recovery_clock",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=initial_now - timedelta(minutes=11),
+            locked_by="worker-that-paused",
+            payload={},
+            idempotency_key="test-recovery-clock-fresh-time",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(
+            job.available_at,
+            recovery_now + timedelta(seconds=2),
+        )
+        self.assertGreater(job.available_at, recovery_now)
+
+    @patch("api.management.commands.worker.BackgroundJob.objects.select_for_update")
+    def test_stale_recovery_skips_candidate_deleted_before_row_lock(self, select_for_update):
+        job = BackgroundJob.objects.create(
+            kind="test_deleted_recovery_candidate",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=11),
+            locked_by="worker-that-crashed",
+            payload={},
+            idempotency_key="test-deleted-recovery-candidate",
+        )
+        select_for_update.return_value = BackgroundJob.objects.none()
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        select_for_update.assert_called_once()
+
     @patch("api.views._runner_request", return_value=(
         {"job_id": "runner-\u00e9", "status": "completed", "exit_code": 0,
          "duration_ms": 1, "stdout": "", "stderr": ""}, None,
@@ -602,7 +656,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution job reference"):
             execute_agent_task_verification(job)
@@ -619,7 +674,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution status"):
             execute_agent_task_verification(job)
@@ -636,7 +692,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         with self.assertRaisesRegex(RuntimeError, "malformed execution output"):
             execute_agent_task_verification(job)
@@ -663,7 +720,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
@@ -692,7 +750,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.get(pk=response.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
         self.task.refresh_from_db()
@@ -793,7 +852,8 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
         first_job = BackgroundJob.objects.get(pk=first.data["job_id"])
         first_job.status = "running"
         first_job.attempts = 1
-        first_job.save(update_fields=["status", "attempts"])
+        first_job.locked_by = "test-worker:lease-1"
+        first_job.save(update_fields=["status", "attempts", "locked_by"])
         execute_agent_task_verification(first_job)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "failed")
@@ -850,7 +910,8 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
             job = BackgroundJob.objects.get(pk=response.data["job_id"])
             job.status = "running"
             job.attempts = 1
-            job.save(update_fields=["status", "attempts"])
+            job.locked_by = "test-worker:lease-1"
+            job.save(update_fields=["status", "attempts", "locked_by"])
             execute_agent_task_verification(job)
             self.task.refresh_from_db()
             self.assertEqual(self.task.status, "failed")
@@ -916,6 +977,68 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
 
 class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
     @patch("api.views._runner_request")
+    def test_reclaimed_job_lease_is_rejected_before_runner_execution(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-old:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
+        BackgroundJob.objects.filter(pk=job.pk).update(locked_by="worker-new:lease-2")
+
+        with self.assertRaisesRegex(RuntimeError, "lease is no longer current"):
+            execute_agent_task_verification(job)
+
+        runner_request.assert_not_called()
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence.get("state"), "queued")
+        self.assertEqual(self.task.execution_evidence.get("sync_job_id"), self.sync_job.id)
+        self.assertEqual(self.task.execution_evidence.get("iteration"), 1)
+
+    @patch("api.views._runner_request")
+    def test_reclaimed_job_lease_cannot_finalize_old_runner_result(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-old:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
+
+        def reclaim_before_runner_returns(method, path, payload, timeout):
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                locked_by="worker-new:lease-2"
+            )
+            return ({
+                "job_id": payload["execution_id"],
+                "status": "completed",
+                "exit_code": 0,
+                "duration_ms": 12,
+                "stdout": "",
+                "stderr": "",
+            }, None)
+
+        runner_request.side_effect = reclaim_before_runner_returns
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_superseded")
+        runner_request.assert_called_once()
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence.get("state"), "queued")
+        self.assertEqual(self.task.execution_evidence.get("sync_job_id"), self.sync_job.id)
+        self.assertEqual(self.task.execution_evidence.get("iteration"), 1)
+
+
+    @patch("api.views._runner_request")
     def test_runner_call_occurs_outside_database_transaction(self, runner_request):
         baseline_atomic_depth = len(connection.atomic_blocks)
 
@@ -935,7 +1058,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.task.refresh_from_db()
@@ -962,7 +1086,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
         result = execute_agent_task_verification(job)
         self.task.refresh_from_db()
         self.workspace.refresh_from_db()
@@ -1023,7 +1148,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         result = execute_agent_task_verification(job)
 
@@ -1055,7 +1181,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         result = execute_agent_task_verification(job)
 
@@ -1112,7 +1239,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
 
         fail_agent_task_verification(job)
 
@@ -1180,7 +1308,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job = BackgroundJob.objects.get(pk=queued.data["job_id"])
         job.status = "running"
         job.attempts = 1
-        job.save(update_fields=["status", "attempts"])
+        job.locked_by = "test-worker:lease-1"
+        job.save(update_fields=["status", "attempts", "locked_by"])
         result = execute_agent_task_verification(job)
         task.refresh_from_db()
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
@@ -1262,7 +1391,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
 
 
-    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {}}, None))
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {"main.py": "print('shared')"}}, None))
     def test_runner_sync_worker_honors_project_collaborator_access(self, runner_request):
         from .management.commands.worker import execute as execute_background_job
 
@@ -1294,3 +1423,196 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             metadata__job_id=sync_job.id, metadata__revision=workspace.revision,
         ).exists())
         runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=({"status": "failed", "files": {}}, None))
+    def test_runner_sync_worker_rejects_http_success_without_synced_status(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Invalid Runner sync receipt",
+            files={"main.py": "print('safe')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync-invalid-status:{workspace.id}:{workspace.revision}",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "invalid receipt"):
+            execute_background_job(sync_job)
+
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id,
+        ).exists())
+        runner_request.assert_called_once()
+
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": []}, None))
+    def test_runner_sync_worker_rejects_malformed_file_snapshot_receipt(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Malformed Runner sync receipt",
+            files={"main.py": "print('safe')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync-invalid-files:{workspace.id}:{workspace.revision}",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "invalid receipt"):
+            execute_background_job(sync_job)
+
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id,
+        ).exists())
+    @patch("api.views._runner_request", return_value=({"status": "synced", "files": {"main.py": "print('different')"}}, None))
+    def test_runner_sync_worker_rejects_success_receipt_with_different_snapshot(self, runner_request):
+        from .management.commands.worker import execute as execute_background_job
+
+        workspace = CodeWorkspace.objects.create(
+            owner=self.user, name="Mismatched Runner sync receipt",
+            files={"main.py": "print('expected')"},
+        )
+        sync_job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync", status="running",
+            payload={
+                "workspace_id": workspace.id, "owner_id": self.user.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"sync-mismatched-snapshot:{workspace.id}:{workspace.revision}",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "invalid receipt"):
+            execute_background_job(sync_job)
+
+        self.assertFalse(AuditLog.objects.filter(
+            action="ai_agent.runner_workspace_synced",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__job_id=sync_job.id,
+        ).exists())
+        runner_request.assert_called_once()
+        self.assertEqual(
+            runner_request.call_args.args[2]["files"],
+            {"main.py": "print('expected')"},
+        )
+
+
+class BackgroundWorkerLeaseRegressionTests(TestCase):
+    def test_claims_issue_distinct_fencing_tokens_for_each_job(self):
+        first = BackgroundJob.objects.create(
+            kind="worker_claim_test",
+            payload={"sequence": 1},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+        second = BackgroundJob.objects.create(
+            kind="worker_claim_test",
+            payload={"sequence": 2},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        claimed_first = claim_job("worker-node")
+        claimed_second = claim_job("worker-node")
+
+        self.assertEqual(claimed_first.pk, first.pk)
+        self.assertEqual(claimed_second.pk, second.pk)
+        self.assertTrue(claimed_first.locked_by.startswith("worker-node:"))
+        self.assertTrue(claimed_second.locked_by.startswith("worker-node:"))
+        self.assertNotEqual(claimed_first.locked_by, claimed_second.locked_by)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, "running")
+        self.assertEqual(second.status, "running")
+
+    def test_old_worker_cannot_refresh_replaced_lease(self):
+        original_time = timezone.now() - timedelta(minutes=2)
+        job = BackgroundJob.objects.create(
+            kind="worker_lease_refresh_test",
+            status="running",
+            locked_at=original_time,
+            locked_by="worker-node:current-fencing-token",
+            payload={},
+        )
+
+        refreshed_by_old_owner = refresh_job_lease(
+            job.pk, "worker-node:previous-fencing-token",
+        )
+        job.refresh_from_db()
+        self.assertFalse(refreshed_by_old_owner)
+        self.assertEqual(job.locked_at, original_time)
+
+        refreshed_by_current_owner = refresh_job_lease(
+            job.pk, "worker-node:current-fencing-token",
+        )
+        job.refresh_from_db()
+        self.assertTrue(refreshed_by_current_owner)
+        self.assertGreater(job.locked_at, original_time)
+
+
+class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_claim_skips_a_job_locked_by_another_transaction(self):
+        if not connection.features.has_select_for_update_skip_locked:
+            self.skipTest("Database backend does not support SELECT FOR UPDATE SKIP LOCKED.")
+
+        first = BackgroundJob.objects.create(
+            kind="worker_concurrency_test",
+            payload={"sequence": 1},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+        second = BackgroundJob.objects.create(
+            kind="worker_concurrency_test",
+            payload={"sequence": 2},
+            available_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+        thread_errors = []
+
+        def hold_first_job_lock():
+            close_old_connections()
+            try:
+                with transaction.atomic():
+                    BackgroundJob.objects.select_for_update().get(pk=first.pk)
+                    lock_acquired.set()
+                    if not release_lock.wait(timeout=10):
+                        raise TimeoutError("Timed out waiting to release the test row lock.")
+            except Exception as exc:
+                thread_errors.append(exc)
+                lock_acquired.set()
+            finally:
+                close_old_connections()
+
+        lock_thread = threading.Thread(target=hold_first_job_lock, daemon=True)
+        lock_thread.start()
+        try:
+            self.assertTrue(lock_acquired.wait(timeout=10), "Locking thread did not acquire the row lock.")
+            if thread_errors:
+                raise thread_errors[0]
+
+            claimed = claim_job("concurrent-worker")
+
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed.pk, second.pk)
+            first.refresh_from_db()
+            second.refresh_from_db()
+            self.assertEqual(first.status, "queued")
+            self.assertEqual(second.status, "running")
+        finally:
+            release_lock.set()
+            lock_thread.join(timeout=10)
+            self.assertFalse(lock_thread.is_alive(), "Locking thread did not terminate.")
+        if thread_errors:
+            raise thread_errors[0]

@@ -38,6 +38,18 @@ def _matches_positive_id(value, expected):
     return _is_positive_int(value) and type(expected) is int and expected > 0 and value == expected
 
 
+def _job_lease_is_current(current_job, claimed_job):
+    """Fence an execution to the exact worker identity that claimed its job."""
+    return bool(
+        current_job
+        and claimed_job
+        and current_job.status == "running"
+        and isinstance(claimed_job.locked_by, str)
+        and claimed_job.locked_by
+        and current_job.locked_by == claimed_job.locked_by
+    )
+
+
 def _sync_receipt_matches(result, expected_workspace_id, expected_revision):
     """Bind a persisted Runner sync receipt to one exact workspace and revision."""
     return (
@@ -105,9 +117,16 @@ def _safe_diagnostic_signals(profile, stdout, stderr, exit_code):
     """Return bounded, non-content diagnostic enums; never retain process output."""
     if type(exit_code) is not int or exit_code == 0:
         return []
+    # Keep this helper safe even when called outside the validated Runner path.
+    # Never let malformed provider data raise here or trigger unbounded scanning.
+    if not isinstance(stdout, str) or not isinstance(stderr, str):
+        return [{"code": "command_failed", "source": "exit_status"}]
+    stdout = stdout[:50_000]
+    stderr = stderr[:50_000]
+    patterns = _DIAGNOSTIC_PATTERNS.get(profile, ())
     signals = []
     for source, output in (("stderr", stderr), ("stdout", stdout)):
-        for code, pattern in _DIAGNOSTIC_PATTERNS.get(profile, ()):
+        for code, pattern in patterns:
             if pattern.search(output) and {"code": code, "source": source} not in signals:
                 signals.append({"code": code, "source": source})
                 if len(signals) == 4:
@@ -340,7 +359,7 @@ def execute_agent_task_verification(job):
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
         if (
-            not current_job or current_job.status != "running"
+            not _job_lease_is_current(current_job, job)
             or not run or run.status == "canceled" or not task
         ):
             raise RuntimeError("Agent task verification lease is no longer current.")
@@ -474,7 +493,7 @@ def execute_agent_task_verification(job):
         task = AgentTask.objects.select_for_update().filter(
             pk=payload.get("task_id"), run=run,
         ).first() if run else None
-        if not current_job or current_job.status != "running" or not run or not task:
+        if not _job_lease_is_current(current_job, job) or not run or not task:
             return {"status": "verification_superseded", "task_id": payload.get("task_id")}
         if run.status == "canceled" or task.status == "canceled":
             resync_job = None
