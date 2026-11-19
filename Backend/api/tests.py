@@ -196,6 +196,7 @@ class ProductionReadinessTests(APITestCase):
 
 class IDEExecutionQuotaFailClosedTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(
             username="ide-quota-fail-closed",
             password="long-test-password-123",
