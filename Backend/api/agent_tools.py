@@ -117,7 +117,7 @@ def _record_python_requirement(requirement, group, record_dependency):
     if not value or value.startswith(("-", "#")):
         return
     match = re.match(
-        r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\\[[^\\]]+\\])?\\s*(.*)$",
+        r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]+\])?\s*(.*)$",
         value,
     )
     if match:
@@ -187,7 +187,7 @@ def analyze_dependencies(workspace):
         elif name == "pyproject.toml":
             try:
                 data = tomllib.loads(content)
-            except (TypeError, ValueError, tomllib.TOMLDecodeError):
+            except (TypeError, ValueError, RecursionError):
                 manifests.append({"path": path, "status": "invalid_toml"})
                 continue
             if not isinstance(data, dict):
@@ -198,8 +198,10 @@ def analyze_dependencies(workspace):
             # PEP 621 project dependencies and optional dependency groups.
             project = data.get("project", {})
             if isinstance(project, dict):
-                for requirement in project.get("dependencies", []) if isinstance(project.get("dependencies", []), list) else []:
-                    _record_python_requirement(requirement, "project", record_dependency)
+                project_dependencies = project.get("dependencies", [])
+                if isinstance(project_dependencies, list):
+                    for requirement in project_dependencies:
+                        _record_python_requirement(requirement, "project", record_dependency)
                 optional = project.get("optional-dependencies", {})
                 if isinstance(optional, dict):
                     for group, requirements in optional.items():
@@ -221,8 +223,10 @@ def analyze_dependencies(workspace):
             tool = data.get("tool", {})
             poetry = tool.get("poetry", {}) if isinstance(tool, dict) else {}
             if isinstance(poetry, dict):
-                for dependency_name, value in (poetry.get("dependencies", {}) or {}).items() if isinstance(poetry.get("dependencies", {}), dict) else []:
-                    _record_poetry_dependency(dependency_name, value, "poetry", record_dependency)
+                poetry_dependencies = poetry.get("dependencies", {})
+                if isinstance(poetry_dependencies, dict):
+                    for dependency_name, value in poetry_dependencies.items():
+                        _record_poetry_dependency(dependency_name, value, "poetry", record_dependency)
                 legacy_dev = poetry.get("dev-dependencies", {})
                 if isinstance(legacy_dev, dict):
                     for dependency_name, value in legacy_dev.items():
