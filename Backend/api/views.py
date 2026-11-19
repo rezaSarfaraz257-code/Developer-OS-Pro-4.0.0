@@ -54,7 +54,7 @@ from .models import (
     Activity,
     Snippet,
     GitHubOAuthState,
-    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution, CommunityPost, CommunityPostComment,
+    GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, ProjectInvite, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey, BillingEvent, UsageRecord, OrganizationInvite, AuditLog, OrganizationSubscription, BillingInvoice, PaymentAttempt, BillingCredit, ProductEvent, NotificationPreference, SecuritySession, ReferralCode, Referral, ReferralReward, IDEExecution, FrameworkInstallation, CommunityPost, CommunityPostComment,
 )
 
 from .serializers import (
