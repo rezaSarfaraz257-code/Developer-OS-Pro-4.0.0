@@ -248,8 +248,10 @@ def execute(job):
             if not _workspace_write_allowed(workspace, actor):
                 raise RuntimeError("Workspace write access was revoked before Runner synchronization.")
             synced_revision = int(workspace.revision)
+            sync_payload = _workspace_payload(workspace)
+            expected_files = sync_payload["files"]
             runner_data, runner_error = _runner_request(
-                "POST", "/sync", _workspace_payload(workspace), timeout=30
+                "POST", "/sync", sync_payload, timeout=30
             )
             if runner_error:
                 # Keep provider/Runner diagnostics out of durable job errors.
@@ -260,6 +262,7 @@ def execute(job):
                 not isinstance(runner_data, dict)
                 or runner_data.get("status") != "synced"
                 or not isinstance(runner_data.get("files"), dict)
+                or runner_data.get("files") != expected_files
             ):
                 raise RuntimeError("Runner workspace synchronization returned an invalid receipt.")
             AuditLog.objects.create(
