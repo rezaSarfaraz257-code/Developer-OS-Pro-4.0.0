@@ -2767,8 +2767,10 @@ def ide_workspace_files_api(request, pk):
             return Response({"error": "Workspace changed elsewhere. Reload before saving.", "code": "stale_workspace", "revision": ws.revision}, status=409)
         return Response({"files": ws.files, "active_file": ws.active_file, "revision": ws.revision})
     content = request.data.get("content", "")
-    if not path or not isinstance(content, str):
-        return Response({"error": "Valid path and text content are required."}, status=400)
+    if not path:
+        return Response({"error": "Invalid path."}, status=400)
+    if not isinstance(content, str):
+        return Response({"error": "Valid text content is required."}, status=400)
     if path in files and action == "create":
         return Response({"error": "File already exists.", "code": "file_exists"}, status=409)
     conflict_files = {key: value for key, value in files.items() if not (action == "write" and key == path)}
