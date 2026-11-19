@@ -254,6 +254,14 @@ def execute(job):
             if runner_error:
                 # Keep provider/Runner diagnostics out of durable job errors.
                 raise RuntimeError("Runner workspace synchronization failed.")
+            # HTTP success alone is not proof that the Runner applied the
+            # snapshot. Accept only the documented /sync receipt shape.
+            if (
+                not isinstance(runner_data, dict)
+                or runner_data.get("status") != "synced"
+                or not isinstance(runner_data.get("files"), dict)
+            ):
+                raise RuntimeError("Runner workspace synchronization returned an invalid receipt.")
             AuditLog.objects.create(
                 user=actor,
                 action="ai_agent.runner_workspace_synced",
