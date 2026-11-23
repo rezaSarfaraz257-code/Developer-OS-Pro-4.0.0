@@ -10,7 +10,7 @@ tzdata==2026.6
 requests==2.34.2
 cryptography==50.0.2
 Pillow==13.0.0
-gunicorn==26.2.0
+gunicorn==27.0.1
 psycopg[binary,pool]==3.3.9
 whitenoise==6.12.0
 channels>=4.3.2,<5
