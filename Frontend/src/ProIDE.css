@@ -318,7 +318,7 @@
 }
 .dos-ide-pro::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;background:linear-gradient(rgba(100,180,210,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(100,180,210,.018) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.65),transparent 92%)}
 .dos-ide-pro .dos-topbar{min-height:54px;background:linear-gradient(180deg,rgba(11,22,34,.96),rgba(7,14,23,.93));border-bottom:1px solid rgba(100,191,220,.12);box-shadow:0 8px 28px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.025);backdrop-filter:blur(18px)}
-.dos-ide-pro .dos-logo{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;color:#b9f3ff;background:linear-gradient(145deg,#0e3547,#09202e);border:1px solid rgba(91,220,255,.24);box-shadow:0 0 22px rgba(57,205,244,.12),inset 0 1px rgba(255,255,255,.08)}
+.dos-ide-pro .dos-logo{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#0b1724;border:1px solid rgba(91,220,255,.24);box-shadow:0 0 22px rgba(57,205,244,.12);overflow:hidden}.dos-ide-pro .dos-logo img{width:100%;height:100%;object-fit:contain;padding:1px}.dos-ide-pro .dos-welcome-mark img{width:100%;height:100%;object-fit:contain;padding:3px}.dos-ide-pro .dos-debugger-brand-icon img{width:100%;height:100%;object-fit:contain;padding:2px}
 .dos-ide-pro .dos-brand strong{letter-spacing:.16em;text-shadow:0 0 18px rgba(100,220,255,.14)}
 .dos-ide-pro .dos-workspace-select{padding:4px 6px;border:1px solid rgba(100,191,220,.10);border-radius:10px;background:rgba(255,255,255,.018)}
 .dos-ide-pro .dos-workspace-select select{min-width:180px;background:transparent;border:0;color:#b8d4df;outline:none}

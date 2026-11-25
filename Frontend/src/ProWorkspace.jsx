@@ -150,7 +150,7 @@ export default function ProWorkspace({ profile, onLogout, onNavigate }) {
 
   return <div className="pro-shell">
     <aside className={`pro-sidebar ${mobileNav ? "open" : ""}`}>
-      <div className="pro-logo"><div className="pro-logo-mark">D</div><div><b>Developer<span>OS</span></b><small>Product engineering workspace</small></div></div>
+      <div className="pro-logo"><div className="pro-logo-mark"><img src="/favicon.svg?v=20261125-coremark" alt="" aria-hidden="true" /></div><div><b>Developer<span>OS</span></b><small>Product engineering workspace</small></div></div>
       <div className="pro-nav-label">WORKSPACE</div>
       <button className={`pro-nav ${tab === "overview" ? "active" : ""}`} onClick={() => { setTab("overview"); setMobileNav(false); }}>⌂ <span>Command center</span></button>
       <button className={`pro-nav ${tab === "tasks" ? "active" : ""}`} onClick={() => { setTab("tasks"); setMobileNav(false); }}>✓ <span>Tasks</span><em>{active}</em></button>

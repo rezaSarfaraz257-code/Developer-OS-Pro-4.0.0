@@ -1211,10 +1211,10 @@ test("Developer OS brand icon is used by browser, mobile install, app shell, and
   const iconPath = path.resolve(srcDir, "../public/favicon.svg");
 
   assert.equal(fs.existsSync(iconPath), true, "uploaded Developer OS SVG icon must ship in the public build");
-  assert.match(rootHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
-  assert.match(rootHtml, /rel="apple-touch-icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
-  assert.match(ideHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261104-brand/);
-  assert.ok(manifest.icons.some(icon => icon.src === "/favicon.svg?v=20261104-brand"));
+  assert.match(rootHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261125-coremark/);
+  assert.match(rootHtml, /rel="apple-touch-icon"[^>]*\/favicon\.svg\?v=20261125-coremark/);
+  assert.match(ideHtml, /rel="icon"[^>]*\/favicon\.svg\?v=20261125-coremark/);
+  assert.ok(manifest.icons.some(icon => icon.src === "/favicon.svg?v=20261125-coremark"));
   assert.match(app, /topbar-brand-icon/);
   assert.match(app, /auth-brand-icon/);
   assert.match(styles, /\.auth-brand-icon/);
