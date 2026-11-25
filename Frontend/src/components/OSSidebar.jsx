@@ -10,7 +10,7 @@ export default function OSSidebar({ page, onNavigate, isAuthenticated, onLogout 
   return (
     <aside className="os-sidebar" aria-label="Developer OS navigation">
       <button type="button" className="os-sidebar__brand" onClick={() => onNavigate("home")} aria-label="Developer OS home">
-        CO
+        <img src="/favicon.svg?v=20261125-coremark" alt="" aria-hidden="true" />
       </button>
 
       {navigationGroups.map(([label, items]) => (
