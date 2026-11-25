@@ -36,10 +36,11 @@
   box-shadow: 0 12px 24px rgba(103, 232, 249, 0.26);
 }
 
-.brand-mark img {
+ .brand-mark img {
   width: 32px;
   height: 32px;
-  border-radius: 12px;
+  object-fit: contain;
+  border-radius: 8px;
   box-shadow: none;
 }
 
