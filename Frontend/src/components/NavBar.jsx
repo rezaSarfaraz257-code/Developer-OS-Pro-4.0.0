@@ -1,5 +1,4 @@
 import { useState } from "react";
-import devlogo from "../assets/devlogo.png";
 import Avatar from "./Avatar";
 import "./Navbar.css";
 
@@ -28,7 +27,7 @@ export default function NavBar({ setPage, isAuthenticated, handleLogout, profile
       >
         <div className="brand-wrap">
           <div className="brand-mark">
-            <img src={devlogo} alt="Developer OS" />
+            <img src="/favicon.svg?v=20261125-coremark" alt="Developer OS" />
           </div>
 
           <div className="brand-text">
