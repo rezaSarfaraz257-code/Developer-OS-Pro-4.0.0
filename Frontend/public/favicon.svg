@@ -1,62 +1,13 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <title>DEVELOPER OS — NOVA Identity</title>
-  <desc>Original geometric symbol representing a connected system, a central build core, and forward momentum.</desc>
-  <defs>
-    <linearGradient id="shell" x1="170" y1="160" x2="850" y2="870" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#F7FBFF"/>
-      <stop offset=".42" stop-color="#A9C9FF"/>
-      <stop offset="1" stop-color="#547DFF"/>
-    </linearGradient>
-    <linearGradient id="signal" x1="330" y1="710" x2="730" y2="300" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#45E5D0"/>
-      <stop offset=".52" stop-color="#54B8FF"/>
-      <stop offset="1" stop-color="#9C8BFF"/>
-    </linearGradient>
-    <linearGradient id="core" x1="390" y1="390" x2="635" y2="640" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#A9C8FF"/>
-    </linearGradient>
-    <filter id="softShadow" x="90" y="90" width="844" height="844" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
-      <feGaussianBlur stdDeviation="18"/>
-    </filter>
-  </defs>
-
-  <!-- Transparent background; every element remains editable. -->
-  <g id="symbol">
-    <!-- Outer system frame: intentionally open at the upper-right to imply expansion. -->
-    <path id="outer-frame"
-      d="M675 174H400C275 174 174 275 174 400V624C174 749 275 850 400 850H624C749 850 850 749 850 624V486"
-      fill="none" stroke="#0A1830" stroke-opacity=".12" stroke-width="78" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)"/>
-    <path id="outer-frame-main"
-      d="M675 174H400C275 174 174 275 174 400V624C174 749 275 850 400 850H624C749 850 850 749 850 624V486"
-      fill="none" stroke="url(#shell)" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/>
-
-    <!-- Three converging pathways: modular tools becoming one system. -->
-    <g id="pathways" fill="none" stroke="url(#signal)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M330 338L458 466"/>
-      <path d="M694 338L566 466"/>
-      <path d="M330 686L458 558"/>
-    </g>
-
-    <!-- Forward signal, the system's output. -->
-    <path id="forward-signal" d="M590 566L760 396L760 510L852 418"
-      fill="none" stroke="url(#signal)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
-    <path id="signal-tip" d="M760 396H852V488"
-      fill="none" stroke="#8DDCFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-
-    <!-- Central build core. -->
-    <path id="core-diamond" d="M512 392L632 512L512 632L392 512Z"
-      fill="#10223E" fill-opacity=".92" stroke="url(#core)" stroke-width="12" stroke-linejoin="round"/>
-    <path id="core-inner" d="M512 447L577 512L512 577L447 512Z"
-      fill="url(#signal)" stroke="#EAF6FF" stroke-width="8" stroke-linejoin="round"/>
-    <circle id="core-point" cx="512" cy="512" r="17" fill="#FFFFFF"/>
-
-    <!-- Small anchor nodes: system modules. -->
-    <g id="nodes" fill="#EAF4FF" stroke="#4D8FFF" stroke-width="12">
-      <circle cx="330" cy="338" r="23"/>
-      <circle cx="694" cy="338" r="23"/>
-      <circle cx="330" cy="686" r="23"/>
-    </g>
-  </g>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Developer OS Coremark brand asset -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" xml:space="preserve">
+<style type="text/css">.st0{fill:url(#SVGID_1_)}.st1{fill:#111A21}.st2{fill:url(#SVGID_2_)}.st3{fill:#FF0000}.st4{fill:#1B2730}.st5{fill:none;stroke:url(#SVGID_3_);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}</style>
+<linearGradient id="SVGID_1_" gradientUnits="userSpaceOnUse" x1="-61.8667" y1="1718.1764" x2="-60.9467" y2="1717.1764" gradientTransform="matrix(872 0 0 -814 54066 1398635)"><stop offset="0" style="stop-color:#56646E"/><stop offset="0.38" style="stop-color:#303D47"/><stop offset="1" style="stop-color:#172129"/></linearGradient>
+<path class="st0" d="M500,86l120,119c8,8,18,13.3,30,16l135,31c11.3,2.7,20.3,9.3,27,20l124,166l-157-46c-11.3-3.3-21.7-1.7-31,5l-48,34l-40,215c-2,12-6.7,23.3-14,34L500,900L354,680c-7.3-10.7-12-22-14-34l-40-215l-48-34c-9.3-6.7-19.7-8.3-31-5L64,438l124-166c6.7-10.7,15.7-17.3,27-20l135-31c12-2.7,22-8,30-16L500,86z"/>
+<path class="st1" d="M500,177l103,101l144,31l89,118l-90-26l-66,46l-46,203L500,817L366,650l-46-203l-66-46l-90,26l89-118l144-31L500,177z"/>
+<linearGradient id="SVGID_2_" gradientUnits="userSpaceOnUse" x1="-61.8648" y1="1717.7904" x2="-60.9448" y2="1716.7904" gradientTransform="matrix(672 0 0 -574 41766 986166)"><stop offset="0" style="stop-color:#56646E"/><stop offset="0.38" style="stop-color:#303D47"/><stop offset="1" style="stop-color:#172129"/></linearGradient>
+<path class="st2" d="M500,177l103,101l144,31l89,118l-90-26l-66,46l-46,203l-82,101l44-144l29-158l-59-67l-66-64l-66,64l-59,67l29,158l44,144l-82-101l-46-203l-66-46l-90,26l89-118l144-31L500,177z"/>
+<path class="st3" d="M500,228l126,126l-52,104l-74,154l-74-154l-52-104L500,228z"/><path class="st4" d="M500,382l55,84l-55,94l-55-94L500,382z"/><path class="st3" d="M500,427l28,42l-28,47l-28-47L500,427z"/>
+<linearGradient id="SVGID_3_" gradientUnits="userSpaceOnUse" x1="-61.9006" y1="1704.4412" x2="-60.9006" y2="1704.4412" gradientTransform="matrix(624 0 0 -51 38814 87173)"><stop offset="0" style="stop-color:#AEBBC3;stop-opacity:0.72"/><stop offset="0.5" style="stop-color:#E7EDF0;stop-opacity:0.12"/><stop offset="1" style="stop-color:#AEBBC3;stop-opacity:0.72"/></linearGradient>
+<path class="st5" d="M188,272c6.7-10.7,15.7-17.3,27-20l135-31 M812,272c-6.7-10.7-15.7-17.3-27-20l-135-31"/>
 </svg>
