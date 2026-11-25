@@ -190,7 +190,7 @@ export function DebuggerPanel({workspace,activeFile,onPrepare,onOpen,onClose}) {
  const stateClass=paused?"paused":running?"running":state==="stopped"?"stopped":"idle";
  return <section className="dos-debugger dos-debugger-pro" role="dialog" aria-label="Developer OS debugger">
   <header className="dos-debugger-head">
-   <div className="dos-debugger-brand"><span className="dos-debugger-brand-icon">⌘</span><div><strong>DEBUGGER</strong><small>DEVELOPER OS <span>·</span> LIVE DAP</small></div></div>
+   <div className="dos-debugger-brand"><span className="dos-debugger-brand-icon"><img src="/favicon.svg?v=20261125-coremark" alt="" aria-hidden="true" /></span><div><strong>DEBUGGER</strong><small>DEVELOPER OS <span>·</span> LIVE DAP</small></div></div>
    <div className="dos-debugger-head-right"><span className={`dos-debugger-state ${stateClass}`}><i/>{stateLabel}</span><button type="button" onClick={onClose} aria-label="Close debugger" title="Close debugger">×</button></div>
   </header>
   <div className="dos-debugger-session">
