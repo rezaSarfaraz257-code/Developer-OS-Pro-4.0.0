@@ -358,7 +358,7 @@ class AgentRunLifecycleTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_approval_marks_plan_only_and_does_not_mutate_workspace(self):
+    def test_approval_waits_for_task_execution_without_mutating_workspace(self):
         run = AgentRun.objects.create(
             owner=self.user,
             workspace=self.workspace,
@@ -371,7 +371,7 @@ class AgentRunLifecycleTests(TestCase):
         response = self.client.post(f"/api/ai/agent/runs/{run.id}/approve/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "approved")
-        self.assertEqual(response.data["execution_state"], "plan_only_no_workspace_mutations")
+        self.assertEqual(response.data["execution_state"], "approved_awaiting_task_execution")
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, original_files)
 
