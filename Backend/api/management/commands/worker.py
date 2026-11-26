@@ -568,9 +568,13 @@ class Command(BaseCommand):
                         # it still owns the durable job lease.
                         from api.agent_execution import fail_agent_task_verification
                         fail_agent_task_verification(persisted_job)
+                    persisted_payload = (
+                        persisted_job.payload if isinstance(persisted_job.payload, dict) else {}
+                    )
                     if persisted_job.kind == "ai_agent_plan" and persisted_job.status in {"queued", "failed"}:
+                        run_id = persisted_payload.get("run_id")
                         run = AgentRun.objects.select_for_update().filter(
-                            pk=persisted_job.payload.get("run_id")
+                            pk=run_id if type(run_id) is int and run_id > 0 else None
                         ).first()
                         if run and run.status in {"queued", "planning"}:
                             if persisted_job.status == "queued":
@@ -592,8 +596,8 @@ class Command(BaseCommand):
                                 )
                     if persisted_job.kind == "data_export" and persisted_job.status == "failed":
                         DataExportRequest.objects.filter(
-                            pk=persisted_job.payload.get("export_id"),
-                            user_id=persisted_job.payload.get("user_id"),
+                            pk=persisted_payload.get("export_id"),
+                            user_id=persisted_payload.get("user_id"),
                         ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the
