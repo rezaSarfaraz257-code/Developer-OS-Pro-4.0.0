@@ -108,6 +108,7 @@ test("task execution normalization verifies run/task identity and keeps bounded 
     { ...acceptedPayload.evidence.human_acceptance, criteria_scope: "run" },
     { ...acceptedPayload.evidence.human_acceptance, accepted_criteria: [] },
     { ...acceptedPayload.evidence.human_acceptance, accepted_at: "not-a-date" },
+    { ...acceptedPayload.evidence.human_acceptance, accepted_at: "2026-11-27T00:00:00" },
     { ...acceptedPayload.evidence.human_acceptance, user_id: null },
   ]) {
     assert.equal(
