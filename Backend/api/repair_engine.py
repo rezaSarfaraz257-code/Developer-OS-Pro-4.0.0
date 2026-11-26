@@ -678,6 +678,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             if raw_line.startswith((" ", "+", "-")):
                 current["active_hunk"]["lines"].append(raw_line)
                 continue
+            raise RepairContractError("Patch hunk contains a line without a unified-diff marker.")
         if line.strip():
             raise RepairContractError("Patch contains content outside a recognized unified-diff hunk.")
 
