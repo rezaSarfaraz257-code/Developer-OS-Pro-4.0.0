@@ -154,7 +154,10 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Execution identity mismatch.")
     if type(payload.get("workspace_id")) is not int or payload["workspace_id"] != expected_workspace_id:
         raise RepairContractError("Workspace identity mismatch.")
-    if payload.get("workspace_revision") != expected_workspace_revision:
+    if (
+        type(payload.get("workspace_revision")) is not type(expected_workspace_revision)
+        or payload.get("workspace_revision") != expected_workspace_revision
+    ):
         raise RepairContractError("Workspace revision mismatch.")
     if type(payload.get("job_id")) is not int or payload["job_id"] != expected_job_id:
         raise RepairContractError("Job identity mismatch.")
@@ -347,7 +350,11 @@ def analyze_root_cause(evidence, *, changed_paths=()):
             "category": classification["category"],
             "message": error.get("message", ""),
             "source_location": location,
-            "evidence_reference": error.get("evidence_reference"),
+            "evidence_reference": (
+                error.get("evidence_reference")
+                or evidence.get("stderr_reference")
+                or evidence.get("stdout_reference")
+            ),
             "change_relation": relation,
             "confidence": "moderate" if path and relation != "outside_changed_files" else "low",
         })
