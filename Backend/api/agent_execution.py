@@ -230,9 +230,13 @@ def agent_task_verification_start_api(request, pk, task_pk):
 
         sync_job = get_object_or_404(
             BackgroundJob.objects.select_for_update(),
-            pk=sync_job_id, kind="ai_agent_runner_sync",
-            payload__workspace_id=workspace.id, payload__owner_id=request.user.id,
+            pk=sync_job_id,
+            kind="ai_agent_runner_sync",
+            payload__owner_id=request.user.id,
         )
+        sync_payload = sync_job.payload if isinstance(sync_job.payload, dict) else {}
+        if sync_payload.get("workspace_id") != workspace.id:
+            return Response({"error": "The exact workspace revision must finish Runner synchronization first."}, status=409)
         sync_result = sync_job.result if isinstance(sync_job.result, dict) else {}
         if (
             sync_job.status != "succeeded"
