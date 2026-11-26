@@ -88,6 +88,16 @@ class AgentExecutionStatePayloadTests(TestCase):
         self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "verified_human_accepted")
 
+    def test_succeeded_task_without_human_acceptance_is_not_reported_as_success(self):
+        self.task.status = "succeeded"
+        self.task.save(update_fields=["status", "updated_at"])
+        self.run.status = "succeeded"
+        self.run.save(update_fields=["status", "updated_at"])
+        self.assertEqual(
+            self.execution_state(),
+            "task_success_missing_human_acceptance_requires_review",
+        )
+
     def test_failed_run_never_reports_stale_succeeded_tasks_as_success(self):
         self.mark_human_accepted()
         self.run.status = "failed"
