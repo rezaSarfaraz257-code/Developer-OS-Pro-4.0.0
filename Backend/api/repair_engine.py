@@ -927,7 +927,7 @@ def evaluate_rollback_eligibility(
         raise RepairContractError("Rollback patch identity is invalid.")
     snapshot_reference = _artifact_reference(snapshot_reference, "rollback snapshot_reference")
     evidence = verification_evidence
-    if type(evidence) is not dict:
+    if not _exact_string_keys(evidence):
         raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     try:
         _opaque_identifier(evidence.get("execution_id"), "rollback execution_id")
@@ -957,15 +957,14 @@ def evaluate_rollback_eligibility(
         raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     checks = evidence.get("checks")
     required = {"targeted_tests", "regression_tests", "security"}
-    if not _exact_string_keys(checks) or not _exact_string_keys(checks)
-        or set(checks) != required:
+    if not _exact_string_keys(checks) or set(checks) != required:
         raise RepairContractError("Rollback verification evidence is incomplete.")
     failed_gates = []
     for name, check in checks.items():
         if (
             type(check) is not dict
             or not _exact_string_keys(check)
-            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"
+            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
             or type(check.get("status")) is not str
             or check.get("status") not in {"passed", "failed"}
             or check.get("execution_id") != evidence["execution_id"]
@@ -1055,7 +1054,7 @@ def verification_passed(result, *, expected_revision):
     except RepairContractError:
         return False
     if (
-        type(result) is not dict
+        not _exact_string_keys(result)
         or type(result.get("evidence_origin")) is not str
         or result.get("evidence_origin") != "runner"
         or type(result.get("schema_version")) is not int
@@ -1085,11 +1084,11 @@ def verification_passed(result, *, expected_revision):
         return False
     checks = result.get("checks")
     required = {"targeted_tests", "regression_tests", "security"}
-    if type(checks) is not dict or set(checks) != required:
+    if not _exact_string_keys(checks) or set(checks) != required:
         return False
     for check in checks.values():
         if (
-            type(check) is not dict
+            not _exact_string_keys(check)
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
             or type(check.get("status")) is not str
             or check.get("status") != "passed"
