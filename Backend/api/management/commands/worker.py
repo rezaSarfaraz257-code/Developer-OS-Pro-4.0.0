@@ -51,19 +51,31 @@ def recover_stale_jobs():
             ):
                 continue
             if locked.kind == "email":
-                # SMTP/API acceptance can succeed immediately before a worker
-                # crash, leaving no durable acknowledgement in our database.
-                # Replaying an uncertain delivery can send duplicate security
-                # and account emails. Fail closed and require provider-log
-                # reconciliation before an operator creates a deliberate retry.
-                locked.status = "failed"
-                locked.dead_lettered_at = recovery_now
-                locked.finished_at = recovery_now
-                locked.error = (
-                    "Email delivery outcome is unknown after worker interruption; "
-                    "automatic retry suppressed to prevent duplicate delivery. "
-                    "Reconcile provider delivery logs before manual retry."
+                # Resend deduplicates requests for 24 hours. Use a conservative
+                # 23-hour enqueue-age bound so a recovered request keeps that
+                # provider guarantee even when its first send time is unknown.
+                resend_idempotency_window_open = bool(
+                    settings.EMAIL_BACKEND == "api.email_backends.resend.EmailBackend"
+                    and locked.created_at
+                    and locked.created_at >= recovery_now - timedelta(hours=23)
                 )
+                if locked.attempts < locked.max_attempts and resend_idempotency_window_open:
+                    locked.status = "queued"
+                    locked.available_at = recovery_now + timedelta(
+                        seconds=min(300, 2 ** max(1, locked.attempts))
+                    )
+                else:
+                    # SMTP and expired Resend keys cannot prove that a send was
+                    # not accepted before the worker stopped. Never replay an
+                    # ambiguous delivery without provider-side deduplication.
+                    locked.status = "failed"
+                    locked.dead_lettered_at = recovery_now
+                    locked.finished_at = recovery_now
+                    locked.error = (
+                        "Email delivery outcome is unknown after worker interruption; "
+                        "automatic retry suppressed to prevent duplicate delivery. "
+                        "Reconcile provider delivery logs before manual retry."
+                    )
             elif locked.attempts < locked.max_attempts:
                 locked.status = "queued"
                 locked.available_at = recovery_now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
