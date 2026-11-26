@@ -181,7 +181,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
     @override_settings(EMAIL_BACKEND="api.email_backends.resend.EmailBackend")
     @patch("api.management.commands.worker.execute", side_effect=RuntimeError("temporary provider error"))
-    def test_resend_failure_remains_retryable_with_stable_provider_key(self, mocked_execute):
+    def test_resend_failure_remains_retryable_with_provider_idempotency(self, mocked_execute):
         job = BackgroundJob.objects.create(
             kind="email",
             payload={"to": "private@example.invalid"},
