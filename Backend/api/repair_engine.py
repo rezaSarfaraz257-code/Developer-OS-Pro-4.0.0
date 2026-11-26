@@ -552,11 +552,26 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     _revision(snapshot_revision)
     if type(snapshot_revision) is not type(target_revision) or snapshot_revision != target_revision:
         raise RepairContractError("Workspace snapshot revision does not match the patch target revision.")
-    if type(workspace_files) is not dict or any(type(path) is not str for path in workspace_files):
-        raise RepairContractError("An authoritative workspace snapshot with exact string paths is required.")
+    if type(workspace_files) is not dict:
+        raise RepairContractError("An authoritative workspace snapshot must be an exact dictionary.")
     # Copy the exact built-in dict before validation so later caller mutations
     # cannot change the set of files or contents being checked.
     snapshot_files = dict(workspace_files)
+    snapshot_total_bytes = 0
+    for snapshot_path, snapshot_content in snapshot_files.items():
+        if type(snapshot_path) is not str or type(snapshot_content) is not str:
+            raise RepairContractError("Snapshot paths and contents must be exact strings.")
+        if not _safe_relative_path(snapshot_path) or len(snapshot_content) > MAX_PATCH_SOURCE_BYTES or "\x00" in snapshot_content:
+            raise RepairContractError("Snapshot contains an unsafe path or oversized/non-text file.")
+        try:
+            content_size = len(snapshot_content.encode("utf-8", errors="strict"))
+        except UnicodeEncodeError as exc:
+            raise RepairContractError("Snapshot contains invalid Unicode.") from exc
+        if content_size > MAX_PATCH_SOURCE_BYTES:
+            raise RepairContractError("Snapshot file exceeds the text safety limit.")
+        snapshot_total_bytes += content_size
+        if snapshot_total_bytes > MAX_PATCH_TOTAL_SOURCE_BYTES:
+            raise RepairContractError("Workspace snapshot exceeds the aggregate safety limit.")
     if type(unified_diff) is not str or not unified_diff or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch is empty or exceeds the configured size limit.")
     try:
