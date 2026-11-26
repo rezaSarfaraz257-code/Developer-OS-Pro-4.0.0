@@ -673,6 +673,8 @@ class VerificationEvidenceTests(SimpleTestCase):
         self.assertTrue(verification_passed(result, expected_revision=14))
         result["execution_id"] = "x" * 129
         self.assertFalse(verification_passed(result, expected_revision=14))
+        result["execution_id"] = "exec" + chr(10) + "invalid"
+        self.assertFalse(verification_passed(result, expected_revision=14))
         result["execution_id"] = "exec-verified-14"
         result["checks"]["security"]["status"] = "failed"
         self.assertFalse(verification_passed(result, expected_revision=14))
@@ -784,6 +786,12 @@ class RollbackEligibilityTests(SimpleTestCase):
         with self.assertRaises(RepairContractError):
             evaluate_rollback_eligibility(evidence, **self.kwargs())
         evidence["checks"]["security"]["status"] = []
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+        evidence = self.evidence(
+            failed_gate="targeted_tests",
+            execution_id="exec" + chr(10) + "invalid",
+        )
         with self.assertRaises(RepairContractError):
             evaluate_rollback_eligibility(evidence, **self.kwargs())
 
