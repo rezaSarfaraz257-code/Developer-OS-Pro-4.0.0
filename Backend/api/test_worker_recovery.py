@@ -108,20 +108,26 @@ class StaleWorkerJobRecoveryTests(TestCase):
             max_attempts=3,
         )
 
+        executions = []
+
         def execute_then_expire(claimed_job):
-            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
-                locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
-            )
-            return {"worker": "expired", "must_not_persist": True}
+            executions.append(claimed_job.locked_by)
+            if len(executions) == 1:
+                BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                    locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
+                )
+                return {"worker": "expired", "must_not_persist": True}
+            return {"worker": "replacement", "persisted": True}
 
         mocked_execute.side_effect = execute_then_expire
 
         Command().handle(once=True, sleep=0)
 
         job.refresh_from_db()
-        self.assertEqual(job.status, "running")
-        self.assertTrue(job.locked_by)
-        self.assertNotEqual(job.result, {"worker": "expired", "must_not_persist": True})
+        self.assertEqual(len(executions), 2)
+        self.assertNotEqual(executions[0], executions[1])
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.result, {"worker": "replacement", "persisted": True})
 
     @patch("api.management.commands.worker.execute")
     def test_old_worker_outcome_is_discarded_after_job_is_reclaimed(self, mocked_execute):
