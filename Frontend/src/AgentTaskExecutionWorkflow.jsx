@@ -46,7 +46,7 @@ function persistSync(runId, taskId, sync) {
 }
 
 export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
-  const tasks = Array.isArray(run?.tasks) ? run.tasks : [];
+  const tasks = useMemo(() => (Array.isArray(run?.tasks) ? run.tasks : []), [run?.tasks]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [execution, setExecution] = useState(null);
   const [executionLoaded, setExecutionLoaded] = useState(false);
@@ -145,20 +145,38 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
     };
   }, [runId, taskId, workspaceId]);
 
+  const syncJobId = syncJob?.id;
+  const syncJobStatus = syncJob?.status;
+  const syncJobWorkspaceId = syncJob?.workspaceId;
+  const syncJobRevision = syncJob?.revision;
+  const syncJobCoalesced = syncJob?.coalesced;
+  const syncJobError = syncJob?.error;
+  const syncJobSnapshot = useMemo(() => (
+    syncJobId == null ? null : {
+      id: syncJobId,
+      status: syncJobStatus,
+      workspaceId: syncJobWorkspaceId,
+      revision: syncJobRevision,
+      coalesced: syncJobCoalesced,
+      error: syncJobError,
+    }
+  ), [syncJobId, syncJobStatus, syncJobWorkspaceId, syncJobRevision, syncJobCoalesced, syncJobError]);
+
   useEffect(() => {
-    if (!syncJob || isSyncTerminal(syncJob.status) || !syncJob.id || runId === null) return undefined;
+    const currentSync = syncJobSnapshot;
+    if (!currentSync || isSyncTerminal(currentSync.status) || !currentSync.id || runId === null) return undefined;
     let active = true;
     let timer;
     let failures = 0;
     const poll = async () => {
       try {
-        const response = await apiFetch(`/ai/agent/sync-jobs/${syncJob.id}/`);
+        const response = await apiFetch(`/ai/agent/sync-jobs/${currentSync.id}/`);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(errorMessage(payload, "Runner synchronization status is unavailable."));
         const normalized = normalizeSyncSnapshot(payload, { workspaceId });
-        if (!normalized || normalized.id !== syncJob.id) {
+        if (!normalized || normalized.id !== currentSync.id) {
           const invalidReceipt = {
-            ...syncJob,
+            ...currentSync,
             status: "stale",
             error: "Runner synchronization identity or workspace could not be verified.",
           };
@@ -170,12 +188,12 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
           return;
         }
         const revisionMismatch = payload.revision == null
-          || normalizeExecutionId(payload.revision) !== normalizeExecutionId(syncJob.revision)
+          || normalizeExecutionId(payload.revision) !== normalizeExecutionId(currentSync.revision)
           || payload.workspace_id == null
           || normalizeExecutionId(payload.workspace_id) !== workspaceId;
         const next = {
           ...normalized,
-          revision: normalized.revision ?? syncJob.revision,
+          revision: normalized.revision ?? currentSync.revision,
           status: revisionMismatch && normalized.status === "succeeded" ? "stale" : normalized.status,
         };
         if (!active) return;
@@ -204,10 +222,12 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
       active = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [syncJob?.id, syncJob?.status, syncJob?.revision, runId, taskId, workspaceId, onRefreshRun]);
+  }, [syncJobSnapshot, runId, taskId, workspaceId, onRefreshRun]);
+
+  const executionStatus = execution?.status;
 
   useEffect(() => {
-    if (!execution || execution.status !== "running" || runId === null || taskId === null) return undefined;
+    if (executionStatus !== "running" || runId === null || taskId === null) return undefined;
     let active = true;
     let timer;
     let failures = 0;
@@ -243,7 +263,7 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
       active = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [execution?.status, runId, taskId, onRefreshRun]);
+  }, [executionStatus, runId, taskId, onRefreshRun]);
 
   const effectiveStatus = execution?.status || selectedTask?.status || "unknown";
   const criteria = execution?.acceptanceCriteria?.length
