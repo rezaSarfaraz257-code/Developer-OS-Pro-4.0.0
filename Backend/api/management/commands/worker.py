@@ -344,7 +344,7 @@ def execute(job):
     if job.kind == "data_export":
         export_id = job.payload.get("export_id")
         user_id = job.payload.get("user_id")
-        if not job.pk or not isinstance(export_id, int) or not isinstance(user_id, int):
+        if not job.pk or type(export_id) is not int or export_id <= 0 or type(user_id) is not int or user_id <= 0:
             raise RuntimeError("Data export job identity is malformed.")
         user = User.objects.filter(pk=user_id).first()
         if user is None:
