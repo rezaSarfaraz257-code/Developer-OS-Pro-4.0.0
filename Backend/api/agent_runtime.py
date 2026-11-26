@@ -168,7 +168,6 @@ def _run_execution_state(run, tasks):
     if any(status == "failed" for status in statuses):
         return "execution_failed_requires_review"
     if statuses and all(status == "succeeded" for status in statuses):
-        accepted_tasks = []
         for task in tasks:
             evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
             acceptance = evidence.get("human_acceptance", {})
@@ -186,7 +185,6 @@ def _run_execution_state(run, tasks):
                 or accepted_criteria != criteria
             ):
                 return "task_success_missing_human_acceptance_requires_review"
-            accepted_tasks.append(task.id)
         if run.status == "succeeded":
             return "verified_human_accepted"
         return "run_finalization_incomplete_requires_review"
