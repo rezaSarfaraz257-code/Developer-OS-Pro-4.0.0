@@ -519,6 +519,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             return
         old_count = sum(1 for line in hunk["lines"] if line.startswith((" ", "-")))
         new_count = sum(1 for line in hunk["lines"] if line.startswith((" ", "+")))
+        has_change = any(line.startswith(("+", "-")) for line in hunk["lines"])
+        if not has_change:
+            raise RepairContractError("Patch hunks must contain at least one added or removed line.")
         if old_count != hunk["old_count"] or new_count != hunk["new_count"]:
             raise RepairContractError("Patch hunk line counts do not match its header.")
         file_record["hunks"].append(hunk)
