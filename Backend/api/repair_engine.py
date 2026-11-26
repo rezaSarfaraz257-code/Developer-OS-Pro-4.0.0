@@ -733,7 +733,8 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         return False
     if not isinstance(patch_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", patch_sha256):
         return False
-    now = now or datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise RepairContractError("Approval validation clock must be timezone-aware.")
     try:
