@@ -422,11 +422,26 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
 
 
     def test_scanner_checks_added_lines_starting_with_multiple_plus_signs(self):
-        findings = scan_patch_for_secrets("+++ token = 'ghp_" + "D" * 30 + "'")
+        secret = "ghp_" + "D" * 30
+        source_line = "+++ b/token = '" + secret + "'"
+        patch = (
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -1 +1 @@\n"
+            "-value = 1\n"
+            + source_line + "\n"
+        )
+        findings = scan_patch_for_secrets(patch)
         self.assertTrue(findings)
-        # A real unified-diff file header must not be treated as an added source line.
-        self.assertEqual(scan_patch_for_secrets("+++ b/src/main.py"), [])
-
+        self.assertNotIn(secret, str(findings))
+        header_only = (
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+        )
+        self.assertEqual(scan_patch_for_secrets(header_only), [])
+        self.assertTrue(scan_patch_for_secrets(source_line))
     def test_revision_bound_approval_expires_and_invalidates_on_revision_or_patch_change(self):
         now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
         approval = {
