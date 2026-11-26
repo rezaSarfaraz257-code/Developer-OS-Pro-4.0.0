@@ -141,6 +141,10 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             mail.return_value.send.return_value = 1
             result = execute(self.email_job())
         self.assertEqual(result, {"sent": True, "to": "member@example.test"})
+        self.assertEqual(
+            mail.return_value._developer_os_idempotency_key,
+            "developer-os-email-job-42",
+        )
         mail.return_value.send.assert_called_once_with(fail_silently=False)
 
     @override_settings(
