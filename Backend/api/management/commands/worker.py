@@ -99,9 +99,12 @@ def recover_stale_jobs():
                 "dead_lettered_at", "finished_at", "error", "last_error_at",
             ])
             if locked.kind == "ai_agent_plan":
-                run = AgentRun.objects.select_for_update().filter(
-                    pk=payload.get("run_id")
-                ).first()
+                run_id = payload.get("run_id")
+                run = (
+                    AgentRun.objects.select_for_update().filter(pk=run_id).first()
+                    if type(run_id) is int and run_id > 0
+                    else None
+                )
                 if run and run.status in {"queued", "planning"}:
                     if locked.status == "queued":
                         run.status = "queued"
@@ -121,10 +124,16 @@ def recover_stale_jobs():
                             metadata={"reason": "worker_lease_exhausted", "attempts": locked.attempts},
                         )
             if locked.status == "failed" and locked.kind == "data_export":
-                DataExportRequest.objects.filter(
-                    pk=payload.get("export_id"),
-                    user_id=payload.get("user_id"),
-                ).exclude(status__in=["ready", "expired"]).update(status="failed")
+                export_id = payload.get("export_id")
+                user_id = payload.get("user_id")
+                if (
+                    type(export_id) is int and export_id > 0
+                    and type(user_id) is int and user_id > 0
+                ):
+                    DataExportRequest.objects.filter(
+                        pk=export_id,
+                        user_id=user_id,
+                    ).exclude(status__in=["ready", "expired"]).update(status="failed")
             if locked.status == "failed" and locked.kind == "ai_agent_task_verify":
                 # Verification POSTs are deliberately single-attempt: after a
                 # worker lease expires, the Runner may already have executed.
