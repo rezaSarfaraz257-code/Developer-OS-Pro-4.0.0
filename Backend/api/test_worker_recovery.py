@@ -575,3 +575,35 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertIsNone(malformed_export.locked_at)
         self.assertEqual(malformed_plan.locked_by, "")
         self.assertEqual(malformed_export.locked_by, "")
+
+
+    def test_stale_recovery_ignores_invalid_identifier_shapes_in_object_payloads(self):
+        malformed_plan = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": []},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="worker:invalid-plan-id",
+        )
+        malformed_export = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": {}, "user_id": []},
+            status="running",
+            attempts=3,
+            max_attempts=3,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="worker:invalid-export-id",
+        )
+
+        recover_stale_jobs()
+
+        malformed_plan.refresh_from_db()
+        malformed_export.refresh_from_db()
+        self.assertEqual(malformed_plan.status, "failed")
+        self.assertEqual(malformed_export.status, "failed")
+        self.assertIsNotNone(malformed_plan.dead_lettered_at)
+        self.assertIsNotNone(malformed_export.dead_lettered_at)
+        self.assertIsNone(malformed_plan.locked_at)
+        self.assertIsNone(malformed_export.locked_at)
