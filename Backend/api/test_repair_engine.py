@@ -973,6 +973,23 @@ class RollbackEligibilityTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     evaluate_rollback_eligibility(evidence, **self.kwargs())
 
+    def test_rollback_rejects_string_subclasses_for_trusted_identity_fields(self):
+        class SpoofedString(str):
+            def __eq__(self, other):
+                return True
+
+        for field, value in (
+            ("evidence_origin", SpoofedString("agent")),
+            ("execution_id", SpoofedString("forged-execution")),
+            ("patch_sha256", SpoofedString("b" * 64)),
+            ("execution_status", SpoofedString("failed")),
+        ):
+            with self.subTest(field=field):
+                evidence = self.evidence(failed_gate="security")
+                evidence[field] = value
+                with self.assertRaises(RepairContractError):
+                    evaluate_rollback_eligibility(evidence, **self.kwargs())
+
     def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
         evidence = self.evidence(failed_gate="targeted_tests")
         evidence["patch_sha256"] = "b" * 64
