@@ -638,6 +638,8 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         source_text = snapshot_files[path]
         if len(source_text) > MAX_PATCH_SOURCE_BYTES or "\x00" in source_text:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
+        if source_text and not source_text.endswith("\n"):
+            raise RepairContractError("Patch targets without a final LF are unsupported because no-newline diff markers are rejected.")
         try:
             source_bytes = source_text.encode("utf-8", errors="strict")
         except UnicodeEncodeError as exc:
