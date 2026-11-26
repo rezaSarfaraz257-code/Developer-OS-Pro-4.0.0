@@ -565,14 +565,14 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                     )
 
     def test_patch_parser_treats_unicode_line_separator_as_file_content(self):
-        source = "value = 'before\\u2028after'\\n"
+        source = "value = 'before\u2028after'\n"
         patch = (
-            "diff --git a/src/main.py b/src/main.py\\n"
-            "--- a/src/main.py\\n"
-            "+++ b/src/main.py\\n"
-            "@@ -1 +1 @@\\n"
-            "-value = 'before\\u2028after'\\n"
-            "+value = 'updated'\\n"
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -1 +1 @@\n"
+            "-value = 'before\u2028after'\n"
+            "+value = 'updated'\n"
         )
         result = self.validate_patch(
             patch,
