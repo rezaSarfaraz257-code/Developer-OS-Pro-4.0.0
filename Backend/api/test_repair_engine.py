@@ -406,8 +406,8 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         oversized_source = "x" * (MAX_PATCH_SOURCE_CHARS + 1)
         invalid_sources = (
             oversized_source,
-            "value = 1\\x00\\n",
-            "value = \\ud800\\n",
+            "value = 1\x00\n",
+            "value = \ud800\n",
         )
         for source in invalid_sources:
             with self.subTest(source_length=len(source)):
