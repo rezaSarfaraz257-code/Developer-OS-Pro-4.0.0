@@ -129,9 +129,9 @@ class RunnerEvidenceContractTests(SimpleTestCase):
     def test_redacts_entire_private_key_blocks_from_persisted_evidence(self):
         key_body = "MIIE" + "K" * 48
         private_key = (
-            "-----BEGIN PRIVATE KEY-----\\n"
+            "-----BEGIN PRIVATE KEY-----\n"
             + key_body
-            + "\\n-----END PRIVATE KEY-----"
+            + "\n-----END PRIVATE KEY-----"
         )
         result = self.normalize(self.evidence(stack_trace=private_key))
         self.assertNotIn(key_body, result["stack_trace"])
