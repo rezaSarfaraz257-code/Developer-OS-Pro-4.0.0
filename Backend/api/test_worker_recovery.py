@@ -45,6 +45,23 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertTrue(refresh_job_lease(job.pk, second_lease))
 
 
+    def test_expired_lease_cannot_be_resurrected_by_original_worker(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="delayed-worker:expired-token",
+        )
+
+        self.assertFalse(refresh_job_lease(job.pk, "delayed-worker:expired-token"))
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "delayed-worker:expired-token")
+        self.assertLess(job.locked_at, timezone.now() - STALE_AFTER)
+
     def test_recovery_rechecks_a_lease_refreshed_after_candidate_scan(self):
         scan_time = timezone.now()
         job = BackgroundJob.objects.create(
