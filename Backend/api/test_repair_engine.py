@@ -465,6 +465,17 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
                 validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
+    def test_rejects_bidirectional_controls_in_added_source_lines(self):
+        controls = ("\\u061c", "\\u200e", "\\u200f", "\\u202a", "\\u202b", "\\u202c", "\\u202d", "\\u202e", "\\u2066", "\\u2067", "\\u2068", "\\u2069")
+        for control in controls:
+            patch = self.patch().replace("+value = 2", '+value = "safe' + control + 'text"')
+            with self.subTest(control=repr(control)):
+                with self.assertRaises(RepairContractError):
+                    validate_unified_patch(
+                        patch, target_revision="r", expected_revision="r",
+                        workspace_files={"src/main.py": "value = 1\\n"},
+                    )
+
     def test_rejects_oversized_hunk_coordinates(self):
         huge_coordinate = self.patch().replace(
             "@@ -1 +1 @@", "@@ -" + ("9" * 5000) + " +1 @@"
