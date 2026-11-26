@@ -1513,8 +1513,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
     def test_verification_start_keeps_shared_sync_job_lock_after_run_and_task(self):
         # The Runner verification worker holds its execution job, then Run,
         # Task, Workspace, and finally the shared sync job. Keep the API's
-        # shared sync-job lock after Run/Task/Workspace to avoid lock inversion
-        # when independent tasks verify against the same synchronized revision.
+        # lock sequence aligned; select_related must not lock Workspace early.
         with CaptureQueriesContext(connection) as captured:
             response = self.client.post(self.url, {
                 "sync_job_id": self.sync_job.id,
@@ -1532,12 +1531,17 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             index for index, sql in enumerate(statements)
             if sql.lstrip().startswith("SELECT") and '"API_AGENTTASK"' in sql
         )
+        workspace_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_CODEWORKSPACE"' in sql
+        )
         sync_lock_index = next(
             index for index, sql in enumerate(statements)
             if sql.lstrip().startswith("SELECT") and '"API_BACKGROUNDJOB"' in sql
         )
         self.assertLess(run_lock_index, task_lock_index)
-        self.assertLess(task_lock_index, sync_lock_index)
+        self.assertLess(task_lock_index, workspace_lock_index)
+        self.assertLess(workspace_lock_index, sync_lock_index)
 
     def test_verification_start_rejects_sync_job_for_another_workspace(self):
         self.sync_job.payload = {
