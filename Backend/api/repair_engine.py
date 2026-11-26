@@ -492,9 +492,9 @@ def _patch_path_allowed(path):
     sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
     return (
         not any(part in protected_dirs for part in parts)
-        and basename not in protected_files
+        and not any(part in protected_files for part in parts)
         and not basename.startswith("dockerfile.")
-        and not basename.startswith(".env.")
+        and not any(part.startswith(".env.") for part in parts)
         and not basename.endswith(sensitive_suffixes)
     )
 
