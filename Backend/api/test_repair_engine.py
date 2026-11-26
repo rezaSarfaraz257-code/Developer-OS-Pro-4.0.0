@@ -1025,6 +1025,28 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             now=now,
         ))
 
+        class SpoofedApproval(dict):
+            def get(self, key, default=None):
+                return approval.get(key, default)
+
+        self.assertFalse(validate_revision_bound_approval(
+            SpoofedApproval(),
+            current_revision="rev-12",
+            patch_sha256="a" * 64,
+            now=now,
+        ))
+
+        class SpoofedDigest(str):
+            def __eq__(self, other):
+                return True
+
+        self.assertFalse(validate_revision_bound_approval(
+            approval,
+            current_revision="rev-12",
+            patch_sha256=SpoofedDigest("a" * 64),
+            now=now,
+        ))
+
 
 class VerificationEvidenceTests(SimpleTestCase):
     def test_success_requires_runner_and_all_independent_check_evidence(self):
