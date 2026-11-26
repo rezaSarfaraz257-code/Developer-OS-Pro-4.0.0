@@ -133,6 +133,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, "")
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
     def test_stale_email_job_is_dead_lettered_to_avoid_duplicate_delivery(self):
         job = BackgroundJob.objects.create(
             kind="email",
@@ -156,6 +157,28 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertIn("outcome is unknown", job.error)
         self.assertIn("automatic retry suppressed", job.error)
         self.assertIsNone(claim_job("email-retry-worker"))
+
+    @override_settings(EMAIL_BACKEND="api.email_backends.resend.EmailBackend")
+    def test_stale_resend_email_is_requeued_inside_provider_idempotency_window(self):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "private@example.invalid"},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=15),
+            locked_by="interrupted-resend-worker:lease",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(job.attempts, 1)
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNone(job.dead_lettered_at)
+        self.assertIn("Recovered stale worker lease.", job.error)
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
     @patch("api.management.commands.worker.execute", side_effect=RuntimeError("transport timeout"))
