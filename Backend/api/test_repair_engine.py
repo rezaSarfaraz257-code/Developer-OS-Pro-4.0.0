@@ -133,6 +133,24 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     self.normalize(payload)
 
+    def test_rejects_string_subclasses_for_runner_identity_fields(self):
+        class SpoofedString(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        for field, value in (
+            ("evidence_origin", SpoofedString("agent")),
+            ("execution_id", SpoofedString("other-execution")),
+            ("execution_status", SpoofedString("succeeded")),
+            ("workspace_revision", SpoofedString("12")),
+        ):
+            with self.subTest(field=field):
+                payload = self.evidence(**{field: value})
+                with self.assertRaises(RepairContractError):
+                    self.normalize(payload)
+
     def test_rejects_wrong_execution_workspace_job_or_revision(self):
         for field, value in (
             ("execution_id", "other"),
