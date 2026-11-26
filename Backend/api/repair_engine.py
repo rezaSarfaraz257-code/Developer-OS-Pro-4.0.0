@@ -179,13 +179,16 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Runner evidence has missing or unexpected fields.")
     if type(payload.get("schema_version")) is not int or payload["schema_version"] != EVIDENCE_SCHEMA_VERSION:
         raise RepairContractError("Unsupported Runner evidence schema version.")
-    if payload.get("evidence_origin") != "runner":
+    if not isinstance(payload.get("evidence_origin"), str) or payload.get("evidence_origin") != "runner":
         raise RepairContractError("Evidence origin must be the authenticated Runner.")
     _opaque_identifier(expected_execution_id, "expected_execution_id")
     _positive_id(expected_workspace_id, "expected_workspace_id")
     _positive_id(expected_job_id, "expected_job_id")
     _revision(expected_workspace_revision)
-    if payload.get("execution_id") != expected_execution_id:
+    if (
+        not isinstance(payload.get("execution_id"), str)
+        or payload.get("execution_id") != expected_execution_id
+    ):
         raise RepairContractError("Execution identity mismatch.")
     if type(payload.get("workspace_id")) is not int or payload["workspace_id"] != expected_workspace_id:
         raise RepairContractError("Workspace identity mismatch.")
