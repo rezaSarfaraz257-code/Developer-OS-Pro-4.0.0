@@ -595,10 +595,16 @@ class Command(BaseCommand):
                                     metadata={"reason": "planning_failed", "attempts": persisted_job.attempts},
                                 )
                     if persisted_job.kind == "data_export" and persisted_job.status == "failed":
-                        DataExportRequest.objects.filter(
-                            pk=persisted_payload.get("export_id"),
-                            user_id=persisted_payload.get("user_id"),
-                        ).exclude(status__in=["ready", "expired"]).update(status="failed")
+                        export_id = persisted_payload.get("export_id")
+                        export_user_id = persisted_payload.get("user_id")
+                        if (
+                            type(export_id) is int and export_id > 0
+                            and type(export_user_id) is int and export_user_id > 0
+                        ):
+                            DataExportRequest.objects.filter(
+                                pk=export_id,
+                                user_id=export_user_id,
+                            ).exclude(status__in=["ready", "expired"]).update(status="failed")
             except Exception:
                 # An external side effect may already have succeeded. Keep the
                 # long-lived worker alive; stale-lease recovery reconciles the
