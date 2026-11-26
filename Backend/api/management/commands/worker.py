@@ -191,7 +191,7 @@ def claim_job(worker):
         return job
 
 
-def export_user(user, export):
+def export_user(user, export, *, output_path=None):
     root = Path(os.getenv("EXPORT_ROOT", "/app/media/exports"))
     root.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -203,7 +203,9 @@ def export_user(user, export):
         "organizations": list(user.organization_memberships.values("organization_id", "role")),
         "audit_logs": list(user.audit_logs.values()),
     }
-    path = root / f"user-{user.id}-export-{export.id}.json"
+    path = Path(output_path) if output_path is not None else root / f"user-{user.id}-export-{export.id}.json"
+    if path.parent.resolve() != root.resolve():
+        raise ValueError("Export staging path must remain inside the configured export directory.")
     path.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
     return str(path)
 
@@ -340,16 +342,59 @@ def execute(job):
         message.send(fail_silently=False)
         return {"sent": True, "to": payload["to"]}
     if job.kind == "data_export":
-        export = DataExportRequest.objects.get(pk=job.payload["export_id"], user_id=job.payload["user_id"])
-        user = User.objects.get(pk=job.payload["user_id"])
-        export.status = "running"
-        export.save(update_fields=["status"])
-        path = export_user(user, export)
-        export.status = "ready"
-        export.file_path = path
-        export.completed_at = timezone.now()
-        export.save(update_fields=["status", "file_path", "completed_at"])
-        return {"export_id": export.id, "path": path}
+        export_id = job.payload.get("export_id")
+        user_id = job.payload.get("user_id")
+        if not job.pk or not isinstance(export_id, int) or not isinstance(user_id, int):
+            raise RuntimeError("Data export job identity is malformed.")
+        user = User.objects.filter(pk=user_id).first()
+        if user is None:
+            raise RuntimeError("Data export owner is no longer available.")
+        root = Path(os.getenv("EXPORT_ROOT", "/app/media/exports"))
+        root.mkdir(parents=True, exist_ok=True)
+        final_path = root / f"user-{user.id}-export-{export_id}.json"
+
+        # A previous attempt may have committed the file and export row but
+        # crashed before finalizing BackgroundJob. Treat that state as an
+        # idempotent completion, but only for the worker that still owns the
+        # current, unexpired lease.
+        with transaction.atomic():
+            current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
+            current_export = DataExportRequest.objects.select_for_update().filter(
+                pk=export_id, user_id=user.id,
+            ).first()
+            if not is_current_job_lease(current_job, getattr(job, "locked_by", None)):
+                raise RuntimeError("Data export worker lease is no longer current.")
+            if current_export is None or current_export.status == "expired":
+                raise RuntimeError("Data export request is no longer available.")
+            if current_export.status == "ready" and current_export.file_path == str(final_path) and final_path.is_file():
+                return {"export_id": current_export.id, "path": str(final_path)}
+
+        staging_path = root / f".user-{user.id}-export-{export_id}-{uuid.uuid4().hex}.tmp"
+        try:
+            export_user(user, current_export, output_path=staging_path)
+            # Publish atomically only after reacquiring and validating the
+            # exact durable lease. A delayed worker can never overwrite the
+            # file produced by a replacement worker.
+            with transaction.atomic():
+                current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
+                locked_export = DataExportRequest.objects.select_for_update().filter(
+                    pk=export_id, user_id=user.id,
+                ).first()
+                if not is_current_job_lease(current_job, getattr(job, "locked_by", None)):
+                    raise RuntimeError("Data export worker lease expired before publication.")
+                if locked_export is None or locked_export.status == "expired":
+                    raise RuntimeError("Data export request is no longer available.")
+                os.replace(staging_path, final_path)
+                locked_export.status = "ready"
+                locked_export.file_path = str(final_path)
+                locked_export.completed_at = timezone.now()
+                locked_export.save(update_fields=["status", "file_path", "completed_at"])
+            return {"export_id": export_id, "path": str(final_path)}
+        finally:
+            try:
+                staging_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove temporary export file export_id=%s", export_id)
     raise ValueError(f"Unsupported job kind: {job.kind}")
 
 
