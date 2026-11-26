@@ -18,7 +18,7 @@ MAX_STACK_TRACE_CHARS = 16_000
 MAX_STRUCTURED_ERRORS = 100
 MAX_DIFF_CHARS = 64_000
 MAX_PATCH_FILES = 20
-MAX_PATCH_SOURCE_CHARS = 8 * 1024 * 1024
+MAX_PATCH_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
 MAX_APPROVAL_TTL_SECONDS = 60 * 60
@@ -538,12 +538,14 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         if path not in workspace_files or not isinstance(workspace_files[path], str):
             raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
         source_text = workspace_files[path]
-        if len(source_text) > MAX_PATCH_SOURCE_CHARS or "\x00" in source_text:
+        if len(source_text) > MAX_PATCH_SOURCE_BYTES or "\x00" in source_text:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
         try:
-            source_text.encode("utf-8", errors="strict")
+            source_bytes = source_text.encode("utf-8", errors="strict")
         except UnicodeEncodeError as exc:
             raise RepairContractError("Patch target contains invalid Unicode.") from exc
+        if len(source_bytes) > MAX_PATCH_SOURCE_BYTES:
+            raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
         source_lines = source_text.splitlines(keepends=True)
         previous_old_end = 0
         previous_new_end = 0
