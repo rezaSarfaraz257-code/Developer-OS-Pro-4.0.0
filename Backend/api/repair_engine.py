@@ -49,9 +49,8 @@ _SECRET_PATTERNS = (
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
     re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*['\"][^'\"\s]{8,}"),
 )
-_DIFF_HEADER = re.compile(r"^(---|\\+\\+\\+) ([ab])/(.+)$")
-_HUNK_HEADER = re.compile(r"^@@ -\\d+(?:,\\d+)? \\+\\d+(?:,\\d+)? @@(?: .*)?$")
-_STACK_FRAME = re.compile(r'File ["\']([^"\']+)["\'], line (\\d+)(?:, in ([^\\n]+))?')
+_DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
+_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@(?: .*)?$")
 
 
 class RepairContractError(ValueError):
