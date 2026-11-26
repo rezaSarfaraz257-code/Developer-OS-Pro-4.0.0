@@ -585,6 +585,15 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 workspace_files={"src/main.py": oversized_line_count},
             )
 
+    def test_patch_validation_rejects_source_without_final_lf(self):
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files={"src/main.py": "value = 1"},
+            )
+
     def test_patch_parser_rejects_unterminated_final_diff_record(self):
         with self.assertRaises(RepairContractError):
             self.validate_patch(
