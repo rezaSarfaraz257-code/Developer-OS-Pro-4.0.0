@@ -133,6 +133,7 @@ def refresh_job_lease(job_id, worker):
         status="running",
         locked_by=worker,
         locked_at__gte=now - STALE_AFTER,
+        locked_at__lte=now,
     ).update(locked_at=now) == 1
 
 
