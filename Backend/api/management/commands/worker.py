@@ -300,7 +300,11 @@ def execute(job):
         }
     if job.kind == "ai_agent_plan":
         from api.agent_runtime import build_agent_plan
-        return build_agent_plan(job.payload["run_id"])
+        return build_agent_plan(
+            job.payload["run_id"],
+            job_id=job.pk,
+            lease_token=job.locked_by,
+        )
     if job.kind == "ai_agent_task_verify":
         from api.agent_execution import execute_agent_task_verification
         return execute_agent_task_verification(job)
