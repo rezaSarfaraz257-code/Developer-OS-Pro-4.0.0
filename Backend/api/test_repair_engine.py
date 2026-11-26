@@ -448,11 +448,14 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         with self.assertRaises(RepairContractError):
             validate_unified_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
         secret_patch = self.patch().replace("+value = 2", "+api_key = 'super-secret-value-123'")
+        short_unquoted_secret_patch = self.patch().replace("+value = 2", "+password=ShortSecret9")
         triple_plus_secret_patch = self.patch().replace(
             "+value = 2", "+++ b/token = 'ghp_" + "E" * 30 + "'"
         )
         with self.assertRaises(RepairContractError):
             validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(short_unquoted_secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         with self.assertRaises(RepairContractError):
             validate_unified_patch(
                 triple_plus_secret_patch, target_revision="r", expected_revision="r",
@@ -638,9 +641,12 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn("ghp_", str(findings))
         bearer = scan_patch_for_secrets("+Authorization: Bearer " + "B" * 30)
         unquoted = scan_patch_for_secrets("+access_token=" + "C" * 30)
+        short_unquoted = scan_patch_for_secrets("+password=ShortSecret9")
         jwt = scan_patch_for_secrets("+token = \"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signatureABCDEF0123456789\"")
         self.assertTrue(bearer)
         self.assertTrue(unquoted)
+        self.assertTrue(short_unquoted)
+        self.assertNotIn("ShortSecret9", str(short_unquoted))
         self.assertTrue(jwt)
         self.assertNotIn("signatureABC", str(jwt))
         self.assertNotIn("B" * 30, str(bearer))
