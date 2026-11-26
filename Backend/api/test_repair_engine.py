@@ -6,6 +6,7 @@ from .repair_engine import (
     RepairContractError,
     analyze_root_cause,
     classify_execution_failure,
+    compare_repair_outcomes,
     normalize_runner_evidence,
     scan_patch_for_secrets,
     validate_revision_bound_approval,
@@ -195,6 +196,50 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             with self.subTest(changed_paths=changed_paths):
                 with self.assertRaises(RepairContractError):
                     analyze_root_cause(evidence, changed_paths=changed_paths)
+
+    def test_before_after_comparison_requires_verified_post_repair_gates(self):
+        before = self.normalize()
+        after = self.normalize(self.evidence(
+            execution_id="exec-002",
+            workspace_revision=13,
+            execution_status="succeeded",
+            exit_code=0,
+            structured_errors=[],
+            source_location=None,
+        ))
+        verification = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": "exec-002",
+            "workspace_id": 7,
+            "job_id": 34,
+            "workspace_revision": 13,
+            "execution_status": "succeeded",
+            "exit_code": 0,
+            "checks": {
+                name: {
+                    "status": "passed",
+                    "evidence_reference": "artifact://checks/" + name,
+                    "execution_id": "exec-002",
+                    "workspace_revision": 13,
+                }
+                for name in ("targeted_tests", "regression_tests", "security")
+            },
+        }
+        result = compare_repair_outcomes(before, after, verification)
+        self.assertEqual(result["outcome"], "verified_repair")
+        verification["checks"]["security"]["status"] = "failed"
+        result = compare_repair_outcomes(before, after, verification)
+        self.assertEqual(result["outcome"], "verification_incomplete")
+
+    def test_before_after_comparison_rejects_same_workspace_revision(self):
+        before = self.normalize()
+        after = self.normalize(self.evidence(
+            execution_id="exec-002",
+            execution_status="failed",
+        ))
+        with self.assertRaises(RepairContractError):
+            compare_repair_outcomes(before, after, {})
 
 
 class PatchAndApprovalValidationTests(SimpleTestCase):
