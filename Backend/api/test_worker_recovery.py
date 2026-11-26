@@ -133,6 +133,30 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, "")
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    def test_stale_email_job_is_dead_lettered_to_avoid_duplicate_delivery(self):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "private@example.invalid", "subject": "Sensitive"},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=15),
+            locked_by="interrupted-email-worker:lease",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(job.attempts, 1)
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIn("outcome is unknown", job.error)
+        self.assertIn("automatic retry suppressed", job.error)
+        self.assertIsNone(claim_job("email-retry-worker"))
+
     def test_stale_running_job_at_attempt_limit_is_dead_lettered(self):
         job = BackgroundJob.objects.create(
             kind="email",
