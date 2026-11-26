@@ -1074,6 +1074,15 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             def get(self, key, default=None):
                 return approval.get(key, default)
 
+        class SpoofedKey(str):
+            pass
+
+        self.assertFalse(validate_revision_bound_approval(
+            {SpoofedKey(key): value for key, value in approval.items()},
+            current_revision="rev-12",
+            patch_sha256="a" * 64,
+            now=now,
+        ))
         self.assertFalse(validate_revision_bound_approval(
             SpoofedApproval(),
             current_revision="rev-12",
