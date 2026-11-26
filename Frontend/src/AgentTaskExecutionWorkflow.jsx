@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
 import {
   executionStorageKey,
@@ -73,10 +73,7 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
     ));
   }, [run?.id, tasks]);
 
-  const selectedTask = useMemo(
-    () => tasks.find((task) => String(task?.id) === selectedTaskId) || null,
-    [tasks, selectedTaskId],
-  );
+  const selectedTask = tasks.find((task) => String(task?.id) === selectedTaskId) || null;
   const taskId = normalizeExecutionId(selectedTask?.id);
   const runId = normalizeExecutionId(run?.id);
   const workspaceId = normalizeExecutionId(run?.workspace);
@@ -151,19 +148,11 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
   const syncJobRevision = syncJob?.revision;
   const syncJobCoalesced = syncJob?.coalesced;
   const syncJobError = syncJob?.error;
-  const syncJobSnapshot = useMemo(() => (
-    syncJobId == null ? null : {
-      id: syncJobId,
-      status: syncJobStatus,
-      workspaceId: syncJobWorkspaceId,
-      revision: syncJobRevision,
-      coalesced: syncJobCoalesced,
-      error: syncJobError,
-    }
-  ), [syncJobId, syncJobStatus, syncJobWorkspaceId, syncJobRevision, syncJobCoalesced, syncJobError]);
+  const syncJobRef = useRef(syncJob);
+  syncJobRef.current = syncJob;
 
   useEffect(() => {
-    const currentSync = syncJobSnapshot;
+    const currentSync = syncJobRef.current;
     if (!currentSync || isSyncTerminal(currentSync.status) || !currentSync.id || runId === null) return undefined;
     let active = true;
     let timer;
@@ -222,7 +211,7 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
       active = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [syncJobSnapshot, runId, taskId, workspaceId, onRefreshRun]);
+  }, [syncJobId, syncJobStatus, syncJobWorkspaceId, syncJobRevision, syncJobCoalesced, syncJobError, runId, taskId, workspaceId, onRefreshRun]);
 
   const executionStatus = execution?.status;
 
