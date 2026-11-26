@@ -50,7 +50,7 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*['\"][^'\"\s]{8,}"),
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
-_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@(?: .*)?$")
+_HUNK_HEADER = re.compile(r"^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(?: .*)?$")
 
 
 class RepairContractError(ValueError):
@@ -352,17 +352,30 @@ def _patch_path_allowed(path):
         return False
     parts = [part.casefold() for part in path.split("/")]
     basename = parts[-1]
-    protected_dirs = {".git", ".github", ".gitlab", ".circleci", ".buildkite"}
-    protected_files = {
-        ".env", ".env.local", ".env.production", "package-lock.json", "pnpm-lock.yaml",
-        "yarn.lock", "bun.lock", "bun.lockb", "poetry.lock", "uv.lock", "pipfile.lock",
-        "cargo.lock", "go.sum", "composer.lock", "gemfile.lock", "dockerfile",
-        "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml",
-        "render.yaml", "fly.toml", "vercel.json", "netlify.toml", "procfile",
-        "nginx.conf", "seccomp-bwrap.json", "developer-os-runner",
+    protected_dirs = {
+        ".git", ".github", ".gitlab", ".circleci", ".buildkite",
+        ".ssh", ".aws", ".azure", ".config/gcloud", "secrets",
     }
-    return not any(part in protected_dirs for part in parts) and basename not in protected_files and not basename.startswith("dockerfile.")
-
+    protected_files = {
+        ".env", ".npmrc", ".pypirc", ".netrc", ".git-credentials",
+        "id_rsa", "id_ed25519", "id_ecdsa", "authorized_keys",
+        "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock",
+        "bun.lockb", "npm-shrinkwrap.json", "poetry.lock", "uv.lock",
+        "pipfile.lock", "pdm.lock", "pip-tools.lock", "cargo.lock",
+        "go.sum", "composer.lock", "gemfile.lock", "dockerfile",
+        "docker-compose.yml", "docker-compose.yaml", "compose.yml",
+        "compose.yaml", "render.yaml", "fly.toml", "vercel.json",
+        "netlify.toml", "procfile", "nginx.conf", "seccomp-bwrap.json",
+        "developer-os-runner", "known_hosts",
+    }
+    sensitive_suffixes = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
+    return (
+        not any(part in protected_dirs for part in parts)
+        and basename not in protected_files
+        and not basename.startswith("dockerfile.")
+        and not basename.startswith(".env.")
+        and not basename.endswith(sensitive_suffixes)
+    )
 
 def scan_patch_for_secrets(unified_diff):
     """Conservative scan of added diff lines; returns findings without echoing secrets."""
@@ -380,10 +393,11 @@ def scan_patch_for_secrets(unified_diff):
 
 
 def validate_unified_patch(unified_diff, *, target_revision, expected_revision, workspace_files):
-    """Validate a bounded unified diff against one exact workspace snapshot.
+    """Validate a bounded git-style unified diff against an exact source snapshot.
 
-    The validator rejects creates/deletes/renames and protected paths in this
-    first contract version. The patch is never applied here.
+    This is validation only: it never applies a patch or mutates a workspace.
+    File creation/deletion/rename, mode changes, binary patches, protected
+    paths, stale revisions, malformed hunks and context mismatches fail closed.
     """
     _revision(target_revision)
     _revision(expected_revision)
@@ -395,81 +409,140 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         raise RepairContractError("Patch is empty or exceeds the configured size limit.")
     if "\x00" in unified_diff or "GIT binary patch" in unified_diff or "Binary files " in unified_diff:
         raise RepairContractError("Binary or malformed patches are not supported.")
-    lines = unified_diff.splitlines()
-    if not lines or not lines[0].startswith("diff --git "):
-        raise RepairContractError("Patch must use a git unified-diff format.")
+
+    def finish_hunk(file_record):
+        hunk = file_record.get("active_hunk")
+        if hunk is None:
+            return
+        old_count = sum(1 for line in hunk["lines"] if line.startswith((" ", "-")))
+        new_count = sum(1 for line in hunk["lines"] if line.startswith((" ", "+")))
+        if old_count != hunk["old_count"] or new_count != hunk["new_count"]:
+            raise RepairContractError("Patch hunk line counts do not match its header.")
+        file_record["hunks"].append(hunk)
+        file_record["active_hunk"] = None
+
+    def finish_file(file_record):
+        if file_record is None:
+            return
+        finish_hunk(file_record)
+        path = file_record["git_path"]
+        if not file_record["hunks"] or file_record["old"] != path or file_record["new"] != path:
+            raise RepairContractError("Patch file headers and hunks are incomplete or inconsistent.")
+        if path not in workspace_files or not isinstance(workspace_files[path], str):
+            raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
+        source_lines = workspace_files[path].splitlines(keepends=True)
+        previous_old_end = 0
+        for hunk in file_record["hunks"]:
+            start = hunk["old_start"] if hunk["old_count"] == 0 else hunk["old_start"] - 1
+            if start < previous_old_end or start < 0 or start > len(source_lines):
+                raise RepairContractError("Patch hunks overlap or exceed the source snapshot.")
+            cursor = start
+            for line in hunk["lines"]:
+                marker, content = line[0], line[1:]
+                if marker in {" ", "-"}:
+                    if cursor >= len(source_lines) or source_lines[cursor] != content:
+                        raise RepairContractError("Patch context does not match the exact workspace snapshot.")
+                    cursor += 1
+            previous_old_end = start + hunk["old_count"]
 
     files = []
     current = None
-    hunk_seen = False
-    for line in lines:
+    for raw_line in unified_diff.splitlines(keepends=True):
+        line = raw_line.rstrip("\r\n")
         if line.startswith("diff --git "):
-            if current is not None and not hunk_seen:
-                raise RepairContractError("Every changed file must contain at least one hunk.")
-            current = {"old": None, "new": None}
+            finish_file(current)
+            match = re.fullmatch(r"diff --git a/(.+) b/(.+)", line)
+            if not match:
+                raise RepairContractError("Quoted, renamed or malformed git diff paths are not supported.")
+            old_path, new_path = match.groups()
+            if old_path != new_path or not _patch_path_allowed(old_path):
+                raise RepairContractError("Patch contains a rename or protected path.")
+            current = {
+                "git_path": old_path, "old": None, "new": None,
+                "hunks": [], "active_hunk": None,
+            }
             files.append(current)
-            hunk_seen = False
             if len(files) > MAX_PATCH_FILES:
                 raise RepairContractError("Patch changes too many files.")
             continue
+
         if line.startswith("--- ") or line.startswith("+++ "):
-            match = _DIFF_HEADER.match(line)
+            if current is None:
+                raise RepairContractError("Patch file header appeared before a git diff header.")
+            finish_hunk(current)
+            match = _DIFF_HEADER.fullmatch(line)
             if not match:
                 raise RepairContractError("Patch contains an invalid file header.")
             marker, side, path = match.groups()
-            if path == "/dev/null" or not _patch_path_allowed(path):
-                raise RepairContractError("Patch contains a create, delete, or protected path.")
+            expected_side = "a" if marker == "---" else "b"
             key = "old" if marker == "---" else "new"
-            if current is None or current[key] is not None:
-                raise RepairContractError("Patch file headers are malformed.")
+            if side != expected_side or path != current["git_path"] or not _patch_path_allowed(path):
+                raise RepairContractError("Patch file header does not match its git diff path.")
+            if current[key] is not None:
+                raise RepairContractError("Patch file headers are duplicated.")
             current[key] = path
             continue
+
         if line.startswith("@@ "):
-            if current is None or current["old"] is None or current["new"] is None or current["old"] != current["new"]:
-                raise RepairContractError("Patch renames and malformed hunks are not supported.")
-            if not _HUNK_HEADER.match(line):
+            if current is None or current["old"] is None or current["new"] is None:
+                raise RepairContractError("Patch hunk appeared before complete file headers.")
+            finish_hunk(current)
+            match = _HUNK_HEADER.fullmatch(line)
+            if not match:
                 raise RepairContractError("Patch hunk header is malformed.")
-            hunk_seen = True
+            old_start, old_count, new_start, new_count = match.groups()
+            current["active_hunk"] = {
+                "old_start": int(old_start),
+                "old_count": int(old_count) if old_count is not None else 1,
+                "new_start": int(new_start),
+                "new_count": int(new_count) if new_count is not None else 1,
+                "lines": [],
+            }
             continue
-        if line.startswith(("index ", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
-            raise RepairContractError("Patch metadata for creates, deletes, renames, and mode changes is not allowed.")
-    if current is not None and not hunk_seen:
-        raise RepairContractError("Every changed file must contain at least one hunk.")
-    paths = [item["old"] for item in files]
-    if not files or len(paths) != len(set(paths)):
+
+        if line.startswith(("\\ No newline at end of file", "index ", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
+            raise RepairContractError("Unsupported patch metadata or no-newline marker.")
+        if current is not None and current.get("active_hunk") is not None:
+            if raw_line.startswith((" ", "+", "-")):
+                current["active_hunk"]["lines"].append(raw_line)
+                continue
+        if line.strip():
+            raise RepairContractError("Patch contains content outside a recognized unified-diff hunk.")
+
+    finish_file(current)
+    paths = [item["git_path"] for item in files]
+    if not files or len(paths) != len({path.casefold() for path in paths}):
         raise RepairContractError("Patch must contain unique file paths.")
-    for path in paths:
-        if path not in workspace_files or not isinstance(workspace_files[path], str):
-            raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
     secret_findings = scan_patch_for_secrets(unified_diff)
     if secret_findings:
         raise RepairContractError("Patch contains possible secret material.")
+    encoded = unified_diff.encode("utf-8")
     return {
         "target_revision": target_revision,
         "changed_paths": paths,
-        "patch_sha256": hashlib.sha256(unified_diff.encode("utf-8")).hexdigest(),
-        "patch_bytes": len(unified_diff.encode("utf-8")),
+        "patch_sha256": hashlib.sha256(encoded).hexdigest(),
+        "patch_bytes": len(encoded),
         "secret_scan": "passed",
+        "source_context": "matched",
         "validated": True,
     }
 
-
 def validate_revision_bound_approval(approval, *, current_revision, patch_sha256, now=None):
-    """Fail closed unless approval binds the exact revision and exact patch hash."""
+    """Fail closed unless approval binds the exact revision and patch hash."""
     if not isinstance(approval, dict):
         return False
+    try:
+        _revision(current_revision)
+    except RepairContractError:
+        return False
+    if not isinstance(patch_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", patch_sha256):
+        return False
     now = now or datetime.now(timezone.utc)
-    if now.tzinfo is None:
+    if not isinstance(now, datetime) or now.tzinfo is None:
         raise RepairContractError("Approval validation clock must be timezone-aware.")
     try:
         expires = _iso_timestamp(approval.get("expires_at"), "approval.expires_at")
-    except RepairContractError:
-        return False
-    approved_at = approval.get("approved_at")
-    if not isinstance(approved_at, str):
-        return False
-    try:
-        approved = _iso_timestamp(approved_at, "approval.approved_at")
+        approved = _iso_timestamp(approval.get("approved_at"), "approval.approved_at")
     except RepairContractError:
         return False
     approved_revision = approval.get("workspace_revision")
@@ -477,16 +550,102 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         type(approved_revision) is type(current_revision)
         and approved_revision == current_revision
     )
+    approved_dt = datetime.fromisoformat(approved.replace("Z", "+00:00"))
+    expires_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
     return (
         approval.get("approved") is True
         and revision_matches
         and approval.get("patch_sha256") == patch_sha256
-        and datetime.fromisoformat(approved.replace("Z", "+00:00")) <= now
-        and datetime.fromisoformat(expires.replace("Z", "+00:00")) > now
+        and approved_dt <= now
+        and expires_dt > now
+        and expires_dt > approved_dt
     )
 
+def verification_passed(result, *, expected_revision):
+    """Require independent, revision-bound Runner evidence for every verification gate."""
+    if (
+        not isinstance(result, dict)
+        or result.get("evidence_origin") != "runner"
+        or type(result.get("schema_version")) is not int
+        or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
+        or not isinstance(result.get("execution_id"), str)
+        or not result.get("execution_id")
+        or type(result.get("workspace_id")) is not int
+        or result.get("workspace_id") < 1
+        or type(result.get("job_id")) is not int
+        or result.get("job_id") < 1
+    ):
+        return False
+    revision = result.get("workspace_revision")
+    if (
+        type(revision) is not type(expected_revision)
+        or revision != expected_revision
+        or result.get("execution_status") != "succeeded"
+        or type(result.get("exit_code")) is not int
+        or result.get("exit_code") != 0
+    ):
+        return False
+    checks = result.get("checks")
+    required = {"targeted_tests", "regression_tests", "security"}
+    if not isinstance(checks, dict) or set(checks) != required:
+        return False
+    for check in checks.values():
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or check.get("status") != "passed"
+            or check.get("execution_id") != result["execution_id"]
+            or type(check.get("workspace_revision")) is not type(revision)
+            or check.get("workspace_revision") != revision
+            or not isinstance(check.get("evidence_reference"), str)
+            or not check["evidence_reference"].strip()
+        ):
+            return False
+    return True
 
 def verification_passed(result, *, expected_revision):
+    """Require independent, revision-bound Runner evidence for every verification gate."""
+    if (
+        not isinstance(result, dict)
+        or result.get("evidence_origin") != "runner"
+        or type(result.get("schema_version")) is not int
+        or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
+        or not isinstance(result.get("execution_id"), str)
+        or not result.get("execution_id")
+        or type(result.get("workspace_id")) is not int
+        or result.get("workspace_id") < 1
+        or type(result.get("job_id")) is not int
+        or result.get("job_id") < 1
+    ):
+        return False
+    revision = result.get("workspace_revision")
+    if (
+        type(revision) is not type(expected_revision)
+        or revision != expected_revision
+        or result.get("execution_status") != "succeeded"
+        or type(result.get("exit_code")) is not int
+        or result.get("exit_code") != 0
+    ):
+        return False
+    checks = result.get("checks")
+    required = {"targeted_tests", "regression_tests", "security"}
+    if not isinstance(checks, dict) or set(checks) != required:
+        return False
+    for check in checks.values():
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or check.get("status") != "passed"
+            or check.get("execution_id") != result["execution_id"]
+            or type(check.get("workspace_revision")) is not type(revision)
+            or check.get("workspace_revision") != revision
+            or not isinstance(check.get("evidence_reference"), str)
+            or not check["evidence_reference"].strip()
+        ):
+            return False
+    return True
+
+
     """A repair passes only with independent, revision-bound test and security evidence."""
     if (
         not isinstance(result, dict)
