@@ -2,7 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from .management.commands.worker import STALE_AFTER, Command, claim_job, execute, recover_stale_jobs, refresh_job_lease
@@ -156,6 +156,48 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertIn("outcome is unknown", job.error)
         self.assertIn("automatic retry suppressed", job.error)
         self.assertIsNone(claim_job("email-retry-worker"))
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("transport timeout"))
+    def test_ambiguous_smtp_failure_is_not_automatically_retried(self, mocked_execute):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "private@example.invalid"},
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=3,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(job.attempts, 1)
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("outcome may be unknown", job.error)
+        self.assertIn("automatic retry suppressed", job.error)
+        mocked_execute.assert_called_once()
+
+    @override_settings(EMAIL_BACKEND="api.email_backends.resend.EmailBackend")
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("temporary provider error"))
+    def test_resend_failure_remains_retryable_with_stable_provider_key(self, mocked_execute):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            payload={"to": "private@example.invalid"},
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=3,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertEqual(job.attempts, 1)
+        self.assertEqual(job.locked_by, "")
+        mocked_execute.assert_called_once()
 
     def test_stale_running_job_at_attempt_limit_is_dead_lettered(self):
         job = BackgroundJob.objects.create(
