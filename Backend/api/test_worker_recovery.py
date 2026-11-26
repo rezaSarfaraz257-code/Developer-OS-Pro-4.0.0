@@ -13,7 +13,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
     def test_reclaimed_job_fences_out_previous_worker_even_when_identity_is_reused(self):
         job = BackgroundJob.objects.create(
-            kind="email",
+            kind="ai_agent_plan",
             status="queued",
             available_at=timezone.now() - timedelta(seconds=1),
             attempts=0,
@@ -84,7 +84,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
     @patch("api.management.commands.worker.execute")
     def test_old_worker_outcome_is_discarded_after_job_is_reclaimed(self, mocked_execute):
         job = BackgroundJob.objects.create(
-            kind="email",
+            kind="ai_agent_plan",
             status="queued",
             available_at=timezone.now() - timedelta(seconds=1),
             attempts=0,
@@ -118,7 +118,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
     def test_running_job_without_lock_timestamp_is_requeued(self):
         job = BackgroundJob.objects.create(
-            kind="email",
+            kind="ai_agent_plan",
             status="running",
             attempts=1,
             max_attempts=3,
