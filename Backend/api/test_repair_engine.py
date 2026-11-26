@@ -690,7 +690,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 triple_plus_secret_patch, target_revision="r", expected_revision="r",
                 workspace_files={"src/main.py": "value = 1\n"},
             )
-        for protected_name in (".env.staging", "config/service.pem", "nested/secrets/token.txt"):
+        for protected_name in (".env.staging", "config/.env/production.env", "config/service.pem", "nested/secrets/token.txt"):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
                 self.validate_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
