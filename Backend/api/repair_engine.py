@@ -845,6 +845,7 @@ def evaluate_rollback_eligibility(
             raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     if (
         not isinstance(evidence, dict)
+        or not isinstance(evidence.get("evidence_origin"), str)
         or evidence.get("evidence_origin") != "runner"
         or type(evidence.get("schema_version")) is not int
         or evidence.get("schema_version") != EVIDENCE_SCHEMA_VERSION
@@ -857,7 +858,9 @@ def evaluate_rollback_eligibility(
         or len(evidence["execution_id"]) > 128
         or type(evidence.get("workspace_revision")) is not type(expected_post_revision)
         or evidence.get("workspace_revision") != expected_post_revision
+        or not isinstance(evidence.get("patch_sha256"), str)
         or evidence.get("patch_sha256") != applied_patch_sha256
+        or not isinstance(evidence.get("execution_status"), str)
         or evidence.get("execution_status") != "succeeded"
         or type(evidence.get("exit_code")) is not int
         or evidence.get("exit_code") != 0
