@@ -1347,6 +1347,39 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(queued_job.status, "canceled")
         runner_request.assert_not_called()
 
+    @patch("api.views._runner_request")
+    def test_run_cancel_ignores_runner_id_not_bound_to_verification_job(self, runner_request):
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+                "runner_execution_id": "agent-999999",
+            },
+            idempotency_key="agent-cancel-mismatched-runner-id-001",
+            max_attempts=1,
+        )
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("runner_cancellation", response.data)
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        runner_request.assert_not_called()
+
     @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
     def test_run_cancel_propagates_to_the_exact_active_runner_job(self, runner_request):
         verification_job = BackgroundJob.objects.create(
