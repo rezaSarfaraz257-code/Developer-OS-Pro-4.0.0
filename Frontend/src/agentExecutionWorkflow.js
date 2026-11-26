@@ -110,6 +110,7 @@ export function normalizeTaskExecution(payload, expected = {}) {
       accepted_criteria: Array.isArray(rawAcceptance.accepted_criteria)
         ? rawAcceptance.accepted_criteria.filter((item) => typeof item === "string" && item.length <= 500).slice(0, 6)
         : [],
+      criteria_scope: typeof rawAcceptance.criteria_scope === "string" ? rawAcceptance.criteria_scope.slice(0, 32) : "",
     } : null,
   };
   const criteria = Array.isArray(payload.acceptance_criteria)
