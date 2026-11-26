@@ -691,6 +691,45 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
         return {"allowed": False, "reason": "attempt_limit_reached", "attempts": len(attempts)}
     return {"allowed": True, "reason": "within_repair_budget", "attempts": len(attempts)}
 
+def compare_repair_outcomes(before_evidence, after_evidence, verification_evidence):
+    """Compare Runner behavior before/after a repair without trusting Agent claims.
+
+    A successful process exit is not a successful repair: all independent
+    verification gates must also pass on the exact post-repair revision.
+    """
+    before = classify_execution_failure(before_evidence)
+    after = classify_execution_failure(after_evidence)
+    if before["category"] is None:
+        raise RepairContractError("Baseline evidence must describe a failed execution.")
+    if (
+        before_evidence["workspace_id"] != after_evidence["workspace_id"]
+        or type(before_evidence["workspace_revision"]) is not type(after_evidence["workspace_revision"])
+        or before_evidence["workspace_revision"] == after_evidence["workspace_revision"]
+        or before_evidence["execution_id"] == after_evidence["execution_id"]
+    ):
+        raise RepairContractError("Before/after evidence must identify distinct executions and revisions in one workspace.")
+    verified = verification_passed(
+        verification_evidence,
+        expected_revision=after_evidence["workspace_revision"],
+    )
+    if after["category"] is None:
+        outcome = "verified_repair" if verified else "verification_incomplete"
+    elif before["category"] == after["category"]:
+        outcome = "failure_persists"
+    else:
+        outcome = "failure_changed"
+    return {
+        "outcome": outcome,
+        "before_category": before["category"],
+        "after_category": after["category"],
+        "verification_passed": verified,
+        "before_execution_id": before_evidence["execution_id"],
+        "after_execution_id": after_evidence["execution_id"],
+        "before_revision": before_evidence["workspace_revision"],
+        "after_revision": after_evidence["workspace_revision"],
+    }
+
+
 def verification_passed(result, *, expected_revision):
     """Require independent, revision-bound Runner evidence for every verification gate."""
     try:
