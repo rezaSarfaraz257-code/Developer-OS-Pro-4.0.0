@@ -191,14 +191,16 @@ class RunnerEvidenceContractTests(SimpleTestCase):
 
     def test_redacts_secret_patterns_from_error_codes_and_source_symbols(self):
         secret = "ghp_" + "S" * 30
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signatureABCDEF0123456789"
         result = self.normalize(self.evidence(structured_errors=[{
             "code": "provider_" + secret,
-            "message": "failure",
+            "message": "failure " + jwt,
             "source_location": {"path": "src/main.py", "symbol": "symbol_" + secret},
             "evidence_reference": None,
         }]))
         self.assertNotIn(secret, result["structured_errors"][0]["code"])
         self.assertNotIn(secret, result["structured_errors"][0]["source_location"]["symbol"])
+        self.assertNotIn(jwt, result["structured_errors"][0]["message"])
 
 
 class FailureIntelligenceTests(RunnerEvidenceContractTests):
