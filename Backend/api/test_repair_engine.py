@@ -407,6 +407,8 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="a" * 64, now=now + timedelta(minutes=6)))
         expired_before_approval = {**approval, "expires_at": (now - timedelta(minutes=2)).isoformat()}
         self.assertFalse(validate_revision_bound_approval(expired_before_approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
+        overlong_approval = {**approval, "expires_at": (now + timedelta(hours=2)).isoformat()}
+        self.assertFalse(validate_revision_bound_approval(overlong_approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
 
 
 class VerificationEvidenceTests(SimpleTestCase):
