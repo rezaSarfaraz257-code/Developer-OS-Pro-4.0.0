@@ -179,7 +179,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
 
     with transaction.atomic():
         run = get_object_or_404(
-            AgentRun.objects.select_for_update().select_related("workspace"),
+            AgentRun.objects.select_for_update(),
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
