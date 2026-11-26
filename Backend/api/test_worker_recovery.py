@@ -646,3 +646,23 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, "")
         self.assertIsNotNone(job.dead_lettered_at)
         self.assertIn("AttributeError", job.error)
+
+
+    def test_worker_finalizes_failed_export_with_invalid_object_identifiers(self):
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": [], "user_id": {"invalid": True}},
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=1,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("RuntimeError", job.error)
