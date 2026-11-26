@@ -1233,6 +1233,46 @@ class RollbackEligibilityTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     evaluate_rollback_eligibility(evidence, **self.kwargs())
 
+    def test_rollback_rejects_dict_subclasses_at_every_evidence_level(self):
+        valid = self.evidence(failed_gate="security")
+
+        class SpoofedMapping(dict):
+            def get(self, key, default=None):
+                return valid.get(key, default)
+
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(
+                SpoofedMapping(), **self.kwargs()
+            )
+
+        class SpoofedChecks(dict):
+            def items(self):
+                return iter(valid["checks"].items())
+
+        evidence = self.evidence(failed_gate="security")
+        evidence["checks"] = SpoofedChecks()
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
+        class SpoofedGate(dict):
+            def get(self, key, default=None):
+                return valid["checks"]["security"].get(key, default)
+
+        evidence = self.evidence(failed_gate="security")
+        evidence["checks"]["security"] = SpoofedGate()
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
+    def test_rollback_rejects_subclassed_gate_status(self):
+        class SpoofedStatus(str):
+            def __eq__(self, other):
+                return True
+
+        evidence = self.evidence(failed_gate="security")
+        evidence["checks"]["security"]["status"] = SpoofedStatus("passed")
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
     def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
         evidence = self.evidence(failed_gate="targeted_tests")
         evidence["patch_sha256"] = "b" * 64
