@@ -700,6 +700,42 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn("malformed-provider-response", str(caught.exception))
 
     @patch("api.ai_engine._call_provider")
+    def test_running_planner_does_not_persist_after_run_cancellation(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Cancel planning safely",
+            status="planning",
+            idempotency_key="cancel-running-plan-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="active-planner:lease",
+            idempotency_key="cancel-running-plan-job-0001",
+        )
+
+        response = self.client.post(f"/api/ai/agent/runs/{run.id}/cancel/")
+        self.assertEqual(response.status_code, 200)
+
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="active-planner:lease",
+        )
+
+        run.refresh_from_db()
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(run.status, "canceled")
+        self.assertEqual(run.tasks.count(), 0)
+        provider.assert_not_called()
+
+    @patch("api.ai_engine._call_provider")
     def test_stale_planner_result_is_discarded_after_job_lease_is_reclaimed(self, provider):
         run = AgentRun.objects.create(
             owner=self.user,
