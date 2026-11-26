@@ -1,5 +1,5 @@
 """Shared validity rules for durable BackgroundJob worker leases."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.utils import timezone
 
@@ -16,7 +16,7 @@ def is_current_job_lease(job, lease_token, *, now=None):
     if getattr(job, "locked_by", None) != lease_token:
         return False
     locked_at = getattr(job, "locked_at", None)
-    if locked_at is None or not timezone.is_aware(locked_at):
+    if not isinstance(locked_at, datetime) or not timezone.is_aware(locked_at):
         return False
     current_time = now or timezone.now()
     return current_time - JOB_LEASE_STALE_AFTER <= locked_at <= current_time
