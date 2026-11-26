@@ -164,6 +164,26 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, replacement_claims[0].locked_by)
         self.assertNotEqual(job.result, {"worker": "stale", "must_not_persist": True})
 
+    def test_running_job_with_future_lease_timestamp_is_recovered(self):
+        future_lease = timezone.now() + timedelta(minutes=5)
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=future_lease,
+            locked_by="clock-skewed-worker:future-token",
+        )
+
+        self.assertFalse(refresh_job_lease(job.pk, "clock-skewed-worker:future-token"))
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIn("Recovered stale worker lease.", job.error)
+
     def test_running_job_without_lock_timestamp_is_requeued(self):
         job = BackgroundJob.objects.create(
             kind="ai_agent_plan",
