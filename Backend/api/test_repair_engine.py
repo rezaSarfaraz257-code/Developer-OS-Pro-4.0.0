@@ -686,6 +686,23 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         )
         self.assertEqual(scan_patch_for_secrets(header_only), [])
         self.assertTrue(scan_patch_for_secrets(source_line))
+    def test_secret_scanner_maps_multiple_findings_to_original_patch_lines(self):
+        token = "ghp_" + "R" * 30
+        patch = (
+            "diff --git a/src/config.py b/src/config.py\n"
+            "--- a/src/config.py\n"
+            "+++ b/src/config.py\n"
+            "@@ -1,2 +1,3 @@\n"
+            "+token = '" + token + "'\n"
+            " context = 'safe'\n"
+            "+password = 'LongSecretValue123'\n"
+        )
+        findings = scan_patch_for_secrets(patch)
+        self.assertEqual({item["line"] for item in findings}, {5, 7})
+        self.assertTrue(all(item["rule"] == "possible_secret" for item in findings))
+        self.assertNotIn(token, str(findings))
+        self.assertNotIn("LongSecretValue123", str(findings))
+
     def test_scans_multiline_and_incomplete_private_keys_across_added_patch_lines(self):
         private_key = (
             "-----BEGIN PRIVATE KEY-----\n"
