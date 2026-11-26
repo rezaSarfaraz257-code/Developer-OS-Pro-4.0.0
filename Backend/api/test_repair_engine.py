@@ -158,8 +158,14 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             with self.subTest(code=code):
                 self.assertEqual(classify_execution_failure(evidence)["category"], expected)
 
-    def test_rejects_secret_or_untrusted_artifact_references(self):
-        for reference in ("https://example.com/log", "artifact://logs?token=secret"):
+    def test_rejects_secret_untrusted_and_traversing_artifact_references(self):
+        for reference in (
+            "https://example.com/log",
+            "artifact://logs?token=secret",
+            "artifact://../../private/key",
+            "runner://logs/../private",
+            "blob://logs//stderr",
+        ):
             with self.subTest(reference=reference):
                 with self.assertRaises(RepairContractError):
                     self.normalize(self.evidence(stdout_reference=reference))
@@ -169,6 +175,23 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         result = analyze_root_cause(evidence)
         self.assertEqual(result["conclusion"], "insufficient_evidence")
         self.assertIsNotNone(result["uncertainty"])
+
+    def test_classifier_fails_closed_on_malformed_runner_payloads(self):
+        for evidence in (
+            {"evidence_origin": "runner", "execution_status": "failed", "structured_errors": None},
+            {"evidence_origin": "runner", "execution_status": "unknown", "structured_errors": []},
+            {"evidence_origin": "runner", "execution_status": "failed", "structured_errors": [{"code": []}]},
+        ):
+            with self.subTest(evidence=evidence):
+                with self.assertRaises(RepairContractError):
+                    classify_execution_failure(evidence)
+
+    def test_root_cause_rejects_malformed_changed_path_collections(self):
+        evidence = self.normalize()
+        for changed_paths in ("src/main.py", None, ["../outside.py"]):
+            with self.subTest(changed_paths=changed_paths):
+                with self.assertRaises(RepairContractError):
+                    analyze_root_cause(evidence, changed_paths=changed_paths)
 
 
 class PatchAndApprovalValidationTests(SimpleTestCase):
@@ -329,6 +352,9 @@ class VerificationEvidenceTests(SimpleTestCase):
         result["exit_code"] = 0
         result["workspace_revision"] = True
         self.assertFalse(verification_passed(result, expected_revision=1))
+        self.assertFalse(verification_passed(result, expected_revision=True))
+        self.assertFalse(verification_passed(result, expected_revision=None))
+        self.assertFalse(verification_passed(result, expected_revision=-1))
 
 
 class RepairLoopGuardTests(SimpleTestCase):
