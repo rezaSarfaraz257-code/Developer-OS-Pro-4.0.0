@@ -566,7 +566,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                     )
 
     def test_patch_validation_rejects_line_count_memory_amplification(self):
-        oversized_line_count = "\\n" * (MAX_PATCH_SOURCE_LINES + 1)
+        oversized_line_count = "\n" * (MAX_PATCH_SOURCE_LINES + 1)
         with self.assertRaises(RepairContractError):
             self.validate_patch(
                 self.patch(),
