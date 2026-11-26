@@ -735,7 +735,7 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         return False
     if now is None:
         now = datetime.now(timezone.utc)
-    if not isinstance(now, datetime) or now.tzinfo is None:
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise RepairContractError("Approval validation clock must be timezone-aware.")
     try:
         expires = _iso_timestamp(approval.get("expires_at"), "approval.expires_at")
