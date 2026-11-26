@@ -478,7 +478,7 @@ def scan_patch_for_secrets(unified_diff):
         if header_state == 1 and re.fullmatch(r"--- a/.+", line):
             header_state = 2
             continue
-        if header_state == 2 and re.fullmatch(r"\\+\\+\\+ b/.+", line):
+        if header_state == 2 and re.fullmatch(r"\+\+\+ b/.+", line):
             header_state = 0
             continue
         if line.startswith("@@ "):
