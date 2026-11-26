@@ -465,14 +465,16 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         source_lines = workspace_files[path].splitlines(keepends=True)
         previous_old_end = 0
         previous_new_end = 0
+        cumulative_line_delta = 0
         for hunk in file_record["hunks"]:
             start = hunk["old_start"] if hunk["old_count"] == 0 else hunk["old_start"] - 1
             new_start = hunk["new_start"] if hunk["new_count"] == 0 else hunk["new_start"] - 1
             if (
                 start < previous_old_end or start < 0 or start > len(source_lines)
                 or new_start < previous_new_end or new_start < 0
+                or new_start != start + cumulative_line_delta
             ):
-                raise RepairContractError("Patch hunks overlap or exceed their declared source ranges.")
+                raise RepairContractError("Patch hunks overlap or their new-file offsets are inconsistent.")
             cursor = start
             for line in hunk["lines"]:
                 marker, content = line[0], line[1:]
@@ -482,6 +484,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
                     cursor += 1
             previous_old_end = start + hunk["old_count"]
             previous_new_end = new_start + hunk["new_count"]
+            cumulative_line_delta += hunk["new_count"] - hunk["old_count"]
 
     files = []
     current = None
