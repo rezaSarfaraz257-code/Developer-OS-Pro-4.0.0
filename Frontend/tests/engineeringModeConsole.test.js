@@ -153,7 +153,8 @@ test("Web IDE keeps the requested workspace handoff until that exact workspace l
   const handoffEnd = source.indexOf("},[workspaces,ws,load]);", handoffStart);
   assert.ok(handoffStart >= 0 && handoffEnd > handoffStart);
   const handoffEffect = source.slice(handoffStart, handoffEnd);
-  assert.doesNotMatch(handoffEffect, /getItem\("dos:requested-ide-workspace"\)\|\|"";window\.sessionStorage\.removeItem/);\n  assert.match(handoffEffect, /requestedWorkspaceRef\.current=requestedId;load\(preferred\|\|workspaces\[0\]\)/);
+  assert.doesNotMatch(handoffEffect, /getItem\("dos:requested-ide-workspace"\)\|\|"";window\.sessionStorage\.removeItem/);
+  assert.match(handoffEffect, /requestedWorkspaceRef\.current=requestedId;load\(preferred\|\|workspaces\[0\]\)/);
   assert.match(source, /String\(ws\.id\)!==requestedId/);
   assert.match(source, /if\(window\.sessionStorage.getItem\("dos:requested-ide-workspace"\)===requestedId\)window\.sessionStorage.removeItem\("dos:requested-ide-workspace"\)/);
 });
