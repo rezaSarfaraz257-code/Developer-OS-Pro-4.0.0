@@ -192,7 +192,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
                 "sync_job_id": 9001,
                 "patch_audit_id": 9002,
                 "profile": "python_pytest",
-                "runner_execution_id": "agent-verify-recovery",
+                "runner_execution_id": "",
             },
             status="running",
             attempts=1,
@@ -200,6 +200,16 @@ class StaleWorkerJobRecoveryTests(TestCase):
             locked_at=timezone.now() - timedelta(minutes=15),
             locked_by="worker:expired-lease",
         )
+        job.payload = {**job.payload, "task_id": 1, "runner_execution_id": f"agent-{job.id}"}
+        job.save(update_fields=["payload"])
+        task_evidence = evidence or {"state": "queued", "iteration": 1, "history": []}
+        if evidence is not None:
+            task_evidence = {
+                **evidence,
+                "revision": workspace.revision,
+                "verification_job_id": job.id,
+                "runner_job_id": f"agent-{job.id}",
+            }
         task = AgentTask.objects.create(
             run=run,
             key="implement",
@@ -210,7 +220,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
             execution_revision=workspace.revision,
             execution_profile="python_pytest",
             execution_attempts=1,
-            execution_evidence=evidence or {"state": "queued", "iteration": 1, "history": []},
+            execution_evidence=task_evidence,
         )
         job.payload = {**job.payload, "task_id": task.id}
         job.save(update_fields=["payload"])
@@ -247,7 +257,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
             "profile": "python_pytest",
             "revision": 1,
             "verification_job_id": 77,
-            "runner_job_id": "agent-77",
+            "runner_job_id": "agent-placeholder",
             "iteration": 1,
             "history": [],
             "output_persisted": False,
@@ -263,7 +273,7 @@ class StaleWorkerJobRecoveryTests(TestCase):
         run.refresh_from_db()
         self.assertEqual(task.status, "failed")
         self.assertEqual(task.execution_evidence["state"], "finalization_failed")
-        self.assertEqual(task.execution_evidence["runner_job_id"], "agent-77")
+        self.assertEqual(task.execution_evidence["runner_job_id"], f"agent-{job.id}")
         self.assertIsNotNone(task.execution_evidence["resync_job_id"])
         self.assertEqual(run.status, "failed")
         self.assertTrue(AuditLog.objects.filter(
