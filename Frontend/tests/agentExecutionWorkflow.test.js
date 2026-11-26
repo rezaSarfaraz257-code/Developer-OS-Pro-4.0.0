@@ -90,6 +90,35 @@ test("task execution normalization verifies run/task identity and keeps bounded 
   assert.equal(normalizeTaskExecution(payload, { runId: 5, taskId: 9 }), null);
   assert.equal(normalizeTaskExecution(payload, { runId: 4, taskId: 10 }), null);
   assert.equal(normalizeTaskExecution([], { runId: 4, taskId: 9 }), null);
+
+  const acceptedPayload = {
+    run_id: 4,
+    task_id: 9,
+    status: "succeeded",
+    acceptance_criteria: ["Build succeeds"],
+    evidence: { human_acceptance: {
+      user_id: 12,
+      accepted_at: "2026-11-27T00:00:00+00:00",
+      accepted_criteria: ["Build succeeds"],
+      criteria_scope: "agent_task",
+    } },
+  };
+  assert.equal(normalizeTaskExecution(acceptedPayload).status, "succeeded");
+  for (const human_acceptance of [
+    { ...acceptedPayload.evidence.human_acceptance, criteria_scope: "run" },
+    { ...acceptedPayload.evidence.human_acceptance, accepted_criteria: [] },
+    { ...acceptedPayload.evidence.human_acceptance, accepted_at: "not-a-date" },
+    { ...acceptedPayload.evidence.human_acceptance, user_id: null },
+  ]) {
+    assert.equal(
+      normalizeTaskExecution({ ...acceptedPayload, evidence: { human_acceptance } }).status,
+      "unknown",
+    );
+  }
+  assert.equal(normalizeTaskExecution({
+    ...acceptedPayload,
+    evidence: {},
+  }).status, "unknown");
 });
 
 test("polling is bounded and verification terminal states stop repeated polling", () => {
