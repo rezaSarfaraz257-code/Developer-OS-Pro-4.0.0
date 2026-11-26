@@ -534,10 +534,14 @@ def scan_patch_for_secrets(unified_diff):
             })
     # A line can match multiple overlapping credential rules; report it once.
     return list({(item["line"], item["rule"]): item for item in findings}.values())
-def validate_unified_patch(unified_diff, *, target_revision, expected_revision, workspace_files):
+def validate_unified_patch(unified_diff, *, target_revision, expected_revision, snapshot_revision, workspace_files):
     """Validate a bounded git-style unified diff against an exact source snapshot.
 
     This is validation only: it never applies a patch or mutates a workspace.
+    The caller must read snapshot_revision and workspace_files atomically from
+    the trusted workspace revision store. This function binds the supplied
+    snapshot to that revision and computes a deterministic content digest; it
+    cannot independently attest that an untrusted caller told the truth.
     File creation/deletion/rename, mode changes, binary patches, protected
     paths, stale revisions, malformed hunks and context mismatches fail closed.
     """
@@ -545,8 +549,14 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     _revision(expected_revision)
     if type(target_revision) is not type(expected_revision) or target_revision != expected_revision:
         raise RepairContractError("Patch target revision is stale.")
+    _revision(snapshot_revision)
+    if type(snapshot_revision) is not type(target_revision) or snapshot_revision != target_revision:
+        raise RepairContractError("Workspace snapshot revision does not match the patch target revision.")
     if type(workspace_files) is not dict or any(type(path) is not str for path in workspace_files):
         raise RepairContractError("An authoritative workspace snapshot with exact string paths is required.")
+    # Copy the exact built-in dict before validation so later caller mutations
+    # cannot change the set of files or contents being checked.
+    snapshot_files = dict(workspace_files)
     if type(unified_diff) is not str or not unified_diff or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch is empty or exceeds the configured size limit.")
     try:
@@ -580,9 +590,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         path = file_record["git_path"]
         if not file_record["hunks"] or file_record["old"] != path or file_record["new"] != path:
             raise RepairContractError("Patch file headers and hunks are incomplete or inconsistent.")
-        if path not in workspace_files or type(workspace_files[path]) is not str:
+        if path not in workspace_files or type(snapshot_files[path]) is not str:
             raise RepairContractError("Patch target must be an exact text entry in the authoritative workspace snapshot.")
-        source_text = workspace_files[path]
+        source_text = snapshot_files[path]
         if len(source_text) > MAX_PATCH_SOURCE_BYTES or "\x00" in source_text:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
         try:
@@ -716,8 +726,18 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     secret_findings = scan_patch_for_secrets(unified_diff)
     if secret_findings:
         raise RepairContractError("Patch contains possible secret material.")
+    snapshot_digest = hashlib.sha256()
+    for snapshot_path in sorted(snapshot_files):
+        path_bytes = snapshot_path.encode("utf-8", errors="strict")
+        content_bytes = snapshot_files[snapshot_path].encode("utf-8", errors="strict")
+        snapshot_digest.update(len(path_bytes).to_bytes(8, "big"))
+        snapshot_digest.update(path_bytes)
+        snapshot_digest.update(len(content_bytes).to_bytes(8, "big"))
+        snapshot_digest.update(content_bytes)
     return {
         "target_revision": target_revision,
+        "snapshot_revision": snapshot_revision,
+        "snapshot_sha256": snapshot_digest.hexdigest(),
         "changed_paths": paths,
         "patch_sha256": hashlib.sha256(encoded).hexdigest(),
         "patch_bytes": len(encoded),
