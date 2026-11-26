@@ -823,6 +823,22 @@ class VerificationEvidenceTests(SimpleTestCase):
         self.assertFalse(verification_passed(result, expected_revision=None))
         self.assertFalse(verification_passed(result, expected_revision=-1))
         result["workspace_revision"] = 14
+
+        class EqualToRunner:
+            def __eq__(self, other):
+                return other == "runner"
+
+        class EqualToSucceeded:
+            def __eq__(self, other):
+                return other == "succeeded"
+
+        result["evidence_origin"] = EqualToRunner()
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["evidence_origin"] = "runner"
+        result["execution_status"] = EqualToSucceeded()
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["execution_status"] = "succeeded"
+
         class EqualToPassed:
             def __eq__(self, other):
                 return other == "passed"
