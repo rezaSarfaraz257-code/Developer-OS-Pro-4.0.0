@@ -178,6 +178,14 @@ def agent_task_verification_start_api(request, pk, task_pk):
     from .views import _workspace_for_user, _workspace_write_allowed
 
     with transaction.atomic():
+        # Match cancellation and Worker lock ordering to avoid a run/job
+        # deadlock under concurrent verification-start and cancellation.
+        sync_job = get_object_or_404(
+            BackgroundJob.objects.select_for_update(),
+            pk=sync_job_id,
+            kind="ai_agent_runner_sync",
+            payload__owner_id=request.user.id,
+        )
         run = get_object_or_404(
             AgentRun.objects.select_for_update().select_related("workspace"),
             pk=pk, owner=request.user,
@@ -228,11 +236,9 @@ def agent_task_verification_start_api(request, pk, task_pk):
         if workspace.revision != revision or revision <= run.workspace_revision:
             return Response({"error": "The applied workspace revision is stale or does not follow this plan."}, status=409)
 
-        sync_job = get_object_or_404(
-            BackgroundJob.objects.select_for_update(),
-            pk=sync_job_id, kind="ai_agent_runner_sync",
-            payload__workspace_id=workspace.id, payload__owner_id=request.user.id,
-        )
+        sync_payload = sync_job.payload if isinstance(sync_job.payload, dict) else {}
+        if sync_payload.get("workspace_id") != workspace.id:
+            return Response({"error": "The exact workspace revision must finish Runner synchronization first."}, status=409)
         sync_result = sync_job.result if isinstance(sync_job.result, dict) else {}
         if (
             sync_job.status != "succeeded"
