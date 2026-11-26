@@ -12,6 +12,7 @@ from .repair_engine import (
     validate_revision_bound_approval,
     validate_unified_patch,
     evaluate_repair_loop,
+    evaluate_rollback_eligibility,
     verification_passed,
 )
 
@@ -440,6 +441,77 @@ class VerificationEvidenceTests(SimpleTestCase):
             result["checks"]["security"]["evidence_reference"] = unsafe_reference
             with self.subTest(evidence_reference=unsafe_reference):
                 self.assertFalse(verification_passed(result, expected_revision=14))
+
+
+class RollbackEligibilityTests(SimpleTestCase):
+    def evidence(self, failed_gate=None, **overrides):
+        checks = {
+            name: {
+                "status": "failed" if name == failed_gate else "passed",
+                "evidence_reference": "artifact://verification/" + name,
+                "execution_id": "exec-post-repair",
+                "workspace_revision": "rev-13",
+            }
+            for name in ("targeted_tests", "regression_tests", "security")
+        }
+        result = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": "exec-post-repair",
+            "workspace_id": 7,
+            "job_id": 35,
+            "workspace_revision": "rev-13",
+            "execution_status": "succeeded",
+            "exit_code": 0,
+            "checks": checks,
+        }
+        result.update(overrides)
+        return result
+
+    def kwargs(self):
+        return {
+            "workspace_id": 7,
+            "current_revision": "rev-13",
+            "expected_post_revision": "rev-13",
+            "pre_repair_revision": "rev-12",
+            "applied_patch_sha256": "a" * 64,
+            "snapshot_reference": "artifact://snapshots/pre-repair",
+        }
+
+    def test_rollback_is_eligible_only_after_correlated_failed_gate(self):
+        result = evaluate_rollback_eligibility(
+            self.evidence(failed_gate="regression_tests"), **self.kwargs()
+        )
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["failed_gates"], ["regression_tests"])
+        self.assertEqual(result["target_revision"], "rev-12")
+
+    def test_successful_verification_does_not_authorize_rollback(self):
+        result = evaluate_rollback_eligibility(self.evidence(), **self.kwargs())
+        self.assertFalse(result["eligible"])
+        self.assertEqual(result["reason"], "verification_passed")
+
+    def test_rollback_rejects_stale_revision_workspace_and_unsafe_snapshot(self):
+        for overrides, kwargs in (
+            ({}, {**self.kwargs(), "current_revision": "rev-14"}),
+            ({"workspace_id": 8}, self.kwargs()),
+            ({}, {**self.kwargs(), "snapshot_reference": "artifact://snapshots/../secret"}),
+        ):
+            with self.subTest(overrides=overrides, kwargs=kwargs):
+                with self.assertRaises(RepairContractError):
+                    evaluate_rollback_eligibility(
+                        self.evidence(failed_gate="security", **overrides), **kwargs
+                    )
+
+    def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
+        evidence = self.evidence(failed_gate="targeted_tests")
+        evidence["checks"]["security"]["execution_id"] = "other-execution"
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+        evidence = self.evidence(failed_gate="targeted_tests")
+        evidence["checks"]["security"]["status"] = "unknown"
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
 
 
 class RepairLoopGuardTests(SimpleTestCase):
