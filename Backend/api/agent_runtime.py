@@ -161,14 +161,14 @@ def _run_execution_state(run, tasks):
     statuses = [task.status for task in tasks]
     if run.status == "canceled":
         return "canceled"
-    if statuses and all(status == "succeeded" for status in statuses):
-        return "verified_human_accepted"
-    if any(status == "failed" for status in statuses):
-        return "execution_failed_requires_review"
-    # A failed run must never be summarized as successful, even if stale task
-    # rows still carry succeeded statuses after a finalization failure.
+    # Run-level failure is authoritative over stale or partially committed task
+    # rows; never allow succeeded task statuses to mask a failed run.
     if run.status == "failed":
         return "run_failed"
+    if any(status == "failed" for status in statuses):
+        return "execution_failed_requires_review"
+    if statuses and all(status == "succeeded" for status in statuses):
+        return "verified_human_accepted"
     if any(status == "running" for status in statuses):
         return "runner_verification_in_progress"
     if any(status == "awaiting_approval" for status in statuses):
