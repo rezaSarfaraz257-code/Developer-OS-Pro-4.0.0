@@ -852,6 +852,20 @@ def agent_runner_sync_status_api(request, job_id):
 def agent_run_cancel_api(request, pk):
     runner_cancellations = []
     with transaction.atomic():
+        # Worker execution/recovery lock BackgroundJob before AgentRun.
+        # Authorize first, then take the same lock order so cancellation cannot
+        # deadlock with a planner finalizing under its durable lease.
+        get_object_or_404(AgentRun.objects.only("pk"), pk=pk, owner=request.user)
+        list(
+            BackgroundJob.objects.select_for_update()
+            .filter(
+                kind__in=["ai_agent_plan", "ai_agent_task_verify"],
+                payload__run_id=pk,
+                status__in=["queued", "running"],
+            )
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
         run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
         active_task_exists = run.tasks.filter(status="running").exists()
         if run.status in {"succeeded", "canceled"} or (
