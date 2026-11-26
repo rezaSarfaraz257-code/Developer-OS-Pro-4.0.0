@@ -123,8 +123,14 @@ def _redact_secrets(value):
 
 def _artifact_reference(value, field):
     value = _bounded_text(value, field, 512)
+    match = re.fullmatch(
+        r"(?:artifact|runner|blob)://([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)",
+        value,
+    )
+    segments = match.group(1).split("/") if match else []
     if (
-        not re.fullmatch(r"(?:artifact|runner|blob)://[A-Za-z0-9._/-]{1,480}", value)
+        not match
+        or any(segment in {".", ".."} for segment in segments)
         or any(pattern.search(value) for pattern in _SECRET_PATTERNS)
     ):
         raise RepairContractError(f"{field} is not a safe artifact reference.")
@@ -288,7 +294,16 @@ def _normalize_source_location(value):
 
 def classify_execution_failure(evidence):
     """Classify only normalized Runner evidence; no Agent claim is accepted."""
-    if not isinstance(evidence, dict) or evidence.get("evidence_origin") != "runner":
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("evidence_origin") != "runner"
+        or evidence.get("execution_status") not in EXECUTION_STATUSES
+        or not isinstance(evidence.get("structured_errors"), list)
+        or any(
+            not isinstance(error, dict) or not isinstance(error.get("code"), str)
+            for error in evidence["structured_errors"]
+        )
+    ):
         raise RepairContractError("Failure classification requires normalized Runner evidence.")
     status = evidence.get("execution_status")
     if status == "succeeded" and evidence.get("exit_code") == 0:
@@ -332,7 +347,14 @@ def analyze_root_cause(evidence, *, changed_paths=()):
     classification = classify_execution_failure(evidence)
     if classification["category"] is None:
         raise RepairContractError("Successful executions do not have a repair root cause.")
-    changed = {path for path in changed_paths if _safe_relative_path(path)}
+    if (
+        isinstance(changed_paths, (str, bytes))
+        or not isinstance(changed_paths, (list, tuple, set, frozenset))
+        or len(changed_paths) > 500
+        or any(not _safe_relative_path(path) for path in changed_paths)
+    ):
+        raise RepairContractError("changed_paths must be a bounded collection of safe relative paths.")
+    changed = set(changed_paths)
     candidates = []
     for index, error in enumerate(evidence.get("structured_errors", [])):
         if not isinstance(error, dict):
@@ -663,6 +685,10 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
 
 def verification_passed(result, *, expected_revision):
     """Require independent, revision-bound Runner evidence for every verification gate."""
+    try:
+        _revision(expected_revision)
+    except RepairContractError:
+        return False
     if (
         not isinstance(result, dict)
         or result.get("evidence_origin") != "runner"
