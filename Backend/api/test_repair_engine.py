@@ -386,6 +386,21 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
                 validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
+    def test_rejects_oversized_hunk_coordinates(self):
+        huge_coordinate = self.patch().replace(
+            "@@ -1 +1 @@", "@@ -" + ("9" * 5000) + " +1 @@"
+        )
+        out_of_range_coordinate = self.patch().replace(
+            "@@ -1 +1 @@", "@@ -2147483648 +1 @@"
+        )
+        for patch in (huge_coordinate, out_of_range_coordinate):
+            with self.subTest(patch_length=len(patch)):
+                with self.assertRaises(RepairContractError):
+                    validate_unified_patch(
+                        patch, target_revision="r", expected_revision="r",
+                        workspace_files={"src/main.py": "value = 1\n"},
+                    )
+
     def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
         patch = (
             "diff --git a/src/main.py b/src/main.py\n"
