@@ -672,7 +672,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     files = []
     current = None
     for raw_line in _split_lf_lines(unified_diff):
-        line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+        if not raw_line.endswith("\n"):
+            raise RepairContractError("Patch records must be LF-terminated.")
+        line = raw_line[:-1]
         if line.endswith("\r"):
             line = line[:-1]
         if line.startswith("diff --git "):
