@@ -902,6 +902,10 @@ def agent_run_cancel_api(request, pk):
             if (
                 isinstance(execution_id, str)
                 and execution_id == f"agent-{job.id}"
+                and payload.get("run_id") == run.id
+                and payload.get("task_id") == task.id
+                and payload.get("owner_id") == request.user.id
+                and payload.get("workspace_id") == workspace_id
             ):
                 runner_cancellations.append(execution_id)
 
