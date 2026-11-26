@@ -481,10 +481,15 @@ def _patch_path_allowed(path):
     )
 
 def scan_patch_for_secrets(unified_diff):
-    """Scan added diff lines while recognizing file headers only in header position."""
+    """Scan the complete added-line stream, including multi-line credentials.
+
+    File headers are excluded only in their valid header positions. Joining
+    added lines before scanning is important: private-key blocks and other
+    multi-line secrets cannot be detected reliably one line at a time.
+    """
     if not isinstance(unified_diff, str) or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch must be bounded text.")
-    findings = []
+    added_lines = []
     header_state = 0
     for line_number, line in enumerate(unified_diff.splitlines(), 1):
         if line.startswith("diff --git "):
@@ -495,7 +500,7 @@ def scan_patch_for_secrets(unified_diff):
         if header_state == 1 and re.fullmatch(r"--- a/.+", line):
             header_state = 2
             continue
-        if header_state == 2 and re.fullmatch(r"\+\+\+ b/.+", line):
+        if header_state == 2 and re.fullmatch(r"\\+\\+\\+ b/.+", line):
             header_state = 0
             continue
         if line.startswith("@@ "):
@@ -503,15 +508,23 @@ def scan_patch_for_secrets(unified_diff):
             continue
         if header_state and not line.startswith(("index ", "--- a/")):
             header_state = 0
-        if not line.startswith("+"):
-            continue
-        for pattern in _SECRET_PATTERNS:
-            if pattern.search(line[1:]):
-                findings.append({"line": line_number, "rule": "possible_secret"})
-                break
-    return findings
+        if line.startswith("+"):
+            added_lines.append((line_number, line[1:]))
 
-
+    if not added_lines:
+        return []
+    added_text = "\\n".join(content for _, content in added_lines)
+    added_line_numbers = [number for number, _ in added_lines]
+    findings = []
+    for pattern in _SECRET_PATTERNS:
+        for match in pattern.finditer(added_text):
+            added_index = added_text.count("\\n", 0, match.start())
+            findings.append({
+                "line": added_line_numbers[min(added_index, len(added_line_numbers) - 1)],
+                "rule": "possible_secret",
+            })
+    # A line can match multiple overlapping credential rules; report it once.
+    return list({(item["line"], item["rule"]): item for item in findings}.values())
 def validate_unified_patch(unified_diff, *, target_revision, expected_revision, workspace_files):
     """Validate a bounded git-style unified diff against an exact source snapshot.
 
