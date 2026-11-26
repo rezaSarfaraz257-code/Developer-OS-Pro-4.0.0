@@ -120,6 +120,16 @@ def _redact_secrets(value):
     return result
 
 
+def _artifact_reference(value, field):
+    value = _bounded_text(value, field, 512)
+    if (
+        not re.fullmatch(r"(?:artifact|runner|blob)://[A-Za-z0-9._/-]{1,480}", value)
+        or any(pattern.search(value) for pattern in _SECRET_PATTERNS)
+    ):
+        raise RepairContractError(f"{field} is not a safe artifact reference.")
+    return value
+
+
 def normalize_runner_evidence(payload, *, expected_execution_id, expected_workspace_id,
                               expected_workspace_revision, expected_job_id):
     """Validate and canonicalize a Runner response against server-known identities.
@@ -166,7 +176,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
     for field in ("stdout_reference", "stderr_reference"):
         value = payload.get(field)
         if value is not None:
-            refs[field] = _bounded_text(value, field, 512)
+            refs[field] = _artifact_reference(value, field)
 
     errors = payload.get("structured_errors")
     if not isinstance(errors, list) or len(errors) > MAX_STRUCTURED_ERRORS:
@@ -182,7 +192,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
             location = _normalize_source_location(location)
         evidence_ref = item["evidence_reference"]
         if evidence_ref is not None:
-            evidence_ref = _bounded_text(evidence_ref, "evidence_reference", 512)
+            evidence_ref = _artifact_reference(evidence_ref, "evidence_reference")
         normalized_errors.append({
             "code": code, "message": message,
             "source_location": location, "evidence_reference": evidence_ref,
@@ -201,7 +211,9 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("execution_environment contains unsupported fields.")
     normalized_environment = {}
     for key, value in environment.items():
-        normalized_environment[key] = _bounded_text(value, f"execution_environment.{key}", 160)
+        normalized_environment[key] = _redact_secrets(
+            _bounded_text(value, f"execution_environment.{key}", 160)
+        )
 
     usage = payload.get("resource_usage")
     if not isinstance(usage, dict) or set(usage) - _RESOURCE_KEYS:
@@ -662,7 +674,7 @@ def verification_passed(result, *, expected_revision):
             or type(check.get("workspace_revision")) is not type(revision)
             or check.get("workspace_revision") != revision
             or not isinstance(check.get("evidence_reference"), str)
-            or not check["evidence_reference"].strip()
+            or not re.fullmatch(r"(?:artifact|runner|blob)://[A-Za-z0-9._/-]{1,480}", check["evidence_reference"])
         ):
             return False
     return True
