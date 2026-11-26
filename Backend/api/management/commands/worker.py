@@ -47,7 +47,10 @@ def recover_stale_jobs():
             recovery_now = timezone.now()
             if (
                 locked.status != "running"
-                or (locked.locked_at and locked.locked_at >= recovery_now - STALE_AFTER)
+                or (
+                    locked.locked_at
+                    and recovery_now - STALE_AFTER <= locked.locked_at <= recovery_now
+                )
             ):
                 continue
             if locked.kind == "email":
