@@ -7,6 +7,7 @@ from .repair_engine import (
     MAX_PATCH_TOTAL_SOURCE_BYTES,
     MAX_PATCH_SNAPSHOT_FILES,
     MAX_PATCH_TOTAL_PATH_BYTES,
+    MAX_PATCH_SOURCE_LINES,
     RepairContractError,
     analyze_root_cause,
     classify_execution_failure,
@@ -563,6 +564,16 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         expected_revision="rev-12",
                         workspace_files=snapshot,
                     )
+
+    def test_patch_validation_rejects_line_count_memory_amplification(self):
+        oversized_line_count = "\\n" * (MAX_PATCH_SOURCE_LINES + 1)
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files={"src/main.py": oversized_line_count},
+            )
 
     def test_patch_parser_rejects_unterminated_final_diff_record(self):
         with self.assertRaises(RepairContractError):
