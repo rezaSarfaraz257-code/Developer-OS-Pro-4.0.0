@@ -20,6 +20,7 @@ MAX_DIFF_CHARS = 64_000
 MAX_PATCH_FILES = 20
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
+MAX_APPROVAL_TTL_SECONDS = 60 * 60
 
 EXECUTION_STATUSES = frozenset({
     "succeeded", "failed", "timed_out", "cancelled",
@@ -656,6 +657,7 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         and approved_dt <= now
         and expires_dt > now
         and expires_dt > approved_dt
+        and (expires_dt - approved_dt).total_seconds() <= MAX_APPROVAL_TTL_SECONDS
     )
 
 def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, max_attempts=MAX_REPAIR_ATTEMPTS):
