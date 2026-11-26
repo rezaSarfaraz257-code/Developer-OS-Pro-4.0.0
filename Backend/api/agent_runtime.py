@@ -190,8 +190,6 @@ def _run_execution_state(run, tasks):
         return "workspace_changed_after_patch_requires_reanalysis"
     if run.status == "approved":
         return "approved_awaiting_task_execution"
-    if run.status == "failed":
-        return "run_failed"
     return "plan_only_no_workspace_mutations"
 
 
