@@ -755,6 +755,7 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
     return (
         approval.get("approved") is True
         and revision_matches
+        and type(approval.get("patch_sha256")) is str
         and approval.get("patch_sha256") == patch_sha256
         and approved_dt <= now
         and expires_dt > now
