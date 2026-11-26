@@ -1047,12 +1047,12 @@ def verification_passed(result, *, expected_revision):
     except RepairContractError:
         return False
     if (
-        not isinstance(result, dict)
-        or not isinstance(result.get("evidence_origin"), str)
+        type(result) is not dict
+        or type(result.get("evidence_origin")) is not str
         or result.get("evidence_origin") != "runner"
         or type(result.get("schema_version")) is not int
         or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
-        or not isinstance(result.get("execution_id"), str)
+        or type(result.get("execution_id")) is not str
         or not result.get("execution_id")
         or len(result["execution_id"]) > 128
         or type(result.get("workspace_id")) is not int
@@ -1069,7 +1069,7 @@ def verification_passed(result, *, expected_revision):
     if (
         type(revision) is not type(expected_revision)
         or revision != expected_revision
-        or not isinstance(result.get("execution_status"), str)
+        or type(result.get("execution_status")) is not str
         or result.get("execution_status") != "succeeded"
         or type(result.get("exit_code")) is not int
         or result.get("exit_code") != 0
@@ -1077,19 +1077,19 @@ def verification_passed(result, *, expected_revision):
         return False
     checks = result.get("checks")
     required = {"targeted_tests", "regression_tests", "security"}
-    if not isinstance(checks, dict) or set(checks) != required:
+    if type(checks) is not dict or set(checks) != required:
         return False
     for check in checks.values():
         if (
-            not isinstance(check, dict)
+            type(check) is not dict
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
-            or not isinstance(check.get("status"), str)
+            or type(check.get("status")) is not str
             or check.get("status") != "passed"
-            or not isinstance(check.get("execution_id"), str)
+            or type(check.get("execution_id")) is not str
             or check.get("execution_id") != result["execution_id"]
             or type(check.get("workspace_revision")) is not type(revision)
             or check.get("workspace_revision") != revision
-            or not isinstance(check.get("evidence_reference"), str)
+            or type(check.get("evidence_reference")) is not str
         ):
             return False
         try:
