@@ -18,6 +18,8 @@ MAX_STACK_TRACE_CHARS = 16_000
 MAX_STRUCTURED_ERRORS = 100
 MAX_DIFF_CHARS = 64_000
 MAX_PATCH_FILES = 20
+MAX_REPAIR_HISTORY = 20
+MAX_REPAIR_ATTEMPTS = 3
 
 EXECUTION_STATUSES = frozenset({
     "succeeded", "failed", "timed_out", "cancelled",
@@ -578,6 +580,50 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         and expires_dt > now
         and expires_dt > approved_dt
     )
+
+def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, max_attempts=MAX_REPAIR_ATTEMPTS):
+    """Bound repair retries and reject repeated patches for one exact revision.
+
+    Only attempted mutations count. Rejected proposals do not consume the
+    execution budget. The function is pure and never applies or schedules work.
+    """
+    _revision(current_revision)
+    if (
+        not isinstance(candidate_patch_sha256, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", candidate_patch_sha256)
+    ):
+        raise RepairContractError("Candidate patch hash is invalid.")
+    if type(max_attempts) is not int or not 1 <= max_attempts <= MAX_REPAIR_ATTEMPTS:
+        raise RepairContractError("Repair attempt limit is outside the safe policy.")
+    if not isinstance(history, list) or len(history) > MAX_REPAIR_HISTORY:
+        raise RepairContractError("Repair history is malformed or exceeds its bound.")
+
+    attempted_outcomes = {"applied_failed_verification", "rolled_back", "verified_success"}
+    attempts = []
+    for record in history:
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"patch_sha256", "outcome", "workspace_revision"}
+            or not isinstance(record.get("patch_sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", record["patch_sha256"])
+            or record.get("outcome") not in attempted_outcomes | {"rejected"}
+        ):
+            raise RepairContractError("Repair history record is invalid.")
+        _revision(record["workspace_revision"])
+        if (
+            type(record["workspace_revision"]) is type(current_revision)
+            and record["workspace_revision"] == current_revision
+            and record["outcome"] in attempted_outcomes
+        ):
+            attempts.append(record)
+
+    if any(record["outcome"] == "verified_success" for record in attempts):
+        return {"allowed": False, "reason": "revision_already_verified", "attempts": len(attempts)}
+    if any(record["patch_sha256"] == candidate_patch_sha256 for record in attempts):
+        return {"allowed": False, "reason": "repeated_patch", "attempts": len(attempts)}
+    if len(attempts) >= max_attempts:
+        return {"allowed": False, "reason": "attempt_limit_reached", "attempts": len(attempts)}
+    return {"allowed": True, "reason": "within_repair_budget", "attempts": len(attempts)}
 
 def verification_passed(result, *, expected_revision):
     """Require independent, revision-bound Runner evidence for every verification gate."""
