@@ -10,6 +10,7 @@ from .repair_engine import (
     scan_patch_for_secrets,
     validate_revision_bound_approval,
     validate_unified_patch,
+    evaluate_repair_loop,
     verification_passed,
 )
 
@@ -264,3 +265,41 @@ class VerificationEvidenceTests(SimpleTestCase):
         result["exit_code"] = 0
         result["workspace_revision"] = True
         self.assertFalse(verification_passed(result, expected_revision=1))
+
+
+class RepairLoopGuardTests(SimpleTestCase):
+    def test_blocks_repeated_patch_and_enforces_attempt_budget(self):
+        revision = "rev-12"
+        repeated = "a" * 64
+        other = "b" * 64
+        history = [
+            {"patch_sha256": repeated, "outcome": "applied_failed_verification", "workspace_revision": revision},
+            {"patch_sha256": other, "outcome": "rolled_back", "workspace_revision": revision},
+        ]
+        self.assertEqual(
+            evaluate_repair_loop(history, current_revision=revision, candidate_patch_sha256=repeated)["reason"],
+            "repeated_patch",
+        )
+        self.assertEqual(
+            evaluate_repair_loop(history, current_revision=revision, candidate_patch_sha256="c" * 64)["reason"],
+            "attempt_limit_reached",
+        )
+
+    def test_new_revision_gets_a_fresh_budget_and_success_stops_repair(self):
+        history = [
+            {"patch_sha256": "a" * 64, "outcome": "verified_success", "workspace_revision": "rev-12"},
+        ]
+        self.assertTrue(evaluate_repair_loop(
+            history, current_revision="rev-13", candidate_patch_sha256="b" * 64
+        )["allowed"])
+        self.assertEqual(
+            evaluate_repair_loop(history, current_revision="rev-12", candidate_patch_sha256="b" * 64)["reason"],
+            "revision_already_verified",
+        )
+
+    def test_malformed_history_fails_closed(self):
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                [{"patch_sha256": "not-a-hash", "outcome": "rolled_back", "workspace_revision": "rev-12"}],
+                current_revision="rev-12", candidate_patch_sha256="a" * 64,
+            )
