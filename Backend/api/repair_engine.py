@@ -120,7 +120,7 @@ def _revision(value):
 
 def _safe_relative_path(value):
     if (
-        not isinstance(value, str) or not value or len(value) > 512
+        type(value) is not str or not value or len(value) > 512
         or "\x00" in value or "\\" in value
         or any(unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for char in value)
         or re.match(r"^[A-Za-z]:", value)
@@ -135,7 +135,7 @@ def _safe_relative_path(value):
 
 
 def _bounded_text(value, field, limit, *, allow_empty=False):
-    if not isinstance(value, str) or len(value) > limit or "\x00" in value:
+    if type(value) is not str or len(value) > limit or "\x00" in value:
         raise RepairContractError(f"{field} must be a bounded string.")
     try:
         value.encode("utf-8", errors="strict")
@@ -147,7 +147,7 @@ def _bounded_text(value, field, limit, *, allow_empty=False):
 
 
 def _iso_timestamp(value, field):
-    if not isinstance(value, str) or len(value) > 64:
+    if type(value) is not str or len(value) > 64:
         raise RepairContractError(f"{field} must be an ISO-8601 timestamp.")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -189,7 +189,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
     it with a response received from the authenticated Runner service; never pass
     Agent-generated JSON or user-submitted evidence as the payload.
     """
-    if not isinstance(payload, dict) or set(payload) != _EVIDENCE_KEYS:
+    if type(payload) is not dict or set(payload) != _EVIDENCE_KEYS:
         raise RepairContractError("Runner evidence has missing or unexpected fields.")
     if type(payload.get("schema_version")) is not int or payload["schema_version"] != EVIDENCE_SCHEMA_VERSION:
         raise RepairContractError("Unsupported Runner evidence schema version.")
@@ -235,11 +235,11 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
             refs[field] = _artifact_reference(value, field)
 
     errors = payload.get("structured_errors")
-    if not isinstance(errors, list) or len(errors) > MAX_STRUCTURED_ERRORS:
+    if type(errors) is not list or len(errors) > MAX_STRUCTURED_ERRORS:
         raise RepairContractError("structured_errors must be a bounded list.")
     normalized_errors = []
     for item in errors:
-        if not isinstance(item, dict) or set(item) != _ERROR_KEYS:
+        if type(item) is not dict or set(item) != _ERROR_KEYS:
             raise RepairContractError("A structured error has an invalid shape.")
         code = _redact_secrets(_bounded_text(item["code"], "structured error code", 80))
         message = _redact_secrets(_bounded_text(item["message"], "structured error message", 2_000))
@@ -263,7 +263,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         source_location = _normalize_source_location(source_location)
 
     environment = payload.get("execution_environment")
-    if not isinstance(environment, dict) or set(environment) - _ENVIRONMENT_KEYS:
+    if type(environment) is not dict or set(environment) - _ENVIRONMENT_KEYS:
         raise RepairContractError("execution_environment contains unsupported fields.")
     normalized_environment = {}
     for key, value in environment.items():
@@ -272,7 +272,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         )
 
     usage = payload.get("resource_usage")
-    if not isinstance(usage, dict) or set(usage) - _RESOURCE_KEYS:
+    if type(usage) is not dict or set(usage) - _RESOURCE_KEYS:
         raise RepairContractError("resource_usage contains unsupported fields.")
     normalized_usage = {}
     for key, value in usage.items():
@@ -281,7 +281,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         normalized_usage[key] = value
 
     timestamps = payload.get("timestamps")
-    if not isinstance(timestamps, dict) or set(timestamps) != _TIMESTAMP_KEYS:
+    if type(timestamps) is not dict or set(timestamps) != _TIMESTAMP_KEYS:
         raise RepairContractError("timestamps must contain started_at and finished_at.")
     started = _iso_timestamp(timestamps["started_at"], "timestamps.started_at")
     finished = _iso_timestamp(timestamps["finished_at"], "timestamps.finished_at")
@@ -289,11 +289,11 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("finished_at cannot precede started_at.")
 
     checksums = payload.get("artifact_checksums")
-    if not isinstance(checksums, dict) or len(checksums) > 100:
+    if type(checksums) is not dict or len(checksums) > 100:
         raise RepairContractError("artifact_checksums must be a bounded mapping.")
     normalized_checksums = {}
     for path, digest in checksums.items():
-        if not _safe_relative_path(path) or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        if not _safe_relative_path(path) or type(digest) is not str or not re.fullmatch(r"[a-f0-9]{64}", digest):
             raise RepairContractError("Artifact checksum entry is invalid.")
         normalized_checksums[path] = digest
 
@@ -320,7 +320,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
 
 
 def _normalize_source_location(value):
-    if not isinstance(value, dict) or set(value) - _LOCATION_KEYS or "path" not in value:
+    if type(value) is not dict or set(value) - _LOCATION_KEYS or "path" not in value:
         raise RepairContractError("source_location has an invalid shape.")
     path = value["path"]
     if not _safe_relative_path(path):
@@ -342,7 +342,7 @@ def _normalize_source_location(value):
 
 def _revalidate_runner_evidence(evidence):
     """Re-normalize a Runner payload before any downstream consumer uses it."""
-    if not isinstance(evidence, dict):
+    if type(evidence) is not dict:
         raise RepairContractError("Failure analysis requires normalized Runner evidence.")
     try:
         return normalize_runner_evidence(
@@ -505,7 +505,7 @@ def scan_patch_for_secrets(unified_diff):
     added lines before scanning is important: private-key blocks and other
     multi-line secrets cannot be detected reliably one line at a time.
     """
-    if not isinstance(unified_diff, str) or len(unified_diff) > MAX_DIFF_CHARS:
+    if type(unified_diff) is not str or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch must be bounded text.")
     added_lines = []
     header_state = 0
@@ -1012,7 +1012,7 @@ def compare_repair_outcomes(before_evidence, after_evidence, verification_eviden
     ):
         raise RepairContractError("Before/after evidence must identify distinct executions and revisions in one workspace.")
     verified = (
-        isinstance(verification_evidence, dict)
+        type(verification_evidence) is dict
         and verification_evidence.get("workspace_id") == after_evidence["workspace_id"]
         and type(verification_evidence.get("workspace_id")) is int
         and verification_evidence.get("execution_id") == after_evidence["execution_id"]
