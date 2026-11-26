@@ -540,7 +540,11 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             }
             continue
 
-        if line.startswith(("\\ No newline at end of file", "index ", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
+        if line.startswith("index "):
+            if not re.fullmatch(r"index [a-f0-9]{7,64}\\.\\.[a-f0-9]{7,64}(?: [0-7]{6})?", line):
+                raise RepairContractError("Patch index metadata is malformed.")
+            continue
+        if line.startswith(("\\ No newline at end of file", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
             raise RepairContractError("Unsupported patch metadata or no-newline marker.")
         if current is not None and current.get("active_hunk") is not None:
             if raw_line.startswith((" ", "+", "-")):
