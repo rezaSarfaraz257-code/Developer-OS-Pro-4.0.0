@@ -688,16 +688,16 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertTrue(scan_patch_for_secrets(source_line))
     def test_scans_multiline_and_incomplete_private_keys_across_added_patch_lines(self):
         private_key = (
-            "-----BEGIN PRIVATE KEY-----\\n"
-            + "MIIE" + "K" * 48 + "\\n"
+            "-----BEGIN PRIVATE KEY-----\n"
+            + "MIIE" + "K" * 48 + "\n"
             + "-----END PRIVATE KEY-----"
         )
         patch = (
-            "diff --git a/src/config.py b/src/config.py\\n"
-            "--- a/src/config.py\\n"
-            "+++ b/src/config.py\\n"
-            "@@ -0,0 +1,3 @@\\n"
-            + "".join("+" + line + "\\n" for line in private_key.splitlines())
+            "diff --git a/src/config.py b/src/config.py\n"
+            "--- a/src/config.py\n"
+            "+++ b/src/config.py\n"
+            "@@ -0,0 +1,3 @@\n"
+            + "".join("+" + line + "\n" for line in private_key.splitlines())
         )
         findings = scan_patch_for_secrets(patch)
         self.assertTrue(findings)
@@ -705,12 +705,12 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn("K" * 48, str(findings))
 
         incomplete = (
-            "diff --git a/src/config.py b/src/config.py\\n"
-            "--- a/src/config.py\\n"
-            "+++ b/src/config.py\\n"
-            "@@ -0,0 +1,2 @@\\n"
-            "+-----BEGIN PRIVATE KEY-----\\n"
-            "+" + "MIIE" + "Q" * 48 + "\\n"
+            "diff --git a/src/config.py b/src/config.py\n"
+            "--- a/src/config.py\n"
+            "+++ b/src/config.py\n"
+            "@@ -0,0 +1,2 @@\n"
+            "+-----BEGIN PRIVATE KEY-----\n"
+            "+" + "MIIE" + "Q" * 48 + "\n"
         )
         incomplete_findings = scan_patch_for_secrets(incomplete)
         self.assertTrue(incomplete_findings)
