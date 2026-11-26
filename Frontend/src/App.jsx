@@ -204,6 +204,21 @@ function Shell({ user, onLogout, children, go, current }) {
   );
 }
 
+
+const AUTH_ICON_PATHS = {
+  user: <><circle cx="12" cy="8" r="3.4" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>,
+  lock: <><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+  mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>,
+  shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></>,
+  key: <><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
+  eyeOff: <><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a15 15 0 0 1-3 3.8M6.2 6.2C3.5 8 2 12 2 12s3.5 7 10 7c1 0 1.9-.2 2.8-.5" /></>,
+  arrow: <><path d="M5 12h14m-6-6 6 6-6 6" /></>,
+};
+function AuthIcon({ name, className = "" }) {
+  return <svg className={className} viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{AUTH_ICON_PATHS[name] || AUTH_ICON_PATHS.shield}</svg>;
+}
+
 function Auth({ onReady }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username:"", password:"", email:"", first_name:"", last_name:"", otp:"", backup_code:"" });
@@ -372,26 +387,27 @@ function Auth({ onReady }) {
 
   return <div className="auth-screen"><div className="auth-grid"/><div className="auth-card">
     <div className="auth-logo"><img className="brand-icon auth-brand-icon" src="/favicon.svg?v=20261125-coremark" alt="" aria-hidden="true" /><div>DEVELOPER OS<small>THE OPERATING SYSTEM FOR DEVELOPERS</small></div></div>
+    <div className="auth-system-status"><span><i /> SECURE GATEWAY</span><span>ENCRYPTED SESSION <AuthIcon name="shield" /></span></div>
     <div className="auth-copy"><span>{mode === "forgot" ? "ACCOUNT RECOVERY" : "BOOT SEQUENCE"}</span><h1>{mode === "login" ? "Enter the command center." : mode === "register" ? "Initialize your workspace." : "Recover your account."}</h1><p>{mode === "forgot" ? "We will send a secure, time-limited password reset link." : "Projects, intelligence, code, collaboration and delivery in one developer control plane."}</p></div>
     <form onSubmit={submit} className="auth-form">
       {mode === "register" && <div className="two">
-        <label className="auth-field"><span>FIRST NAME</span><input autoComplete="given-name" placeholder="First name" value={form.first_name} onChange={e=>setForm({...form,first_name:e.target.value})}/></label>
-        <label className="auth-field"><span>LAST NAME</span><input autoComplete="family-name" placeholder="Last name" value={form.last_name} onChange={e=>setForm({...form,last_name:e.target.value})}/></label>
+        <label className="auth-field"><span className="auth-label"><AuthIcon name="user" /> FIRST NAME</span><input autoComplete="given-name" placeholder="First name" value={form.first_name} onChange={e=>setForm({...form,first_name:e.target.value})}/></label>
+        <label className="auth-field"><span className="auth-label"><AuthIcon name="user" /> LAST NAME</span><input autoComplete="family-name" placeholder="Last name" value={form.last_name} onChange={e=>setForm({...form,last_name:e.target.value})}/></label>
       </div>}
-      {mode !== "forgot" && <label className="auth-field"><span>{mode === "register" ? "USERNAME" : "USERNAME OR EMAIL"}</span><input required minLength={mode === "register" ? 3 : undefined} autoComplete="username" placeholder={mode === "register" ? "Choose a username" : "Username or email"} value={form.username} onChange={e=>setForm({...form,username:e.target.value})}/></label>}
-      {(mode === "register" || mode === "forgot") && <label className="auth-field"><span>EMAIL ADDRESS</span><input required type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>}
-      {mode !== "forgot" && <label className="auth-field"><span>PASSWORD</span><div className="auth-password"><input required type={showPassword ? "text" : "password"} minLength={mode === "register" ? 12 : undefined} autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder={mode === "register" ? "At least 12 characters" : "Your password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><button type="button" className="password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} onClick={()=>setShowPassword(v=>!v)}>{showPassword ? "HIDE" : "SHOW"}</button></div></label>}
+      {mode !== "forgot" && <label className="auth-field"><span className="auth-label"><AuthIcon name="user" /> {mode === "register" ? "USERNAME" : "USERNAME OR EMAIL"}</span><input required minLength={mode === "register" ? 3 : undefined} autoComplete="username" placeholder={mode === "register" ? "Choose a username" : "Username or email"} value={form.username} onChange={e=>setForm({...form,username:e.target.value})}/></label>}
+      {(mode === "register" || mode === "forgot") && <label className="auth-field"><span className="auth-label"><AuthIcon name="mail" /> EMAIL ADDRESS</span><input required type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>}
+      {mode !== "forgot" && <label className="auth-field"><span className="auth-label"><AuthIcon name="lock" /> PASSWORD</span><div className="auth-password"><input required type={showPassword ? "text" : "password"} minLength={mode === "register" ? 12 : undefined} autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder={mode === "register" ? "At least 12 characters" : "Your password"} value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><button type="button" className="password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} onClick={()=>setShowPassword(v=>!v)}><AuthIcon name={showPassword ? "eyeOff" : "eye"} /> <span>{showPassword ? "HIDE" : "SHOW"}</span></button></div></label>}
       {mode === "register" && <>
         <div className="password-meter" aria-label={`Password strength: ${passwordStrength} of 5`}><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /><div className={`strength strength-${passwordStrength}`} /></div>
         <p className="password-hint">{form.password ? ["Very weak","Weak","Fair","Good","Strong","Excellent"][passwordStrength] : "Use 12+ characters with a mix of upper/lowercase, numbers and symbols."}</p>
-        <label className="auth-field"><span>CONFIRM PASSWORD</span><input required type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Enter your password again" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
+        <label className="auth-field"><span className="auth-label"><AuthIcon name="shield" /> CONFIRM PASSWORD</span><input required type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Enter your password again" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></label>
       </>}
       {mode === "login" && <div className="two">
-        <label className="auth-field"><span>AUTHENTICATOR CODE (OPTIONAL)</span><input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="6-digit code" value={form.otp} onChange={e=>setForm({...form,otp:e.target.value})}/></label>
-        <label className="auth-field"><span>BACKUP CODE</span><input autoComplete="off" aria-label="Backup code" placeholder="Recovery code" value={form.backup_code} onChange={e=>setForm({...form,backup_code:e.target.value})}/></label>
+        <label className="auth-field"><span className="auth-label"><AuthIcon name="key" /> AUTHENTICATOR CODE (OPTIONAL)</span><input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="6-digit code" value={form.otp} onChange={e=>setForm({...form,otp:e.target.value})}/></label>
+        <label className="auth-field"><span className="auth-label"><AuthIcon name="shield" /> BACKUP CODE</span><input autoComplete="off" aria-label="Backup code" placeholder="Recovery code" value={form.backup_code} onChange={e=>setForm({...form,backup_code:e.target.value})}/></label>
       </div>}
       {notice&&<div className="notice" role="status">{notice}</div>}{error&&<div className="error" role="alert">{error}</div>}
-      <button className="primary wide auth-submit" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID →" : "SEND RESET LINK →"}</button>
+      <button className="primary wide auth-submit" disabled={busy}>{busy?"PROCESSING...":mode === "login" ? "ACCESS COMMAND CENTER →" : mode === "register" ? "CREATE DEVELOPER ID" : "SEND RESET LINK"} <AuthIcon name="arrow" /></button>
     </form>
     {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("forgot");setError("");setNotice("")}}>Forgot password?</button>}
     {mode === "login" && <button className="switch" onClick={()=>{setForm(previous=>({...previous,email:previous.email || (previous.username.includes("@") ? previous.username : "")}));setMode("verify");setError("");setNotice("")}}>Resend verification email</button>}
