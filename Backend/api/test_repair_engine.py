@@ -502,6 +502,7 @@ class RollbackEligibilityTests(SimpleTestCase):
             "workspace_id": 7,
             "job_id": 35,
             "workspace_revision": "rev-13",
+            "patch_sha256": "a" * 64,
             "execution_status": "succeeded",
             "exit_code": 0,
             "checks": checks,
@@ -545,6 +546,10 @@ class RollbackEligibilityTests(SimpleTestCase):
                     )
 
     def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
+        evidence = self.evidence(failed_gate="targeted_tests")
+        evidence["patch_sha256"] = "b" * 64
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
         evidence = self.evidence(failed_gate="targeted_tests")
         evidence["checks"]["security"]["execution_id"] = "other-execution"
         with self.assertRaises(RepairContractError):
