@@ -564,6 +564,15 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         workspace_files=snapshot,
                     )
 
+    def test_patch_parser_rejects_unterminated_final_diff_record(self):
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch().rstrip("\\n"),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files={"src/main.py": "value = 1\\n"},
+            )
+
     def test_patch_parser_treats_unicode_line_separator_as_file_content(self):
         source = "value = 'before\u2028after'\n"
         patch = (
