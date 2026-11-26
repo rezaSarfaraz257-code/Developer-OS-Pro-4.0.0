@@ -401,6 +401,23 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
 
+    def test_rejects_empty_and_context_only_hunks(self):
+        context_only = self.patch().replace(
+            "@@ -1 +1 @@\n-value = 1\n+value = 2\n",
+            "@@ -1 +1 @@\n value = 1\n",
+        )
+        empty = self.patch().replace(
+            "@@ -1 +1 @@\n-value = 1\n+value = 2\n",
+            "@@ -0,0 +0,0 @@\n",
+        )
+        for patch in (context_only, empty):
+            with self.subTest(patch=patch):
+                with self.assertRaises(RepairContractError):
+                    validate_unified_patch(
+                        patch, target_revision="r", expected_revision="r",
+                        workspace_files={"src/main.py": "value = 1\n"},
+                    )
+
     def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
         patch = (
             "diff --git a/src/main.py b/src/main.py\n"
