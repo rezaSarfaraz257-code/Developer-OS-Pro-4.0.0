@@ -1136,6 +1136,73 @@ class VerificationEvidenceTests(SimpleTestCase):
                 self.assertFalse(verification_passed(result, expected_revision=14))
 
 
+    def test_verification_rejects_spoofed_mapping_and_nested_values(self):
+        valid = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": "exec-verified-22",
+            "workspace_id": 7,
+            "job_id": 36,
+            "workspace_revision": "rev-22",
+            "execution_status": "succeeded",
+            "exit_code": 0,
+            "checks": {
+                name: {
+                    "status": "passed",
+                    "evidence_reference": "artifact://checks/" + name,
+                    "execution_id": "exec-verified-22",
+                    "workspace_revision": "rev-22",
+                }
+                for name in ("targeted_tests", "regression_tests", "security")
+            },
+        }
+
+        class SpoofedMapping(dict):
+            def get(self, key, default=None):
+                return valid.get(key, default)
+
+        class SpoofedChecks(dict):
+            def values(self):
+                return iter(valid["checks"].values())
+
+        class SpoofedGate(dict):
+            def get(self, key, default=None):
+                return valid["checks"]["security"].get(key, default)
+
+        self.assertFalse(verification_passed(
+            SpoofedMapping(), expected_revision="rev-22"
+        ))
+        evidence = {**valid, "checks": SpoofedChecks()}
+        self.assertFalse(verification_passed(
+            evidence, expected_revision="rev-22"
+        ))
+        evidence = {
+            **valid,
+            "checks": {**valid["checks"], "security": SpoofedGate()},
+        }
+        self.assertFalse(verification_passed(
+            evidence, expected_revision="rev-22"
+        ))
+
+        class SpoofedStatus(str):
+            def __eq__(self, other):
+                return True
+
+        evidence = {
+            **valid,
+            "checks": {
+                **valid["checks"],
+                "security": {
+                    **valid["checks"]["security"],
+                    "status": SpoofedStatus("failed"),
+                },
+            },
+        }
+        self.assertFalse(verification_passed(
+            evidence, expected_revision="rev-22"
+        ))
+
+
 class RollbackEligibilityTests(SimpleTestCase):
     def evidence(self, failed_gate=None, **overrides):
         checks = {
