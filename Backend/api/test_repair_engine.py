@@ -470,6 +470,55 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 workspace_files={path: source for path in paths},
             )
 
+    def test_accepts_zero_count_insertions_at_file_boundaries(self):
+        cases = (
+            (
+                "@@ -0,0 +1 @@\\n+first\\n",
+                "first\\nalpha\\nbeta\\n",
+            ),
+            (
+                "@@ -2,0 +3 @@\\n+last\\n",
+                "alpha\\nbeta\\nlast\\n",
+            ),
+        )
+        for hunk, source in cases:
+            with self.subTest(hunk=hunk):
+                patch = (
+                    "diff --git a/src/main.py b/src/main.py\\n"
+                    "--- a/src/main.py\\n"
+                    "+++ b/src/main.py\\n"
+                    + hunk
+                )
+                self.assertTrue(validate_unified_patch(
+                    patch, target_revision="r", expected_revision="r",
+                    workspace_files={"src/main.py": source.replace(
+                        "first\\n", ""
+                    ).replace("last\\n", "")},
+                )["validated"])
+
+    def test_validates_multiple_hunks_after_cumulative_line_delta(self):
+        patch = (
+            "diff --git a/src/main.py b/src/main.py\\n"
+            "--- a/src/main.py\\n"
+            "+++ b/src/main.py\\n"
+            "@@ -1 +1,2 @@\\n"
+            " alpha\\n"
+            "+inserted\\n"
+            "@@ -4 +5 @@\\n"
+            "-delta\\n"
+            "+DELTA\\n"
+        )
+        self.assertTrue(validate_unified_patch(
+            patch, target_revision="r", expected_revision="r",
+            workspace_files={"src/main.py": "alpha\\nbeta\\ngamma\\ndelta\\n"},
+        )["validated"])
+        wrong_offset = patch.replace("@@ -4 +5 @@", "@@ -4 +4 @@")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(
+                wrong_offset, target_revision="r", expected_revision="r",
+                workspace_files={"src/main.py": "alpha\\nbeta\\ngamma\\ndelta\\n"},
+            )
+
     def test_rejects_empty_and_context_only_hunks(self):
         context_only = self.patch().replace(
             "@@ -1 +1 @@\n-value = 1\n+value = 2\n",
