@@ -1,0 +1,94 @@
+/* Premium authentication experience — scoped to the unauthenticated shell. */
+.auth-screen{
+  --auth-cyan:#58e8ff;
+  position:relative;isolation:isolate;display:flex;align-items:center;justify-content:flex-start;
+  min-height:100vh;min-height:100svh;overflow:hidden;padding:56px clamp(24px,8vw,150px);
+  background:
+    radial-gradient(ellipse at 78% 48%,rgba(0,198,231,.13),transparent 32%),
+    radial-gradient(ellipse at 94% 8%,rgba(92,75,255,.12),transparent 28%),
+    linear-gradient(115deg,#03060b 0%,#070c14 52%,#050912 100%);
+}
+.auth-screen .auth-grid{position:absolute;inset:0;z-index:-1;opacity:.22;pointer-events:none;
+  background-image:linear-gradient(rgba(87,151,181,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(87,151,181,.09) 1px,transparent 1px);
+  background-size:54px 54px;mask-image:linear-gradient(90deg,black,transparent 95%);}
+.auth-screen::after{
+  content:"AUTONOMOUS\A SOFTWARE\A UNIVERSE";
+  position:absolute;right:clamp(28px,9vw,170px);top:50%;transform:translateY(-57%);
+  width:min(42vw,650px);white-space:pre;pointer-events:none;
+  color:rgba(224,246,255,.91);font:700 clamp(38px,5.1vw,78px)/1.06 "Space Grotesk",sans-serif;
+  letter-spacing:-.075em;text-shadow:0 0 60px rgba(63,218,255,.12);
+}
+.auth-screen::before{
+  content:"THINK  /  CODE  /  BUILD  /  SCALE";
+  position:absolute;right:clamp(34px,9.5vw,178px);top:calc(50% + 116px);
+  color:var(--auth-cyan);font:600 10px "JetBrains Mono",monospace;letter-spacing:.22em;
+  text-shadow:0 0 22px rgba(88,232,255,.35);pointer-events:none;
+}
+.auth-screen>.auth-card{
+  position:relative;z-index:1;width:min(100%,470px);margin:0;
+  padding:clamp(28px,3.4vw,48px);border:1px solid rgba(107,174,201,.2);
+  border-radius:18px;background:linear-gradient(145deg,rgba(13,21,32,.96),rgba(6,11,19,.97));
+  box-shadow:0 35px 110px rgba(0,0,0,.58),0 0 70px rgba(36,193,224,.07),inset 0 1px rgba(255,255,255,.045);
+  backdrop-filter:blur(24px);
+}
+.auth-screen .auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:38px;
+  color:#eafaff;font:700 13px "JetBrains Mono",monospace;letter-spacing:.16em;}
+.auth-screen .auth-logo>div{line-height:1.5}
+.auth-screen .auth-logo small{display:block;margin-top:4px;color:#688397;font-size:8px;letter-spacing:.18em}
+.auth-screen .auth-brand-icon{width:48px;height:48px;object-fit:contain;padding:7px;
+  border:1px solid rgba(88,232,255,.32);border-radius:13px;
+  background:linear-gradient(145deg,rgba(88,232,255,.12),rgba(88,232,255,.025));
+  filter:drop-shadow(0 0 15px rgba(88,232,255,.2));}
+.auth-screen .auth-copy{margin-bottom:28px}
+.auth-screen .auth-copy>span{display:inline-flex;align-items:center;gap:9px;color:var(--auth-cyan);
+  font:700 9px "JetBrains Mono",monospace;letter-spacing:.2em}
+.auth-screen .auth-copy>span::before{content:"";width:18px;height:1px;background:var(--auth-cyan);box-shadow:0 0 10px var(--auth-cyan)}
+.auth-screen .auth-copy h1{margin:13px 0 10px;color:#f0f8ff;font-size:clamp(27px,3vw,35px);
+  line-height:1.12;letter-spacing:-.055em}
+.auth-screen .auth-copy p{max-width:390px;margin:0;color:#8294a8;font-size:12px;line-height:1.8}
+.auth-screen .auth-form{display:grid;gap:15px}
+.auth-screen .auth-field{display:grid;gap:8px}
+.auth-screen .auth-field>span{color:#8299aa;font:700 8px "JetBrains Mono",monospace;letter-spacing:.15em}
+.auth-screen .auth-field input,.auth-screen form>input,.auth-screen .auth-password input{
+  width:100%;min-width:0;height:48px;padding:0 14px;border:1px solid #243548;border-radius:8px;
+  outline:none;background:rgba(3,8,15,.8);color:#e7f7ff;font:12px "JetBrains Mono",monospace;
+  transition:border-color .18s,box-shadow .18s,background .18s;
+}
+.auth-screen .auth-field input::placeholder,.auth-screen form>input::placeholder{color:#506477}
+.auth-screen .auth-field input:focus,.auth-screen form>input:focus,.auth-screen .auth-password input:focus{
+  border-color:rgba(88,232,255,.75);background:#07121c;box-shadow:0 0 0 3px rgba(88,232,255,.09),0 0 24px rgba(88,232,255,.07)}
+.auth-screen .auth-password{display:flex;position:relative}
+.auth-screen .auth-password input{padding-right:68px}
+.auth-screen .password-toggle{position:absolute;right:9px;top:50%;transform:translateY(-50%);padding:7px 8px;
+  border:0;border-radius:5px;background:transparent;color:var(--auth-cyan);font:700 8px "JetBrains Mono",monospace}
+.auth-screen .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.auth-screen .primary.wide{min-height:49px;margin-top:4px;border:1px solid rgba(88,232,255,.55);border-radius:8px;
+  background:linear-gradient(105deg,#0b5364,#143c60 58%,#29265c);color:#f1fdff;
+  box-shadow:0 8px 30px rgba(20,176,205,.14);font:700 9px "JetBrains Mono",monospace;letter-spacing:.13em;
+  transition:transform .18s,filter .18s,box-shadow .18s}
+.auth-screen .primary.wide:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.18);box-shadow:0 12px 34px rgba(20,176,205,.22)}
+.auth-screen .primary.wide:disabled{opacity:.58;cursor:wait}
+.auth-screen .switch{display:block;margin:13px auto 0;padding:4px 7px;border:0;background:transparent;color:#8ba4b7;
+  font-size:10px;transition:color .18s}
+.auth-screen .switch:hover{color:var(--auth-cyan)}
+.auth-screen .error,.auth-screen .notice{padding:11px 12px;border-radius:7px;font-size:11px;line-height:1.6}
+.auth-screen .error{border:1px solid rgba(255,99,126,.25);background:rgba(255,99,126,.07);color:#ff9bac}
+.auth-screen .notice{border:1px solid rgba(69,224,160,.22);background:rgba(69,224,160,.06);color:#8be9c0}
+.auth-screen .password-hint{margin:-8px 0 0;color:#71879a;font-size:10px}
+.auth-screen .password-meter{display:flex;gap:5px}
+.auth-screen .password-meter .strength{height:3px;flex:1;border-radius:4px;background:#1b2938}
+.auth-screen .password-meter .strength-1{background:#ff637e}.auth-screen .password-meter .strength-2{background:#f5a45f}
+.auth-screen .password-meter .strength-3{background:#e8d36a}.auth-screen .password-meter .strength-4{background:#72d9ad}
+.auth-screen .password-meter .strength-5{background:#58e8ff;box-shadow:0 0 9px rgba(88,232,255,.45)}
+@media(max-width:900px){
+  .auth-screen{justify-content:center;padding:28px 18px}
+  .auth-screen::after,.auth-screen::before{display:none}
+  .auth-screen>.auth-card{width:min(100%,490px)}
+}
+@media(max-width:520px){
+  .auth-screen>.auth-card{padding:25px 20px;border-radius:14px}
+  .auth-screen .auth-logo{margin-bottom:29px}
+  .auth-screen .auth-copy h1{font-size:28px}
+  .auth-screen .two{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){.auth-screen *{transition:none!important;animation:none!important}}
