@@ -385,7 +385,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     The validator rejects creates/deletes/renames and protected paths in this
     first contract version. The patch is never applied here.
     """
-    if target_revision != expected_revision:
+    _revision(target_revision)
+    _revision(expected_revision)
+    if type(target_revision) is not type(expected_revision) or target_revision != expected_revision:
         raise RepairContractError("Patch target revision is stale.")
     if not isinstance(workspace_files, dict):
         raise RepairContractError("An authoritative workspace snapshot is required.")
@@ -470,9 +472,14 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         approved = _iso_timestamp(approved_at, "approval.approved_at")
     except RepairContractError:
         return False
+    approved_revision = approval.get("workspace_revision")
+    revision_matches = (
+        type(approved_revision) is type(current_revision)
+        and approved_revision == current_revision
+    )
     return (
         approval.get("approved") is True
-        and approval.get("workspace_revision") == current_revision
+        and revision_matches
         and approval.get("patch_sha256") == patch_sha256
         and datetime.fromisoformat(approved.replace("Z", "+00:00")) <= now
         and datetime.fromisoformat(expires.replace("Z", "+00:00")) > now
@@ -481,9 +488,24 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
 
 def verification_passed(result, *, expected_revision):
     """A repair passes only with independent, revision-bound test and security evidence."""
-    if not isinstance(result, dict) or result.get("evidence_origin") != "runner":
+    if (
+        not isinstance(result, dict)
+        or result.get("evidence_origin") != "runner"
+        or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
+        or not isinstance(result.get("execution_id"), str)
+        or not result.get("execution_id")
+        or type(result.get("workspace_id")) is not int
+        or type(result.get("job_id")) is not int
+    ):
         return False
-    if result.get("workspace_revision") != expected_revision or result.get("execution_status") != "succeeded" or result.get("exit_code") != 0:
+    revision = result.get("workspace_revision")
+    if (
+        type(revision) is not type(expected_revision)
+        or revision != expected_revision
+        or result.get("execution_status") != "succeeded"
+        or type(result.get("exit_code")) is not int
+        or result.get("exit_code") != 0
+    ):
         return False
     checks = result.get("checks")
     if not isinstance(checks, dict) or set(checks) != {"targeted_tests", "regression_tests", "security"}:
