@@ -500,7 +500,7 @@ def scan_patch_for_secrets(unified_diff):
         if header_state == 1 and re.fullmatch(r"--- a/.+", line):
             header_state = 2
             continue
-        if header_state == 2 and re.fullmatch(r"\\+\\+\\+ b/.+", line):
+        if header_state == 2 and re.fullmatch(r"\+\+\+ b/.+", line):
             header_state = 0
             continue
         if line.startswith("@@ "):
@@ -513,12 +513,12 @@ def scan_patch_for_secrets(unified_diff):
 
     if not added_lines:
         return []
-    added_text = "\\n".join(content for _, content in added_lines)
+    added_text = "\n".join(content for _, content in added_lines)
     added_line_numbers = [number for number, _ in added_lines]
     findings = []
     for pattern in _SECRET_PATTERNS:
         for match in pattern.finditer(added_text):
-            added_index = added_text.count("\\n", 0, match.start())
+            added_index = added_text.count("\n", 0, match.start())
             findings.append({
                 "line": added_line_numbers[min(added_index, len(added_line_numbers) - 1)],
                 "rule": "possible_secret",
