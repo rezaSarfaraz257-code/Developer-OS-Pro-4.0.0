@@ -632,8 +632,10 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn("ghp_", str(findings))
         bearer = scan_patch_for_secrets("+Authorization: Bearer " + "B" * 30)
         unquoted = scan_patch_for_secrets("+access_token=" + "C" * 30)
+        jwt = scan_patch_for_secrets("+token = \"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signatureABCDEF0123456789\"")
         self.assertTrue(bearer)
         self.assertTrue(unquoted)
+        self.assertTrue(jwt)
         self.assertNotIn("B" * 30, str(bearer))
         self.assertNotIn("C" * 30, str(unquoted))
 
