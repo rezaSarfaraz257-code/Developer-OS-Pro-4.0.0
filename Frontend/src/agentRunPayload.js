@@ -14,9 +14,18 @@ export function normalizeAgentRun(payload) {
   const safeScalar = (value) => typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? value : null;
   const tasks = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => task && typeof task === "object" && !Array.isArray(task)).map((task, index) => ({
     id: safeScalar(task.id) ?? `task-${index}`,
+    key: safeText(task.key),
     title: safeText(task.title, `Task ${index + 1}`),
+    description: safeText(task.description).slice(0, 2000),
     agent_role: safeText(task.agent_role, "engineering"),
     status: safeText(task.status, "pending").replace(/[^a-z0-9_-]/gi, "").slice(0, 40) || "pending",
+    acceptance_criteria: Array.isArray(task.acceptance_criteria)
+      ? task.acceptance_criteria.filter((criterion) => typeof criterion === "string" && criterion.trim() && criterion.length <= 500).slice(0, 6)
+      : [],
+    allowed_capabilities: Array.isArray(task.allowed_capabilities)
+      ? task.allowed_capabilities.filter((capability) => typeof capability === "string").slice(0, 12)
+      : [],
+    sequence: Number.isSafeInteger(task.sequence) && task.sequence >= 0 ? task.sequence : index,
     depends_on: Array.isArray(task.depends_on) ? task.depends_on.filter((dependency) => typeof dependency === "string" || (typeof dependency === "number" && Number.isFinite(dependency))).map(String) : [],
   })) : [];
   return {

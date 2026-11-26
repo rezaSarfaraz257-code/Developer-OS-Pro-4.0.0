@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, formatApiError } from "./services/api";
+import AgentTaskExecutionWorkflow from "./AgentTaskExecutionWorkflow.jsx";
 import { getAgentPollDelay, normalizeAgentRun, normalizeRunId, normalizeWorkspaces, resolveWorkspaceId } from "./agentRunPayload";
 import "./EngineeringModeConsole.css";
 
@@ -103,7 +104,7 @@ export default function EngineeringModeConsole({ go }) {
       workspaceSelectionTouchedRef.current ? current : restoredWorkspaceCandidate ?? current,
     ));
     if (restoredWorkspaceCandidate !== null) setRestoredWorkspaceCandidate(null);
-  }, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);
+  }, [loadingWorkspaces, workspaceLoadError, workspaces, restoredWorkspaceCandidate]);
 
   useEffect(() => {
     let active = true;
@@ -323,7 +324,7 @@ export default function EngineeringModeConsole({ go }) {
         </button>
         <button type="button" className={`cc-mode-card cc-mode-hybrid ${mode === "hybrid" ? "is-selected" : ""}`} aria-pressed={mode === "hybrid"} onClick={() => setMode("hybrid")}>
           <span className="cc-mode-icon">⇄</span><span className="cc-mode-number">03 / HUMAN + AI</span>
-          <strong>Hybrid Build</strong><span>Use an agent plan for direction, then continue hands-on in the Web IDE. The Web IDE opens this exact workspace automatically.</span>
+          <strong>Hybrid Build</strong><span>Review Agent proposals and verify approved changes, then continue hands-on in the same Web IDE whenever you choose.</span>
           <em>Plan + collaborate <b>→</b></em>
         </button>
       </div>
@@ -338,7 +339,7 @@ export default function EngineeringModeConsole({ go }) {
       ) : (
         <div className="cc-mode-detail cc-agent-detail">
           <div className="cc-agent-form-head">
-            <div><span className="cc-mode-detail-label">{mode === "hybrid" ? "HYBRID WORKFLOW" : "AGENT PLANNING"}</span><strong>{mode === "hybrid" ? "Plan with an agent. Build with control." : "Turn an engineering goal into a reviewable plan."}</strong><p>{mode === "hybrid" ? "The agent prepares the task graph; you continue implementation in the same workspace." : "The current agent runtime creates and tracks plans. It does not yet execute code or mutate files."}</p></div>
+            <div><span className="cc-mode-detail-label">{mode === "hybrid" ? "HYBRID WORKFLOW" : "AGENT PLANNING"}</span><strong>{mode === "hybrid" ? "Plan with an agent. Build with control." : "Turn an engineering goal into a reviewable plan."}</strong><p>{mode === "hybrid" ? "The agent prepares the task graph, then you review patches and verify approved work in the same workspace." : "Generate task-specific patches, review each change, approve it explicitly, then verify the synchronized revision in the isolated Runner."}</p></div>
             {run && <span className={`cc-agent-status is-${status}`} role="status" aria-live="polite" aria-atomic="true"><i />{STATUS_LABELS[status] || status}</span>}
           </div>
           <form className="cc-agent-create-form" onSubmit={createPlan}>
@@ -351,10 +352,10 @@ export default function EngineeringModeConsole({ go }) {
           {notice && <p className="cc-agent-message" role="status">{notice}</p>}
           {run && (
             <div className="cc-agent-run">
-              <div className="cc-agent-run-head"><div><span className="cc-mode-detail-label">LIVE AGENT RUN · #{run.id}</span><strong>{run.goal}</strong><small>Workspace revision {run.workspace_revision ?? "unknown"} · {run.execution_state === "plan_only_no_workspace_mutations" ? "Plan-only · no file mutations" : "Execution state reported by server"}</small></div><div className="cc-agent-run-actions"><button type="button" onClick={() => refreshRun(run.id)} disabled={busy}>Refresh</button>{CANCELLABLE_STATUSES.has(run.status) && <button type="button" onClick={cancelRun} disabled={busy}>Cancel</button>}{run.status === "awaiting_approval" && <button type="button" className="cc-mode-primary" onClick={approvePlan} disabled={busy || !matchesWorkspace(run, workspaceId)} title={!matchesWorkspace(run, workspaceId) ? "Select the workspace used to create this plan before approving it." : undefined}>Review & approve</button>}{run.status === "approved" && mode === "hybrid" && <button type="button" className="cc-mode-primary" onClick={() => openWorkspaceInIde(run.workspace, true)}>Continue in IDE <span>↗</span></button>}</div></div>
+              <div className="cc-agent-run-head"><div><span className="cc-mode-detail-label">LIVE AGENT RUN · #{run.id}</span><strong>{run.goal}</strong><small>Plan baseline revision {run.workspace_revision ?? "unknown"} · live task state and verification evidence below</small></div><div className="cc-agent-run-actions"><button type="button" onClick={() => refreshRun(run.id)} disabled={busy}>Refresh</button>{CANCELLABLE_STATUSES.has(run.status) && <button type="button" onClick={cancelRun} disabled={busy}>Cancel</button>}{run.status === "awaiting_approval" && <button type="button" className="cc-mode-primary" onClick={approvePlan} disabled={busy || !matchesWorkspace(run, workspaceId)} title={!matchesWorkspace(run, workspaceId) ? "Select the workspace used to create this plan before approving it." : undefined}>Review & approve</button>}{run.status === "approved" && mode === "hybrid" && <button type="button" className="cc-mode-primary" onClick={() => openWorkspaceInIde(run.workspace, true)}>Continue in IDE <span>↗</span></button>}</div></div>
               {run.error && <p className="cc-agent-message is-error" role="alert">{run.error}</p>}
               {tasks.length > 0 ? <ol className="cc-agent-task-list">{tasks.map((task, index) => <li key={`${task.id ?? "task"}-${index}`}><span className={`cc-agent-task-state is-${String(task.status || "pending").replace(/[^a-z0-9_-]/gi, "")}`} /><div><strong>{task.title || `Task ${index + 1}`}</strong><small>{String(task.agent_role || "engineering").replaceAll("_", " ")} · {task.status || "pending"}{Array.isArray(task.depends_on) && task.depends_on.length ? ` · depends on ${task.depends_on.join(", ")}` : ""}</small></div></li>)}</ol> : <p className="cc-agent-empty">{ACTIVE_STATUSES.has(run.status) ? "The planning worker is preparing the task graph…" : "No task graph has been returned for this run."}</p>}
-              {run.status === "approved" && <p className="cc-agent-message">Approval is recorded. Task execution remains unavailable in this runtime; no work is represented as completed.</p>}
+              {["approved", "running", "failed", "succeeded"].includes(run.status) && <AgentTaskExecutionWorkflow run={run} onRefreshRun={refreshRun} />}
             </div>
           )}
           {mode === "hybrid" && run?.status === "approved" && <div className="cc-hybrid-next"><span>HUMAN-LED IMPLEMENTATION</span><button type="button" onClick={() => openWorkspaceInIde(run.workspace, true)}>Continue in originating workspace ↗</button></div>}
