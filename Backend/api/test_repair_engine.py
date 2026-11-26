@@ -565,6 +565,16 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         workspace_files=snapshot,
                     )
 
+    def test_patch_parser_rejects_duplicate_file_entries(self):
+        duplicated = self.patch() + self.patch()
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                duplicated,
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files={"src/main.py": "value = 1\\n"},
+            )
+
     def test_patch_validation_rejects_line_count_memory_amplification(self):
         oversized_line_count = "\n" * (MAX_PATCH_SOURCE_LINES + 1)
         with self.assertRaises(RepairContractError):
