@@ -49,7 +49,7 @@ _RESOURCE_KEYS = frozenset({"duration_ms", "cpu_time_ms", "peak_memory_bytes", "
 _SECRET_PATTERNS = (
     re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----"
-        r"[\\s\\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----",
+        r"[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----",
         re.I,
     ),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----", re.I),
