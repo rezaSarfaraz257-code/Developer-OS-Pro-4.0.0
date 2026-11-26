@@ -4,6 +4,7 @@ from django.test import SimpleTestCase
 
 from .repair_engine import (
     MAX_PATCH_SOURCE_BYTES,
+    MAX_PATCH_TOTAL_SOURCE_BYTES,
     RepairContractError,
     analyze_root_cause,
     classify_execution_failure,
@@ -418,6 +419,37 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         self.patch(), target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": source},
                     )
+
+    def test_rejects_invalid_unicode_patch_text_with_contract_error(self):
+        invalid_patch = self.patch().replace("+value = 2", "+value = \ud800")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(
+                invalid_patch, target_revision="r", expected_revision="r",
+                workspace_files={"src/main.py": "value = 1\n"},
+            )
+
+    def test_rejects_aggregate_workspace_snapshot_size_over_limit(self):
+        per_file_size = MAX_PATCH_SOURCE_BYTES - 1024
+        source = "value = 1\n" + ("x" * (per_file_size - len("value = 1\n")))
+        paths = ("src/a.py", "src/b.py", "src/c.py")
+        patch_parts = []
+        for path in paths:
+            patch_parts.extend((
+                f"diff --git a/{path} b/{path}\n",
+                f"--- a/{path}\n",
+                f"+++ b/{path}\n",
+                "@@ -1 +1 @@\n",
+                "-value = 1\n",
+                "+value = 2\n",
+            ))
+        patch = "".join(patch_parts)
+        self.assertLess(len(source.encode("utf-8")), MAX_PATCH_SOURCE_BYTES)
+        self.assertGreater(3 * len(source.encode("utf-8")), MAX_PATCH_TOTAL_SOURCE_BYTES)
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(
+                patch, target_revision="r", expected_revision="r",
+                workspace_files={path: source for path in paths},
+            )
 
     def test_rejects_empty_and_context_only_hunks(self):
         context_only = self.patch().replace(
