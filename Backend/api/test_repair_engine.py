@@ -143,6 +143,10 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         oversized_usage = self.evidence(resource_usage={"peak_memory_bytes": 10 ** 100})
         with self.assertRaises(RepairContractError):
             self.normalize(bad_location)
+        for unsafe_path in ("src/hidden" + chr(0x200b) + ".py", "src/report" + chr(0x202e) + "txt.py", "src/control" + chr(0x0085) + ".py"):
+            with self.subTest(unsafe_path=repr(unsafe_path)):
+                with self.assertRaises(RepairContractError):
+                    self.normalize(self.evidence(source_location={"path": unsafe_path, "line": 1}))
         with self.assertRaises(RepairContractError):
             self.normalize(bad_usage)
         with self.assertRaises(RepairContractError):
