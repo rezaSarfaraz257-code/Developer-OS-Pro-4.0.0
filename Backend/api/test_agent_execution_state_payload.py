@@ -104,6 +104,20 @@ class AgentExecutionStatePayloadTests(TestCase):
         self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "run_failed")
 
+    def test_succeeded_run_with_incomplete_or_missing_tasks_requires_review(self):
+        self.run.status = "succeeded"
+        self.run.save(update_fields=["status", "updated_at"])
+        self.assertEqual(
+            self.execution_state(),
+            "run_success_missing_task_acceptance_requires_review",
+        )
+
+        self.task.delete()
+        self.assertEqual(
+            self.execution_state(),
+            "run_success_missing_task_acceptance_requires_review",
+        )
+
     def test_partial_completion_and_cancellation_are_not_reported_as_success(self):
         self.mark_human_accepted()
         AgentTask.objects.create(
