@@ -45,10 +45,8 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertTrue(refresh_job_lease(job.pk, second_lease))
 
 
-    @patch("api.management.commands.worker.timezone.now")
-    def test_recovery_rechecks_a_lease_refreshed_after_candidate_scan(self, mocked_now):
+    def test_recovery_rechecks_a_lease_refreshed_after_candidate_scan(self):
         scan_time = timezone.now()
-        refreshed_time = scan_time + timedelta(seconds=10)
         job = BackgroundJob.objects.create(
             kind="email",
             status="running",
@@ -57,16 +55,29 @@ class StaleWorkerJobRecoveryTests(TestCase):
             locked_at=scan_time - STALE_AFTER - timedelta(seconds=1),
             locked_by="worker:live-lease-token",
         )
-        # The candidate query sees an expired lease. Before the row lock is
-        # acquired, its owner refreshes it; the locked recheck must preserve it.
-        mocked_now.side_effect = [scan_time, refreshed_time]
+        original_select_for_update = BackgroundJob.objects.select_for_update
+        refreshed_at = []
 
-        recover_stale_jobs()
+        def refresh_lease_before_lock(*args, **kwargs):
+            # Simulate the owner extending its lease after the stale candidate
+            # scan but before recovery acquires the row lock.
+            refreshed_at.append(timezone.now())
+            BackgroundJob.objects.filter(pk=job.pk, status="running").update(
+                locked_at=refreshed_at[-1]
+            )
+            return original_select_for_update(*args, **kwargs)
+
+        with patch.object(
+            BackgroundJob.objects,
+            "select_for_update",
+            side_effect=refresh_lease_before_lock,
+        ):
+            recover_stale_jobs()
 
         job.refresh_from_db()
         self.assertEqual(job.status, "running")
         self.assertEqual(job.locked_by, "worker:live-lease-token")
-        self.assertEqual(job.locked_at, scan_time - STALE_AFTER - timedelta(seconds=1))
+        self.assertEqual(job.locked_at, refreshed_at[0])
         self.assertNotIn("Recovered stale worker lease.", job.error)
 
     def test_running_job_without_lock_timestamp_is_requeued(self):
