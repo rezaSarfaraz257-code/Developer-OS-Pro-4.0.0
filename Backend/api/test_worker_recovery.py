@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .management.commands.worker import execute, recover_stale_jobs
-from .models import AgentRun, AuditLog, BackgroundJob, CodeWorkspace
+from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class StaleWorkerJobRecoveryTests(TestCase):
@@ -167,4 +167,109 @@ class StaleWorkerJobRecoveryTests(TestCase):
             action="agent_run.failed",
             target_id=str(run.id),
             metadata__reason="worker_lease_exhausted",
+        ).exists())
+
+
+    def _create_stale_agent_verification(self, *, task_status="running", evidence=None):
+        owner = User.objects.create_user(username=f"agent-verify-recovery-{task_status}")
+        workspace = CodeWorkspace.objects.create(owner=owner, name="Verification recovery workspace")
+        run = AgentRun.objects.create(
+            owner=owner,
+            workspace=workspace,
+            goal="Recover interrupted Runner verification",
+            status="running",
+            idempotency_key=f"agent-verify-recovery-{task_status}-01",
+            workspace_revision=workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            payload={
+                "run_id": run.id,
+                "task_id": 1,
+                "workspace_id": workspace.id,
+                "owner_id": owner.id,
+                "revision": workspace.revision,
+                "sync_job_id": 9001,
+                "patch_audit_id": 9002,
+                "profile": "python_pytest",
+                "runner_execution_id": "agent-verify-recovery",
+            },
+            status="running",
+            attempts=1,
+            max_attempts=1,
+            locked_at=timezone.now() - timedelta(minutes=15),
+            locked_by="worker:expired-lease",
+        )
+        task = AgentTask.objects.create(
+            run=run,
+            key="implement",
+            title="Implement feature",
+            acceptance_criteria=["Tests pass"],
+            status=task_status,
+            execution_job=job,
+            execution_revision=workspace.revision,
+            execution_profile="python_pytest",
+            execution_attempts=1,
+            execution_evidence=evidence or {"state": "queued", "iteration": 1, "history": []},
+        )
+        job.payload = {**job.payload, "task_id": task.id}
+        job.save(update_fields=["payload"])
+        return owner, workspace, run, task, job
+
+    def test_expired_single_attempt_runner_lease_fails_closed_and_queues_resync(self):
+        owner, workspace, run, task, job = self._create_stale_agent_verification()
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        task.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.execution_evidence["state"], "infrastructure_failed")
+        self.assertEqual(task.execution_evidence["verification_job_id"], job.id)
+        self.assertIsNotNone(task.execution_evidence["resync_job_id"])
+        resync = BackgroundJob.objects.get(pk=task.execution_evidence["resync_job_id"])
+        self.assertEqual(resync.kind, "ai_agent_runner_sync")
+        self.assertEqual(resync.payload["workspace_id"], workspace.id)
+        self.assertEqual(run.status, "failed")
+        self.assertTrue(AuditLog.objects.filter(
+            user=owner,
+            action="agent_task.runner_verification_exhausted",
+            target_id=str(task.id),
+            metadata__verification_job_id=job.id,
+        ).exists())
+
+    def test_interrupted_task_finalization_is_not_promoted_to_success_on_recovery(self):
+        passed_evidence = {
+            "state": "passed",
+            "profile": "python_pytest",
+            "revision": 1,
+            "verification_job_id": 77,
+            "runner_job_id": "agent-77",
+            "iteration": 1,
+            "history": [],
+            "output_persisted": False,
+        }
+        owner, workspace, run, task, job = self._create_stale_agent_verification(
+            task_status="awaiting_approval",
+            evidence=passed_evidence,
+        )
+
+        recover_stale_jobs()
+
+        task.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.execution_evidence["state"], "finalization_failed")
+        self.assertEqual(task.execution_evidence["runner_job_id"], "agent-77")
+        self.assertIsNotNone(task.execution_evidence["resync_job_id"])
+        self.assertEqual(run.status, "failed")
+        self.assertTrue(AuditLog.objects.filter(
+            user=owner,
+            action="agent_task.runner_job_finalization_failed",
+            target_id=str(task.id),
+            metadata__verification_job_id=job.id,
+            metadata__finalization_interrupted=True,
         ).exists())
