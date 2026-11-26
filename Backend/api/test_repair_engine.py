@@ -496,9 +496,9 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             pass
 
         invalid_snapshots = (
-            SpoofedDict({"src/main.py": "value = 1\\n"}),
-            {SpoofedString("src/main.py"): "value = 1\\n"},
-            {"src/main.py": SpoofedString("value = 1\\n")},
+            SpoofedDict({"src/main.py": "value = 1\n"}),
+            {SpoofedString("src/main.py"): "value = 1\n"},
+            {"src/main.py": SpoofedString("value = 1\n")},
         )
         for snapshot in invalid_snapshots:
             with self.subTest(snapshot_type=type(snapshot).__name__):
@@ -542,7 +542,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     validate_unified_patch(
                         patch, target_revision="r", expected_revision="r",
-                        workspace_files={"src/main.py": "value = 1\\n"},
+                        workspace_files={"src/main.py": "value = 1\n"},
                     )
 
     def test_rejects_oversized_hunk_coordinates(self):
