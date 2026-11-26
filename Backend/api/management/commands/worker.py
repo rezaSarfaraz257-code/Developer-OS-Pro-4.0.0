@@ -417,9 +417,13 @@ class Command(BaseCommand):
                 # stable per-job key above. SMTP has no equivalent guarantee:
                 # a timeout can happen after the server accepted the message.
                 # Do not automatically replay an ambiguous SMTP delivery.
+                resend_idempotency_window_open = bool(
+                    settings.EMAIL_BACKEND == "api.email_backends.resend.EmailBackend"
+                    and job.created_at
+                    and job.created_at >= now - timedelta(hours=23)
+                )
                 email_retry_is_safe = (
-                    job.kind != "email"
-                    or settings.EMAIL_BACKEND == "api.email_backends.resend.EmailBackend"
+                    job.kind != "email" or resend_idempotency_window_open
                 )
                 if job.attempts < job.max_attempts and email_retry_is_safe:
                     job.status = "queued"
