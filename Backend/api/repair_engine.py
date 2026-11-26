@@ -293,20 +293,19 @@ def _normalize_source_location(value):
 
 
 def classify_execution_failure(evidence):
-    """Classify only normalized Runner evidence; no Agent claim is accepted."""
-    if (
-        not isinstance(evidence, dict)
-        or evidence.get("evidence_origin") != "runner"
-        or not isinstance(evidence.get("execution_status"), str)
-        or evidence.get("execution_status") not in EXECUTION_STATUSES
-        or not isinstance(evidence.get("structured_errors"), list)
-        or len(evidence["structured_errors"]) > MAX_STRUCTURED_ERRORS
-        or any(
-            not isinstance(error, dict) or not isinstance(error.get("code"), str)
-            for error in evidence["structured_errors"]
-        )
-    ):
+    """Classify only fully normalized Runner evidence; no Agent claim is accepted."""
+    if not isinstance(evidence, dict):
         raise RepairContractError("Failure classification requires normalized Runner evidence.")
+    try:
+        evidence = normalize_runner_evidence(
+            evidence,
+            expected_execution_id=evidence.get("execution_id"),
+            expected_workspace_id=evidence.get("workspace_id"),
+            expected_workspace_revision=evidence.get("workspace_revision"),
+            expected_job_id=evidence.get("job_id"),
+        )
+    except (AttributeError, TypeError) as exc:
+        raise RepairContractError("Failure classification requires normalized Runner evidence.") from exc
     status = evidence.get("execution_status")
     exit_code = evidence.get("exit_code")
     if (
