@@ -122,6 +122,17 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         self.assertNotIn(secret, result["structured_errors"][0]["message"])
         self.assertNotIn(secret, result["stack_trace"])
 
+    def test_redacts_secret_patterns_from_error_codes_and_source_symbols(self):
+        secret = "ghp_" + "S" * 30
+        result = self.normalize(self.evidence(structured_errors=[{
+            "code": "provider_" + secret,
+            "message": "failure",
+            "source_location": {"path": "src/main.py", "symbol": "symbol_" + secret},
+            "evidence_reference": None,
+        }]))
+        self.assertNotIn(secret, result["structured_errors"][0]["code"])
+        self.assertNotIn(secret, result["structured_errors"][0]["source_location"]["symbol"])
+
 
 class FailureIntelligenceTests(RunnerEvidenceContractTests):
     def test_classifies_failure_from_runner_evidence_not_agent_text(self):
@@ -241,6 +252,10 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verified_repair")
         verification["checks"]["security"]["status"] = "failed"
+        result = compare_repair_outcomes(before, after, verification)
+        self.assertEqual(result["outcome"], "verification_incomplete")
+        verification["checks"]["security"]["status"] = "passed"
+        verification["workspace_id"] = 8
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
 
