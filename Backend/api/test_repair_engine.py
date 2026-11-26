@@ -477,6 +477,24 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
 
+        class SpoofedKey(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        spoofed_verification = {
+            (SpoofedKey(key) if key == "workspace_id" else key): value
+            for key, value in {
+                **verification,
+                "workspace_id": 7,
+                "execution_id": "exec-002",
+                "job_id": 34,
+            }.items()
+        }
+        result = compare_repair_outcomes(before, after, spoofed_verification)
+        self.assertEqual(result["outcome"], "verification_incomplete")
+
     def test_before_after_comparison_rejects_same_workspace_revision(self):
         before = self.normalize()
         after = self.normalize(self.evidence(
