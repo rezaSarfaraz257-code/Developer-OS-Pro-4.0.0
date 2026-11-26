@@ -21,6 +21,7 @@ MAX_PATCH_FILES = 20
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
 MAX_APPROVAL_TTL_SECONDS = 60 * 60
+MAX_RESOURCE_USAGE_VALUE = (2 ** 63) - 1
 
 EXECUTION_STATUSES = frozenset({
     "succeeded", "failed", "timed_out", "cancelled",
@@ -46,7 +47,12 @@ _TIMESTAMP_KEYS = frozenset({"started_at", "finished_at"})
 _ENVIRONMENT_KEYS = frozenset({"runner_version", "os", "architecture", "runtime", "runtime_version", "sandbox_profile"})
 _RESOURCE_KEYS = frozenset({"duration_ms", "cpu_time_ms", "peak_memory_bytes", "output_bytes"})
 _SECRET_PATTERNS = (
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", re.I),
+    re.compile(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----"
+        r"[\\s\\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----",
+        re.I,
+    ),
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----", re.I),
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
@@ -235,8 +241,8 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("resource_usage contains unsupported fields.")
     normalized_usage = {}
     for key, value in usage.items():
-        if type(value) is not int or value < 0:
-            raise RepairContractError(f"resource_usage.{key} must be a non-negative integer.")
+        if type(value) is not int or not 0 <= value <= MAX_RESOURCE_USAGE_VALUE:
+            raise RepairContractError(f"resource_usage.{key} must be a bounded non-negative integer.")
         normalized_usage[key] = value
 
     timestamps = payload.get("timestamps")
