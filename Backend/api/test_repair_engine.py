@@ -1537,6 +1537,22 @@ class RepairLoopGuardTests(SimpleTestCase):
                 candidate_patch_sha256=SpoofedDigest("b" * 64),
             )
 
+    def test_repair_history_rejects_string_subclass_mapping_keys(self):
+        class SpoofedKey(str):
+            pass
+
+        record = {
+            SpoofedKey("patch_sha256"): "a" * 64,
+            SpoofedKey("outcome"): "rolled_back",
+            SpoofedKey("workspace_revision"): "rev-12",
+        }
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                [record],
+                current_revision="rev-12",
+                candidate_patch_sha256="b" * 64,
+            )
+
     def test_duplicate_attempt_rows_count_once_and_conflicting_rows_fail_closed(self):
         record = {
             "patch_sha256": "a" * 64,
