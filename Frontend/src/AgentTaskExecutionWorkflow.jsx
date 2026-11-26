@@ -46,7 +46,7 @@ function persistSync(runId, taskId, sync) {
 }
 
 export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
-  const tasks = useMemo(() => (Array.isArray(run?.tasks) ? run.tasks : []), [run?.tasks]);
+  const tasks = Array.isArray(run?.tasks) ? run.tasks : [];
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [execution, setExecution] = useState(null);
   const [executionLoaded, setExecutionLoaded] = useState(false);
