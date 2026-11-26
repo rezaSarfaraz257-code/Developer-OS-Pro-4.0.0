@@ -98,6 +98,15 @@ def _opaque_identifier(value, field, *, max_length=128):
     return value
 
 
+def _split_lf_lines(value):
+    """Split text using Git's LF record delimiter without treating Unicode separators as newlines."""
+    parts = value.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
 def _revision(value):
     if type(value) is int and value >= 0:
         return value
@@ -635,7 +644,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         total_source_bytes += len(source_bytes)
         if total_source_bytes > MAX_PATCH_TOTAL_SOURCE_BYTES:
             raise RepairContractError("Patched workspace snapshots exceed the aggregate safety limit.")
-        source_lines = source_text.splitlines(keepends=True)
+        source_lines = _split_lf_lines(source_text)
         previous_old_end = 0
         previous_new_end = 0
         cumulative_line_delta = 0
@@ -662,8 +671,10 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
 
     files = []
     current = None
-    for raw_line in unified_diff.splitlines(keepends=True):
-        line = raw_line.rstrip("\r\n")
+    for raw_line in _split_lf_lines(unified_diff):
+        line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+        if line.endswith("\r"):
+            line = line[:-1]
         if line.startswith("diff --git "):
             finish_file(current)
             match = re.fullmatch(r"diff --git a/(.+) b/(.+)", line)
