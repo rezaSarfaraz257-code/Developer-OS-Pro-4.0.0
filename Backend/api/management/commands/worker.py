@@ -297,6 +297,12 @@ def execute(job):
             synced_revision = int(workspace.revision)
             sync_payload = _workspace_payload(workspace)
             expected_files = sync_payload["files"]
+            # Workspace locking serializes snapshots, but it does not prove this
+            # worker still owns the durable queue lease. Renew/fence immediately
+            # before the external side effect so an expired worker cannot write
+            # to Runner after another worker has reclaimed the job.
+            if not refresh_job_lease(job.pk, getattr(job, "locked_by", None)):
+                raise RuntimeError("Runner sync worker lease is no longer current.")
             runner_data, runner_error = _runner_request(
                 "POST", "/sync", sync_payload, timeout=30
             )
