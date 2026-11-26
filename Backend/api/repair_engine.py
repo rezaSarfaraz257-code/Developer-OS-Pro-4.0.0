@@ -195,7 +195,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
     for item in errors:
         if not isinstance(item, dict) or set(item) != _ERROR_KEYS:
             raise RepairContractError("A structured error has an invalid shape.")
-        code = _bounded_text(item["code"], "structured error code", 80)
+        code = _redact_secrets(_bounded_text(item["code"], "structured error code", 80))
         message = _redact_secrets(_bounded_text(item["message"], "structured error message", 2_000))
         location = item["source_location"]
         if location is not None:
@@ -288,7 +288,9 @@ def _normalize_source_location(value):
             result[field] = number
     symbol = value.get("symbol")
     if symbol is not None:
-        result["symbol"] = _bounded_text(symbol, "source_location.symbol", 240)
+        result["symbol"] = _redact_secrets(
+            _bounded_text(symbol, "source_location.symbol", 240)
+        )
     return result
 
 
@@ -716,9 +718,14 @@ def compare_repair_outcomes(before_evidence, after_evidence, verification_eviden
         or before_evidence["execution_id"] == after_evidence["execution_id"]
     ):
         raise RepairContractError("Before/after evidence must identify distinct executions and revisions in one workspace.")
-    verified = verification_passed(
-        verification_evidence,
-        expected_revision=after_evidence["workspace_revision"],
+    verified = (
+        isinstance(verification_evidence, dict)
+        and verification_evidence.get("workspace_id") == after_evidence["workspace_id"]
+        and type(verification_evidence.get("workspace_id")) is int
+        and verification_passed(
+            verification_evidence,
+            expected_revision=after_evidence["workspace_revision"],
+        )
     )
     if after["category"] is None:
         outcome = "verified_repair" if verified else "verification_incomplete"
