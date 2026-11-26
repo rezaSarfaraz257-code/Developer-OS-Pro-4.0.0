@@ -2255,7 +2255,7 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
 
         def stage_then_expire(_user, _export, *, output_path):
             with open(output_path, "w", encoding="utf-8") as staged:
-                staged.write("{\\"stale\\": true}")
+                staged.write('{"stale": true}')
             BackgroundJob.objects.filter(pk=job.pk).update(
                 locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
             )
@@ -2292,7 +2292,7 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
 
         def stage_export(_user, _export, *, output_path):
             with open(output_path, "w", encoding="utf-8") as staged:
-                staged.write("{\\"complete\\": true}")
+                staged.write('{"complete": true}')
             return output_path
 
         export_user.side_effect = stage_export
@@ -2302,7 +2302,7 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
             self.assertEqual(first, second)
             self.assertTrue(os.path.isfile(first["path"]))
             with open(first["path"], encoding="utf-8") as published:
-                self.assertEqual(published.read(), "{\\"complete\\": true}")
+                self.assertEqual(published.read(), '{"complete": true}')
             self.assertEqual(os.listdir(export_root), [os.path.basename(first["path"])])
 
         export.refresh_from_db()
