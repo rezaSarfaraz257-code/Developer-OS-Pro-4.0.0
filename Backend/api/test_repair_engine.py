@@ -178,6 +178,21 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             with self.assertRaises(RepairContractError):
                 validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\\n"})
 
+    def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
+        patch = (
+            "diff --git a/src/main.py b/src/main.py\\n"
+            "--- a/src/main.py\\n"
+            "+++ b/src/main.py\\n"
+            "@@ -1 +1 @@\\n"
+            "---- old\\n"
+            "++++ new\\n"
+        )
+        result = validate_unified_patch(
+            patch, target_revision="r", expected_revision="r",
+            workspace_files={"src/main.py": "--- old\\n"},
+        )
+        self.assertTrue(result["validated"])
+
     def test_rejects_patch_when_git_header_or_source_context_is_forged(self):
         wrong_git_path = self.patch().replace("diff --git a/src/main.py b/src/main.py", "diff --git a/src/other.py b/src/other.py")
         with self.assertRaises(RepairContractError):
