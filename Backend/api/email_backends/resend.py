@@ -97,7 +97,7 @@ class EmailBackend(BaseEmailBackend):
                     "Content-Type": "application/json",
                     "User-Agent": "Developer-OS-Mailer/1.0",
                 }
-                # This private Django message header is translated into
+                # This private Django message attribute is translated into
                 # Resend's native request-level idempotency contract.
                 idempotency_key = str(
                     getattr(message, "_developer_os_idempotency_key", "")
