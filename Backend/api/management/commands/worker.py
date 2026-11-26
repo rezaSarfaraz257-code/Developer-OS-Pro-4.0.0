@@ -486,10 +486,20 @@ class Command(BaseCommand):
             lease_thread.start()
             try:
                 result = execute(job)
-                job.status = "succeeded"
                 job.result = result
                 job.finished_at = timezone.now()
                 job.error = ""
+                # A verification handler can finish its reconciliation without
+                # completing the requested execution: cancellation and supersession
+                # are terminal non-success outcomes, not successful Job execution.
+                if (
+                    job.kind == "ai_agent_task_verify"
+                    and isinstance(result, dict)
+                    and result.get("status") in {"verification_canceled", "verification_superseded"}
+                ):
+                    job.status = "canceled"
+                else:
+                    job.status = "succeeded"
             except Exception as exc:
                 now = timezone.now()
                 # Keep diagnostics useful without logging message bodies,
