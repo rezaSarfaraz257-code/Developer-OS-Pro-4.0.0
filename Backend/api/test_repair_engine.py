@@ -207,6 +207,16 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
                 )
                 self.assertNotIn(secret, normalized["termination_signal"])
                 self.assertIn("[REDACTED_SECRET]", normalized["termination_signal"])
+        for credential in (
+            "password='private phrase with spaces'",
+            "aws_secret_access_key=AbCdEf0123456789+/=XYZ",
+        ):
+            with self.subTest(credential_key=credential.split("=")[0]):
+                normalized = self.normalize(
+                    self.evidence(termination_signal=credential)
+                )
+                self.assertNotIn(credential.split("=", 1)[1].strip("'"), normalized["termination_signal"])
+                self.assertIn("[REDACTED_SECRET]", normalized["termination_signal"])
 
     def test_root_cause_uses_redacted_normalized_evidence_not_raw_payload(self):
         secret = "ghp_" + "R" * 30
