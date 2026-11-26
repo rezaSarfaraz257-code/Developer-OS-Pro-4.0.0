@@ -40,14 +40,12 @@ def _matches_positive_id(value, expected):
 
 
 def _job_lease_is_current(current_job, claimed_job):
-    """Fence an execution to the exact worker identity that claimed its job."""
+    """Fence execution to the exact worker identity and its unexpired lease."""
+    from .agent_leases import is_current_job_lease
+
     return bool(
-        current_job
-        and claimed_job
-        and current_job.status == "running"
-        and isinstance(claimed_job.locked_by, str)
-        and claimed_job.locked_by
-        and current_job.locked_by == claimed_job.locked_by
+        claimed_job
+        and is_current_job_lease(current_job, getattr(claimed_job, "locked_by", None))
     )
 
 
