@@ -1076,6 +1076,64 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
 
 
     @patch("api.views._runner_request")
+    def test_cancellation_during_runner_post_cannot_be_overwritten_by_late_success(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-cancel-race:lease-1"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        def cancel_while_runner_is_executing(method, path, payload, timeout):
+            if path == "/exec":
+                # Simulate a user canceling after the execution ID is durably
+                # reserved but before the Runner POST returns its late success.
+                cancel_response = self.client.post(
+                    f"/api/ai/agent/runs/{self.run.id}/cancel/"
+                )
+                self.assertEqual(cancel_response.status_code, 200)
+                self.assertEqual(
+                    cancel_response.data["runner_cancellation"],
+                    {"requested": 1, "confirmed": 1, "unconfirmed": 0},
+                )
+                return ({
+                    "job_id": payload["execution_id"],
+                    "status": "completed",
+                    "exit_code": 0,
+                    "duration_ms": 20,
+                    "stdout": "late success after cancellation",
+                    "stderr": "",
+                }, None)
+            if path.startswith("/jobs/") and path.endswith("/cancel?workspace_id=%s" % self.workspace.id):
+                return ({"status": "cancelled"}, None)
+            self.fail("Unexpected Runner request during cancellation race: %s %s" % (method, path))
+
+        runner_request.side_effect = cancel_while_runner_is_executing
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        self.assertNotEqual(self.task.execution_evidence.get("state"), "passed")
+        self.assertEqual(job.status, "running")
+        self.assertTrue(BackgroundJob.objects.filter(
+            kind="ai_agent_runner_sync",
+            payload__workspace_id=self.workspace.id,
+            payload__owner_id=self.user.id,
+            status="queued",
+        ).exists())
+        self.assertEqual(runner_request.call_count, 2)
+
+    @patch("api.views._runner_request")
     def test_runner_call_occurs_outside_database_transaction(self, runner_request):
         baseline_atomic_depth = len(connection.atomic_blocks)
 
