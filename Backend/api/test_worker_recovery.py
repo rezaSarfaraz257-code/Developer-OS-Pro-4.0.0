@@ -10,6 +10,30 @@ from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class StaleWorkerJobRecoveryTests(TestCase):
+    def test_worker_preserves_canceled_and_superseded_verification_outcomes(self):
+        for index, outcome in enumerate(("verification_canceled", "verification_superseded"), start=1):
+            with self.subTest(outcome=outcome):
+                job = BackgroundJob.objects.create(
+                    kind="ai_agent_task_verify",
+                    payload={"case": index},
+                    status="queued",
+                    available_at=timezone.now() - timedelta(seconds=1),
+                    attempts=0,
+                    max_attempts=1,
+                )
+                with patch(
+                    "api.management.commands.worker.execute",
+                    return_value={"status": outcome, "task_id": index},
+                ):
+                    Command().handle(once=True, sleep=0)
+
+                job.refresh_from_db()
+                self.assertEqual(job.status, "canceled")
+                self.assertEqual(job.result["status"], outcome)
+                self.assertIsNotNone(job.finished_at)
+                self.assertIsNone(job.locked_at)
+                self.assertEqual(job.locked_by, "")
+
 
     def test_reclaimed_job_fences_out_previous_worker_even_when_identity_is_reused(self):
         job = BackgroundJob.objects.create(
