@@ -733,7 +733,10 @@ def verification_passed(result, *, expected_revision):
             or type(check.get("workspace_revision")) is not type(revision)
             or check.get("workspace_revision") != revision
             or not isinstance(check.get("evidence_reference"), str)
-            or not re.fullmatch(r"(?:artifact|runner|blob)://[A-Za-z0-9._/-]{1,480}", check["evidence_reference"])
         ):
+            return False
+        try:
+            _artifact_reference(check["evidence_reference"], "verification evidence_reference")
+        except RepairContractError:
             return False
     return True
