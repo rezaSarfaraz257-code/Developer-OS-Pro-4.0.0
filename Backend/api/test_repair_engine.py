@@ -317,6 +317,22 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         self.assertEqual(result["candidates"][0]["evidence_reference"], "artifact://errors/33/0")
 
 
+    def test_root_cause_rejects_container_subclasses_for_changed_paths(self):
+        evidence = self.normalize()
+
+        class SpoofedList(list):
+            def __iter__(self):
+                return iter(["src/main.py"])
+
+        class SpoofedSet(set):
+            def __iter__(self):
+                return iter(["src/main.py"])
+
+        for changed_paths in (SpoofedList(["../outside.py"]), SpoofedSet(["../outside.py"])):
+            with self.subTest(changed_paths=type(changed_paths).__name__):
+                with self.assertRaises(RepairContractError):
+                    analyze_root_cause(evidence, changed_paths=changed_paths)
+
     def test_classifies_all_supported_failure_families(self):
         cases = (
             ("python_type_error", "type"),
@@ -545,6 +561,19 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertEqual(result["changed_paths"], ["src/main.py"])
         self.assertEqual(len(result["patch_sha256"]), 64)
         self.assertEqual(result["source_context"], "matched")
+
+    def test_patch_validation_rejects_string_subclass_snapshot_keys(self):
+        class SpoofedKey(str):
+            pass
+
+        snapshot = {SpoofedKey("src/main.py"): "value = 1\n"}
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files=snapshot,
+            )
 
     def test_patch_validation_rejects_unsafe_unmodified_snapshot_entries(self):
         with self.assertRaises(RepairContractError):
