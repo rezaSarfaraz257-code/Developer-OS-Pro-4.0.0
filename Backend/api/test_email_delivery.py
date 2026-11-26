@@ -110,7 +110,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
 
         self.assertTrue(result["sent"])
         self.assertEqual(
-            mail.return_value.extra_headers["X-Developer-OS-Idempotency-Key"],
+            mail.return_value._developer_os_idempotency_key,
             "developer-os-email-job-42",
         )
         mail.return_value.send.assert_called_once_with(fail_silently=False)
@@ -167,7 +167,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             ["member@example.test"],
         )
         message.attach_alternative("<p>HTML body</p>", "text/html")
-        message.extra_headers["X-Developer-OS-Idempotency-Key"] = "developer-os-email-job-42"
+        message._developer_os_idempotency_key = "developer-os-email-job-42"
         response = SimpleNamespace(status=200, read=lambda: b'{"id":"email_test"}')
 
         with patch(
