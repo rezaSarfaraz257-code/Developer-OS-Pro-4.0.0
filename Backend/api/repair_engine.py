@@ -699,6 +699,97 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
         return {"allowed": False, "reason": "attempt_limit_reached", "attempts": len(attempts)}
     return {"allowed": True, "reason": "within_repair_budget", "attempts": len(attempts)}
 
+def evaluate_rollback_eligibility(
+    verification_evidence,
+    *,
+    workspace_id,
+    current_revision,
+    expected_post_revision,
+    pre_repair_revision,
+    applied_patch_sha256,
+    snapshot_reference,
+):
+    """Decide whether a failed, revision-bound verification permits rollback.
+
+    This is a pure policy check. It never reads a snapshot or mutates a workspace.
+    Only a complete Runner verification envelope with at least one failed gate
+    can authorize a caller to request rollback of the exact applied patch.
+    """
+    _positive_id(workspace_id, "workspace_id")
+    _revision(current_revision)
+    _revision(expected_post_revision)
+    _revision(pre_repair_revision)
+    if (
+        type(current_revision) is not type(expected_post_revision)
+        or current_revision != expected_post_revision
+        or type(pre_repair_revision) is not type(expected_post_revision)
+        or pre_repair_revision == expected_post_revision
+    ):
+        raise RepairContractError("Rollback revisions are stale or inconsistent.")
+    if not isinstance(applied_patch_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", applied_patch_sha256):
+        raise RepairContractError("Rollback patch identity is invalid.")
+    snapshot_reference = _artifact_reference(snapshot_reference, "rollback snapshot_reference")
+    evidence = verification_evidence
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("evidence_origin") != "runner"
+        or type(evidence.get("schema_version")) is not int
+        or evidence.get("schema_version") != EVIDENCE_SCHEMA_VERSION
+        or type(evidence.get("workspace_id")) is not int
+        or evidence.get("workspace_id") != workspace_id
+        or type(evidence.get("job_id")) is not int
+        or evidence.get("job_id") < 1
+        or not isinstance(evidence.get("execution_id"), str)
+        or not evidence.get("execution_id")
+        or len(evidence["execution_id"]) > 128
+        or type(evidence.get("workspace_revision")) is not type(expected_post_revision)
+        or evidence.get("workspace_revision") != expected_post_revision
+        or evidence.get("execution_status") != "succeeded"
+        or type(evidence.get("exit_code")) is not int
+        or evidence.get("exit_code") != 0
+    ):
+        raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
+    checks = evidence.get("checks")
+    required = {"targeted_tests", "regression_tests", "security"}
+    if not isinstance(checks, dict) or set(checks) != required:
+        raise RepairContractError("Rollback verification evidence is incomplete.")
+    failed_gates = []
+    for name, check in checks.items():
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or check.get("status") not in {"passed", "failed"}
+            or check.get("execution_id") != evidence["execution_id"]
+            or type(check.get("workspace_revision")) is not type(expected_post_revision)
+            or check.get("workspace_revision") != expected_post_revision
+        ):
+            raise RepairContractError("Rollback verification gate evidence is malformed or uncorrelated.")
+        _artifact_reference(check.get("evidence_reference"), f"rollback {name} evidence_reference")
+        if check["status"] == "failed":
+            failed_gates.append(name)
+    if not failed_gates:
+        return {
+            "eligible": False,
+            "reason": "verification_passed",
+            "failed_gates": [],
+            "workspace_id": workspace_id,
+            "from_revision": current_revision,
+            "target_revision": pre_repair_revision,
+            "patch_sha256": applied_patch_sha256,
+            "snapshot_reference": snapshot_reference,
+        }
+    return {
+        "eligible": True,
+        "reason": "verification_failed",
+        "failed_gates": sorted(failed_gates),
+        "workspace_id": workspace_id,
+        "from_revision": current_revision,
+        "target_revision": pre_repair_revision,
+        "patch_sha256": applied_patch_sha256,
+        "snapshot_reference": snapshot_reference,
+    }
+
+
 def compare_repair_outcomes(before_evidence, after_evidence, verification_evidence):
     """Compare Runner behavior before/after a repair without trusting Agent claims.
 
