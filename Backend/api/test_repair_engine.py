@@ -823,6 +823,20 @@ class VerificationEvidenceTests(SimpleTestCase):
         self.assertFalse(verification_passed(result, expected_revision=None))
         self.assertFalse(verification_passed(result, expected_revision=-1))
         result["workspace_revision"] = 14
+        class EqualToPassed:
+            def __eq__(self, other):
+                return other == "passed"
+
+        class EqualToExecutionId:
+            def __eq__(self, other):
+                return other == "exec-verified-14"
+
+        result["checks"]["security"]["status"] = EqualToPassed()
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["checks"]["security"]["status"] = "passed"
+        result["checks"]["security"]["execution_id"] = EqualToExecutionId()
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["checks"]["security"]["execution_id"] = "exec-verified-14"
         for unsafe_reference in (
             "artifact://../outside",
             "runner://logs/../../private",
