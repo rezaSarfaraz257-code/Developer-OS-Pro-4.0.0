@@ -36,6 +36,7 @@ class AgentExecutionStatePayloadTests(TestCase):
                 "user_id": self.user.id,
                 "accepted_at": "2026-11-27T00:00:00+00:00",
                 "accepted_criteria": task.acceptance_criteria,
+                "criteria_scope": "agent_task",
             }
         }
         task.save(update_fields=["execution_evidence", "status", "updated_at"])
@@ -91,6 +92,19 @@ class AgentExecutionStatePayloadTests(TestCase):
     def test_succeeded_task_without_human_acceptance_is_not_reported_as_success(self):
         self.task.status = "succeeded"
         self.task.save(update_fields=["status", "updated_at"])
+        self.run.status = "succeeded"
+        self.run.save(update_fields=["status", "updated_at"])
+        self.assertEqual(
+            self.execution_state(),
+            "task_success_missing_human_acceptance_requires_review",
+        )
+
+    def test_success_without_task_scoped_acceptance_requires_review(self):
+        self.mark_human_accepted()
+        evidence = self.task.execution_evidence
+        evidence["human_acceptance"].pop("criteria_scope")
+        self.task.execution_evidence = evidence
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
         self.run.status = "succeeded"
         self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(
