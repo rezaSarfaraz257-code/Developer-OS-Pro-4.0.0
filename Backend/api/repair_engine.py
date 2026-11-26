@@ -482,7 +482,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
                 raise RepairContractError("Patch changes too many files.")
             continue
 
-        if line.startswith("--- ") or line.startswith("+++ "):
+        if (line.startswith("--- ") or line.startswith("+++ ")) and not (
+            current is not None and current.get("active_hunk") is not None
+        ):
             if current is None:
                 raise RepairContractError("Patch file header appeared before a git diff header.")
             finish_hunk(current)
