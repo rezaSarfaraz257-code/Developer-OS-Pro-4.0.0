@@ -418,6 +418,42 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(second.data["job_id"], job.id)
         self.assertEqual(BackgroundJob.objects.filter(kind="ai_agent_task_verify").count(), 1)
 
+    @patch("api.views._runner_request")
+    def test_stale_worker_response_cannot_overwrite_replacement_lease(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-original:lease-1"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        def replace_lease_during_runner_request(method, path, payload, timeout):
+            BackgroundJob.objects.filter(pk=job.pk, locked_by="worker-original:lease-1").update(
+                locked_by="worker-replacement:lease-2", locked_at=timezone.now(),
+            )
+            return ({
+                "job_id": payload["execution_id"], "status": "completed",
+                "exit_code": 0, "duration_ms": 25, "stdout": "late result", "stderr": "",
+            }, None)
+
+        runner_request.side_effect = replace_lease_during_runner_request
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_superseded")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        current_job = BackgroundJob.objects.get(pk=job.pk)
+        self.assertEqual(current_job.locked_by, "worker-replacement:lease-2")
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence["state"], "queued")
+        self.assertEqual(self.run.status, "running")
+        runner_request.assert_called_once()
+
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
