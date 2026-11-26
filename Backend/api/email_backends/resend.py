@@ -100,9 +100,7 @@ class EmailBackend(BaseEmailBackend):
                 # This private Django message header is translated into
                 # Resend's native request-level idempotency contract.
                 idempotency_key = str(
-                    (getattr(message, "extra_headers", {}) or {}).get(
-                        "X-Developer-OS-Idempotency-Key", ""
-                    )
+                    getattr(message, "_developer_os_idempotency_key", "")
                     or ""
                 ).strip()
                 if idempotency_key:
