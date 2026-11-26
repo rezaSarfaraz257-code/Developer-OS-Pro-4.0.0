@@ -74,6 +74,10 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     self.normalize(payload)
 
+    def test_rejects_boolean_workspace_revision_even_when_integer_value_matches(self):
+        with self.assertRaises(RepairContractError):
+            self.normalize(self.evidence(workspace_revision=True))
+
     def test_rejects_wrong_execution_workspace_job_or_revision(self):
         for field, value in (
             ("execution_id", "other"),
