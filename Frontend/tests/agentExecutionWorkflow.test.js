@@ -46,6 +46,10 @@ test("Runner sync normalization binds workspace and preserves a mismatched revis
   assert.equal(normalizeSyncSnapshot({ job_id: 31, status: "succeeded", workspace_id: 8, revision: 13 }, { workspaceId: 7 }), null);
   assert.equal(normalizeSyncSnapshot({ job_id: "../31", status: "queued" }), null);
   assert.equal(normalizeSyncSnapshot({ job_id: 31, status: "succeeded", workspace_id: 7 }, { workspaceId: 7, revision: 12 }).revision, null);
+  assert.equal(normalizeSyncSnapshot({ job_id: 31, status: "succeeded", revision: 12 }, { workspaceId: 7 }), null);
+  assert.equal(normalizeSavedSyncState({
+    runId: 4, taskId: 9, sync: { id: 31, status: "queued", revision: 12 },
+  }, { runId: 4, taskId: 9, workspaceId: 7 }), null);
 });
 
 test("saved sync recovery is scoped to the exact run, task and workspace and never stores approval credentials", () => {
