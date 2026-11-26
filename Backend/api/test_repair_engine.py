@@ -356,14 +356,14 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             )
 
     def test_rejects_index_metadata_outside_file_header_position(self):
-        valid_index = "index 0123456789abcdef..abcdef0123456789 100644\\n"
+        valid_index = "index 0123456789abcdef..abcdef0123456789 100644\n"
         malformed_patches = (
             valid_index + self.patch(),
-            self.patch().replace("@@ -1 +1 @@\\n", "@@ -1 +1 @@\\n" + valid_index),
-            self.patch().replace("--- a/src/main.py\\n", "--- a/src/main.py\\n" + valid_index),
+            self.patch().replace("@@ -1 +1 @@\n", "@@ -1 +1 @@\n" + valid_index),
+            self.patch().replace("--- a/src/main.py\n", "--- a/src/main.py\n" + valid_index),
             self.patch().replace(
-                "--- a/src/main.py\\n",
-                valid_index + valid_index + "--- a/src/main.py\\n",
+                "--- a/src/main.py\n",
+                valid_index + valid_index + "--- a/src/main.py\n",
             ),
         )
         for malformed in malformed_patches:
@@ -371,7 +371,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     validate_unified_patch(
                         malformed, target_revision="r", expected_revision="r",
-                        workspace_files={"src/main.py": "value = 1\\n"},
+                        workspace_files={"src/main.py": "value = 1\n"},
                     )
 
     def test_validates_minimal_patch_against_exact_revision_and_existing_paths(self):
