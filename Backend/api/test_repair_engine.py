@@ -174,6 +174,21 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         self.assertNotIn("BEGIN PRIVATE KEY", result["stack_trace"])
         self.assertIn("[REDACTED_SECRET]", result["stack_trace"])
 
+
+    def test_redacts_incomplete_private_key_block_to_end_of_evidence(self):
+        key_body = "MIIE" + "Q" * 48
+        incomplete_key = (
+            "diagnostic prefix\\n"
+            "-----BEGIN PRIVATE KEY-----\\n"
+            + key_body
+            + "\\ntrailing diagnostic material"
+        )
+        result = self.normalize(self.evidence(stack_trace=incomplete_key))
+        self.assertIn("diagnostic prefix", result["stack_trace"])
+        self.assertNotIn(key_body, result["stack_trace"])
+        self.assertNotIn("trailing diagnostic material", result["stack_trace"])
+        self.assertTrue(result["stack_trace"].endswith("[REDACTED_SECRET]"))
+
     def test_redacts_secret_patterns_from_error_codes_and_source_symbols(self):
         secret = "ghp_" + "S" * 30
         result = self.normalize(self.evidence(structured_errors=[{
