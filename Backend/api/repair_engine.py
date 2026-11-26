@@ -79,11 +79,24 @@ def _positive_id(value, field):
     return value
 
 
+def _opaque_identifier(value, field, *, max_length=128):
+    if (
+        not isinstance(value, str) or not value or len(value) > max_length
+        or not value.isprintable() or any(ch.isspace() for ch in value)
+    ):
+        raise RepairContractError(f"{field} must be a bounded printable identifier.")
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise RepairContractError(f"{field} contains invalid Unicode.") from exc
+    return value
+
+
 def _revision(value):
     if type(value) is int and value >= 0:
         return value
-    if isinstance(value, str) and value and len(value) <= 128 and not any(ch.isspace() for ch in value):
-        return value
+    if isinstance(value, str):
+        return _opaque_identifier(value, "workspace_revision")
     raise RepairContractError("workspace_revision must be a non-negative integer or opaque revision string.")
 
 
@@ -164,8 +177,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Unsupported Runner evidence schema version.")
     if payload.get("evidence_origin") != "runner":
         raise RepairContractError("Evidence origin must be the authenticated Runner.")
-    if not isinstance(expected_execution_id, str) or not expected_execution_id or len(expected_execution_id) > 128:
-        raise RepairContractError("Expected execution identity is invalid.")
+    _opaque_identifier(expected_execution_id, "expected_execution_id")
     _positive_id(expected_workspace_id, "expected_workspace_id")
     _positive_id(expected_job_id, "expected_job_id")
     _revision(expected_workspace_revision)
