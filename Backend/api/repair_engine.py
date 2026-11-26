@@ -750,6 +750,7 @@ def evaluate_rollback_eligibility(
         or len(evidence["execution_id"]) > 128
         or type(evidence.get("workspace_revision")) is not type(expected_post_revision)
         or evidence.get("workspace_revision") != expected_post_revision
+        or evidence.get("patch_sha256") != applied_patch_sha256
         or evidence.get("execution_status") != "succeeded"
         or type(evidence.get("exit_code")) is not int
         or evidence.get("exit_code") != 0
