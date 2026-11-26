@@ -48,7 +48,7 @@ test("Runner sync normalization binds workspace and preserves a mismatched revis
   assert.equal(normalizeSyncSnapshot({ job_id: 31, status: "succeeded", workspace_id: 7 }, { workspaceId: 7, revision: 12 }).revision, null);
 });
 
-test("saved sync recovery is scoped to the exact run and task and never stores approval credentials", () => {
+test("saved sync recovery is scoped to the exact run, task and workspace and never stores approval credentials", () => {
   const saved = {
     runId: 4,
     taskId: 9,
@@ -57,6 +57,7 @@ test("saved sync recovery is scoped to the exact run and task and never stores a
   assert.deepEqual(normalizeSavedSyncState(saved, { runId: 4, taskId: 9, workspaceId: 7 }), {
     id: 31, status: "queued", workspaceId: 7, revision: 12, coalesced: false, error: "",
   });
+  assert.equal(normalizeSavedSyncState(saved, { runId: 4, taskId: 9, workspaceId: 8 }), null);
   assert.equal(normalizeSavedSyncState(saved, { runId: 5, taskId: 9, workspaceId: 7 }), null);
   assert.equal(executionStorageKey(4, 9), "dos:agent-sync:4:9");
   assert.equal(executionStorageKey("../4", 9), "");
