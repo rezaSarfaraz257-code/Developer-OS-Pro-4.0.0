@@ -636,6 +636,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertTrue(bearer)
         self.assertTrue(unquoted)
         self.assertTrue(jwt)
+        self.assertNotIn("signatureABC", str(jwt))
         self.assertNotIn("B" * 30, str(bearer))
         self.assertNotIn("C" * 30, str(unquoted))
 
