@@ -292,12 +292,12 @@ def _normalize_source_location(value):
     return result
 
 
-def classify_execution_failure(evidence):
-    """Classify only fully normalized Runner evidence; no Agent claim is accepted."""
+def _revalidate_runner_evidence(evidence):
+    """Re-normalize a Runner payload before any downstream consumer uses it."""
     if not isinstance(evidence, dict):
-        raise RepairContractError("Failure classification requires normalized Runner evidence.")
+        raise RepairContractError("Failure analysis requires normalized Runner evidence.")
     try:
-        evidence = normalize_runner_evidence(
+        return normalize_runner_evidence(
             evidence,
             expected_execution_id=evidence.get("execution_id"),
             expected_workspace_id=evidence.get("workspace_id"),
@@ -305,7 +305,12 @@ def classify_execution_failure(evidence):
             expected_job_id=evidence.get("job_id"),
         )
     except (AttributeError, TypeError) as exc:
-        raise RepairContractError("Failure classification requires normalized Runner evidence.") from exc
+        raise RepairContractError("Failure analysis requires normalized Runner evidence.") from exc
+
+
+def classify_execution_failure(evidence):
+    """Classify only fully normalized Runner evidence; no Agent claim is accepted."""
+    evidence = _revalidate_runner_evidence(evidence)
     status = evidence.get("execution_status")
     exit_code = evidence.get("exit_code")
     if (
@@ -352,6 +357,7 @@ def classify_execution_failure(evidence):
 
 def analyze_root_cause(evidence, *, changed_paths=()):
     """Return evidence-linked candidate causes; unknowns remain explicitly uncertain."""
+    evidence = _revalidate_runner_evidence(evidence)
     classification = classify_execution_failure(evidence)
     if classification["category"] is None:
         raise RepairContractError("Successful executions do not have a repair root cause.")
@@ -697,6 +703,8 @@ def compare_repair_outcomes(before_evidence, after_evidence, verification_eviden
     A successful process exit is not a successful repair: all independent
     verification gates must also pass on the exact post-repair revision.
     """
+    before_evidence = _revalidate_runner_evidence(before_evidence)
+    after_evidence = _revalidate_runner_evidence(after_evidence)
     before = classify_execution_failure(before_evidence)
     after = classify_execution_failure(after_evidence)
     if before["category"] is None:
