@@ -187,6 +187,7 @@ def _run_execution_state(run, tasks):
                 or acceptance.get("user_id") != run.owner_id
                 or not isinstance(acceptance.get("accepted_at"), str)
                 or not acceptance.get("accepted_at")
+                or acceptance.get("criteria_scope") != "agent_task"
                 or not isinstance(criteria, list)
                 or not criteria
                 or accepted_criteria != criteria
