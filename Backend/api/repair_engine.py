@@ -959,6 +959,7 @@ def verification_passed(result, *, expected_revision):
         return False
     if (
         not isinstance(result, dict)
+        or not isinstance(result.get("evidence_origin"), str)
         or result.get("evidence_origin") != "runner"
         or type(result.get("schema_version")) is not int
         or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
@@ -979,6 +980,7 @@ def verification_passed(result, *, expected_revision):
     if (
         type(revision) is not type(expected_revision)
         or revision != expected_revision
+        or not isinstance(result.get("execution_status"), str)
         or result.get("execution_status") != "succeeded"
         or type(result.get("exit_code")) is not int
         or result.get("exit_code") != 0
