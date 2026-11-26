@@ -168,7 +168,9 @@ def _run_execution_state(run, tasks):
     # A terminal successful run must account for every persisted task. A
     # missing or incomplete task graph is inconsistent durable state, not a
     # plan-only or in-progress run, and must fail closed for human review.
-    if run.status == "succeeded" and (not statuses or not all(status == "succeeded" for status in statuses)):
+    if run.status == "succeeded" and (
+        not statuses or not all(status == "succeeded" for status in statuses)
+    ):
         return "run_success_missing_task_acceptance_requires_review"
     if any(status == "failed" for status in statuses):
         return "execution_failed_requires_review"
