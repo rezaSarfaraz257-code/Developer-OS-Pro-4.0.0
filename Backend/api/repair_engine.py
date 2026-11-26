@@ -64,7 +64,7 @@ _SECRET_PATTERNS = (
     re.compile(r"""(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|secret|password)\s*[:=]\s*(?:['"][^'"]{8,}['"]|[A-Za-z0-9_./+=-]{20,})"""),
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
-_HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
+_HUNK_HEADER = re.compile(r"^@@ -([0-9]{1,10})(?:,([0-9]{1,10}))? \+([0-9]{1,10})(?:,([0-9]{1,10}))? @@(?: .*)?$")
 
 
 class RepairContractError(ValueError):
@@ -608,11 +608,19 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             if not match:
                 raise RepairContractError("Patch hunk header is malformed.")
             old_start, old_count, new_start, new_count = match.groups()
+            numeric_values = [
+                int(old_start),
+                int(old_count) if old_count is not None else 1,
+                int(new_start),
+                int(new_count) if new_count is not None else 1,
+            ]
+            if any(value > 2_147_483_647 for value in numeric_values):
+                raise RepairContractError("Patch hunk coordinates exceed the supported line range.")
             current["active_hunk"] = {
-                "old_start": int(old_start),
-                "old_count": int(old_count) if old_count is not None else 1,
-                "new_start": int(new_start),
-                "new_count": int(new_count) if new_count is not None else 1,
+                "old_start": numeric_values[0],
+                "old_count": numeric_values[1],
+                "new_start": numeric_values[2],
+                "new_count": numeric_values[3],
                 "lines": [],
             }
             continue
