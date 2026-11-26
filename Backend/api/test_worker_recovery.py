@@ -607,3 +607,42 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertIsNotNone(malformed_export.dead_lettered_at)
         self.assertIsNone(malformed_plan.locked_at)
         self.assertIsNone(malformed_export.locked_at)
+
+
+    def test_worker_finalizes_failed_plan_job_with_non_object_payload(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload=["invalid", "json-object-shape"],
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=1,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("TypeError", job.error)
+
+    def test_worker_finalizes_failed_export_job_with_non_object_payload(self):
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload="invalid-json-object-shape",
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=1,
+        )
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("AttributeError", job.error)
