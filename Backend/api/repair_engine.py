@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -105,7 +106,7 @@ def _safe_relative_path(value):
     if (
         not isinstance(value, str) or not value or len(value) > 512
         or "\x00" in value or "\\" in value
-        or any(ord(char) < 32 for char in value)
+        or any(unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for char in value)
         or re.match(r"^[A-Za-z]:", value)
     ):
         return False
