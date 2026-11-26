@@ -104,10 +104,13 @@ class RunnerEvidenceContractTests(SimpleTestCase):
     def test_rejects_unsafe_paths_and_invalid_resource_usage(self):
         bad_location = self.evidence(source_location={"path": "../secret", "line": 1})
         bad_usage = self.evidence(resource_usage={"peak_memory_bytes": -1})
+        oversized_usage = self.evidence(resource_usage={"peak_memory_bytes": 10 ** 100})
         with self.assertRaises(RepairContractError):
             self.normalize(bad_location)
         with self.assertRaises(RepairContractError):
             self.normalize(bad_usage)
+        with self.assertRaises(RepairContractError):
+            self.normalize(oversized_usage)
 
     def test_redacts_secret_patterns_from_persisted_error_and_stack_text(self):
         secret = "ghp_" + "A" * 30
@@ -122,6 +125,18 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         ))
         self.assertNotIn(secret, result["structured_errors"][0]["message"])
         self.assertNotIn(secret, result["stack_trace"])
+
+    def test_redacts_entire_private_key_blocks_from_persisted_evidence(self):
+        key_body = "MIIE" + "K" * 48
+        private_key = (
+            "-----BEGIN PRIVATE KEY-----\\n"
+            + key_body
+            + "\\n-----END PRIVATE KEY-----"
+        )
+        result = self.normalize(self.evidence(stack_trace=private_key))
+        self.assertNotIn(key_body, result["stack_trace"])
+        self.assertNotIn("BEGIN PRIVATE KEY", result["stack_trace"])
+        self.assertIn("[REDACTED_SECRET]", result["stack_trace"])
 
     def test_redacts_secret_patterns_from_error_codes_and_source_symbols(self):
         secret = "ghp_" + "S" * 30
