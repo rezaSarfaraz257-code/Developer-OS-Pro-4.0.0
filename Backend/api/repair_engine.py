@@ -415,8 +415,7 @@ def analyze_root_cause(evidence, *, changed_paths=()):
     if classification["category"] is None:
         raise RepairContractError("Successful executions do not have a repair root cause.")
     if (
-        isinstance(changed_paths, (str, bytes))
-        or not isinstance(changed_paths, (list, tuple, set, frozenset))
+        type(changed_paths) not in (list, tuple, set, frozenset)
         or len(changed_paths) > 500
         or any(not _safe_relative_path(path) for path in changed_paths)
     ):
@@ -573,8 +572,8 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     _revision(snapshot_revision)
     if type(snapshot_revision) is not type(target_revision) or snapshot_revision != target_revision:
         raise RepairContractError("Workspace snapshot revision does not match the patch target revision.")
-    if type(workspace_files) is not dict:
-        raise RepairContractError("An authoritative workspace snapshot must be an exact dictionary.")
+    if not _exact_string_keys(workspace_files):
+        raise RepairContractError("An authoritative workspace snapshot must be an exact dictionary with exact string keys.")
     # Copy the exact built-in dict before validation so later caller mutations
     # cannot change the set of files or contents being checked.
     snapshot_files = dict(workspace_files)
@@ -816,7 +815,7 @@ def validate_revision_bound_approval(approval, *, current_revision, patch_sha256
         return False
     if now is None:
         now = datetime.now(timezone.utc)
-    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+    if type(now) is not datetime or now.tzinfo is None or now.utcoffset() is None:
         raise RepairContractError("Approval validation clock must be timezone-aware.")
     try:
         expires = _iso_timestamp(approval.get("expires_at"), "approval.expires_at")
