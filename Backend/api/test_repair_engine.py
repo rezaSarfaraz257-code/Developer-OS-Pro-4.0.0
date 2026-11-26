@@ -181,6 +181,8 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             {"evidence_origin": "runner", "execution_status": "failed", "structured_errors": None},
             {"evidence_origin": "runner", "execution_status": "unknown", "structured_errors": []},
             {"evidence_origin": "runner", "execution_status": "failed", "structured_errors": [{"code": []}]},
+            {"evidence_origin": "runner", "execution_status": [], "structured_errors": []},
+            {"evidence_origin": "runner", "execution_status": "succeeded", "exit_code": True, "structured_errors": []},
         ):
             with self.subTest(evidence=evidence):
                 with self.assertRaises(RepairContractError):
