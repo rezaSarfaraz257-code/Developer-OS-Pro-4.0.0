@@ -801,13 +801,13 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
 
 def validate_revision_bound_approval(approval, *, current_revision, patch_sha256, now=None):
     """Fail closed unless approval binds the exact revision and patch hash."""
-    if not isinstance(approval, dict):
+    if type(approval) is not dict:
         return False
     try:
         _revision(current_revision)
     except RepairContractError:
         return False
-    if not isinstance(patch_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", patch_sha256):
+    if type(patch_sha256) is not str or not re.fullmatch(r"[a-f0-9]{64}", patch_sha256):
         return False
     if now is None:
         now = datetime.now(timezone.utc)
