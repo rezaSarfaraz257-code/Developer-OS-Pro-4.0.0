@@ -12,6 +12,7 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -732,7 +733,21 @@ def agent_task_accept_api(request, pk, task_pk):
             acceptance = stored_evidence.get("human_acceptance", {})
             if not isinstance(acceptance, dict):
                 acceptance = {}
-            if _matches_positive_id(acceptance.get("user_id"), request.user.id):
+            criteria = _task_acceptance_criteria(task)
+            accepted_at = acceptance.get("accepted_at")
+            try:
+                accepted_timestamp = parse_datetime(accepted_at) if isinstance(accepted_at, str) else None
+            except (TypeError, ValueError):
+                accepted_timestamp = None
+            acceptance_is_valid = bool(
+                _matches_positive_id(acceptance.get("user_id"), request.user.id)
+                and acceptance.get("criteria_scope") == "agent_task"
+                and criteria
+                and acceptance.get("accepted_criteria") == criteria
+                and accepted_timestamp is not None
+                and timezone.is_aware(accepted_timestamp)
+            )
+            if acceptance_is_valid:
                 return Response(_task_status_payload(task, task.execution_job), status=200)
             return Response({"error": "This task has already been accepted."}, status=409)
         if task.status != "awaiting_approval":
