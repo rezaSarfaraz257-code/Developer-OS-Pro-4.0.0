@@ -116,6 +116,23 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                         expected_job_id=33,
                     )
 
+    def test_rejects_non_string_runner_origin_and_execution_identity(self):
+        class EqualToRunner:
+            def __eq__(self, other):
+                return other == "runner"
+
+        class EqualToExecutionId:
+            def __eq__(self, other):
+                return other == "exec-001"
+
+        for payload in (
+            self.evidence(evidence_origin=EqualToRunner()),
+            self.evidence(execution_id=EqualToExecutionId()),
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RepairContractError):
+                    self.normalize(payload)
+
     def test_rejects_wrong_execution_workspace_job_or_revision(self):
         for field, value in (
             ("execution_id", "other"),
