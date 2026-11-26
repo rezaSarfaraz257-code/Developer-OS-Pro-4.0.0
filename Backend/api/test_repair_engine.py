@@ -111,6 +111,21 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                 "execution_environment": SpoofedMapping(valid["execution_environment"]),
             })
 
+    def test_runner_evidence_rejects_string_subclass_mapping_keys(self):
+        class SpoofedKey(str):
+            pass
+
+        payload = {SpoofedKey(key): value for key, value in self.evidence().items()}
+        with self.assertRaises(RepairContractError):
+            self.normalize(payload)
+
+        payload = self.evidence()
+        payload["execution_environment"] = {
+            SpoofedKey(key): value for key, value in payload["execution_environment"].items()
+        }
+        with self.assertRaises(RepairContractError):
+            self.normalize(payload)
+
     def test_rejects_boolean_workspace_revision_even_when_integer_value_matches(self):
         with self.assertRaises(RepairContractError):
             self.normalize(self.evidence(workspace_revision=True))
@@ -1233,6 +1248,38 @@ class VerificationEvidenceTests(SimpleTestCase):
         ))
 
 
+    def test_verification_rejects_string_subclass_mapping_keys(self):
+        class SpoofedKey(str):
+            pass
+
+        result = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": "exec-verified-14",
+            "workspace_id": 7,
+            "job_id": 34,
+            "workspace_revision": 14,
+            "execution_status": "succeeded",
+            "exit_code": 0,
+            "checks": {
+                name: {
+                    "status": "passed",
+                    "evidence_reference": "artifact://verification/" + name,
+                    "execution_id": "exec-verified-14",
+                    "workspace_revision": 14,
+                }
+                for name in ("targeted_tests", "regression_tests", "security")
+            },
+        }
+        spoofed_top_level = {SpoofedKey(key): value for key, value in result.items()}
+        self.assertFalse(verification_passed(spoofed_top_level, expected_revision=14))
+
+        result["checks"]["security"] = {
+            SpoofedKey(key): value for key, value in result["checks"]["security"].items()
+        }
+        self.assertFalse(verification_passed(result, expected_revision=14))
+
+
 class RollbackEligibilityTests(SimpleTestCase):
     def evidence(self, failed_gate=None, **overrides):
         checks = {
@@ -1390,6 +1437,23 @@ class RollbackEligibilityTests(SimpleTestCase):
             failed_gate="targeted_tests",
             execution_id="exec" + chr(10) + "invalid",
         )
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
+
+    def test_rollback_rejects_string_subclass_mapping_keys(self):
+        class SpoofedKey(str):
+            pass
+
+        evidence = self.evidence(failed_gate="security")
+        evidence = {SpoofedKey(key): value for key, value in evidence.items()}
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
+        evidence = self.evidence(failed_gate="security")
+        evidence["checks"] = {
+            SpoofedKey(key): value for key, value in evidence["checks"].items()
+        }
         with self.assertRaises(RepairContractError):
             evaluate_rollback_eligibility(evidence, **self.kwargs())
 
