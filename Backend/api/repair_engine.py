@@ -46,11 +46,15 @@ _ENVIRONMENT_KEYS = frozenset({"runner_version", "os", "architecture", "runtime"
 _RESOURCE_KEYS = frozenset({"duration_ms", "cpu_time_ms", "peak_memory_bytes", "output_bytes"})
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", re.I),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
-    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\b(?:xox[baprs]|npm|pypi)-[A-Za-z0-9_-]{10,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),
+    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}"),
-    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*(?:['"][^'"\s]{8,}['"]|[A-Za-z0-9_./+-]{20,})"),
+    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|secret|password)\s*[:=]\s*(?:['"][^'"\s]{8,}['"]|[A-Za-z0-9_./+=-]{20,})"),
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
@@ -180,7 +184,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("A failed execution cannot report exit_code 0.")
     signal = payload.get("termination_signal")
     if signal is not None:
-        _bounded_text(signal, "termination_signal", 64)
+        signal = _redact_secrets(_bounded_text(signal, "termination_signal", 64))
 
     refs = {}
     for field in ("stdout_reference", "stderr_reference"):
