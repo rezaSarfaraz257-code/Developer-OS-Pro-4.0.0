@@ -637,6 +637,9 @@ class VerificationEvidenceTests(SimpleTestCase):
             },
         }
         self.assertTrue(verification_passed(result, expected_revision=14))
+        result["execution_id"] = "x" * 129
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["execution_id"] = "exec-verified-14"
         result["checks"]["security"]["status"] = "failed"
         self.assertFalse(verification_passed(result, expected_revision=14))
         result["checks"]["security"]["status"] = "passed"
