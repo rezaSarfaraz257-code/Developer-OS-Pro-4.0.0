@@ -407,6 +407,45 @@ class StaleWorkerJobRecoveryTests(TestCase):
         ).exists())
 
 
+    @patch("api.views._runner_request")
+    def test_runner_sync_does_not_record_success_after_lease_expires_in_flight(self, runner_request):
+        owner = User.objects.create_user(username="agent-runner-sync-midflight-expiry")
+        workspace = CodeWorkspace.objects.create(
+            owner=owner, name="Runner sync midflight expiry",
+            files={"main.py": "print('lease may expire during request')"},
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            status="running",
+            locked_at=timezone.now(),
+            locked_by="worker:runner-sync-midflight",
+            payload={
+                "workspace_id": workspace.id,
+                "owner_id": owner.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"agent-runner-sync-midflight:{workspace.id}",
+        )
+
+        def expire_lease_during_request(method, path, payload, timeout):
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            )
+            return ({"status": "synced", "files": payload["files"]}, None)
+
+        runner_request.side_effect = expire_lease_during_request
+        with self.assertRaisesMessage(
+            RuntimeError, "Runner sync worker lease expired during synchronization."
+        ):
+            execute(job)
+
+        runner_request.assert_called_once()
+        self.assertFalse(AuditLog.objects.filter(
+            user=owner, action="ai_agent.runner_workspace_synced",
+            target_id=str(workspace.id),
+        ).exists())
+
+
     @patch("api.views._runner_request", return_value=(None, {"error": "unavailable"}))
     def test_agent_runner_sync_job_fails_closed_for_worker_retry(self, runner_request):
         owner = User.objects.create_user(username="agent-runner-sync-failure")
