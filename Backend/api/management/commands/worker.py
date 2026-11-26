@@ -126,12 +126,14 @@ def recover_stale_jobs():
 
 
 def refresh_job_lease(job_id, worker):
-    """Extend a running job's lease only while this worker still owns it."""
+    """Extend only a still-live lease; an expired worker cannot resurrect itself."""
+    now = timezone.now()
     return BackgroundJob.objects.filter(
         pk=job_id,
         status="running",
         locked_by=worker,
-    ).update(locked_at=timezone.now()) == 1
+        locked_at__gte=now - STALE_AFTER,
+    ).update(locked_at=now) == 1
 
 
 def _job_lease_loop(job_id, worker, stop_event, interval=30):
@@ -470,7 +472,7 @@ class Command(BaseCommand):
                     )
                     if not is_current_job_lease(persisted_job, claimed_lease):
                         logger.warning(
-                            "Discarding worker outcome after lease ownership changed job_id=%s worker_id=%s",
+                            "Discarding worker outcome after lease expired or ownership changed job_id=%s worker_id=%s",
                             job.pk,
                             worker,
                         )
