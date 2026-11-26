@@ -538,7 +538,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         if path not in workspace_files or not isinstance(workspace_files[path], str):
             raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
         source_text = workspace_files[path]
-        if len(source_text) > MAX_PATCH_SOURCE_CHARS or "\\x00" in source_text:
+        if len(source_text) > MAX_PATCH_SOURCE_CHARS or "\x00" in source_text:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
         try:
             source_text.encode("utf-8", errors="strict")
