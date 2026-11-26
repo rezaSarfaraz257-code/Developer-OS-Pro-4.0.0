@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from bisect import bisect_right
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -513,14 +514,19 @@ def scan_patch_for_secrets(unified_diff):
 
     if not added_lines:
         return []
+    line_offsets = []
+    offset = 0
+    for _, content in added_lines:
+        line_offsets.append(offset)
+        offset += len(content) + 1
     added_text = "\n".join(content for _, content in added_lines)
     added_line_numbers = [number for number, _ in added_lines]
     findings = []
     for pattern in _SECRET_PATTERNS:
         for match in pattern.finditer(added_text):
-            added_index = added_text.count("\n", 0, match.start())
+            added_index = bisect_right(line_offsets, match.start()) - 1
             findings.append({
-                "line": added_line_numbers[min(added_index, len(added_line_numbers) - 1)],
+                "line": added_line_numbers[max(0, added_index)],
                 "rule": "possible_secret",
             })
     # A line can match multiple overlapping credential rules; report it once.
