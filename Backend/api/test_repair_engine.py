@@ -135,6 +135,31 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         self.assertEqual(result["candidates"][0]["change_relation"], "changed_file")
         self.assertEqual(result["candidates"][0]["evidence_reference"], "artifact://errors/33/0")
 
+
+    def test_classifies_all_supported_failure_families(self):
+        cases = (
+            ("python_type_error", "type"),
+            ("dependency_module_not_found", "dependency"),
+            ("build_compile_error", "build"),
+            ("test_assertion_failure", "test"),
+            ("runtime_exception", "runtime"),
+            ("configuration_invalid", "configuration"),
+            ("permission_access_denied", "permission"),
+        )
+        for code, expected in cases:
+            evidence = self.normalize(self.evidence(structured_errors=[{
+                "code": code, "message": "failure", "source_location": None,
+                "evidence_reference": "artifact://errors/33/0",
+            }]))
+            with self.subTest(code=code):
+                self.assertEqual(classify_execution_failure(evidence)["category"], expected)
+
+    def test_rejects_secret_or_untrusted_artifact_references(self):
+        for reference in ("https://example.com/log", "artifact://logs?token=secret"):
+            with self.subTest(reference=reference):
+                with self.assertRaises(RepairContractError):
+                    self.normalize(self.evidence(stdout_reference=reference))
+
     def test_unknown_failure_reports_uncertainty(self):
         evidence = self.normalize(self.evidence(structured_errors=[] , source_location=None))
         result = analyze_root_cause(evidence)
@@ -281,7 +306,7 @@ class RepairLoopGuardTests(SimpleTestCase):
             "repeated_patch",
         )
         self.assertEqual(
-            evaluate_repair_loop(history, current_revision=revision, candidate_patch_sha256="c" * 64)["reason"],
+            evaluate_repair_loop(history, current_revision=revision, candidate_patch_sha256="c" * 64, max_attempts=2)["reason"],
             "attempt_limit_reached",
         )
 
