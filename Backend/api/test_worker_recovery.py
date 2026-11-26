@@ -255,9 +255,6 @@ class StaleWorkerJobRecoveryTests(TestCase):
         passed_evidence = {
             "state": "passed",
             "profile": "python_pytest",
-            "revision": 1,
-            "verification_job_id": 77,
-            "runner_job_id": "agent-placeholder",
             "iteration": 1,
             "history": [],
             "output_persisted": False,
