@@ -493,9 +493,9 @@ def _patch_path_allowed(path):
     return (
         not any(part in protected_dirs for part in parts)
         and not any(part in protected_files for part in parts)
-        and not basename.startswith("dockerfile.")
+        and not any(part.startswith("dockerfile.") for part in parts)
         and not any(part.startswith(".env.") for part in parts)
-        and not basename.endswith(sensitive_suffixes)
+        and not any(part.endswith(sensitive_suffixes) for part in parts)
     )
 
 def scan_patch_for_secrets(unified_diff):
