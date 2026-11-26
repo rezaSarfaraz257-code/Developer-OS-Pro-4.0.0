@@ -19,6 +19,7 @@ MAX_STRUCTURED_ERRORS = 100
 MAX_DIFF_CHARS = 64_000
 MAX_PATCH_FILES = 20
 MAX_PATCH_SOURCE_BYTES = 8 * 1024 * 1024
+MAX_PATCH_TOTAL_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
 MAX_APPROVAL_TTL_SECONDS = 60 * 60
@@ -511,8 +512,14 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         raise RepairContractError("An authoritative workspace snapshot is required.")
     if not isinstance(unified_diff, str) or not unified_diff or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch is empty or exceeds the configured size limit.")
+    try:
+        encoded = unified_diff.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise RepairContractError("Patch contains invalid Unicode.") from exc
     if "\x00" in unified_diff or "GIT binary patch" in unified_diff or "Binary files " in unified_diff:
         raise RepairContractError("Binary or malformed patches are not supported.")
+
+    total_source_bytes = 0
 
     def finish_hunk(file_record):
         hunk = file_record.get("active_hunk")
@@ -529,6 +536,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         file_record["active_hunk"] = None
 
     def finish_file(file_record):
+        nonlocal total_source_bytes
         if file_record is None:
             return
         finish_hunk(file_record)
@@ -546,6 +554,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             raise RepairContractError("Patch target contains invalid Unicode.") from exc
         if len(source_bytes) > MAX_PATCH_SOURCE_BYTES:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
+        total_source_bytes += len(source_bytes)
+        if total_source_bytes > MAX_PATCH_TOTAL_SOURCE_BYTES:
+            raise RepairContractError("Patched workspace snapshots exceed the aggregate safety limit.")
         source_lines = source_text.splitlines(keepends=True)
         previous_old_end = 0
         previous_new_end = 0
@@ -658,7 +669,6 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     secret_findings = scan_patch_for_secrets(unified_diff)
     if secret_findings:
         raise RepairContractError("Patch contains possible secret material.")
-    encoded = unified_diff.encode("utf-8")
     return {
         "target_revision": target_revision,
         "changed_paths": paths,
