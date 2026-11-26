@@ -285,6 +285,14 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
         verification["checks"]["security"]["status"] = "passed"
+        verification["execution_id"] = "different-execution"
+        result = compare_repair_outcomes(before, after, verification)
+        self.assertEqual(result["outcome"], "verification_incomplete")
+        verification["execution_id"] = "exec-002"
+        verification["job_id"] = 999
+        result = compare_repair_outcomes(before, after, verification)
+        self.assertEqual(result["outcome"], "verification_incomplete")
+        verification["job_id"] = 34
         verification["workspace_id"] = 8
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
@@ -401,6 +409,8 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
     def test_scanner_checks_added_lines_starting_with_multiple_plus_signs(self):
         findings = scan_patch_for_secrets("+++ token = 'ghp_" + "D" * 30 + "'")
         self.assertTrue(findings)
+        # A real unified-diff file header must not be treated as an added source line.
+        self.assertEqual(scan_patch_for_secrets("+++ b/src/main.py"), [])
 
     def test_revision_bound_approval_expires_and_invalidates_on_revision_or_patch_change(self):
         now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
