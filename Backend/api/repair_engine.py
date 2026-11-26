@@ -920,6 +920,7 @@ def verification_passed(result, *, expected_revision):
         or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
         or not isinstance(result.get("execution_id"), str)
         or not result.get("execution_id")
+        or len(result["execution_id"]) > 128
         or type(result.get("workspace_id")) is not int
         or result.get("workspace_id") < 1
         or type(result.get("job_id")) is not int
