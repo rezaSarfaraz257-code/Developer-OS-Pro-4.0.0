@@ -14,6 +14,7 @@ from .agent_runtime import (
     build_agent_plan,
 )
 from .agent_tools import TOOL_REGISTRY
+from .management.commands.worker import claim_job, recover_stale_jobs
 from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
@@ -695,6 +696,101 @@ class AgentRunLifecycleTests(TestCase):
         with self.assertRaisesRegex(RuntimeError, "AI planner returned an invalid task graph") as caught:
             build_agent_plan(run.id)
         self.assertNotIn("malformed-provider-response", str(caught.exception))
+
+    @patch("api.ai_engine._call_provider")
+    def test_stale_planner_result_is_discarded_after_job_lease_is_reclaimed(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not persist a stale plan",
+            status="queued",
+            idempotency_key="stale-plan-fence-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - timedelta(minutes=15),
+            locked_by="old-planner:lease",
+            idempotency_key="stale-plan-job-0001",
+        )
+        replacement_claims = []
+
+        def recover_and_reclaim(*_args, **_kwargs):
+            recover_stale_jobs()
+            job.refresh_from_db()
+            self.assertEqual(job.status, "queued")
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                available_at=timezone.now() - timedelta(seconds=1)
+            )
+            replacement_claims.append(claim_job("replacement-planner"))
+            self.assertIsNotNone(replacement_claims[0])
+            return (
+                json.dumps({
+                    "summary": "Stale plan must not persist",
+                    "risks": [],
+                    "acceptance_criteria": ["No stale tasks are stored"],
+                    "tasks": [{
+                        "id": "inspect",
+                        "title": "Inspect workspace",
+                        "description": "Review the source",
+                        "agent_role": "architect",
+                        "depends_on": [],
+                        "acceptance_criteria": ["The inspection evidence is recorded."],
+                    }],
+                }),
+                None,
+            )
+
+        provider.side_effect = recover_and_reclaim
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="old-planner:lease",
+        )
+
+        run.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(result["status"], "superseded")
+        self.assertEqual(run.status, "queued")
+        self.assertEqual(run.tasks.count(), 0)
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, replacement_claims[0].locked_by)
+        provider.assert_called_once()
+
+    @patch("api.ai_engine._call_provider")
+    def test_planner_rejects_a_superseded_lease_before_provider_call(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not start stale planning",
+            status="queued",
+            idempotency_key="preflight-plan-fence-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="queued",
+            attempts=1,
+            max_attempts=3,
+            locked_by="old-planner:lease",
+            idempotency_key="preflight-plan-job-0001",
+        )
+
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="old-planner:lease",
+        )
+
+        self.assertEqual(result["status"], "superseded")
+        provider.assert_not_called()
+        run.refresh_from_db()
+        self.assertEqual(run.status, "queued")
 
     @patch("api.ai_engine._call_provider")
     def test_worker_persists_plan_and_dependency_graph_without_mutating_workspace(self, provider):
