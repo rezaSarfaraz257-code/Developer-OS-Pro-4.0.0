@@ -269,6 +269,11 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn("B" * 30, str(bearer))
         self.assertNotIn("C" * 30, str(unquoted))
 
+
+    def test_scanner_checks_added_lines_starting_with_multiple_plus_signs(self):
+        findings = scan_patch_for_secrets("+++ token = 'ghp_" + "D" * 30 + "'")
+        self.assertTrue(findings)
+
     def test_revision_bound_approval_expires_and_invalidates_on_revision_or_patch_change(self):
         now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
         approval = {
@@ -357,8 +362,13 @@ class RepairLoopGuardTests(SimpleTestCase):
         )
 
     def test_malformed_history_fails_closed(self):
-        with self.assertRaises(RepairContractError):
-            evaluate_repair_loop(
-                [{"patch_sha256": "not-a-hash", "outcome": "rolled_back", "workspace_revision": "rev-12"}],
-                current_revision="rev-12", candidate_patch_sha256="a" * 64,
-            )
+        invalid_records = (
+            [{"patch_sha256": "not-a-hash", "outcome": "rolled_back", "workspace_revision": "rev-12"}],
+            [{"patch_sha256": "a" * 64, "outcome": [], "workspace_revision": "rev-12"}],
+        )
+        for history in invalid_records:
+            with self.subTest(history=history):
+                with self.assertRaises(RepairContractError):
+                    evaluate_repair_loop(
+                        history, current_revision="rev-12", candidate_patch_sha256="a" * 64,
+                    )
