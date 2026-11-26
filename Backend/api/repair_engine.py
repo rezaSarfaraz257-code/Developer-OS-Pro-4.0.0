@@ -844,24 +844,25 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
     """
     _revision(current_revision)
     if (
-        not isinstance(candidate_patch_sha256, str)
+        type(candidate_patch_sha256) is not str
         or not re.fullmatch(r"[a-f0-9]{64}", candidate_patch_sha256)
     ):
         raise RepairContractError("Candidate patch hash is invalid.")
     if type(max_attempts) is not int or not 1 <= max_attempts <= MAX_REPAIR_ATTEMPTS:
         raise RepairContractError("Repair attempt limit is outside the safe policy.")
-    if not isinstance(history, list) or len(history) > MAX_REPAIR_HISTORY:
+    if type(history) is not list or len(history) > MAX_REPAIR_HISTORY:
         raise RepairContractError("Repair history is malformed or exceeds its bound.")
 
     attempted_outcomes = {"applied_failed_verification", "rolled_back", "verified_success"}
     attempts = []
+    seen_attempts = set()
     for record in history:
         if (
-            not isinstance(record, dict)
+            type(record) is not dict
             or set(record) != {"patch_sha256", "outcome", "workspace_revision"}
-            or not isinstance(record.get("patch_sha256"), str)
+            or type(record["patch_sha256"]) is not str
             or not re.fullmatch(r"[a-f0-9]{64}", record["patch_sha256"])
-            or not isinstance(record.get("outcome"), str)
+            or type(record["outcome"]) is not str
             or record["outcome"] not in attempted_outcomes | {"rejected"}
         ):
             raise RepairContractError("Repair history record is invalid.")
@@ -871,7 +872,16 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
             and record["workspace_revision"] == current_revision
             and record["outcome"] in attempted_outcomes
         ):
-            attempts.append(record)
+            # A repeated persisted row is one attempt, not additional budget.
+            # Distinct attempts must have distinct patch digests by policy.
+            identity = (
+                record["patch_sha256"],
+                record["outcome"],
+                record["workspace_revision"],
+            )
+            if identity not in seen_attempts:
+                seen_attempts.add(identity)
+                attempts.append(record)
 
     if any(record["outcome"] == "verified_success" for record in attempts):
         return {"allowed": False, "reason": "revision_already_verified", "attempts": len(attempts)}
