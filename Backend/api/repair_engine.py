@@ -22,6 +22,8 @@ MAX_DIFF_CHARS = 64_000
 MAX_PATCH_FILES = 20
 MAX_PATCH_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_PATCH_TOTAL_SOURCE_BYTES = 16 * 1024 * 1024
+MAX_PATCH_SNAPSHOT_FILES = 10_000
+MAX_PATCH_TOTAL_PATH_BYTES = 2 * 1024 * 1024
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
 MAX_APPROVAL_TTL_SECONDS = 60 * 60
@@ -559,18 +561,30 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     # Copy the exact built-in dict before validation so later caller mutations
     # cannot change the set of files or contents being checked.
     snapshot_files = dict(workspace_files)
+    if len(snapshot_files) > MAX_PATCH_SNAPSHOT_FILES:
+        raise RepairContractError("Workspace snapshot contains too many file entries.")
     snapshot_total_bytes = 0
+    snapshot_path_bytes = 0
+    normalized_snapshot_paths = set()
     for snapshot_path, snapshot_content in snapshot_files.items():
         if type(snapshot_path) is not str or type(snapshot_content) is not str:
             raise RepairContractError("Snapshot paths and contents must be exact strings.")
         if not _safe_relative_path(snapshot_path) or len(snapshot_content) > MAX_PATCH_SOURCE_BYTES or "\x00" in snapshot_content:
             raise RepairContractError("Snapshot contains an unsafe path or oversized/non-text file.")
         try:
+            path_size = len(snapshot_path.encode("utf-8", errors="strict"))
             content_size = len(snapshot_content.encode("utf-8", errors="strict"))
         except UnicodeEncodeError as exc:
             raise RepairContractError("Snapshot contains invalid Unicode.") from exc
         if content_size > MAX_PATCH_SOURCE_BYTES:
             raise RepairContractError("Snapshot file exceeds the text safety limit.")
+        snapshot_path_bytes += path_size
+        if snapshot_path_bytes > MAX_PATCH_TOTAL_PATH_BYTES:
+            raise RepairContractError("Workspace snapshot path metadata exceeds the aggregate safety limit.")
+        normalized_path = unicodedata.normalize("NFC", snapshot_path).casefold()
+        if normalized_path in normalized_snapshot_paths:
+            raise RepairContractError("Workspace snapshot contains colliding normalized file paths.")
+        normalized_snapshot_paths.add(normalized_path)
         snapshot_total_bytes += content_size
         if snapshot_total_bytes > MAX_PATCH_TOTAL_SOURCE_BYTES:
             raise RepairContractError("Workspace snapshot exceeds the aggregate safety limit.")
