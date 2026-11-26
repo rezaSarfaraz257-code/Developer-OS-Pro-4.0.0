@@ -26,11 +26,18 @@ class AgentExecutionLeaseFenceTests(TestCase):
         from .agent_execution import _job_lease_is_current
 
         claimed = SimpleNamespace(locked_by="worker-old")
-        current = SimpleNamespace(status="running", locked_by="worker-old")
+        current = SimpleNamespace(
+            status="running", locked_by="worker-old", locked_at=timezone.now(),
+        )
         self.assertTrue(_job_lease_is_current(current, claimed))
 
         # A reclaimed job is still "running", but belongs to another worker.
         current.locked_by = "worker-new"
+        self.assertFalse(_job_lease_is_current(current, claimed))
+
+        # A matching fencing token is insufficient after the durable TTL.
+        current.locked_by = "worker-old"
+        current.locked_at = timezone.now() - timedelta(minutes=11)
         self.assertFalse(_job_lease_is_current(current, claimed))
 
     def test_verification_rejects_missing_or_terminal_leases(self):
@@ -43,9 +50,23 @@ class AgentExecutionLeaseFenceTests(TestCase):
         ))
         claimed.locked_by = "worker-current"
         self.assertFalse(_job_lease_is_current(
-            SimpleNamespace(status="queued", locked_by="worker-current"), claimed
+            SimpleNamespace(status="queued", locked_by="worker-current", locked_at=timezone.now()), claimed
+        ))
+        self.assertFalse(_job_lease_is_current(
+            SimpleNamespace(status="running", locked_by="worker-current", locked_at=None), claimed
         ))
         self.assertFalse(_job_lease_is_current(None, claimed))
+
+    def test_planner_rejects_expired_lease_even_when_fencing_token_matches(self):
+        from types import SimpleNamespace
+        from .agent_runtime import _agent_plan_job_lease_is_current
+
+        current = SimpleNamespace(
+            status="running",
+            locked_by="planner:lease-token",
+            locked_at=timezone.now() - timedelta(minutes=11),
+        )
+        self.assertFalse(_agent_plan_job_lease_is_current(current, "planner:lease-token"))
 
 
 class AgentContextRedactionTests(TestCase):
