@@ -750,6 +750,15 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertFalse(validate_revision_bound_approval(expired_before_approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
         overlong_approval = {**approval, "expires_at": (now + timedelta(hours=2)).isoformat()}
         self.assertFalse(validate_revision_bound_approval(overlong_approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
+        for invalid_clock in (False, 0, ""):
+            with self.subTest(invalid_clock=invalid_clock):
+                with self.assertRaises(RepairContractError):
+                    validate_revision_bound_approval(
+                        approval,
+                        current_revision="rev-12",
+                        patch_sha256="a" * 64,
+                        now=invalid_clock,
+                    )
 
 
 class VerificationEvidenceTests(SimpleTestCase):
