@@ -992,7 +992,9 @@ def verification_passed(result, *, expected_revision):
         if (
             not isinstance(check, dict)
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or not isinstance(check.get("status"), str)
             or check.get("status") != "passed"
+            or not isinstance(check.get("execution_id"), str)
             or check.get("execution_id") != result["execution_id"]
             or type(check.get("workspace_revision")) is not type(revision)
             or check.get("workspace_revision") != revision
