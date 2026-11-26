@@ -464,12 +464,29 @@ def _patch_path_allowed(path):
     )
 
 def scan_patch_for_secrets(unified_diff):
-    """Conservative scan of added diff lines; returns findings without echoing secrets."""
+    """Scan added diff lines while recognizing file headers only in header position."""
     if not isinstance(unified_diff, str) or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch must be bounded text.")
     findings = []
+    header_state = 0
     for line_number, line in enumerate(unified_diff.splitlines(), 1):
-        if not line.startswith("+") or re.fullmatch(r"\+\+\+ b/.+", line):
+        if line.startswith("diff --git "):
+            header_state = 1
+            continue
+        if header_state == 1 and line.startswith("index "):
+            continue
+        if header_state == 1 and re.fullmatch(r"--- a/.+", line):
+            header_state = 2
+            continue
+        if header_state == 2 and re.fullmatch(r"\\+\\+\\+ b/.+", line):
+            header_state = 0
+            continue
+        if line.startswith("@@ "):
+            header_state = 0
+            continue
+        if header_state and not line.startswith(("index ", "--- a/")):
+            header_state = 0
+        if not line.startswith("+"):
             continue
         for pattern in _SECRET_PATTERNS:
             if pattern.search(line[1:]):
