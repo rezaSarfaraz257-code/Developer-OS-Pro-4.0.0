@@ -5,6 +5,7 @@ import threading
 from django.contrib.auth.models import User
 from django.db import close_old_connections, connection, transaction
 from django.test import TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -1506,6 +1507,49 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             runner_request.call_args.args[2]["files"],
             {"main.py": "print('expected')"},
         )
+
+
+
+    def test_verification_start_locks_sync_job_before_run_and_task(self):
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.post(self.url, {
+                "sync_job_id": self.sync_job.id,
+                "revision": self.workspace.revision,
+                "profile": "python_pytest",
+            }, format="json")
+
+        self.assertEqual(response.status_code, 202)
+        statements = [query["sql"].upper() for query in captured.captured_queries]
+        sync_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_BACKGROUNDJOB"' in sql
+        )
+        run_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_AGENTRUN"' in sql
+        )
+        task_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_AGENTTASK"' in sql
+        )
+        self.assertLess(sync_lock_index, run_lock_index)
+        self.assertLess(run_lock_index, task_lock_index)
+
+    def test_verification_start_rejects_sync_job_for_another_workspace(self):
+        self.sync_job.payload = {
+            **self.sync_job.payload,
+            "workspace_id": self.workspace.id + 100,
+        }
+        self.sync_job.save(update_fields=["payload"])
+
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
 
 class BackgroundWorkerLeaseRegressionTests(TestCase):
