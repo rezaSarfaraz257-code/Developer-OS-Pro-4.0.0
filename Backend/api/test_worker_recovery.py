@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
-from .management.commands.worker import claim_job, execute, recover_stale_jobs, refresh_job_lease
+from .management.commands.worker import STALE_AFTER, claim_job, execute, recover_stale_jobs, refresh_job_lease
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 
@@ -43,6 +43,31 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertNotEqual(first_lease, second_lease)
         self.assertFalse(refresh_job_lease(job.pk, first_lease))
         self.assertTrue(refresh_job_lease(job.pk, second_lease))
+
+
+    @patch("api.management.commands.worker.timezone.now")
+    def test_recovery_rechecks_a_lease_refreshed_after_candidate_scan(self, mocked_now):
+        scan_time = timezone.now()
+        refreshed_time = scan_time + timedelta(seconds=10)
+        job = BackgroundJob.objects.create(
+            kind="email",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=scan_time - STALE_AFTER - timedelta(seconds=1),
+            locked_by="worker:live-lease-token",
+        )
+        # The candidate query sees an expired lease. Before the row lock is
+        # acquired, its owner refreshes it; the locked recheck must preserve it.
+        mocked_now.side_effect = [scan_time, refreshed_time]
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, "worker:live-lease-token")
+        self.assertEqual(job.locked_at, scan_time - STALE_AFTER - timedelta(seconds=1))
+        self.assertNotIn("Recovered stale worker lease.", job.error)
 
     def test_running_job_without_lock_timestamp_is_requeued(self):
         job = BackgroundJob.objects.create(
