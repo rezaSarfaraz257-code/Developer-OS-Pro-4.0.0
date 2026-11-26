@@ -400,11 +400,30 @@ def _validate_plan(raw):
         "tasks": normalized,
     }
 
-def build_agent_plan(run_id):
+def _agent_plan_job_lease_is_current(job, lease_token):
+    return bool(
+        job
+        and job.status == "running"
+        and isinstance(lease_token, str)
+        and lease_token
+        and job.locked_by == lease_token
+    )
+
+
+def build_agent_plan(run_id, *, job_id=None, lease_token=""):
     """Worker entry point: produce and persist a bounded DAG, never execute it."""
     from .ai_engine import _call_provider
 
     with transaction.atomic():
+        # Acquire locks in the same job -> run order used by stale recovery,
+        # worker finalization, and cancellation. This prevents an expired
+        # planner from entering or continuing the provider-to-database path.
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
         run = AgentRun.objects.select_for_update().select_related(
             "owner", "workspace"
         ).get(pk=run_id)
@@ -520,6 +539,15 @@ def build_agent_plan(run_id):
         raise RuntimeError("AI planner returned an invalid task graph.") from None
 
     with transaction.atomic():
+        # Provider calls can outlive a worker lease. Recheck and lock the
+        # durable job before touching AgentRun/AgentTask so a reclaimed
+        # execution cannot persist stale planning results.
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
         run = AgentRun.objects.select_for_update().select_related("owner").get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
