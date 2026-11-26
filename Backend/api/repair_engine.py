@@ -758,6 +758,7 @@ def evaluate_rollback_eligibility(
         if (
             not isinstance(check, dict)
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or not isinstance(check.get("status"), str)
             or check.get("status") not in {"passed", "failed"}
             or check.get("execution_id") != evidence["execution_id"]
             or type(check.get("workspace_revision")) is not type(expected_post_revision)
