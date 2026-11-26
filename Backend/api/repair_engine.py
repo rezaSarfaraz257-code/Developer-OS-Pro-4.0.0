@@ -356,7 +356,12 @@ def analyze_root_cause(evidence, *, changed_paths=()):
                 or evidence.get("stdout_reference")
             ),
             "change_relation": relation,
-            "confidence": "moderate" if path and relation != "outside_changed_files" else "low",
+            "confidence": (
+                "moderate"
+                if path and relation != "outside_changed_files"
+                and (error.get("evidence_reference") or evidence.get("stderr_reference") or evidence.get("stdout_reference"))
+                else "low"
+            ),
         })
     if not candidates and evidence.get("source_location"):
         candidates.append({
@@ -411,11 +416,11 @@ def _patch_path_allowed(path):
 
 def scan_patch_for_secrets(unified_diff):
     """Conservative scan of added diff lines; returns findings without echoing secrets."""
-    if not isinstance(unified_diff, str):
-        raise RepairContractError("Patch must be text.")
+    if not isinstance(unified_diff, str) or len(unified_diff) > MAX_DIFF_CHARS:
+        raise RepairContractError("Patch must be bounded text.")
     findings = []
     for line_number, line in enumerate(unified_diff.splitlines(), 1):
-        if not line.startswith("+") or line.startswith("+++"):
+        if not line.startswith("+") or line.startswith("+++ "):
             continue
         for pattern in _SECRET_PATTERNS:
             if pattern.search(line[1:]):
@@ -472,6 +477,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             if (
                 start < previous_old_end or start < 0 or start > len(source_lines)
                 or new_start < previous_new_end or new_start < 0
+                or new_start > len(source_lines) + cumulative_line_delta
                 or new_start != start + cumulative_line_delta
             ):
                 raise RepairContractError("Patch hunks overlap or their new-file offsets are inconsistent.")
@@ -521,6 +527,8 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             key = "old" if marker == "---" else "new"
             if side != expected_side or path != current["git_path"] or not _patch_path_allowed(path):
                 raise RepairContractError("Patch file header does not match its git diff path.")
+            if (marker == "---" and current["new"] is not None) or (marker == "+++" and current["old"] is None):
+                raise RepairContractError("Patch file headers are out of order.")
             if current[key] is not None:
                 raise RepairContractError("Patch file headers are duplicated.")
             current[key] = path
@@ -633,7 +641,8 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
             or set(record) != {"patch_sha256", "outcome", "workspace_revision"}
             or not isinstance(record.get("patch_sha256"), str)
             or not re.fullmatch(r"[a-f0-9]{64}", record["patch_sha256"])
-            or record.get("outcome") not in attempted_outcomes | {"rejected"}
+            or not isinstance(record.get("outcome"), str)
+            or record["outcome"] not in attempted_outcomes | {"rejected"}
         ):
             raise RepairContractError("Repair history record is invalid.")
         _revision(record["workspace_revision"])
