@@ -148,11 +148,15 @@ export default function AgentTaskExecutionWorkflow({ run, onRefreshRun }) {
   const syncJobRevision = syncJob?.revision;
   const syncJobCoalesced = syncJob?.coalesced;
   const syncJobError = syncJob?.error;
-  const syncJobRef = useRef(syncJob);
-  syncJobRef.current = syncJob;
-
   useEffect(() => {
-    const currentSync = syncJobRef.current;
+    const currentSync = syncJobId == null ? null : {
+      id: syncJobId,
+      status: syncJobStatus,
+      workspaceId: syncJobWorkspaceId,
+      revision: syncJobRevision,
+      coalesced: syncJobCoalesced,
+      error: syncJobError,
+    };
     if (!currentSync || isSyncTerminal(currentSync.status) || !currentSync.id || runId === null) return undefined;
     let active = true;
     let timer;
