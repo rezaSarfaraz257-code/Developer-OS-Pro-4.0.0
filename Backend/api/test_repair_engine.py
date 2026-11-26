@@ -172,37 +172,37 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             validate_unified_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
         secret_patch = self.patch().replace("+value = 2", "+api_key = 'super-secret-value-123'")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+            validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         for protected_name in (".env.staging", "config/service.pem", "nested/secrets/token.txt"):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
-                validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\\n"})
+                validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
 
     def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
         patch = (
-            "diff --git a/src/main.py b/src/main.py\\n"
-            "--- a/src/main.py\\n"
-            "+++ b/src/main.py\\n"
-            "@@ -1 +1 @@\\n"
-            "---- old\\n"
-            "++++ new\\n"
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -1 +1 @@\n"
+            "---- old\n"
+            "++++ new\n"
         )
         result = validate_unified_patch(
             patch, target_revision="r", expected_revision="r",
-            workspace_files={"src/main.py": "--- old\\n"},
+            workspace_files={"src/main.py": "--- old\n"},
         )
         self.assertTrue(result["validated"])
 
     def test_rejects_patch_when_git_header_or_source_context_is_forged(self):
         wrong_git_path = self.patch().replace("diff --git a/src/main.py b/src/main.py", "diff --git a/src/other.py b/src/other.py")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_git_path, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+            validate_unified_patch(wrong_git_path, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         wrong_context = self.patch().replace("-value = 1", "-value = 999")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_context, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+            validate_unified_patch(wrong_context, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         wrong_count = self.patch().replace("@@ -1 +1 @@", "@@ -1,2 +1,2 @@")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+            validate_unified_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
 
     def test_secret_scanner_never_returns_secret_value(self):
         findings = scan_patch_for_secrets("+token = 'ghp_" + "A" * 30 + "'")
