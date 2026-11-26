@@ -178,10 +178,10 @@ class RunnerEvidenceContractTests(SimpleTestCase):
     def test_redacts_incomplete_private_key_block_to_end_of_evidence(self):
         key_body = "MIIE" + "Q" * 48
         incomplete_key = (
-            "diagnostic prefix\\n"
-            "-----BEGIN PRIVATE KEY-----\\n"
+            "diagnostic prefix\n"
+            "-----BEGIN PRIVATE KEY-----\n"
             + key_body
-            + "\\ntrailing diagnostic material"
+            + "\ntrailing diagnostic material"
         )
         result = self.normalize(self.evidence(stack_trace=incomplete_key))
         self.assertIn("diagnostic prefix", result["stack_trace"])
