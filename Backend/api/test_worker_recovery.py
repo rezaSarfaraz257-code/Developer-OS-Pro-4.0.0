@@ -543,3 +543,35 @@ class StaleWorkerJobRecoveryTests(TestCase):
             metadata__verification_job_id=job.id,
             metadata__finalization_interrupted=True,
         ).exists())
+
+
+    def test_stale_recovery_tolerates_non_object_job_payloads(self):
+        malformed_plan = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload=["invalid", "json-object-shape"],
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="worker:malformed-plan",
+        )
+        malformed_export = BackgroundJob.objects.create(
+            kind="data_export",
+            payload="invalid-json-object-shape",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="worker:malformed-export",
+        )
+
+        recover_stale_jobs()
+
+        malformed_plan.refresh_from_db()
+        malformed_export.refresh_from_db()
+        self.assertEqual(malformed_plan.status, "queued")
+        self.assertEqual(malformed_export.status, "queued")
+        self.assertIsNone(malformed_plan.locked_at)
+        self.assertIsNone(malformed_export.locked_at)
+        self.assertEqual(malformed_plan.locked_by, "")
+        self.assertEqual(malformed_export.locked_by, "")
