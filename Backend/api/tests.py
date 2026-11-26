@@ -2237,6 +2237,80 @@ class BackgroundWorkerStaleJobRecoveryTests(APITestCase):
         self.assertIsNotNone(job.finished_at)
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    @patch("api.management.commands.worker.export_user")
+    def test_data_export_cannot_publish_after_worker_lease_expires(self, export_user):
+        from .management.commands.worker import STALE_AFTER, execute
+
+        user = User.objects.create_user(username="export-expired-lease-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="export-worker:lease-token",
+        )
+
+        def stage_then_expire(_user, _export, *, output_path):
+            with open(output_path, "w", encoding="utf-8") as staged:
+                staged.write("{\\"stale\\": true}")
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
+            )
+            return output_path
+
+        export_user.side_effect = stage_then_expire
+        with tempfile.TemporaryDirectory() as export_root, patch.dict(os.environ, {"EXPORT_ROOT": export_root}):
+            with self.assertRaisesMessage(RuntimeError, "lease expired before publication"):
+                execute(job)
+
+            final_path = os.path.join(export_root, f"user-{user.id}-export-{export.id}.json")
+            self.assertFalse(os.path.exists(final_path))
+            self.assertEqual(os.listdir(export_root), [])
+
+        export.refresh_from_db()
+        self.assertEqual(export.status, "running")
+        export_user.assert_called_once()
+
+    @patch("api.management.commands.worker.export_user")
+    def test_data_export_publication_is_idempotent_after_file_commit(self, export_user):
+        from .management.commands.worker import execute
+
+        user = User.objects.create_user(username="export-idempotent-user", password="test-password")
+        export = DataExportRequest.objects.create(user=user, status="running")
+        job = BackgroundJob.objects.create(
+            kind="data_export",
+            payload={"export_id": export.pk, "user_id": user.pk},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="export-worker:idempotent-token",
+        )
+
+        def stage_export(_user, _export, *, output_path):
+            with open(output_path, "w", encoding="utf-8") as staged:
+                staged.write("{\\"complete\\": true}")
+            return output_path
+
+        export_user.side_effect = stage_export
+        with tempfile.TemporaryDirectory() as export_root, patch.dict(os.environ, {"EXPORT_ROOT": export_root}):
+            first = execute(job)
+            second = execute(job)
+            self.assertEqual(first, second)
+            self.assertTrue(os.path.isfile(first["path"]))
+            with open(first["path"], encoding="utf-8") as published:
+                self.assertEqual(published.read(), "{\\"complete\\": true}")
+            self.assertEqual(os.listdir(export_root), [os.path.basename(first["path"])])
+
+        export.refresh_from_db()
+        self.assertEqual(export.status, "ready")
+        self.assertEqual(export.file_path, first["path"])
+        self.assertIsNotNone(export.completed_at)
+        export_user.assert_called_once()
+
     def test_stale_export_dead_letter_marks_request_failed(self):
         from .management.commands.worker import recover_stale_jobs
 
