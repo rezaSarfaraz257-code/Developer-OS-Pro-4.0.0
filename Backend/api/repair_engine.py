@@ -85,7 +85,7 @@ def _positive_id(value, field):
 
 def _opaque_identifier(value, field, *, max_length=128):
     if (
-        not isinstance(value, str) or not value or len(value) > max_length
+        type(value) is not str or not value or len(value) > max_length
         or not value.isprintable() or any(ch.isspace() for ch in value)
     ):
         raise RepairContractError(f"{field} must be a bounded printable identifier.")
@@ -99,7 +99,7 @@ def _opaque_identifier(value, field, *, max_length=128):
 def _revision(value):
     if type(value) is int and value >= 0:
         return value
-    if isinstance(value, str):
+    if type(value) is str:
         return _opaque_identifier(value, "workspace_revision")
     raise RepairContractError("workspace_revision must be a non-negative integer or opaque revision string.")
 
@@ -179,14 +179,14 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Runner evidence has missing or unexpected fields.")
     if type(payload.get("schema_version")) is not int or payload["schema_version"] != EVIDENCE_SCHEMA_VERSION:
         raise RepairContractError("Unsupported Runner evidence schema version.")
-    if not isinstance(payload.get("evidence_origin"), str) or payload.get("evidence_origin") != "runner":
+    if type(payload.get("evidence_origin")) is not str or payload.get("evidence_origin") != "runner":
         raise RepairContractError("Evidence origin must be the authenticated Runner.")
     _opaque_identifier(expected_execution_id, "expected_execution_id")
     _positive_id(expected_workspace_id, "expected_workspace_id")
     _positive_id(expected_job_id, "expected_job_id")
     _revision(expected_workspace_revision)
     if (
-        not isinstance(payload.get("execution_id"), str)
+        type(payload.get("execution_id")) is not str
         or payload.get("execution_id") != expected_execution_id
     ):
         raise RepairContractError("Execution identity mismatch.")
@@ -201,7 +201,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Job identity mismatch.")
 
     status = payload.get("execution_status")
-    if not isinstance(status, str) or status not in EXECUTION_STATUSES:
+    if type(status) is not str or status not in EXECUTION_STATUSES:
         raise RepairContractError("Unsupported execution status.")
     exit_code = payload.get("exit_code")
     if exit_code is not None and type(exit_code) is not int:
