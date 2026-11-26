@@ -11,7 +11,10 @@ export function normalizeSyncSnapshot(payload, expected = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const id = normalizeExecutionId(payload.job_id ?? payload.id);
   if (id === null) return null;
-  const workspaceId = normalizeExecutionId(payload.workspace_id ?? expected.workspaceId);
+  // API responses use snake_case; session recovery stores the normalized camelCase
+  // object. Validate either representation instead of silently substituting the
+  // expected workspace when a saved record explicitly names a different one.
+  const workspaceId = normalizeExecutionId(payload.workspace_id ?? payload.workspaceId ?? expected.workspaceId);
   const revision = normalizeExecutionId(payload.revision);
   if (expected.workspaceId != null && workspaceId !== normalizeExecutionId(expected.workspaceId)) return null;
   const statuses = new Set(["queued", "running", "succeeded", "failed", "canceled", "stale"]);
