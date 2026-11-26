@@ -83,7 +83,11 @@ class RunnerEvidenceContractTests(SimpleTestCase):
             self.normalize(self.evidence(workspace_revision=True))
 
     def test_rejects_whitespace_and_control_characters_in_opaque_revisions(self):
-        for revision in ("", "revision with spaces", "revision\\nnext", "revision\\x00", "revision\\u200b"):
+        invalid_revisions = (
+            "", "revision with spaces", "revision" + chr(10) + "next",
+            "revision" + chr(0), "revision" + chr(0x200b),
+        )
+        for revision in invalid_revisions:
             with self.subTest(revision=repr(revision)):
                 payload = self.evidence(workspace_revision=revision)
                 with self.assertRaises(RepairContractError):
@@ -96,7 +100,11 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                     )
 
     def test_rejects_whitespace_and_control_characters_in_execution_identity(self):
-        for execution_id in ("", "exec with spaces", "exec\\nnext", "exec\\x00", "exec\\u200b"):
+        invalid_ids = (
+            "", "exec with spaces", "exec" + chr(10) + "next",
+            "exec" + chr(0), "exec" + chr(0x200b),
+        )
+        for execution_id in invalid_ids:
             with self.subTest(execution_id=repr(execution_id)):
                 payload = self.evidence(execution_id=execution_id)
                 with self.assertRaises(RepairContractError):
