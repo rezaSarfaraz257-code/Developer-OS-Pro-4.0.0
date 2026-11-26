@@ -545,9 +545,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
     _revision(expected_revision)
     if type(target_revision) is not type(expected_revision) or target_revision != expected_revision:
         raise RepairContractError("Patch target revision is stale.")
-    if not isinstance(workspace_files, dict):
-        raise RepairContractError("An authoritative workspace snapshot is required.")
-    if not isinstance(unified_diff, str) or not unified_diff or len(unified_diff) > MAX_DIFF_CHARS:
+    if type(workspace_files) is not dict or any(type(path) is not str for path in workspace_files):
+        raise RepairContractError("An authoritative workspace snapshot with exact string paths is required.")
+    if type(unified_diff) is not str or not unified_diff or len(unified_diff) > MAX_DIFF_CHARS:
         raise RepairContractError("Patch is empty or exceeds the configured size limit.")
     try:
         encoded = unified_diff.encode("utf-8", errors="strict")
@@ -580,8 +580,8 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         path = file_record["git_path"]
         if not file_record["hunks"] or file_record["old"] != path or file_record["new"] != path:
             raise RepairContractError("Patch file headers and hunks are incomplete or inconsistent.")
-        if path not in workspace_files or not isinstance(workspace_files[path], str):
-            raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
+        if path not in workspace_files or type(workspace_files[path]) is not str:
+            raise RepairContractError("Patch target must be an exact text entry in the authoritative workspace snapshot.")
         source_text = workspace_files[path]
         if len(source_text) > MAX_PATCH_SOURCE_BYTES or "\x00" in source_text:
             raise RepairContractError("Patch target exceeds the text snapshot safety limit.")
