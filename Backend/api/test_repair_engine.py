@@ -512,6 +512,9 @@ class RollbackEligibilityTests(SimpleTestCase):
         evidence["checks"]["security"]["status"] = "unknown"
         with self.assertRaises(RepairContractError):
             evaluate_rollback_eligibility(evidence, **self.kwargs())
+        evidence["checks"]["security"]["status"] = []
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
 
 
 class RepairLoopGuardTests(SimpleTestCase):
