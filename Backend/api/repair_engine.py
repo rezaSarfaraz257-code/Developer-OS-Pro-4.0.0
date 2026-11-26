@@ -297,8 +297,10 @@ def classify_execution_failure(evidence):
     if (
         not isinstance(evidence, dict)
         or evidence.get("evidence_origin") != "runner"
+        or not isinstance(evidence.get("execution_status"), str)
         or evidence.get("execution_status") not in EXECUTION_STATUSES
         or not isinstance(evidence.get("structured_errors"), list)
+        or len(evidence["structured_errors"]) > MAX_STRUCTURED_ERRORS
         or any(
             not isinstance(error, dict) or not isinstance(error.get("code"), str)
             for error in evidence["structured_errors"]
@@ -306,6 +308,13 @@ def classify_execution_failure(evidence):
     ):
         raise RepairContractError("Failure classification requires normalized Runner evidence.")
     status = evidence.get("execution_status")
+    exit_code = evidence.get("exit_code")
+    if (
+        (exit_code is not None and type(exit_code) is not int)
+        or (status == "succeeded" and exit_code != 0)
+        or (status != "succeeded" and exit_code == 0)
+    ):
+        raise RepairContractError("Runner status and exit code are inconsistent.")
     if status == "succeeded" and evidence.get("exit_code") == 0:
         return {"category": None, "confidence": "none", "reason": "Execution succeeded; no failure to classify."}
     if status == "timed_out" or any(
