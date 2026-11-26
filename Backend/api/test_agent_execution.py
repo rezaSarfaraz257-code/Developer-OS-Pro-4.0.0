@@ -1411,6 +1411,43 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertNotIn("runner_cancellation", response.data)
         runner_request.assert_not_called()
 
+    @patch("api.views._runner_request")
+    def test_run_cancel_rejects_boolean_json_identifiers(self, runner_request):
+        expected_ids = {
+            "run_id": self.run.id,
+            "task_id": self.task.id,
+            "owner_id": self.user.id,
+            "workspace_id": self.workspace.id,
+        }
+        boolean_ids = {
+            key: (True if value == 1 else value)
+            for key, value in expected_ids.items()
+        }
+        if not any(type(boolean_ids[key]) is bool for key in expected_ids):
+            self.skipTest("The isolated test database did not allocate identifier 1.")
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={**boolean_ids, "runner_execution_id": "pending"},
+            idempotency_key="agent-cancel-boolean-identifiers-001",
+            max_attempts=1,
+        )
+        verification_job.payload["runner_execution_id"] = f"agent-{verification_job.id}"
+        verification_job.save(update_fields=["payload"])
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("runner_cancellation", response.data)
+        runner_request.assert_not_called()
+
     @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
     def test_run_cancel_propagates_to_the_exact_active_runner_job(self, runner_request):
         verification_job = BackgroundJob.objects.create(
