@@ -598,6 +598,51 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn("locked_by", response.data)
         self.assertNotIn("result", response.data)
 
+    def test_queued_runner_sync_status_uses_owner_scoped_outbox_target_until_worker_result_exists(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={
+                "workspace_id": self.workspace.id,
+                "owner_id": self.user.id,
+                "requested_revision": 7,
+            },
+            status="queued",
+            idempotency_key="agent-runner-status-queued-target-0001",
+        )
+
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["workspace_id"], self.workspace.id)
+        self.assertEqual(response.data["revision"], 7)
+        self.assertNotIn("payload", response.data)
+        self.assertNotIn("result", response.data)
+
+    def test_runner_sync_status_prefers_actual_worker_revision_over_requested_revision(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={
+                "workspace_id": self.workspace.id,
+                "owner_id": self.user.id,
+                "requested_revision": 7,
+            },
+            status="succeeded",
+            result={
+                "workspace_id": self.workspace.id,
+                "revision": 8,
+                "coalesced": True,
+            },
+            idempotency_key="agent-runner-status-coalesced-0001",
+        )
+
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["workspace_id"], self.workspace.id)
+        self.assertEqual(response.data["revision"], 8)
+        self.assertTrue(response.data["coalesced"])
+
     def test_other_user_cannot_read_runner_sync_status(self):
         job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync",
