@@ -855,7 +855,7 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
 
     attempted_outcomes = {"applied_failed_verification", "rolled_back", "verified_success"}
     attempts = []
-    seen_attempts = set()
+    seen_attempts = {}
     for record in history:
         if (
             type(record) is not dict
@@ -874,13 +874,12 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
         ):
             # A repeated persisted row is one attempt, not additional budget.
             # Distinct attempts must have distinct patch digests by policy.
-            identity = (
-                record["patch_sha256"],
-                record["outcome"],
-                record["workspace_revision"],
-            )
-            if identity not in seen_attempts:
-                seen_attempts.add(identity)
+            digest = record["patch_sha256"]
+            prior_outcome = seen_attempts.get(digest)
+            if prior_outcome is not None and prior_outcome != record["outcome"]:
+                raise RepairContractError("Repair history contains conflicting outcomes for one patch.")
+            if prior_outcome is None:
+                seen_attempts[digest] = record["outcome"]
                 attempts.append(record)
 
     if any(record["outcome"] == "verified_success" for record in attempts):
