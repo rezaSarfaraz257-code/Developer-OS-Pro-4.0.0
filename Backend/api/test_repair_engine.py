@@ -234,6 +234,12 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         findings = scan_patch_for_secrets("+token = 'ghp_" + "A" * 30 + "'")
         self.assertTrue(findings)
         self.assertNotIn("ghp_", str(findings))
+        bearer = scan_patch_for_secrets("+Authorization: Bearer " + "B" * 30)
+        unquoted = scan_patch_for_secrets("+access_token=" + "C" * 30)
+        self.assertTrue(bearer)
+        self.assertTrue(unquoted)
+        self.assertNotIn("B" * 30, str(bearer))
+        self.assertNotIn("C" * 30, str(unquoted))
 
     def test_revision_bound_approval_expires_and_invalidates_on_revision_or_patch_change(self):
         now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
