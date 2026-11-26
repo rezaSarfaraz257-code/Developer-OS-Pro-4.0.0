@@ -77,12 +77,18 @@ test("live Agent updates announce only the changing status, not the entire task 
   assert.match(source, /cc-agent-form-head[\s\S]*?className={`cc-agent-status is-\$\{status}`} role="status" aria-live="polite" aria-atomic="true"/);
 });
 
-test("Agent approval is not presented as code execution or workspace mutation", () => {
+test("Agent plan approval is distinguished from the new approval-gated task execution loop", () => {
   const source = read("EngineeringModeConsole.jsx");
+  const workflow = read("AgentTaskExecutionWorkflow.jsx");
 
-  assert.match(source, /plan_only_no_workspace_mutations/);
-  assert.match(source, /does not execute tasks or modify workspace files/);
-  assert.match(source, /Task execution remains unavailable in this runtime/);
+  assert.match(source, /Plan baseline revision/);
+  assert.match(source, /Generate task-specific patches, review each change, approve it explicitly/);
+  assert.match(source, /<AgentTaskExecutionWorkflow run=\{run\} onRefreshRun=\{refreshRun\} \/>/);
+  assert.match(workflow, /proposal_ready/);
+  assert.match(workflow, /Approve & apply patch/);
+  assert.match(workflow, /Run approved build \/ test/);
+  assert.match(workflow, /Accept verified task/);
+  assert.doesNotMatch(source, /Task execution remains unavailable in this runtime/);
 });
 
 test("Hybrid handoff restores the originating Agent run workspace in the Web IDE", () => {
@@ -140,6 +146,18 @@ test("Web IDE workspace discovery remains available when the framework catalog f
   assert.match(source, /Retry workspaces/);
 });
 
+test("Web IDE keeps the requested workspace handoff until that exact workspace loads", () => {
+  const source = read("ProIDE.jsx");
+  assert.match(source, /requestedWorkspaceRef=useRef\(""/);
+  const handoffStart = source.indexOf('requestedId=window.sessionStorage.getItem("dos:requested-ide-workspace")');
+  const handoffEnd = source.indexOf("},[workspaces,ws,load]);", handoffStart);
+  assert.ok(handoffStart >= 0 && handoffEnd > handoffStart);
+  const handoffEffect = source.slice(handoffStart, handoffEnd);
+  assert.doesNotMatch(handoffEffect, /removeItem\("dos:requested-ide-workspace"\)/);
+  assert.match(source, /String\(ws\.id\)!==requestedId/);
+  assert.match(source, /if\(window\.sessionStorage.getItem\("dos:requested-ide-workspace"\)===requestedId\)window\.sessionStorage.removeItem\("dos:requested-ide-workspace"\)/);
+});
+
 test("engineering mode console styling is responsive and motion-safe", () => {
   const component = read("EngineeringModeConsole.jsx");
   const css = read("EngineeringModeConsole.css");
@@ -188,6 +206,32 @@ test("Agent run normalizer rejects malformed envelopes and sanitizes task data",
   assert.equal(normalized.tasks.length, 1);
   assert.equal(normalized.tasks[0].status, "runscript");
   assert.deepEqual(normalized.tasks[0].depends_on, ["task-1", "2"]);
+  assert.deepEqual(normalized.tasks[0].acceptance_criteria, []);
+  assert.equal(normalized.tasks[0].description, "");
+});
+
+test("Agent run normalizer preserves bounded task implementation context", () => {
+  const normalized = normalizeAgentRun({
+    id: 8,
+    status: "approved",
+    tasks: [{
+      id: 12,
+      key: "backend_api",
+      title: "Build API",
+      description: "Implement the approved endpoint.",
+      status: "ready",
+      acceptance_criteria: ["Endpoint returns the expected schema", "Tests pass", "", 7],
+      allowed_capabilities: ["inspect_workspace", "review_security", 4],
+      sequence: 2,
+      depends_on: ["schema"],
+    }],
+  });
+  assert.equal(normalized.tasks[0].id, 12);
+  assert.equal(normalized.tasks[0].key, "backend_api");
+  assert.equal(normalized.tasks[0].description, "Implement the approved endpoint.");
+  assert.deepEqual(normalized.tasks[0].acceptance_criteria, ["Endpoint returns the expected schema", "Tests pass"]);
+  assert.deepEqual(normalized.tasks[0].allowed_capabilities, ["inspect_workspace", "review_security"]);
+  assert.equal(normalized.tasks[0].sequence, 2);
 });
 
 test("late session restoration never overrides an explicit workspace selection", () => {
@@ -240,7 +284,7 @@ test("Agent polling backoff stays responsive when healthy and bounded during fai
 test("transient workspace or Agent restore failures preserve the saved recovery targets", () => {
   const source = read("EngineeringModeConsole.jsx");
   const workspaceRestoreStart = source.indexOf("// Resolve restored workspace IDs only after the owned workspace list is ready.");
-  const workspaceRestoreEnd = source.indexOf("}, [loadingWorkspaces, workspaces, restoredWorkspaceCandidate]);", workspaceRestoreStart);
+  const workspaceRestoreEnd = source.indexOf("}, [loadingWorkspaces, workspaceLoadError, workspaces, restoredWorkspaceCandidate]);", workspaceRestoreStart);
   const workspaceRestore = source.slice(workspaceRestoreStart, workspaceRestoreEnd);
   assert.ok(workspaceRestoreStart >= 0 && workspaceRestoreEnd > workspaceRestoreStart, "workspace restore effect should be bounded");
   assert.match(workspaceRestore, /if \(loadingWorkspaces \|\| workspaceLoadError\) return/);
