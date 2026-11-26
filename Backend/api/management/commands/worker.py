@@ -307,11 +307,19 @@ def execute(job):
     if job.kind == "email":
         _require_real_email_transport()
         payload = job.payload
+        if not job.pk:
+            raise RuntimeError("Email delivery requires a persisted background job.")
         message = EmailMultiAlternatives(
             payload["subject"],
             payload["text"],
             getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@developer-os.local"),
             [payload["to"]],
+        )
+        # The Resend backend maps this private transport hint to its native
+        # Idempotency-Key header. It is deliberately omitted from the email
+        # body and provider payload, and remains stable across worker retries.
+        message.extra_headers["X-Developer-OS-Idempotency-Key"] = (
+            f"developer-os-email-job-{job.pk}"
         )
         if payload.get("html"):
             message.attach_alternative(payload["html"], "text/html")
@@ -405,13 +413,27 @@ class Command(BaseCommand):
                     else str(exc)[:10000]
                 )
                 job.last_error_at = now
-                if job.attempts < job.max_attempts:
+                # Resend supports provider-side idempotency and receives a
+                # stable per-job key above. SMTP has no equivalent guarantee:
+                # a timeout can happen after the server accepted the message.
+                # Do not automatically replay an ambiguous SMTP delivery.
+                email_retry_is_safe = (
+                    job.kind != "email"
+                    or settings.EMAIL_BACKEND == "api.email_backends.resend.EmailBackend"
+                )
+                if job.attempts < job.max_attempts and email_retry_is_safe:
                     job.status = "queued"
                     job.available_at = now + timedelta(seconds=min(300, 2 ** max(1, job.attempts)))
                 else:
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
+                    if job.kind == "email" and not email_retry_is_safe:
+                        job.error = (
+                            f"{type(exc).__name__}: email delivery outcome may be unknown; "
+                            "automatic retry suppressed because the configured transport "
+                            "does not support provider idempotency."
+                        )
             finally:
                 lease_stop.set()
                 lease_thread.join(timeout=2)
