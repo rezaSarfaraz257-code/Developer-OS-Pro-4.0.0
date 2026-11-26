@@ -585,6 +585,17 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
 
+    def test_rejects_unmarked_blank_line_inside_hunk(self):
+        malformed = self.patch().replace(
+            "@@ -1 +1 @@\n-value = 1\n+value = 2\n",
+            "@@ -1 +1 @@\n-value = 1\n\n+value = 2\n",
+        )
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(
+                malformed, target_revision="r", expected_revision="r",
+                workspace_files={"src/main.py": "value = 1\n"},
+            )
+
     def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
         patch = (
             "diff --git a/src/main.py b/src/main.py\n"
