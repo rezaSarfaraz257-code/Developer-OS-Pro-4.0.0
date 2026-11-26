@@ -156,6 +156,41 @@ def _workspace_access(workspace_id, user):
     return workspace
 
 
+def _run_execution_state(run, tasks):
+    """Derive a truthful summary from durable task states and the latest applied patch."""
+    statuses = [task.status for task in tasks]
+    if run.status == "canceled":
+        return "canceled"
+    if statuses and all(status == "succeeded" for status in statuses):
+        return "verified_human_accepted"
+    if any(status == "failed" for status in statuses):
+        return "execution_failed_requires_review"
+    if any(status == "running" for status in statuses):
+        return "runner_verification_in_progress"
+    if any(status == "awaiting_approval" for status in statuses):
+        return "verification_passed_pending_human_acceptance"
+    if any(status == "succeeded" for status in statuses):
+        return "partially_verified_awaiting_next_task"
+
+    latest_patch = AuditLog.objects.filter(
+        user_id=run.owner_id,
+        action="ai_agent.patch_applied",
+        metadata__agent_run_id=run.id,
+    ).order_by("-created_at", "-id").values("metadata").first()
+    if latest_patch:
+        metadata = latest_patch.get("metadata") if isinstance(latest_patch.get("metadata"), dict) else {}
+        patch_revision = metadata.get("revision")
+        current_revision = run.workspace.revision
+        if type(patch_revision) is int and patch_revision == current_revision:
+            return "patch_applied_sync_or_verification_pending"
+        return "workspace_changed_after_patch_requires_reanalysis"
+    if run.status == "approved":
+        return "approved_awaiting_task_execution"
+    if run.status == "failed":
+        return "run_failed"
+    return "plan_only_no_workspace_mutations"
+
+
 def _run_payload(run):
     tasks = list(run.tasks.order_by("sequence", "id"))
     return {
@@ -166,7 +201,7 @@ def _run_payload(run):
         "workspace_revision": run.workspace_revision,
         "conversation": run.conversation_id,
         "plan": run.plan,
-        "execution_state": "plan_only_no_workspace_mutations",
+        "execution_state": _run_execution_state(run, tasks),
         "error": run.error,
         "approved_at": run.approved_at,
         "started_at": run.started_at,
