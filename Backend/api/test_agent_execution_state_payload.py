@@ -75,6 +75,13 @@ class AgentExecutionStatePayloadTests(TestCase):
         self.task.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "verified_human_accepted")
 
+    def test_failed_run_never_reports_stale_succeeded_tasks_as_success(self):
+        self.task.status = "succeeded"
+        self.task.save(update_fields=["status", "updated_at"])
+        self.run.status = "failed"
+        self.run.save(update_fields=["status", "updated_at"])
+        self.assertEqual(self.execution_state(), "run_failed")
+
     def test_partial_completion_and_cancellation_are_not_reported_as_success(self):
         self.task.status = "succeeded"
         self.task.save(update_fields=["status", "updated_at"])
