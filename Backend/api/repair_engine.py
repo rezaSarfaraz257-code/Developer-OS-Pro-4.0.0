@@ -475,7 +475,7 @@ def _patch_path_allowed(path):
     basename = parts[-1]
     protected_dirs = {
         ".git", ".github", ".gitlab", ".circleci", ".buildkite",
-        ".ssh", ".aws", ".azure", ".config", "secrets",
+        ".ssh", ".aws", ".azure", ".config", ".env", "secrets",
     }
     protected_files = {
         ".env", ".npmrc", ".pypirc", ".netrc", ".git-credentials",
