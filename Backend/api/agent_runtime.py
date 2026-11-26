@@ -401,13 +401,9 @@ def _validate_plan(raw):
     }
 
 def _agent_plan_job_lease_is_current(job, lease_token):
-    return bool(
-        job
-        and job.status == "running"
-        and isinstance(lease_token, str)
-        and lease_token
-        and job.locked_by == lease_token
-    )
+    from .agent_leases import is_current_job_lease
+
+    return is_current_job_lease(job, lease_token)
 
 
 def build_agent_plan(run_id, *, job_id=None, lease_token=""):
