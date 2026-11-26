@@ -498,6 +498,18 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertEqual(len(result["patch_sha256"]), 64)
         self.assertEqual(result["source_context"], "matched")
 
+    def test_patch_validation_rejects_unsafe_unmodified_snapshot_entries(self):
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files={
+                    "src/main.py": "value = 1\n",
+                    "../outside.py": "not patched but still part of snapshot\n",
+                },
+            )
+
     def test_patch_validation_rejects_snapshot_revision_mismatch(self):
         with self.assertRaises(RepairContractError):
             self.validate_patch(
@@ -513,19 +525,19 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             self.patch(),
             target_revision="rev-12",
             expected_revision="rev-12",
-            workspace_files={"src/main.py": "value = 1\n"},
+            workspace_files={"README.md": "notes\n", "src/main.py": "value = 1\n"},
         )
         second = self.validate_patch(
             self.patch(),
             target_revision="rev-12",
             expected_revision="rev-12",
-            workspace_files={"src/main.py": "value = 1\n"},
+            workspace_files={"src/main.py": "value = 1\n", "README.md": "notes\n"},
         )
         changed = self.validate_patch(
             self.patch(),
             target_revision="rev-12",
             expected_revision="rev-12",
-            workspace_files={"src/main.py": "value = 0\n"},
+            workspace_files={"README.md": "changed\n", "src/main.py": "value = 1\n"},
         )
         self.assertEqual(first["snapshot_revision"], "rev-12")
         self.assertEqual(first["snapshot_sha256"], second["snapshot_sha256"])
