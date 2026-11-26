@@ -1018,7 +1018,7 @@ def compare_repair_outcomes(before_evidence, after_evidence, verification_eviden
     ):
         raise RepairContractError("Before/after evidence must identify distinct executions and revisions in one workspace.")
     verified = (
-        type(verification_evidence) is dict
+        _exact_string_keys(verification_evidence)
         and verification_evidence.get("workspace_id") == after_evidence["workspace_id"]
         and type(verification_evidence.get("workspace_id")) is int
         and verification_evidence.get("execution_id") == after_evidence["execution_id"]
