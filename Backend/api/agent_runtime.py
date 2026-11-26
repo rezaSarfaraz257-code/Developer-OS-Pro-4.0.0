@@ -855,18 +855,23 @@ def agent_run_cancel_api(request, pk):
         # Worker execution/recovery lock BackgroundJob before AgentRun.
         # Authorize first, then take the same lock order so cancellation cannot
         # deadlock with a planner finalizing under its durable lease.
-        get_object_or_404(AgentRun.objects.only("pk"), pk=pk, owner=request.user)
+        authorized_run = get_object_or_404(
+            AgentRun.objects.only("pk"), pk=pk, owner=request.user
+        )
+        run_id = authorized_run.pk
         list(
             BackgroundJob.objects.select_for_update()
             .filter(
                 kind__in=["ai_agent_plan", "ai_agent_task_verify"],
-                payload__run_id=pk,
+                payload__run_id=run_id,
                 status__in=["queued", "running"],
             )
             .order_by("pk")
             .values_list("pk", flat=True)
         )
-        run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
+        run = get_object_or_404(
+            AgentRun.objects.select_for_update(), pk=run_id, owner=request.user
+        )
         active_task_exists = run.tasks.filter(status="running").exists()
         if run.status in {"succeeded", "canceled"} or (
             run.status == "failed" and not active_task_exists
