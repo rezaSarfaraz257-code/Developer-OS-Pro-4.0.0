@@ -41,6 +41,10 @@ def recover_stale_jobs():
             # not a fatal queue-poll error.
             if locked is None:
                 continue
+            # JSONField payloads can be corrupted or manually edited into
+            # non-object JSON. Recovery must still release the lease instead
+            # of rolling back the whole queue poll on an unexpected .get().
+            payload = locked.payload if isinstance(locked.payload, dict) else {}
             # Re-evaluate the lease after acquiring the row lock. The initial
             # queryset is only a candidate scan; its timestamp may be stale by
             # the time this worker reaches and locks the row.
@@ -96,7 +100,7 @@ def recover_stale_jobs():
             ])
             if locked.kind == "ai_agent_plan":
                 run = AgentRun.objects.select_for_update().filter(
-                    pk=locked.payload.get("run_id")
+                    pk=payload.get("run_id")
                 ).first()
                 if run and run.status in {"queued", "planning"}:
                     if locked.status == "queued":
@@ -118,8 +122,8 @@ def recover_stale_jobs():
                         )
             if locked.status == "failed" and locked.kind == "data_export":
                 DataExportRequest.objects.filter(
-                    pk=locked.payload.get("export_id"),
-                    user_id=locked.payload.get("user_id"),
+                    pk=payload.get("export_id"),
+                    user_id=payload.get("user_id"),
                 ).exclude(status__in=["ready", "expired"]).update(status="failed")
             if locked.status == "failed" and locked.kind == "ai_agent_task_verify":
                 # Verification POSTs are deliberately single-attempt: after a
