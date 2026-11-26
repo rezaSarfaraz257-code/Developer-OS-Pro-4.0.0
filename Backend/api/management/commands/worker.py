@@ -14,14 +14,12 @@ from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
 from api.models import AgentRun, AuditLog, BackgroundJob, DataExportRequest, ObjectStorageFile, WorkerHeartbeat
+from api.agent_leases import JOB_LEASE_STALE_AFTER as STALE_AFTER, is_current_job_lease
 from api.storage import put_file, presigned_get
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
-
-STALE_AFTER = timedelta(minutes=10)
 
 
 def recover_stale_jobs():
@@ -470,11 +468,7 @@ class Command(BaseCommand):
                         BackgroundJob.objects.select_for_update()
                         .filter(pk=job.pk).first()
                     )
-                    if (
-                        not persisted_job
-                        or persisted_job.status != "running"
-                        or persisted_job.locked_by != claimed_lease
-                    ):
+                    if not is_current_job_lease(persisted_job, claimed_lease):
                         logger.warning(
                             "Discarding worker outcome after lease ownership changed job_id=%s worker_id=%s",
                             job.pk,
