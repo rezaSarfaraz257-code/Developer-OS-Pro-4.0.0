@@ -123,7 +123,7 @@ export function normalizeTaskExecution(payload, expected = {}) {
     && evidence.human_acceptance.user_id
     && evidence.human_acceptance.criteria_scope === "agent_task"
     && typeof acceptedAt === "string"
-    && /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(acceptedAt)
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(acceptedAt)
     && Number.isFinite(Date.parse(acceptedAt))
     && criteria.length > 0
     && acceptedCriteria.length === criteria.length
