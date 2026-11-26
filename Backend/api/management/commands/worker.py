@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 def recover_stale_jobs():
     now = timezone.now()
     stale = BackgroundJob.objects.filter(status="running").filter(
-        Q(locked_at__lt=now - STALE_AFTER) | Q(locked_at__isnull=True)
+        Q(locked_at__lt=now - STALE_AFTER)
+        | Q(locked_at__isnull=True)
+        | Q(locked_at__gt=now)
     )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
