@@ -521,6 +521,22 @@ def build_agent_plan(run_id, *, job_id=None, lease_token=""):
         "Do not request or expose secrets. No shell commands or deployment actions.\n\n"
         f"GOAL:\n{safe_goal}"
     )
+    # Cancellation can arrive after the initial planning transition but
+    # while workspace/history context is being assembled. Revalidate the
+    # lease and run immediately before crossing the external provider boundary.
+    with transaction.atomic():
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
+        current_run = AgentRun.objects.select_for_update().get(pk=run_id)
+        if current_run.status == "canceled":
+            return {"run_id": run_id, "status": "canceled"}
+        if current_run.status != "planning":
+            return {"run_id": run_id, "status": current_run.status}
+
     answer, provider_error = _call_provider(prompt, context, history, "autonomous engineering plan")
     if provider_error or not answer:
         raise RuntimeError("AI planning provider is unavailable; no plan was generated.")
