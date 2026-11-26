@@ -50,7 +50,7 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*['\"][^'\"\s]{8,}"),
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
-_HUNK_HEADER = re.compile(r"^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(?: .*)?$")
+_HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
 
 
 class RepairContractError(ValueError):
@@ -602,77 +602,3 @@ def verification_passed(result, *, expected_revision):
         ):
             return False
     return True
-
-def verification_passed(result, *, expected_revision):
-    """Require independent, revision-bound Runner evidence for every verification gate."""
-    if (
-        not isinstance(result, dict)
-        or result.get("evidence_origin") != "runner"
-        or type(result.get("schema_version")) is not int
-        or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
-        or not isinstance(result.get("execution_id"), str)
-        or not result.get("execution_id")
-        or type(result.get("workspace_id")) is not int
-        or result.get("workspace_id") < 1
-        or type(result.get("job_id")) is not int
-        or result.get("job_id") < 1
-    ):
-        return False
-    revision = result.get("workspace_revision")
-    if (
-        type(revision) is not type(expected_revision)
-        or revision != expected_revision
-        or result.get("execution_status") != "succeeded"
-        or type(result.get("exit_code")) is not int
-        or result.get("exit_code") != 0
-    ):
-        return False
-    checks = result.get("checks")
-    required = {"targeted_tests", "regression_tests", "security"}
-    if not isinstance(checks, dict) or set(checks) != required:
-        return False
-    for check in checks.values():
-        if (
-            not isinstance(check, dict)
-            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
-            or check.get("status") != "passed"
-            or check.get("execution_id") != result["execution_id"]
-            or type(check.get("workspace_revision")) is not type(revision)
-            or check.get("workspace_revision") != revision
-            or not isinstance(check.get("evidence_reference"), str)
-            or not check["evidence_reference"].strip()
-        ):
-            return False
-    return True
-
-
-    """A repair passes only with independent, revision-bound test and security evidence."""
-    if (
-        not isinstance(result, dict)
-        or result.get("evidence_origin") != "runner"
-        or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
-        or not isinstance(result.get("execution_id"), str)
-        or not result.get("execution_id")
-        or type(result.get("workspace_id")) is not int
-        or type(result.get("job_id")) is not int
-    ):
-        return False
-    revision = result.get("workspace_revision")
-    if (
-        type(revision) is not type(expected_revision)
-        or revision != expected_revision
-        or result.get("execution_status") != "succeeded"
-        or type(result.get("exit_code")) is not int
-        or result.get("exit_code") != 0
-    ):
-        return False
-    checks = result.get("checks")
-    if not isinstance(checks, dict) or set(checks) != {"targeted_tests", "regression_tests", "security"}:
-        return False
-    return all(
-        isinstance(check, dict)
-        and check.get("status") == "passed"
-        and isinstance(check.get("evidence_reference"), str)
-        and bool(check["evidence_reference"])
-        for check in checks.values()
-    )
