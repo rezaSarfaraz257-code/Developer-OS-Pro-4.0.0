@@ -372,13 +372,20 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         with self.assertRaises(RepairContractError):
             validate_unified_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
         secret_patch = self.patch().replace("+value = 2", "+api_key = 'super-secret-value-123'")
+        triple_plus_secret_patch = self.patch().replace(
+            "+value = 2", "+++ b/token = 'ghp_" + "E" * 30 + "'"
+        )
         with self.assertRaises(RepairContractError):
             validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(
+                triple_plus_secret_patch, target_revision="r", expected_revision="r",
+                workspace_files={"src/main.py": "value = 1\n"},
+            )
         for protected_name in (".env.staging", "config/service.pem", "nested/secrets/token.txt"):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
                 validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
-
     def test_hunk_lines_that_resemble_file_headers_remain_hunk_content(self):
         patch = (
             "diff --git a/src/main.py b/src/main.py\n"
@@ -437,6 +444,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn(secret, str(findings))
         header_only = (
             "diff --git a/src/main.py b/src/main.py\n"
+            "index 0123456789abcdef..abcdef0123456789 100644\n"
             "--- a/src/main.py\n"
             "+++ b/src/main.py\n"
         )
