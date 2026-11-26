@@ -318,6 +318,11 @@ def execute(job):
                 or runner_data.get("files") != expected_files
             ):
                 raise RuntimeError("Runner workspace synchronization returned an invalid receipt.")
+            # The HTTPS call may outlive the durable lease. Fence again before
+            # recording success so an expired worker cannot publish a stale
+            # synchronization receipt after another worker has reclaimed it.
+            if not refresh_job_lease(job.pk, getattr(job, "locked_by", None)):
+                raise RuntimeError("Runner sync worker lease expired during synchronization.")
             AuditLog.objects.create(
                 user=actor,
                 action="ai_agent.runner_workspace_synced",
