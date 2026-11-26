@@ -792,6 +792,18 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 now=invalid_aware_clock,
             )
 
+        class EqualToDigest:
+            def __eq__(self, other):
+                return other == "a" * 64
+
+        spoofed_digest = {**approval, "patch_sha256": EqualToDigest()}
+        self.assertFalse(validate_revision_bound_approval(
+            spoofed_digest,
+            current_revision="rev-12",
+            patch_sha256="a" * 64,
+            now=now,
+        ))
+
 
 class VerificationEvidenceTests(SimpleTestCase):
     def test_success_requires_runner_and_all_independent_check_evidence(self):
