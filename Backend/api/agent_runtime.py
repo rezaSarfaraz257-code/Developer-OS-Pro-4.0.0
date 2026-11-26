@@ -16,6 +16,7 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -156,6 +157,17 @@ def _workspace_access(workspace_id, user):
     return workspace
 
 
+def _is_aware_acceptance_timestamp(value):
+    """Accept only parseable ISO timestamps carrying an explicit timezone."""
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return False
+    try:
+        parsed = parse_datetime(value)
+    except (TypeError, ValueError):
+        return False
+    return parsed is not None and timezone.is_aware(parsed)
+
+
 def _run_execution_state(run, tasks):
     """Derive a truthful summary from durable task states and the latest applied patch."""
     statuses = [task.status for task in tasks]
@@ -187,6 +199,7 @@ def _run_execution_state(run, tasks):
                 or acceptance.get("user_id") != run.owner_id
                 or not isinstance(acceptance.get("accepted_at"), str)
                 or not acceptance.get("accepted_at")
+                or not _is_aware_acceptance_timestamp(acceptance.get("accepted_at"))
                 or acceptance.get("criteria_scope") != "agent_task"
                 or not isinstance(criteria, list)
                 or not criteria
