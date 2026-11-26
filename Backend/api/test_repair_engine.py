@@ -177,6 +177,18 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         self.assertEqual(result["conclusion"], "insufficient_evidence")
         self.assertIsNotNone(result["uncertainty"])
 
+    def test_root_cause_uses_redacted_normalized_evidence_not_raw_payload(self):
+        secret = "ghp_" + "R" * 30
+        payload = self.evidence(structured_errors=[{
+            "code": "runtime_exception",
+            "message": "provider failure " + secret,
+            "source_location": {"path": "src/main.py", "line": 8},
+            "evidence_reference": "artifact://errors/33/0",
+        }])
+        result = analyze_root_cause(payload)
+        self.assertNotIn(secret, result["candidates"][0]["message"])
+        self.assertIn("[REDACTED_SECRET]", result["candidates"][0]["message"])
+
     def test_classifier_fails_closed_on_malformed_runner_payloads(self):
         for evidence in (
             {"evidence_origin": "runner", "execution_status": "failed", "structured_errors": None},
