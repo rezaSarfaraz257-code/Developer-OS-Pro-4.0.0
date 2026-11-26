@@ -82,6 +82,31 @@ class StaleWorkerJobRecoveryTests(TestCase):
 
 
     @patch("api.management.commands.worker.execute")
+    def test_worker_discards_outcome_when_lease_expires_without_reclaim(self, mocked_execute):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=3,
+        )
+
+        def execute_then_expire(claimed_job):
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
+            )
+            return {"worker": "expired", "must_not_persist": True}
+
+        mocked_execute.side_effect = execute_then_expire
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertTrue(job.locked_by)
+        self.assertNotEqual(job.result, {"worker": "expired", "must_not_persist": True})
+
+    @patch("api.management.commands.worker.execute")
     def test_old_worker_outcome_is_discarded_after_job_is_reclaimed(self, mocked_execute):
         job = BackgroundJob.objects.create(
             kind="ai_agent_plan",
