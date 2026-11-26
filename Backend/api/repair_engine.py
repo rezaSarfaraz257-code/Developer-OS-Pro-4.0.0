@@ -63,6 +63,7 @@ _SECRET_PATTERNS = (
     re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),
     re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"),
     re.compile(r"""(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|secret|password)\s*[:=]\s*(?:['"][^'"]{8,}['"]|[A-Za-z0-9_./+=-]{20,})"""),
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
