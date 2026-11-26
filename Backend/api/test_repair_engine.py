@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from django.test import SimpleTestCase
 
@@ -759,6 +759,21 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         patch_sha256="a" * 64,
                         now=invalid_clock,
                     )
+        class MissingOffsetTimezone(tzinfo):
+            def utcoffset(self, dt):
+                return None
+
+            def dst(self, dt):
+                return None
+
+        invalid_aware_clock = datetime(2026, 11, 27, 12, 0, tzinfo=MissingOffsetTimezone())
+        with self.assertRaises(RepairContractError):
+            validate_revision_bound_approval(
+                approval,
+                current_revision="rev-12",
+                patch_sha256="a" * 64,
+                now=invalid_aware_clock,
+            )
 
 
 class VerificationEvidenceTests(SimpleTestCase):
