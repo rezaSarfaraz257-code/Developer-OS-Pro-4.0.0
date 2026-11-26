@@ -450,3 +450,111 @@
   }
   .auth-screen *{scroll-behavior:auto!important;transition:none!important}
 }
+
+
+/* AUTH CENTER + COREMARK EMPHASIS — final layout authority.
+   Keep the card centered on every desktop viewport, including short screens.
+   The scroll container remains enabled for long registration/recovery flows. */
+.auth-screen{
+  display:flex !important;
+  flex-direction:column;
+  align-items:center !important;
+  justify-content:center;
+  box-sizing:border-box;
+  width:100%;
+  min-height:100vh;
+  min-height:100svh;
+  min-height:100dvh;
+  padding-inline:clamp(14px,2.5vw,32px);
+}
+.auth-screen>.auth-card{
+  align-self:center;
+  margin-inline:auto !important;
+  width:min(100%,470px);
+}
+
+/* Give the existing Developer OS mark a stronger, premium emblem treatment. */
+.auth-screen .auth-logo{
+  position:relative;
+  isolation:isolate;
+  padding-top:4px;
+}
+.auth-screen .auth-logo::before{
+  content:"";
+  position:absolute;
+  z-index:0;
+  top:-10px;
+  left:50%;
+  width:clamp(94px,13vh,116px);
+  aspect-ratio:1;
+  transform:translateX(-50%);
+  border:1px solid rgba(113,231,255,.34);
+  border-radius:30px;
+  background:radial-gradient(circle,rgba(76,211,246,.14),rgba(39,83,126,.07) 58%,transparent 72%);
+  box-shadow:0 0 0 9px rgba(78,210,244,.025),0 0 42px rgba(48,190,238,.13),inset 0 0 24px rgba(88,215,255,.08);
+  pointer-events:none;
+}
+.auth-screen .auth-logo::after{
+  content:"";
+  position:absolute;
+  z-index:0;
+  top:-17px;
+  left:50%;
+  width:clamp(108px,15vh,132px);
+  aspect-ratio:1;
+  transform:translateX(-50%);
+  border:1px dashed rgba(117,194,232,.24);
+  border-radius:34px;
+  box-shadow:0 0 22px rgba(73,181,224,.07);
+  pointer-events:none;
+  animation:auth-emblem-orbit 28s linear infinite;
+}
+.auth-screen .auth-brand-icon{
+  position:relative;
+  z-index:1;
+  width:clamp(76px,10vh,94px) !important;
+  height:clamp(76px,10vh,94px) !important;
+  padding:10px;
+  border:1px solid rgba(139,237,255,.72);
+  border-radius:23px;
+  background:
+    radial-gradient(circle at 32% 22%,rgba(118,236,255,.24),transparent 46%),
+    linear-gradient(145deg,rgba(22,48,67,.98),rgba(4,12,23,.99) 72%);
+  box-shadow:
+    0 0 0 4px rgba(90,221,255,.07),
+    0 0 25px rgba(67,211,255,.25),
+    0 0 58px rgba(48,142,255,.13),
+    inset 0 1px rgba(255,255,255,.22),
+    inset 0 -12px 24px rgba(0,0,0,.28);
+  filter:saturate(1.22) contrast(1.08) drop-shadow(0 0 12px rgba(83,221,255,.25));
+  animation:auth-emblem-breathe 5.5s ease-in-out infinite;
+}
+@keyframes auth-emblem-orbit{
+  from{transform:translateX(-50%) rotate(0deg)}
+  to{transform:translateX(-50%) rotate(360deg)}
+}
+@keyframes auth-emblem-breathe{
+  0%,100%{filter:saturate(1.16) contrast(1.06) drop-shadow(0 0 9px rgba(83,221,255,.2))}
+  50%{filter:saturate(1.32) contrast(1.1) drop-shadow(0 0 17px rgba(83,221,255,.34))}
+}
+@media(max-height:740px) and (min-width:561px){
+  .auth-screen{
+    align-items:center !important;
+    justify-content:center;
+    padding-top:12px;
+    padding-bottom:12px;
+  }
+  .auth-screen .auth-logo::before{width:82px;top:-7px;border-radius:23px}
+  .auth-screen .auth-logo::after{width:94px;top:-13px;border-radius:26px}
+  .auth-screen .auth-brand-icon{width:64px !important;height:64px !important;padding:7px;border-radius:17px}
+}
+@media(max-height:650px) and (max-width:560px){
+  .auth-screen{
+    align-items:center !important;
+    justify-content:center;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-screen .auth-logo::after,
+  .auth-screen .auth-brand-icon{animation:none!important}
+}
