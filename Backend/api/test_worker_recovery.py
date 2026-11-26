@@ -5,11 +5,45 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
-from .management.commands.worker import execute, recover_stale_jobs
+from .management.commands.worker import claim_job, execute, recover_stale_jobs, refresh_job_lease
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 
 class StaleWorkerJobRecoveryTests(TestCase):
+
+    def test_reclaimed_job_fences_out_previous_worker_even_when_identity_is_reused(self):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=3,
+        )
+
+        first_claim = claim_job("worker-reused")
+        self.assertEqual(first_claim.pk, job.pk)
+        first_lease = first_claim.locked_by
+        self.assertTrue(refresh_job_lease(job.pk, first_lease))
+
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            locked_at=timezone.now() - timedelta(minutes=15)
+        )
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        BackgroundJob.objects.filter(pk=job.pk).update(
+            available_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        second_claim = claim_job("worker-reused")
+        self.assertEqual(second_claim.pk, job.pk)
+        second_lease = second_claim.locked_by
+
+        self.assertNotEqual(first_lease, second_lease)
+        self.assertFalse(refresh_job_lease(job.pk, first_lease))
+        self.assertTrue(refresh_job_lease(job.pk, second_lease))
+
     def test_running_job_without_lock_timestamp_is_requeued(self):
         job = BackgroundJob.objects.create(
             kind="email",
