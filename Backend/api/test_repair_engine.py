@@ -147,7 +147,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "diff --git a/src/main.py b/src/main.py\n"
             "--- a/src/main.py\n"
             "+++ b/src/main.py\n"
-            "@@ -1,2 +1,2 @@\n"
+            "@@ -1 +1 @@\n"
             "-value = 1\n"
             "+value = 2\n"
         )
@@ -162,6 +162,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertTrue(result["validated"])
         self.assertEqual(result["changed_paths"], ["src/main.py"])
         self.assertEqual(len(result["patch_sha256"]), 64)
+        self.assertEqual(result["source_context"], "matched")
 
     def test_rejects_stale_revision_protected_path_and_secret_patch(self):
         with self.assertRaises(RepairContractError):
@@ -171,7 +172,22 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             validate_unified_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
         secret_patch = self.patch().replace("+value = 2", "+api_key = 'super-secret-value-123'")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": ""})
+            validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+        for protected_name in (".env.staging", "config/service.pem", "nested/secrets/token.txt"):
+            protected_patch = self.patch().replace("src/main.py", protected_name)
+            with self.assertRaises(RepairContractError):
+                validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\\n"})
+
+    def test_rejects_patch_when_git_header_or_source_context_is_forged(self):
+        wrong_git_path = self.patch().replace("diff --git a/src/main.py b/src/main.py", "diff --git a/src/other.py b/src/other.py")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(wrong_git_path, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+        wrong_context = self.patch().replace("-value = 1", "-value = 999")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(wrong_context, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
+        wrong_count = self.patch().replace("@@ -1 +1 @@", "@@ -1,2 +1,2 @@")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\\n"})
 
     def test_secret_scanner_never_returns_secret_value(self):
         findings = scan_patch_for_secrets("+token = 'ghp_" + "A" * 30 + "'")
@@ -191,6 +207,8 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-13", patch_sha256="a" * 64, now=now))
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="b" * 64, now=now))
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="a" * 64, now=now + timedelta(minutes=6)))
+        expired_before_approval = {**approval, "expires_at": (now - timedelta(minutes=2)).isoformat()}
+        self.assertFalse(validate_revision_bound_approval(expired_before_approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
 
 
 class VerificationEvidenceTests(SimpleTestCase):
@@ -205,15 +223,21 @@ class VerificationEvidenceTests(SimpleTestCase):
             "execution_status": "succeeded",
             "exit_code": 0,
             "checks": {
-                "targeted_tests": {"status": "passed", "evidence_reference": "artifact://targeted"},
-                "regression_tests": {"status": "passed", "evidence_reference": "artifact://regression"},
-                "security": {"status": "passed", "evidence_reference": "artifact://security"},
+                "targeted_tests": {"status": "passed", "evidence_reference": "artifact://targeted", "execution_id": "exec-verified-14", "workspace_revision": 14},
+                "regression_tests": {"status": "passed", "evidence_reference": "artifact://regression", "execution_id": "exec-verified-14", "workspace_revision": 14},
+                "security": {"status": "passed", "evidence_reference": "artifact://security", "execution_id": "exec-verified-14", "workspace_revision": 14},
             },
         }
         self.assertTrue(verification_passed(result, expected_revision=14))
         result["checks"]["security"]["status"] = "failed"
         self.assertFalse(verification_passed(result, expected_revision=14))
         result["checks"]["security"]["status"] = "passed"
+        result["checks"]["security"]["workspace_revision"] = 13
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["checks"]["security"]["workspace_revision"] = 14
+        result["checks"]["security"]["execution_id"] = "other-execution"
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["checks"]["security"]["execution_id"] = "exec-verified-14"
         result["workspace_revision"] = 13
         self.assertFalse(verification_passed(result, expected_revision=14))
         result["workspace_revision"] = 14
