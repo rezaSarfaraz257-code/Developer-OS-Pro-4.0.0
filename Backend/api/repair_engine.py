@@ -809,6 +809,11 @@ def evaluate_rollback_eligibility(
         raise RepairContractError("Rollback patch identity is invalid.")
     snapshot_reference = _artifact_reference(snapshot_reference, "rollback snapshot_reference")
     evidence = verification_evidence
+    if isinstance(evidence, dict):
+        try:
+            _opaque_identifier(evidence.get("execution_id"), "rollback execution_id")
+        except RepairContractError:
+            raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     if (
         not isinstance(evidence, dict)
         or evidence.get("evidence_origin") != "runner"
@@ -841,6 +846,7 @@ def evaluate_rollback_eligibility(
             or not isinstance(check.get("status"), str)
             or check.get("status") not in {"passed", "failed"}
             or check.get("execution_id") != evidence["execution_id"]
+            or type(check.get("execution_id")) is not str
             or type(check.get("workspace_revision")) is not type(expected_post_revision)
             or check.get("workspace_revision") != expected_post_revision
         ):
@@ -938,6 +944,10 @@ def verification_passed(result, *, expected_revision):
         or type(result.get("job_id")) is not int
         or result.get("job_id") < 1
     ):
+        return False
+    try:
+        _opaque_identifier(result.get("execution_id"), "verification execution_id")
+    except RepairContractError:
         return False
     revision = result.get("workspace_revision")
     if (
