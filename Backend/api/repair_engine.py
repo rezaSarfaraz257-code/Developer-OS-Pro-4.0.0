@@ -463,7 +463,7 @@ def scan_patch_for_secrets(unified_diff):
         raise RepairContractError("Patch must be bounded text.")
     findings = []
     for line_number, line in enumerate(unified_diff.splitlines(), 1):
-        if not line.startswith("+") or line.startswith("+++ "):
+        if not line.startswith("+") or re.fullmatch(r"\+\+\+ b/.+", line):
             continue
         for pattern in _SECRET_PATTERNS:
             if pattern.search(line[1:]):
@@ -820,6 +820,8 @@ def compare_repair_outcomes(before_evidence, after_evidence, verification_eviden
         isinstance(verification_evidence, dict)
         and verification_evidence.get("workspace_id") == after_evidence["workspace_id"]
         and type(verification_evidence.get("workspace_id")) is int
+        and verification_evidence.get("execution_id") == after_evidence["execution_id"]
+        and verification_evidence.get("job_id") == after_evidence["job_id"]
         and verification_passed(
             verification_evidence,
             expected_revision=after_evidence["workspace_revision"],
