@@ -424,6 +424,19 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
 
 
 class PatchAndApprovalValidationTests(SimpleTestCase):
+    def validate_patch(self, unified_diff, *, target_revision, expected_revision, workspace_files, snapshot_revision=None):
+        # Existing fixtures model an atomic trusted snapshot read at the target
+        # revision. Dedicated tests pass a mismatched revision explicitly.
+        if snapshot_revision is None:
+            snapshot_revision = target_revision
+        return validate_unified_patch(
+            unified_diff,
+            target_revision=target_revision,
+            expected_revision=expected_revision,
+            snapshot_revision=snapshot_revision,
+            workspace_files=workspace_files,
+        )
+
     def patch(self):
         return (
             "diff --git a/src/main.py b/src/main.py\n"
@@ -439,7 +452,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "--- a/src/main.py",
             "index 0123456789abcdef..abcdef0123456789 100644\n--- a/src/main.py",
         )
-        result = validate_unified_patch(
+        result = self.validate_patch(
             indexed, target_revision="rev-12", expected_revision="rev-12",
             workspace_files={"src/main.py": "value = 1\n"},
         )
@@ -449,7 +462,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "diff --git a/src/main.py b/src/main.py\nold mode 100644\nnew mode 100755\n",
         )
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 mode_change, target_revision="rev-12", expected_revision="rev-12",
                 workspace_files={"src/main.py": "value = 1\n"},
             )
@@ -468,13 +481,13 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         for malformed in malformed_patches:
             with self.subTest(patch=malformed):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         malformed, target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
 
     def test_validates_minimal_patch_against_exact_revision_and_existing_paths(self):
-        result = validate_unified_patch(
+        result = self.validate_patch(
             self.patch(),
             target_revision="rev-12",
             expected_revision="rev-12",
@@ -484,6 +497,39 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertEqual(result["changed_paths"], ["src/main.py"])
         self.assertEqual(len(result["patch_sha256"]), 64)
         self.assertEqual(result["source_context"], "matched")
+
+    def test_patch_validation_rejects_snapshot_revision_mismatch(self):
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                snapshot_revision="rev-11",
+                workspace_files={"src/main.py": "value = 1\n"},
+            )
+
+    def test_patch_validation_returns_stable_snapshot_digest(self):
+        first = self.validate_patch(
+            self.patch(),
+            target_revision="rev-12",
+            expected_revision="rev-12",
+            workspace_files={"src/main.py": "value = 1\n"},
+        )
+        second = self.validate_patch(
+            self.patch(),
+            target_revision="rev-12",
+            expected_revision="rev-12",
+            workspace_files={"src/main.py": "value = 1\n"},
+        )
+        changed = self.validate_patch(
+            self.patch(),
+            target_revision="rev-12",
+            expected_revision="rev-12",
+            workspace_files={"src/main.py": "value = 0\n"},
+        )
+        self.assertEqual(first["snapshot_revision"], "rev-12")
+        self.assertEqual(first["snapshot_sha256"], second["snapshot_sha256"])
+        self.assertNotEqual(first["snapshot_sha256"], changed["snapshot_sha256"])
 
     def test_patch_validation_rejects_spoofed_snapshot_containers_and_values(self):
         class SpoofedString(str):
@@ -503,7 +549,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         for snapshot in invalid_snapshots:
             with self.subTest(snapshot_type=type(snapshot).__name__):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         self.patch(),
                         target_revision="rev-12",
                         expected_revision="rev-12",
@@ -512,35 +558,35 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
 
     def test_rejects_stale_revision_protected_path_and_secret_patch(self):
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(self.patch(), target_revision="old", expected_revision="new", workspace_files={"src/main.py": ""})
+            self.validate_patch(self.patch(), target_revision="old", expected_revision="new", workspace_files={"src/main.py": ""})
         protected = self.patch().replace("src/main.py", ".github/workflows/ci.yml")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
+            self.validate_patch(protected, target_revision="r", expected_revision="r", workspace_files={".github/workflows/ci.yml": ""})
         secret_patch = self.patch().replace("+value = 2", "+api_key = 'super-secret-value-123'")
         short_unquoted_secret_patch = self.patch().replace("+value = 2", "+password=ShortSecret9")
         triple_plus_secret_patch = self.patch().replace(
             "+value = 2", "+++ b/token = 'ghp_" + "E" * 30 + "'"
         )
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(short_unquoted_secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(short_unquoted_secret_patch, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 triple_plus_secret_patch, target_revision="r", expected_revision="r",
                 workspace_files={"src/main.py": "value = 1\n"},
             )
         for protected_name in (".env.staging", "config/service.pem", "nested/secrets/token.txt"):
             protected_patch = self.patch().replace("src/main.py", protected_name)
             with self.assertRaises(RepairContractError):
-                validate_unified_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
+                self.validate_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
     def test_rejects_bidirectional_controls_in_added_source_lines(self):
         controls = ("\\u061c", "\\u200e", "\\u200f", "\\u202a", "\\u202b", "\\u202c", "\\u202d", "\\u202e", "\\u2066", "\\u2067", "\\u2068", "\\u2069")
         for control in controls:
             patch = self.patch().replace("+value = 2", '+value = "safe' + control + 'text"')
             with self.subTest(control=repr(control)):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         patch, target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
@@ -555,7 +601,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         for patch in (huge_coordinate, out_of_range_coordinate):
             with self.subTest(patch_length=len(patch)):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         patch, target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
@@ -572,7 +618,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         for source in invalid_sources:
             with self.subTest(source_length=len(source)):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         self.patch(), target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": source},
                     )
@@ -580,7 +626,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
     def test_rejects_invalid_unicode_patch_text_with_contract_error(self):
         invalid_patch = self.patch().replace("+value = 2", "+value = \ud800")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 invalid_patch, target_revision="r", expected_revision="r",
                 workspace_files={"src/main.py": "value = 1\n"},
             )
@@ -603,7 +649,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertLess(len(source.encode("utf-8")), MAX_PATCH_SOURCE_BYTES)
         self.assertGreater(3 * len(source.encode("utf-8")), MAX_PATCH_TOTAL_SOURCE_BYTES)
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 patch, target_revision="r", expected_revision="r",
                 workspace_files={path: source for path in paths},
             )
@@ -627,7 +673,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                     "+++ b/src/main.py\n"
                     + hunk
                 )
-                self.assertTrue(validate_unified_patch(
+                self.assertTrue(self.validate_patch(
                     patch, target_revision="r", expected_revision="r",
                     workspace_files={"src/main.py": source.replace(
                         "first\n", ""
@@ -646,13 +692,13 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "-delta\n"
             "+DELTA\n"
         )
-        self.assertTrue(validate_unified_patch(
+        self.assertTrue(self.validate_patch(
             patch, target_revision="r", expected_revision="r",
             workspace_files={"src/main.py": "alpha\nbeta\ngamma\ndelta\n"},
         )["validated"])
         wrong_offset = patch.replace("@@ -4 +5 @@", "@@ -4 +4 @@")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 wrong_offset, target_revision="r", expected_revision="r",
                 workspace_files={"src/main.py": "alpha\nbeta\ngamma\ndelta\n"},
             )
@@ -669,7 +715,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         for patch in (context_only, empty):
             with self.subTest(patch=patch):
                 with self.assertRaises(RepairContractError):
-                    validate_unified_patch(
+                    self.validate_patch(
                         patch, target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": "value = 1\n"},
                     )
@@ -680,7 +726,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "@@ -1 +1 @@\n-value = 1\n\n+value = 2\n",
         )
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(
+            self.validate_patch(
                 malformed, target_revision="r", expected_revision="r",
                 workspace_files={"src/main.py": "value = 1\n"},
             )
@@ -694,7 +740,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "---- old\n"
             "++++ new\n"
         )
-        result = validate_unified_patch(
+        result = self.validate_patch(
             patch, target_revision="r", expected_revision="r",
             workspace_files={"src/main.py": "--- old\n"},
         )
@@ -703,17 +749,17 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
     def test_rejects_patch_when_git_header_or_source_context_is_forged(self):
         wrong_git_path = self.patch().replace("diff --git a/src/main.py b/src/main.py", "diff --git a/src/other.py b/src/other.py")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_git_path, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(wrong_git_path, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         wrong_context = self.patch().replace("-value = 1", "-value = 999")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_context, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(wrong_context, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
         wrong_count = self.patch().replace("@@ -1 +1 @@", "@@ -1,2 +1,2 @@")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
 
         wrong_new_offset = self.patch().replace("@@ -1 +1 @@", "@@ -1 +4 @@")
         with self.assertRaises(RepairContractError):
-            validate_unified_patch(wrong_new_offset, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+            self.validate_patch(wrong_new_offset, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
 
     def test_secret_scanner_never_returns_secret_value(self):
         findings = scan_patch_for_secrets("+token = 'ghp_" + "A" * 30 + "'")
