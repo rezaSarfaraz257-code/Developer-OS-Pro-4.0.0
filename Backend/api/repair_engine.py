@@ -541,7 +541,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             continue
 
         if line.startswith("index "):
-            if not re.fullmatch(r"index [a-f0-9]{7,64}\\.\\.[a-f0-9]{7,64}(?: [0-7]{6})?", line):
+            if not re.fullmatch(r"index [a-f0-9]{7,64}\.\.[a-f0-9]{7,64}(?: [0-7]{6})?", line):
                 raise RepairContractError("Patch index metadata is malformed.")
             continue
         if line.startswith(("\\ No newline at end of file", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
