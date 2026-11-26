@@ -673,6 +673,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             cumulative_line_delta += hunk["new_count"] - hunk["old_count"]
 
     files = []
+    seen_patch_paths = set()
     current = None
     for raw_line in _split_lf_lines(unified_diff):
         if not raw_line.endswith("\n"):
@@ -688,6 +689,9 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             old_path, new_path = match.groups()
             if old_path != new_path or not _patch_path_allowed(old_path):
                 raise RepairContractError("Patch contains a rename or protected path.")
+            if old_path in seen_patch_paths:
+                raise RepairContractError("Patch contains duplicate file entries.")
+            seen_patch_paths.add(old_path)
             current = {
                 "git_path": old_path, "old": None, "new": None,
                 "hunks": [], "active_hunk": None, "index_seen": False,
