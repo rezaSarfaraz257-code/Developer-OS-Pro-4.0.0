@@ -5,6 +5,8 @@ from django.test import SimpleTestCase
 from .repair_engine import (
     MAX_PATCH_SOURCE_BYTES,
     MAX_PATCH_TOTAL_SOURCE_BYTES,
+    MAX_PATCH_SNAPSHOT_FILES,
+    MAX_PATCH_TOTAL_PATH_BYTES,
     RepairContractError,
     analyze_root_cause,
     classify_execution_failure,
@@ -509,6 +511,58 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                     "../outside.py": "not patched but still part of snapshot\n",
                 },
             )
+
+    def test_patch_validation_bounds_snapshot_entry_and_path_metadata_counts(self):
+        too_many_files = {"src/main.py": "value = 1\\n"}
+        too_many_files.update({
+            f"empty/{index}.txt": ""
+            for index in range(MAX_PATCH_SNAPSHOT_FILES)
+        })
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files=too_many_files,
+            )
+
+        oversized_path_metadata = {
+            "src/main.py": "value = 1\\n",
+            **{
+                f"{index:04d}/" + ("x" * 500) + ".txt": ""
+                for index in range((MAX_PATCH_TOTAL_PATH_BYTES // 500) + 2)
+            },
+        }
+        with self.assertRaises(RepairContractError):
+            self.validate_patch(
+                self.patch(),
+                target_revision="rev-12",
+                expected_revision="rev-12",
+                workspace_files=oversized_path_metadata,
+            )
+
+    def test_patch_validation_rejects_casefold_and_unicode_normalization_path_collisions(self):
+        colliding_snapshots = (
+            {
+                "src/main.py": "value = 1\\n",
+                "src/Config.py": "a",
+                "src/config.py": "b",
+            },
+            {
+                "src/main.py": "value = 1\\n",
+                "src/café.py": "a",
+                "src/cafe\\u0301.py": "b",
+            },
+        )
+        for snapshot in colliding_snapshots:
+            with self.subTest(snapshot=list(snapshot)):
+                with self.assertRaises(RepairContractError):
+                    self.validate_patch(
+                        self.patch(),
+                        target_revision="rev-12",
+                        expected_revision="rev-12",
+                        workspace_files=snapshot,
+                    )
 
     def test_patch_validation_rejects_snapshot_revision_mismatch(self):
         with self.assertRaises(RepairContractError):
