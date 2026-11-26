@@ -364,7 +364,7 @@ def execute(job):
             ).first()
             if not is_current_job_lease(current_job, getattr(job, "locked_by", None)):
                 raise RuntimeError("Data export worker lease is no longer current.")
-            if current_export is None or current_export.status == "expired":
+            if current_export is None or current_export.status not in {"queued", "running", "ready"}:
                 raise RuntimeError("Data export request is no longer available.")
             if current_export.status == "ready" and current_export.file_path == str(final_path) and final_path.is_file():
                 return {"export_id": current_export.id, "path": str(final_path)}
@@ -382,7 +382,7 @@ def execute(job):
                 ).first()
                 if not is_current_job_lease(current_job, getattr(job, "locked_by", None)):
                     raise RuntimeError("Data export worker lease expired before publication.")
-                if locked_export is None or locked_export.status == "expired":
+                if locked_export is None or locked_export.status not in {"queued", "running", "ready"}:
                     raise RuntimeError("Data export request is no longer available.")
                 os.replace(staging_path, final_path)
                 locked_export.status = "ready"
