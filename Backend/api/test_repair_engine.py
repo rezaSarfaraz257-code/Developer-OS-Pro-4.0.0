@@ -942,6 +942,25 @@ class RollbackEligibilityTests(SimpleTestCase):
                         self.evidence(failed_gate="security", **overrides), **kwargs
                     )
 
+    def test_rollback_rejects_equality_spoofed_runner_fields(self):
+        class EqualTo:
+            def __init__(self, expected):
+                self.expected = expected
+
+            def __eq__(self, other):
+                return other == self.expected
+
+        for field, value in (
+            ("evidence_origin", EqualTo("runner")),
+            ("patch_sha256", EqualTo("a" * 64)),
+            ("execution_status", EqualTo("succeeded")),
+        ):
+            with self.subTest(field=field):
+                evidence = self.evidence(failed_gate="security")
+                evidence[field] = value
+                with self.assertRaises(RepairContractError):
+                    evaluate_rollback_eligibility(evidence, **self.kwargs())
+
     def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
         evidence = self.evidence(failed_gate="targeted_tests")
         evidence["patch_sha256"] = "b" * 64
