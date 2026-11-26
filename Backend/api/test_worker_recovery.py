@@ -351,6 +351,9 @@ class StaleWorkerJobRecoveryTests(TestCase):
         workspace.refresh_from_db()
         job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync",
+            status="running",
+            locked_at=timezone.now(),
+            locked_by="test-worker:runner-sync-current",
             payload={
                 "workspace_id": workspace.id,
                 "owner_id": owner.id,
@@ -374,12 +377,45 @@ class StaleWorkerJobRecoveryTests(TestCase):
             metadata__coalesced=True,
         ).exists())
 
+    @patch("api.views._runner_request")
+    def test_expired_runner_sync_lease_cannot_write_to_runner(self, runner_request):
+        owner = User.objects.create_user(username="agent-runner-sync-expired")
+        workspace = CodeWorkspace.objects.create(
+            owner=owner, name="Expired Runner sync lease",
+            files={"main.py": "print('must not sync')"},
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            status="running",
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="stale-worker:expired-token",
+            payload={
+                "workspace_id": workspace.id,
+                "owner_id": owner.id,
+                "requested_revision": workspace.revision,
+            },
+            idempotency_key=f"agent-runner-sync-expired:{workspace.id}",
+        )
+
+        with self.assertRaisesMessage(RuntimeError, "Runner sync worker lease is no longer current."):
+            execute(job)
+
+        runner_request.assert_not_called()
+        self.assertFalse(AuditLog.objects.filter(
+            user=owner, action="ai_agent.runner_workspace_synced",
+            target_id=str(workspace.id),
+        ).exists())
+
+
     @patch("api.views._runner_request", return_value=(None, {"error": "unavailable"}))
     def test_agent_runner_sync_job_fails_closed_for_worker_retry(self, runner_request):
         owner = User.objects.create_user(username="agent-runner-sync-failure")
         workspace = CodeWorkspace.objects.create(owner=owner, name="Runner unavailable")
         job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync",
+            status="running",
+            locked_at=timezone.now(),
+            locked_by="test-worker:runner-sync-failure",
             payload={
                 "workspace_id": workspace.id,
                 "owner_id": owner.id,
