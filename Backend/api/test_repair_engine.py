@@ -254,6 +254,10 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         with self.assertRaises(RepairContractError):
             validate_unified_patch(wrong_count, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
 
+        wrong_new_offset = self.patch().replace("@@ -1 +1 @@", "@@ -1 +4 @@")
+        with self.assertRaises(RepairContractError):
+            validate_unified_patch(wrong_new_offset, target_revision="r", expected_revision="r", workspace_files={"src/main.py": "value = 1\n"})
+
     def test_secret_scanner_never_returns_secret_value(self):
         findings = scan_patch_for_secrets("+token = 'ghp_" + "A" * 30 + "'")
         self.assertTrue(findings)
