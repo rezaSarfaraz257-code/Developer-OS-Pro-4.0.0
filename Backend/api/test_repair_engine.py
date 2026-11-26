@@ -81,6 +81,36 @@ class RunnerEvidenceContractTests(SimpleTestCase):
                 with self.assertRaises(RepairContractError):
                     self.normalize(payload)
 
+    def test_runner_evidence_rejects_spoofed_container_subclasses(self):
+        valid = self.evidence()
+
+        class SpoofedMapping(dict):
+            def get(self, key, default=None):
+                return valid.get(key, default)
+
+        class SpoofedList(list):
+            def __iter__(self):
+                return iter([])
+
+        class SpoofedError(dict):
+            def get(self, key, default=None):
+                return valid["structured_errors"][0].get(key, default)
+
+        with self.assertRaises(RepairContractError):
+            self.normalize(SpoofedMapping())
+        with self.assertRaises(RepairContractError):
+            self.normalize({**valid, "structured_errors": SpoofedList(valid["structured_errors"])})
+        with self.assertRaises(RepairContractError):
+            self.normalize({
+                **valid,
+                "structured_errors": [SpoofedError(valid["structured_errors"][0])],
+            })
+        with self.assertRaises(RepairContractError):
+            self.normalize({
+                **valid,
+                "execution_environment": SpoofedMapping(valid["execution_environment"]),
+            })
+
     def test_rejects_boolean_workspace_revision_even_when_integer_value_matches(self):
         with self.assertRaises(RepairContractError):
             self.normalize(self.evidence(workspace_revision=True))
