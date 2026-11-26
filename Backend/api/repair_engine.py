@@ -917,18 +917,18 @@ def evaluate_rollback_eligibility(
         or pre_repair_revision == expected_post_revision
     ):
         raise RepairContractError("Rollback revisions are stale or inconsistent.")
-    if not isinstance(applied_patch_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", applied_patch_sha256):
+    if type(applied_patch_sha256) is not str or not re.fullmatch(r"[a-f0-9]{64}", applied_patch_sha256):
         raise RepairContractError("Rollback patch identity is invalid.")
     snapshot_reference = _artifact_reference(snapshot_reference, "rollback snapshot_reference")
     evidence = verification_evidence
-    if isinstance(evidence, dict):
-        try:
-            _opaque_identifier(evidence.get("execution_id"), "rollback execution_id")
-        except RepairContractError:
-            raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
+    if type(evidence) is not dict:
+        raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
+    try:
+        _opaque_identifier(evidence.get("execution_id"), "rollback execution_id")
+    except RepairContractError:
+        raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     if (
-        not isinstance(evidence, dict)
-        or type(evidence.get("evidence_origin")) is not str
+        type(evidence.get("evidence_origin")) is not str
         or evidence.get("evidence_origin") != "runner"
         or type(evidence.get("schema_version")) is not int
         or evidence.get("schema_version") != EVIDENCE_SCHEMA_VERSION
@@ -951,14 +951,14 @@ def evaluate_rollback_eligibility(
         raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     checks = evidence.get("checks")
     required = {"targeted_tests", "regression_tests", "security"}
-    if not isinstance(checks, dict) or set(checks) != required:
+    if type(checks) is not dict or set(checks) != required:
         raise RepairContractError("Rollback verification evidence is incomplete.")
     failed_gates = []
     for name, check in checks.items():
         if (
-            not isinstance(check, dict)
+            type(check) is not dict
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
-            or not isinstance(check.get("status"), str)
+            or type(check.get("status")) is not str
             or check.get("status") not in {"passed", "failed"}
             or check.get("execution_id") != evidence["execution_id"]
             or type(check.get("execution_id")) is not str
