@@ -69,6 +69,7 @@ _SECRET_PATTERNS = (
 )
 _DIFF_HEADER = re.compile(r"^(---|\+\+\+) ([ab])/(.+)$")
 _HUNK_HEADER = re.compile(r"^@@ -([0-9]{1,10})(?:,([0-9]{1,10}))? \+([0-9]{1,10})(?:,([0-9]{1,10}))? @@(?: .*)?$")
+_BIDI_CONTROL_CHARS = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 
 class RepairContractError(ValueError):
@@ -678,6 +679,8 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             raise RepairContractError("Unsupported patch metadata or no-newline marker.")
         if current is not None and current.get("active_hunk") is not None:
             if raw_line.startswith((" ", "+", "-")):
+                if raw_line.startswith("+") and any(char in _BIDI_CONTROL_CHARS for char in raw_line[1:]):
+                    raise RepairContractError("Patch adds bidirectional text controls that can spoof source-code review.")
                 current["active_hunk"]["lines"].append(raw_line)
                 continue
             raise RepairContractError("Patch hunk contains a line without a unified-diff marker.")
