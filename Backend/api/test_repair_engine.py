@@ -189,6 +189,25 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         self.assertEqual(result["conclusion"], "insufficient_evidence")
         self.assertIsNotNone(result["uncertainty"])
 
+    def test_redacts_additional_provider_tokens_and_termination_signal(self):
+        secrets = (
+            "github_pat_" + "G" * 30,
+            "glpat-" + "L" * 30,
+            "AIza" + "M" * 36,
+            "sk_live_" + "S" * 24,
+            "rk_test_" + "R" * 24,
+            "ASIA" + "A" * 16,
+            "npm-" + "N" * 24,
+            "pypi-" + "P" * 24,
+        )
+        for secret in secrets:
+            with self.subTest(secret_prefix=secret[:8]):
+                normalized = self.normalize(
+                    self.evidence(termination_signal="SIGTERM " + secret)
+                )
+                self.assertNotIn(secret, normalized["termination_signal"])
+                self.assertIn("[REDACTED_SECRET]", normalized["termination_signal"])
+
     def test_root_cause_uses_redacted_normalized_evidence_not_raw_payload(self):
         secret = "ghp_" + "R" * 30
         payload = self.evidence(structured_errors=[{
