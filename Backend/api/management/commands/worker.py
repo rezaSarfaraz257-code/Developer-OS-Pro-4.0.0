@@ -315,12 +315,9 @@ def execute(job):
             getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@developer-os.local"),
             [payload["to"]],
         )
-        # The Resend backend maps this private transport hint to its native
-        # Idempotency-Key header. It is deliberately omitted from the email
-        # body and provider payload, and remains stable across worker retries.
-        message.extra_headers["X-Developer-OS-Idempotency-Key"] = (
-            f"developer-os-email-job-{job.pk}"
-        )
+        # Keep the stable key as an in-memory transport attribute so it is
+        # never exposed as a custom header to SMTP recipients.
+        message._developer_os_idempotency_key = f"developer-os-email-job-{job.pk}"
         if payload.get("html"):
             message.attach_alternative(payload["html"], "text/html")
         message.send(fail_silently=False)
