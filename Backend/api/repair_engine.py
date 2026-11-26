@@ -605,7 +605,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         path = file_record["git_path"]
         if not file_record["hunks"] or file_record["old"] != path or file_record["new"] != path:
             raise RepairContractError("Patch file headers and hunks are incomplete or inconsistent.")
-        if path not in workspace_files or type(snapshot_files[path]) is not str:
+        if path not in snapshot_files or type(snapshot_files[path]) is not str:
             raise RepairContractError("Patch target must be an exact text entry in the authoritative workspace snapshot.")
         source_text = snapshot_files[path]
         if len(source_text) > MAX_PATCH_SOURCE_BYTES or "\x00" in source_text:
