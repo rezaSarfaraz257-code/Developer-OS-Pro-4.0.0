@@ -80,6 +80,11 @@ class RepairContractError(ValueError):
     """Raised when evidence or a repair artifact violates its strict contract."""
 
 
+def _exact_string_keys(mapping):
+    """Reject string-subclass keys at untrusted mapping boundaries."""
+    return type(mapping) is dict and all(type(key) is str for key in mapping)
+
+
 def _positive_id(value, field):
     if type(value) is not int or value < 1:
         raise RepairContractError(f"{field} must be a positive integer.")
@@ -189,7 +194,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
     it with a response received from the authenticated Runner service; never pass
     Agent-generated JSON or user-submitted evidence as the payload.
     """
-    if type(payload) is not dict or set(payload) != _EVIDENCE_KEYS:
+    if not _exact_string_keys(payload) or set(payload) != _EVIDENCE_KEYS:
         raise RepairContractError("Runner evidence has missing or unexpected fields.")
     if type(payload.get("schema_version")) is not int or payload["schema_version"] != EVIDENCE_SCHEMA_VERSION:
         raise RepairContractError("Unsupported Runner evidence schema version.")
@@ -239,7 +244,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("structured_errors must be a bounded list.")
     normalized_errors = []
     for item in errors:
-        if type(item) is not dict or set(item) != _ERROR_KEYS:
+        if not _exact_string_keys(item) or set(item) != _ERROR_KEYS:
             raise RepairContractError("A structured error has an invalid shape.")
         code = _redact_secrets(_bounded_text(item["code"], "structured error code", 80))
         message = _redact_secrets(_bounded_text(item["message"], "structured error message", 2_000))
@@ -263,7 +268,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         source_location = _normalize_source_location(source_location)
 
     environment = payload.get("execution_environment")
-    if type(environment) is not dict or set(environment) - _ENVIRONMENT_KEYS:
+    if not _exact_string_keys(environment) or set(environment) - _ENVIRONMENT_KEYS:
         raise RepairContractError("execution_environment contains unsupported fields.")
     normalized_environment = {}
     for key, value in environment.items():
@@ -272,7 +277,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         )
 
     usage = payload.get("resource_usage")
-    if type(usage) is not dict or set(usage) - _RESOURCE_KEYS:
+    if not _exact_string_keys(usage) or set(usage) - _RESOURCE_KEYS:
         raise RepairContractError("resource_usage contains unsupported fields.")
     normalized_usage = {}
     for key, value in usage.items():
@@ -281,7 +286,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         normalized_usage[key] = value
 
     timestamps = payload.get("timestamps")
-    if type(timestamps) is not dict or set(timestamps) != _TIMESTAMP_KEYS:
+    if not _exact_string_keys(timestamps) or set(timestamps) != _TIMESTAMP_KEYS:
         raise RepairContractError("timestamps must contain started_at and finished_at.")
     started = _iso_timestamp(timestamps["started_at"], "timestamps.started_at")
     finished = _iso_timestamp(timestamps["finished_at"], "timestamps.finished_at")
@@ -289,7 +294,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("finished_at cannot precede started_at.")
 
     checksums = payload.get("artifact_checksums")
-    if type(checksums) is not dict or len(checksums) > 100:
+    if not _exact_string_keys(checksums) or len(checksums) > 100:
         raise RepairContractError("artifact_checksums must be a bounded mapping.")
     normalized_checksums = {}
     for path, digest in checksums.items():
@@ -320,7 +325,7 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
 
 
 def _normalize_source_location(value):
-    if type(value) is not dict or set(value) - _LOCATION_KEYS or "path" not in value:
+    if not _exact_string_keys(value) or set(value) - _LOCATION_KEYS or "path" not in value:
         raise RepairContractError("source_location has an invalid shape.")
     path = value["path"]
     if not _safe_relative_path(path):
@@ -859,6 +864,7 @@ def evaluate_repair_loop(history, *, current_revision, candidate_patch_sha256, m
     for record in history:
         if (
             type(record) is not dict
+            or not _exact_string_keys(record)
             or set(record) != {"patch_sha256", "outcome", "workspace_revision"}
             or type(record["patch_sha256"]) is not str
             or not re.fullmatch(r"[a-f0-9]{64}", record["patch_sha256"])
@@ -951,13 +957,15 @@ def evaluate_rollback_eligibility(
         raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     checks = evidence.get("checks")
     required = {"targeted_tests", "regression_tests", "security"}
-    if type(checks) is not dict or set(checks) != required:
+    if not _exact_string_keys(checks) or not _exact_string_keys(checks)
+        or set(checks) != required:
         raise RepairContractError("Rollback verification evidence is incomplete.")
     failed_gates = []
     for name, check in checks.items():
         if (
             type(check) is not dict
-            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
+            or not _exact_string_keys(check)
+            or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"
             or type(check.get("status")) is not str
             or check.get("status") not in {"passed", "failed"}
             or check.get("execution_id") != evidence["execution_id"]
