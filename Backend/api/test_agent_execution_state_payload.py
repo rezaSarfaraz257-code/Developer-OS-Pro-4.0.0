@@ -28,6 +28,18 @@ class AgentExecutionStatePayloadTests(TestCase):
             status="ready",
         )
 
+    def mark_human_accepted(self, task=None):
+        task = task or self.task
+        task.status = "succeeded"
+        task.execution_evidence = {
+            "human_acceptance": {
+                "user_id": self.user.id,
+                "accepted_at": "2026-11-27T00:00:00+00:00",
+                "accepted_criteria": task.acceptance_criteria,
+            }
+        }
+        task.save(update_fields=["execution_evidence", "status", "updated_at"])
+
     def execution_state(self):
         return _run_payload(self.run)["execution_state"]
 
@@ -71,20 +83,19 @@ class AgentExecutionStatePayloadTests(TestCase):
         self.task.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "execution_failed_requires_review")
 
-        self.task.status = "succeeded"
-        self.task.save(update_fields=["status", "updated_at"])
+        self.mark_human_accepted()
+        self.run.status = "succeeded"
+        self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "verified_human_accepted")
 
     def test_failed_run_never_reports_stale_succeeded_tasks_as_success(self):
-        self.task.status = "succeeded"
-        self.task.save(update_fields=["status", "updated_at"])
+        self.mark_human_accepted()
         self.run.status = "failed"
         self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "run_failed")
 
     def test_partial_completion_and_cancellation_are_not_reported_as_success(self):
-        self.task.status = "succeeded"
-        self.task.save(update_fields=["status", "updated_at"])
+        self.mark_human_accepted()
         AgentTask.objects.create(
             run=self.run,
             key="second",
@@ -93,6 +104,8 @@ class AgentExecutionStatePayloadTests(TestCase):
             status="ready",
             sequence=1,
         )
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
         self.assertEqual(self.execution_state(), "partially_verified_awaiting_next_task")
 
         self.run.status = "canceled"
