@@ -196,7 +196,11 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
 class VerificationEvidenceTests(SimpleTestCase):
     def test_success_requires_runner_and_all_independent_check_evidence(self):
         result = {
+            "schema_version": 1,
             "evidence_origin": "runner",
+            "execution_id": "exec-verified-14",
+            "workspace_id": 7,
+            "job_id": 34,
             "workspace_revision": 14,
             "execution_status": "succeeded",
             "exit_code": 0,
@@ -215,3 +219,9 @@ class VerificationEvidenceTests(SimpleTestCase):
         result["workspace_revision"] = 14
         result["evidence_origin"] = "agent"
         self.assertFalse(verification_passed(result, expected_revision=14))
+        result["evidence_origin"] = "runner"
+        result["exit_code"] = True
+        self.assertFalse(verification_passed(result, expected_revision=14))
+        result["exit_code"] = 0
+        result["workspace_revision"] = True
+        self.assertFalse(verification_passed(result, expected_revision=1))
