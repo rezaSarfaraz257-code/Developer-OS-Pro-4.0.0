@@ -775,13 +775,19 @@ def agent_runner_sync_status_api(request, job_id):
         payload__owner_id=request.user.id,
     )
     result = job.result if isinstance(job.result, dict) else {}
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    # Before the worker finishes, result is empty. Return the immutable target
+    # recorded in the owner-scoped outbox so clients can bind polling to the
+    # intended workspace revision without treating a queued job as stale.
+    # Once available, the worker's actual result takes precedence (including
+    # coalesced revisions), and the raw payload/result remain private.
     response = {
         "job_id": job.id,
         "status": job.status,
         "attempts": job.attempts,
         "max_attempts": job.max_attempts,
-        "workspace_id": result.get("workspace_id"),
-        "revision": result.get("revision"),
+        "workspace_id": result.get("workspace_id", payload.get("workspace_id")),
+        "revision": result.get("revision", payload.get("requested_revision")),
         "coalesced": bool(result.get("coalesced", False)),
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
