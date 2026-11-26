@@ -596,7 +596,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
                 raise RepairContractError("Patch contains a rename or protected path.")
             current = {
                 "git_path": old_path, "old": None, "new": None,
-                "hunks": [], "active_hunk": None,
+                "hunks": [], "active_hunk": None, "index_seen": False,
             }
             files.append(current)
             if len(files) > MAX_PATCH_FILES:
@@ -650,8 +650,15 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             continue
 
         if line.startswith("index "):
-            if not re.fullmatch(r"index [a-f0-9]{7,64}\.\.[a-f0-9]{7,64}(?: [0-7]{6})?", line):
-                raise RepairContractError("Patch index metadata is malformed.")
+            if (
+                current is None
+                or current["old"] is not None
+                or current["active_hunk"] is not None
+                or current["index_seen"]
+                or not re.fullmatch(r"index [a-f0-9]{7,64}\.\.[a-f0-9]{7,64}(?: [0-7]{6})?", line)
+            ):
+                raise RepairContractError("Patch index metadata is malformed or out of order.")
+            current["index_seen"] = True
             continue
         if line.startswith(("\\ No newline at end of file", "new file mode ", "deleted file mode ", "old mode ", "new mode ", "rename from ", "rename to ", "similarity index ", "dissimilarity index ")):
             raise RepairContractError("Unsupported patch metadata or no-newline marker.")
