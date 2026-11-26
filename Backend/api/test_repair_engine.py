@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from django.test import SimpleTestCase
 
 from .repair_engine import (
+    MAX_PATCH_SOURCE_CHARS,
     RepairContractError,
     analyze_root_cause,
     classify_execution_failure,
@@ -399,6 +400,21 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                     validate_unified_patch(
                         patch, target_revision="r", expected_revision="r",
                         workspace_files={"src/main.py": "value = 1\n"},
+                    )
+
+    def test_rejects_oversized_binary_and_invalid_unicode_source_snapshots(self):
+        oversized_source = "x" * (MAX_PATCH_SOURCE_CHARS + 1)
+        invalid_sources = (
+            oversized_source,
+            "value = 1\\x00\\n",
+            "value = \\ud800\\n",
+        )
+        for source in invalid_sources:
+            with self.subTest(source_length=len(source)):
+                with self.assertRaises(RepairContractError):
+                    validate_unified_patch(
+                        self.patch(), target_revision="r", expected_revision="r",
+                        workspace_files={"src/main.py": source},
                     )
 
     def test_rejects_empty_and_context_only_hunks(self):
