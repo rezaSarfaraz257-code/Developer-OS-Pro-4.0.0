@@ -368,6 +368,14 @@ def execute(job):
                 raise RuntimeError("Data export request is no longer available.")
             if current_export.status == "ready" and current_export.file_path == str(final_path) and final_path.is_file():
                 return {"export_id": current_export.id, "path": str(final_path)}
+            if current_export.status in {"queued", "ready"}:
+                current_export.status = "running"
+                update_fields = ["status"]
+                if current_export.file_path and not final_path.is_file():
+                    current_export.file_path = ""
+                    current_export.completed_at = None
+                    update_fields.extend(["file_path", "completed_at"])
+                current_export.save(update_fields=update_fields)
 
         staging_path = root / f".user-{user.id}-export-{export_id}-{uuid.uuid4().hex}.tmp"
         try:
