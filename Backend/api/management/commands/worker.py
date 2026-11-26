@@ -50,7 +50,21 @@ def recover_stale_jobs():
                 or (locked.locked_at and locked.locked_at >= recovery_now - STALE_AFTER)
             ):
                 continue
-            if locked.attempts < locked.max_attempts:
+            if locked.kind == "email":
+                # SMTP/API acceptance can succeed immediately before a worker
+                # crash, leaving no durable acknowledgement in our database.
+                # Replaying an uncertain delivery can send duplicate security
+                # and account emails. Fail closed and require provider-log
+                # reconciliation before an operator creates a deliberate retry.
+                locked.status = "failed"
+                locked.dead_lettered_at = recovery_now
+                locked.finished_at = recovery_now
+                locked.error = (
+                    "Email delivery outcome is unknown after worker interruption; "
+                    "automatic retry suppressed to prevent duplicate delivery. "
+                    "Reconcile provider delivery logs before manual retry."
+                )
+            elif locked.attempts < locked.max_attempts:
                 locked.status = "queued"
                 locked.available_at = recovery_now + timedelta(seconds=min(300, 2 ** max(1, locked.attempts)))
             else:
