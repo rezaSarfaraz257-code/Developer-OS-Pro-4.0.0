@@ -901,8 +901,7 @@ def agent_run_cancel_api(request, pk):
             execution_id = payload.get("runner_execution_id")
             if (
                 isinstance(execution_id, str)
-                and execution_id.startswith("agent-")
-                and execution_id[6:].isdigit()
+                and execution_id == f"agent-{job.id}"
             ):
                 runner_cancellations.append(execution_id)
 
