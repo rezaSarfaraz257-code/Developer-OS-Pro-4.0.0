@@ -185,21 +185,21 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
     def test_accepts_standard_git_index_metadata_but_rejects_mode_changes(self):
         indexed = self.patch().replace(
             "--- a/src/main.py",
-            "index 0123456789abcdef..abcdef0123456789 100644\\n--- a/src/main.py",
+            "index 0123456789abcdef..abcdef0123456789 100644\n--- a/src/main.py",
         )
         result = validate_unified_patch(
             indexed, target_revision="rev-12", expected_revision="rev-12",
-            workspace_files={"src/main.py": "value = 1\\n"},
+            workspace_files={"src/main.py": "value = 1\n"},
         )
         self.assertTrue(result["validated"])
         mode_change = self.patch().replace(
-            "diff --git a/src/main.py b/src/main.py\\n",
-            "diff --git a/src/main.py b/src/main.py\\nold mode 100644\\nnew mode 100755\\n",
+            "diff --git a/src/main.py b/src/main.py\n",
+            "diff --git a/src/main.py b/src/main.py\nold mode 100644\nnew mode 100755\n",
         )
         with self.assertRaises(RepairContractError):
             validate_unified_patch(
                 mode_change, target_revision="rev-12", expected_revision="rev-12",
-                workspace_files={"src/main.py": "value = 1\\n"},
+                workspace_files={"src/main.py": "value = 1\n"},
             )
 
     def test_validates_minimal_patch_against_exact_revision_and_existing_paths(self):
