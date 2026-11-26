@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
-from .management.commands.worker import STALE_AFTER, claim_job, execute, recover_stale_jobs, refresh_job_lease
+from .management.commands.worker import STALE_AFTER, Command, claim_job, execute, recover_stale_jobs, refresh_job_lease
 from .models import AgentRun, AgentTask, AuditLog, BackgroundJob, CodeWorkspace
 
 
@@ -79,6 +79,42 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, "worker:live-lease-token")
         self.assertEqual(job.locked_at, refreshed_at[0])
         self.assertNotIn("Recovered stale worker lease.", job.error)
+
+
+    @patch("api.management.commands.worker.execute")
+    def test_old_worker_outcome_is_discarded_after_job_is_reclaimed(self, mocked_execute):
+        job = BackgroundJob.objects.create(
+            kind="email",
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=3,
+        )
+        replacement_claims = []
+
+        def execute_then_reclaim(claimed_job):
+            old_lease = claimed_job.locked_by
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1)
+            )
+            recover_stale_jobs()
+            BackgroundJob.objects.filter(pk=claimed_job.pk).update(
+                available_at=timezone.now() - timedelta(seconds=1)
+            )
+            replacement = claim_job("replacement-worker")
+            replacement_claims.append(replacement)
+            self.assertIsNotNone(replacement)
+            self.assertNotEqual(old_lease, replacement.locked_by)
+            return {"worker": "stale", "must_not_persist": True}
+
+        mocked_execute.side_effect = execute_then_reclaim
+
+        Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, replacement_claims[0].locked_by)
+        self.assertNotEqual(job.result, {"worker": "stale", "must_not_persist": True})
 
     def test_running_job_without_lock_timestamp_is_requeued(self):
         job = BackgroundJob.objects.create(
