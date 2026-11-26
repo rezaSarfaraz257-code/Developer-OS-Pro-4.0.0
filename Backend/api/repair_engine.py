@@ -72,12 +72,17 @@ def _revision(value):
 
 
 def _safe_relative_path(value):
-    if not isinstance(value, str) or not value or len(value) > 512 or "\x00" in value or "\\" in value:
+    if (
+        not isinstance(value, str) or not value or len(value) > 512
+        or "\x00" in value or "\\" in value
+        or any(ord(char) < 32 for char in value)
+        or re.match(r"^[A-Za-z]:", value)
+    ):
         return False
     path = PurePosixPath(value)
     return (
         not path.is_absolute()
-        and all(part not in {"", ".", ".."} for part in value.split("/"))
+        and all(part not in {"", ".", ".."} and not part.endswith((".", " ")) and ":" not in part for part in value.split("/"))
         and ".git" not in {part.casefold() for part in path.parts}
     )
 
@@ -127,6 +132,11 @@ def normalize_runner_evidence(payload, *, expected_execution_id, expected_worksp
         raise RepairContractError("Unsupported Runner evidence schema version.")
     if payload.get("evidence_origin") != "runner":
         raise RepairContractError("Evidence origin must be the authenticated Runner.")
+    if not isinstance(expected_execution_id, str) or not expected_execution_id or len(expected_execution_id) > 128:
+        raise RepairContractError("Expected execution identity is invalid.")
+    _positive_id(expected_workspace_id, "expected_workspace_id")
+    _positive_id(expected_job_id, "expected_job_id")
+    _revision(expected_workspace_revision)
     if payload.get("execution_id") != expected_execution_id:
         raise RepairContractError("Execution identity mismatch.")
     if type(payload.get("workspace_id")) is not int or payload["workspace_id"] != expected_workspace_id:
@@ -354,7 +364,7 @@ def _patch_path_allowed(path):
     basename = parts[-1]
     protected_dirs = {
         ".git", ".github", ".gitlab", ".circleci", ".buildkite",
-        ".ssh", ".aws", ".azure", ".config/gcloud", "secrets",
+        ".ssh", ".aws", ".azure", ".config", "secrets",
     }
     protected_files = {
         ".env", ".npmrc", ".pypirc", ".netrc", ".git-credentials",
@@ -432,10 +442,15 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
             raise RepairContractError("Patch target is not present in the authoritative workspace snapshot.")
         source_lines = workspace_files[path].splitlines(keepends=True)
         previous_old_end = 0
+        previous_new_end = 0
         for hunk in file_record["hunks"]:
             start = hunk["old_start"] if hunk["old_count"] == 0 else hunk["old_start"] - 1
-            if start < previous_old_end or start < 0 or start > len(source_lines):
-                raise RepairContractError("Patch hunks overlap or exceed the source snapshot.")
+            new_start = hunk["new_start"] if hunk["new_count"] == 0 else hunk["new_start"] - 1
+            if (
+                start < previous_old_end or start < 0 or start > len(source_lines)
+                or new_start < previous_new_end or new_start < 0
+            ):
+                raise RepairContractError("Patch hunks overlap or exceed their declared source ranges.")
             cursor = start
             for line in hunk["lines"]:
                 marker, content = line[0], line[1:]
@@ -444,6 +459,7 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
                         raise RepairContractError("Patch context does not match the exact workspace snapshot.")
                     cursor += 1
             previous_old_end = start + hunk["old_count"]
+            previous_new_end = new_start + hunk["new_count"]
 
     files = []
     current = None
