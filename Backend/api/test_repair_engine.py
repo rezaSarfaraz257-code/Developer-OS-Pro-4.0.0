@@ -564,6 +564,24 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                         workspace_files=snapshot,
                     )
 
+    def test_patch_parser_treats_unicode_line_separator_as_file_content(self):
+        source = "value = 'before\\u2028after'\\n"
+        patch = (
+            "diff --git a/src/main.py b/src/main.py\\n"
+            "--- a/src/main.py\\n"
+            "+++ b/src/main.py\\n"
+            "@@ -1 +1 @@\\n"
+            "-value = 'before\\u2028after'\\n"
+            "+value = 'updated'\\n"
+        )
+        result = self.validate_patch(
+            patch,
+            target_revision="rev-12",
+            expected_revision="rev-12",
+            workspace_files={"src/main.py": source},
+        )
+        self.assertTrue(result["validated"])
+
     def test_patch_validation_rejects_snapshot_revision_mismatch(self):
         with self.assertRaises(RepairContractError):
             self.validate_patch(
