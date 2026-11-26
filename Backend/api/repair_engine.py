@@ -539,9 +539,11 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
 
     This is validation only: it never applies a patch or mutates a workspace.
     The caller must read snapshot_revision and workspace_files atomically from
-    the trusted workspace revision store. This function binds the supplied
-    snapshot to that revision and computes a deterministic content digest; it
-    cannot independently attest that an untrusted caller told the truth.
+    the trusted workspace revision store, then re-check the same revision with
+    an atomic compare-and-swap when applying the patch. This pure validator
+    binds the supplied snapshot to that revision and computes a deterministic
+    content digest; it cannot independently attest an untrusted caller or stop
+    a later workspace write by itself.
     File creation/deletion/rename, mode changes, binary patches, protected
     paths, stale revisions, malformed hunks and context mismatches fail closed.
     """
