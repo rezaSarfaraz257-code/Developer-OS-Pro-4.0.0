@@ -1298,3 +1298,67 @@ class RepairLoopGuardTests(SimpleTestCase):
                     evaluate_repair_loop(
                         history, current_revision="rev-12", candidate_patch_sha256="a" * 64,
                     )
+
+    def test_repair_history_rejects_subclassed_trust_boundary_values(self):
+        class SpoofedHistory(list):
+            def __iter__(self):
+                return iter([])
+
+        class SpoofedRecord(dict):
+            def get(self, key, default=None):
+                return default
+
+        class SpoofedDigest(str):
+            def __eq__(self, other):
+                return True
+
+        valid_record = {
+            "patch_sha256": "a" * 64,
+            "outcome": "rolled_back",
+            "workspace_revision": "rev-12",
+        }
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                SpoofedHistory([valid_record]),
+                current_revision="rev-12",
+                candidate_patch_sha256="b" * 64,
+            )
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                [SpoofedRecord(valid_record)],
+                current_revision="rev-12",
+                candidate_patch_sha256="b" * 64,
+            )
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                [],
+                current_revision="rev-12",
+                candidate_patch_sha256=SpoofedDigest("b" * 64),
+            )
+
+    def test_duplicate_attempt_rows_count_once_and_conflicting_rows_fail_closed(self):
+        record = {
+            "patch_sha256": "a" * 64,
+            "outcome": "rolled_back",
+            "workspace_revision": "rev-12",
+        }
+        duplicate_history = [record.copy(), record.copy(), record.copy()]
+        result = evaluate_repair_loop(
+            duplicate_history,
+            current_revision="rev-12",
+            candidate_patch_sha256="b" * 64,
+            max_attempts=1,
+        )
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["attempts"], 1)
+
+        conflicting_history = [
+            record,
+            {**record, "outcome": "verified_success"},
+        ]
+        with self.assertRaises(RepairContractError):
+            evaluate_repair_loop(
+                conflicting_history,
+                current_revision="rev-12",
+                candidate_patch_sha256="b" * 64,
+            )
