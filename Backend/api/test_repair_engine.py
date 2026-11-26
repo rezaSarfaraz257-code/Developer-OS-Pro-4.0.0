@@ -686,6 +686,36 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         )
         self.assertEqual(scan_patch_for_secrets(header_only), [])
         self.assertTrue(scan_patch_for_secrets(source_line))
+    def test_scans_multiline_and_incomplete_private_keys_across_added_patch_lines(self):
+        private_key = (
+            "-----BEGIN PRIVATE KEY-----\\n"
+            + "MIIE" + "K" * 48 + "\\n"
+            + "-----END PRIVATE KEY-----"
+        )
+        patch = (
+            "diff --git a/src/config.py b/src/config.py\\n"
+            "--- a/src/config.py\\n"
+            "+++ b/src/config.py\\n"
+            "@@ -0,0 +1,3 @@\\n"
+            + "".join("+" + line + "\\n" for line in private_key.splitlines())
+        )
+        findings = scan_patch_for_secrets(patch)
+        self.assertTrue(findings)
+        self.assertNotIn("MIIE", str(findings))
+        self.assertNotIn("K" * 48, str(findings))
+
+        incomplete = (
+            "diff --git a/src/config.py b/src/config.py\\n"
+            "--- a/src/config.py\\n"
+            "+++ b/src/config.py\\n"
+            "@@ -0,0 +1,2 @@\\n"
+            "+-----BEGIN PRIVATE KEY-----\\n"
+            "+" + "MIIE" + "Q" * 48 + "\\n"
+        )
+        incomplete_findings = scan_patch_for_secrets(incomplete)
+        self.assertTrue(incomplete_findings)
+        self.assertNotIn("Q" * 48, str(incomplete_findings))
+
     def test_revision_bound_approval_expires_and_invalidates_on_revision_or_patch_change(self):
         now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
         approval = {
