@@ -24,6 +24,7 @@ MAX_PATCH_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_PATCH_TOTAL_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_PATCH_SNAPSHOT_FILES = 10_000
 MAX_PATCH_TOTAL_PATH_BYTES = 2 * 1024 * 1024
+MAX_PATCH_SOURCE_LINES = 100_000
 MAX_REPAIR_HISTORY = 20
 MAX_REPAIR_ATTEMPTS = 3
 MAX_APPROVAL_TTL_SECONDS = 60 * 60
@@ -99,7 +100,9 @@ def _opaque_identifier(value, field, *, max_length=128):
 
 
 def _split_lf_lines(value):
-    """Split text using Git's LF record delimiter without treating Unicode separators as newlines."""
+    """Split LF-delimited text after bounding line count to prevent memory amplification."""
+    if value.count("\n") > MAX_PATCH_SOURCE_LINES:
+        raise RepairContractError("Patch source contains too many lines.")
     parts = value.split("\n")
     lines = [part + "\n" for part in parts[:-1]]
     if parts[-1]:
