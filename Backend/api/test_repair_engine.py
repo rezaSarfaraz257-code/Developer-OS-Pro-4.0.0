@@ -357,6 +357,16 @@ class VerificationEvidenceTests(SimpleTestCase):
         self.assertFalse(verification_passed(result, expected_revision=True))
         self.assertFalse(verification_passed(result, expected_revision=None))
         self.assertFalse(verification_passed(result, expected_revision=-1))
+        result["workspace_revision"] = 14
+        for unsafe_reference in (
+            "artifact://../outside",
+            "runner://logs/../../private",
+            "blob://logs//stderr",
+            "https://example.com/evidence",
+        ):
+            result["checks"]["security"]["evidence_reference"] = unsafe_reference
+            with self.subTest(evidence_reference=unsafe_reference):
+                self.assertFalse(verification_passed(result, expected_revision=14))
 
 
 class RepairLoopGuardTests(SimpleTestCase):
