@@ -99,6 +99,27 @@ class AgentExecutionStatePayloadTests(TestCase):
             "task_success_missing_human_acceptance_requires_review",
         )
 
+    def test_success_with_invalid_or_timezone_naive_acceptance_timestamp_requires_review(self):
+        self.mark_human_accepted()
+        evidence = self.task.execution_evidence
+        evidence["human_acceptance"]["accepted_at"] = "not-a-timestamp"
+        self.task.execution_evidence = evidence
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+        self.run.status = "succeeded"
+        self.run.save(update_fields=["status", "updated_at"])
+        self.assertEqual(
+            self.execution_state(),
+            "task_success_missing_human_acceptance_requires_review",
+        )
+
+        evidence["human_acceptance"]["accepted_at"] = "2026-11-27T00:00:00"
+        self.task.execution_evidence = evidence
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+        self.assertEqual(
+            self.execution_state(),
+            "task_success_missing_human_acceptance_requires_review",
+        )
+
     def test_success_without_task_scoped_acceptance_requires_review(self):
         self.mark_human_accepted()
         evidence = self.task.execution_evidence
