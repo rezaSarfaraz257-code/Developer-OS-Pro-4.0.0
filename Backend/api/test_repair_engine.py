@@ -485,6 +485,31 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertEqual(len(result["patch_sha256"]), 64)
         self.assertEqual(result["source_context"], "matched")
 
+    def test_patch_validation_rejects_spoofed_snapshot_containers_and_values(self):
+        class SpoofedString(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class SpoofedDict(dict):
+            pass
+
+        invalid_snapshots = (
+            SpoofedDict({"src/main.py": "value = 1\\n"}),
+            {SpoofedString("src/main.py"): "value = 1\\n"},
+            {"src/main.py": SpoofedString("value = 1\\n")},
+        )
+        for snapshot in invalid_snapshots:
+            with self.subTest(snapshot_type=type(snapshot).__name__):
+                with self.assertRaises(RepairContractError):
+                    validate_unified_patch(
+                        self.patch(),
+                        target_revision="rev-12",
+                        expected_revision="rev-12",
+                        workspace_files=snapshot,
+                    )
+
     def test_rejects_stale_revision_protected_path_and_secret_patch(self):
         with self.assertRaises(RepairContractError):
             validate_unified_patch(self.patch(), target_revision="old", expected_revision="new", workspace_files={"src/main.py": ""})
