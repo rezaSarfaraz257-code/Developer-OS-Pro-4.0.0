@@ -1602,6 +1602,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1630,6 +1631,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1657,6 +1659,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1682,6 +1685,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
