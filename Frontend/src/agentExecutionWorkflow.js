@@ -115,10 +115,28 @@ export function normalizeTaskExecution(payload, expected = {}) {
   const criteria = Array.isArray(payload.acceptance_criteria)
     ? payload.acceptance_criteria.filter((item) => typeof item === "string" && item.trim() && item.length <= 500).slice(0, 6)
     : [];
+  const acceptedCriteria = evidence.human_acceptance?.accepted_criteria || [];
+  const acceptedAt = evidence.human_acceptance?.accepted_at || "";
+  const acceptanceIsValid = Boolean(
+    evidence.human_acceptance
+    && evidence.human_acceptance.user_id
+    && evidence.human_acceptance.criteria_scope === "agent_task"
+    && acceptedAt
+    && Number.isFinite(Date.parse(acceptedAt))
+    && criteria.length > 0
+    && acceptedCriteria.length === criteria.length
+    && acceptedCriteria.every((item, index) => item === criteria[index]),
+  );
+  // A succeeded task without complete, scoped, parseable human-acceptance
+  // evidence is legacy/inconsistent state. Fail closed instead of displaying
+  // a success claim or enabling downstream task progression.
+  const normalizedStatus = payload.status === "succeeded" && !acceptanceIsValid
+    ? "unknown"
+    : statuses.has(payload.status) ? payload.status : "unknown";
   return {
     runId,
     taskId,
-    status: statuses.has(payload.status) ? payload.status : "unknown",
+    status: normalizedStatus,
     acceptanceCriteria: criteria,
     verificationProfile: typeof payload.verification_profile === "string" ? payload.verification_profile : "",
     revision: normalizeExecutionId(payload.revision),
