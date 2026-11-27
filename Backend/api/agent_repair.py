@@ -8,6 +8,7 @@ only way to change workspace files.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -455,11 +456,41 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
         }
         mode = "path_contract_and_secret_scan_only"
 
+    # Hash the complete operation manifest, not only the unified-diff subset.
+    # The diff validator deliberately excludes file creation, so using its hash
+    # alone would leave created-file contents out of the recorded patch identity.
+    operation_manifest = []
+    for change in proposal["changes"]:
+        path = change["path"]
+        operation = change["operation"]
+        before = workspace_files.get(path)
+        after = change.get("content") if operation in {"modify", "create"} else None
+        operation_manifest.append({
+            "path": path,
+            "operation": operation,
+            "before_sha256": hashlib.sha256(before.encode("utf-8")).hexdigest() if isinstance(before, str) else None,
+            "after_sha256": hashlib.sha256(after.encode("utf-8")).hexdigest() if isinstance(after, str) else None,
+        })
+    canonical_manifest = json.dumps(
+        operation_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    snapshot_sha256 = validation.get("snapshot_sha256")
+    if not snapshot_sha256:
+        snapshot_manifest = [
+            [path, hashlib.sha256(value.encode("utf-8")).hexdigest()]
+            for path, value in sorted(workspace_files.items())
+        ]
+        snapshot_sha256 = hashlib.sha256(json.dumps(
+            snapshot_manifest, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+
     return {
         **validation,
         "validation_mode": mode,
         "changed_paths": changed_paths,
         "secret_scan": "passed",
+        "patch_sha256": hashlib.sha256(canonical_manifest).hexdigest(),
+        "snapshot_sha256": snapshot_sha256,
     }
 
 
