@@ -1682,6 +1682,16 @@ class RollbackEligibilityTests(SimpleTestCase):
         with self.assertRaises(RepairContractError):
             evaluate_rollback_eligibility(evidence, **self.kwargs())
 
+    def test_rollback_rejects_non_string_gate_identity_before_comparison(self):
+        class HostileEquality:
+            def __eq__(self, other):
+                raise AssertionError("untrusted equality must not execute")
+
+        evidence = self.evidence(failed_gate="security")
+        evidence["checks"]["security"]["execution_id"] = HostileEquality()
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
+
     def test_rollback_rejects_malformed_or_uncorrelated_gate_evidence(self):
         evidence = self.evidence(failed_gate="targeted_tests")
         evidence["patch_sha256"] = "b" * 64
