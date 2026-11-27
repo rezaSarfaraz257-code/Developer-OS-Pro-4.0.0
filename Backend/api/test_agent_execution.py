@@ -1829,6 +1829,7 @@ class BackgroundWorkerLeaseRegressionTests(TestCase):
         job.refresh_from_db()
         self.assertTrue(refreshed_by_current_owner)
         self.assertGreater(job.locked_at, original_time)
+
     def test_worker_cannot_refresh_malformed_or_future_lease(self):
         now = timezone.now()
         cases = (
