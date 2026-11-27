@@ -966,6 +966,10 @@ def evaluate_rollback_eligibility(
         or current_revision != expected_post_revision
         or type(pre_repair_revision) is not type(expected_post_revision)
         or pre_repair_revision == expected_post_revision
+        or (
+            type(pre_repair_revision) is int
+            and pre_repair_revision >= expected_post_revision
+        )
     ):
         raise RepairContractError("Rollback revisions are stale or inconsistent.")
     if type(applied_patch_sha256) is not str or not re.fullmatch(r"[a-f0-9]{64}", applied_patch_sha256):
