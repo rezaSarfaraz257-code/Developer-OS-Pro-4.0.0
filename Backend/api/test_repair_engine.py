@@ -311,18 +311,49 @@ class RunnerEvidenceContractTests(SimpleTestCase):
 
 
 class FailureIntelligenceTests(RunnerEvidenceContractTests):
+    def trusted_identity(self):
+        # Model independently fetched server-side execution/job/workspace records.
+        return {
+            "expected_execution_id": "exec-001",
+            "expected_workspace_id": 7,
+            "expected_workspace_revision": 12,
+            "expected_job_id": 33,
+        }
+
+    def classify(self, evidence):
+        return classify_execution_failure(evidence, **self.trusted_identity())
+
+    def analyze(self, evidence, **kwargs):
+        return analyze_root_cause(evidence, **self.trusted_identity(), **kwargs)
+
     def test_classifies_failure_from_runner_evidence_not_agent_text(self):
         evidence = self.normalize()
-        self.assertEqual(classify_execution_failure(evidence)["category"], "syntax")
+        self.assertEqual(self.classify(evidence)["category"], "syntax")
+
+    def test_downstream_analysis_rejects_identity_drift_against_trusted_records(self):
+        identity_fields = (
+            ("execution_id", "forged-execution"),
+            ("workspace_id", 8),
+            ("workspace_revision", 13),
+            ("job_id", 34),
+        )
+        for field, forged_value in identity_fields:
+            with self.subTest(field=field):
+                evidence = self.normalize()
+                evidence[field] = forged_value
+                with self.assertRaises(RepairContractError):
+                    self.classify(evidence)
+                with self.assertRaises(RepairContractError):
+                    self.analyze(evidence)
 
     def test_classifies_infrastructure_and_resource_failures(self):
         infra = self.normalize(self.evidence(execution_status="infrastructure_failed", exit_code=None))
         timed = self.normalize(self.evidence(execution_status="timed_out", exit_code=None))
-        self.assertEqual(classify_execution_failure(infra)["category"], "infrastructure")
-        self.assertEqual(classify_execution_failure(timed)["category"], "resource_exhaustion")
+        self.assertEqual(self.classify(infra)["category"], "infrastructure")
+        self.assertEqual(self.classify(timed)["category"], "resource_exhaustion")
 
     def test_root_cause_candidates_reference_runner_evidence_and_changed_paths(self):
-        result = analyze_root_cause(self.normalize(), changed_paths={"src/main.py"})
+        result = self.analyze(self.normalize(), changed_paths={"src/main.py"})
         self.assertEqual(result["conclusion"], "candidate_causes_available")
         self.assertEqual(result["candidates"][0]["change_relation"], "changed_file")
         self.assertEqual(result["candidates"][0]["evidence_reference"], "artifact://errors/33/0")
@@ -342,7 +373,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         for changed_paths in (SpoofedList(["../outside.py"]), SpoofedSet(["../outside.py"])):
             with self.subTest(changed_paths=type(changed_paths).__name__):
                 with self.assertRaises(RepairContractError):
-                    analyze_root_cause(evidence, changed_paths=changed_paths)
+                    self.analyze(evidence, changed_paths=changed_paths)
 
     def test_classifies_all_supported_failure_families(self):
         cases = (
@@ -360,7 +391,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
                 "evidence_reference": "artifact://errors/33/0",
             }]))
             with self.subTest(code=code):
-                self.assertEqual(classify_execution_failure(evidence)["category"], expected)
+                self.assertEqual(self.classify(evidence)["category"], expected)
 
     def test_rejects_secret_untrusted_and_traversing_artifact_references(self):
         for reference in (
@@ -376,7 +407,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
 
     def test_unknown_failure_reports_uncertainty(self):
         evidence = self.normalize(self.evidence(structured_errors=[] , source_location=None))
-        result = analyze_root_cause(evidence)
+        result = self.analyze(evidence)
         self.assertEqual(result["conclusion"], "insufficient_evidence")
         self.assertIsNotNone(result["uncertainty"])
 
@@ -417,7 +448,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             "source_location": {"path": "src/main.py", "line": 8},
             "evidence_reference": "artifact://errors/33/0",
         }])
-        result = analyze_root_cause(payload)
+        result = self.analyze(payload)
         self.assertNotIn(secret, result["candidates"][0]["message"])
         self.assertIn("[REDACTED_SECRET]", result["candidates"][0]["message"])
 
@@ -432,14 +463,14 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         ):
             with self.subTest(evidence=evidence):
                 with self.assertRaises(RepairContractError):
-                    classify_execution_failure(evidence)
+                    self.classify(evidence)
 
     def test_root_cause_rejects_malformed_changed_path_collections(self):
         evidence = self.normalize()
         for changed_paths in ("src/main.py", None, ["../outside.py"]):
             with self.subTest(changed_paths=changed_paths):
                 with self.assertRaises(RepairContractError):
-                    analyze_root_cause(evidence, changed_paths=changed_paths)
+                    self.analyze(evidence, changed_paths=changed_paths)
 
     def test_before_after_comparison_requires_verified_post_repair_gates(self):
         before = self.normalize()
