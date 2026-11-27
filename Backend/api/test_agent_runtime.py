@@ -833,8 +833,21 @@ class AgentRunLifecycleTests(TestCase):
             BackgroundJob.objects.filter(status="queued").exclude(pk=job.pk).update(
                 available_at=timezone.now() + timedelta(hours=1)
             )
-            replacement_claims.append(claim_job("replacement-planner"))
-            self.assertIsNotNone(replacement_claims[0])
+            # TestCase wraps the whole test in an outer transaction, so
+            # PostgreSQL SKIP LOCKED correctly skips rows locked by this test
+            # transaction. Model the replacement worker's committed lease
+            # transition directly; claim_job concurrency is covered by the
+            # dedicated TransactionTestCase regression suite.
+            updated = BackgroundJob.objects.filter(
+                pk=job.pk, status="queued",
+            ).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-planner:replacement-lease",
+                attempts=2,
+            )
+            self.assertEqual(updated, 1)
+            replacement_claims.append(BackgroundJob.objects.get(pk=job.pk))
             return (
                 json.dumps({
                     "summary": "Stale plan must not persist",
