@@ -1052,68 +1052,60 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual(replay.status_code, 409)
         self.assertEqual(workspace.revision, response.data["workspace"]["revision"])
 
-    def test_agent_rollback_records_audit_event_without_file_contents(self):
+    def test_agent_rollback_restores_immutable_snapshot_and_queues_runner_sync(self):
         self.client.force_authenticate(self.user)
-        workspace = CodeWorkspace.objects.create(
-            owner=self.user,
-            name="Rollback audit test",
-            files={"main.py": "print('current')\\n"},
-        )
-        response = self.client.post(
-            "/api/ai/agent/rollback/",
-            {
-                "workspace": workspace.id,
-                "revision": workspace.revision,
-                "files": {"main.py": "print('restored')\\n"},
-            },
-            format="json",
-        )
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback test', files={'main.py': 'current'})
+        snapshot = _create_rollback_snapshot(workspace, self.user, {'main.py': 'restored'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
         self.assertEqual(response.status_code, 200)
-        event = AuditLog.objects.get(
-            user=self.user,
-            action="ai_agent.workspace_rolled_back",
-            target_id=str(workspace.id),
-        )
-        self.assertEqual(event.metadata["restored_file_count"], 1)
-        self.assertNotIn("files", event.metadata)
-        self.assertNotIn("print('restored')", json.dumps(event.metadata))
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files['main.py'], 'restored')
+        self.assertEqual(response.data['status'], 'rolled_back_sync_pending')
+        self.assertTrue(response.data['sync']['queued'])
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.restored_revision, workspace.revision)
+        event = AuditLog.objects.get(user=self.user, action='ai_agent.workspace_rolled_back', target_id=str(workspace.id))
+        self.assertEqual(event.metadata['restored_file_count'], 1)
+        self.assertNotIn('files', event.metadata)
+        replay = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
+        self.assertEqual(replay.status_code, 409)
 
-    def test_agent_rollback_rejects_unsafe_paths(self):
+    def test_agent_rollback_rejects_client_supplied_file_trees(self):
         self.client.force_authenticate(self.user)
-        workspace = CodeWorkspace.objects.create(
-            owner=self.user,
-            name="Rollback path test",
-            files={"main.py": "print('safe')\\n"},
-        )
-        for path in ("../secret.txt", ".git/config", "node_modules/pkg.js", "src\\\\main.py"):
-            with self.subTest(path=path):
-                response = self.client.post(
-                    "/api/ai/agent/rollback/",
-                    {"workspace": workspace.id, "revision": workspace.revision, "files": {path: "bad"}},
-                    format="json",
-                )
-                self.assertEqual(response.status_code, 400)
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback input', files={'main.py': 'current'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'revision': workspace.revision, 'files': {'main.py': 'untrusted'},
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files['main.py'], 'current')
 
-    @patch("api.views._workspace_write_allowed", return_value=False)
+    def test_agent_rollback_rejects_corrupted_snapshot_content(self):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback path', files={'main.py': 'current'})
+        snapshot = _create_rollback_snapshot(workspace, self.user, {'../secret.txt': 'bad'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files['main.py'], 'current')
+
+    @patch('api.views._workspace_write_allowed', return_value=False)
     def test_agent_rollback_rejects_read_only_workspace_access(self, _write_allowed):
         self.client.force_authenticate(self.user)
-        workspace = CodeWorkspace.objects.create(
-            owner=self.user,
-            name="Rollback permission test",
-            files={"main.py": "print('current')\\n"},
-        )
-        response = self.client.post(
-            "/api/ai/agent/rollback/",
-            {
-                "workspace": workspace.id,
-                "revision": workspace.revision,
-                "files": {"main.py": "print('old')\\n"},
-            },
-            format="json",
-        )
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback permission', files={'main.py': 'current'})
+        snapshot = _create_rollback_snapshot(workspace, self.user, {'main.py': 'old'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
         self.assertEqual(response.status_code, 403)
         workspace.refresh_from_db()
-        self.assertEqual(workspace.files["main.py"], "print('current')\\n")
+        self.assertEqual(workspace.files['main.py'], 'current')
 
     def test_agent_apply_token_cannot_be_used_by_another_user(self):
         other = User.objects.create_user(username="agent-other", password="StrongPassword123!")
