@@ -538,7 +538,7 @@ def execute_agent_task_verification(job):
         normalized_status = "succeeded"
     normalized_exit_code = (
         None if (
-            normalized_status in {"cancelled", "infrastructure_failed"}
+            normalized_status in {"cancelled", "timed_out", "infrastructure_failed"}
             and exit_code == 0
         )
         else exit_code
