@@ -494,7 +494,7 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
                 encoded_value = value.encode("utf-8", errors="strict")
             except UnicodeEncodeError as exc:
                 raise RepairContractError("Workspace snapshot contains invalid Unicode.") from exc
-            if "\\x00" in value or len(encoded_value) > MAX_PATCH_SOURCE_BYTES:
+            if "\x00" in value or len(encoded_value) > MAX_PATCH_SOURCE_BYTES:
                 raise RepairContractError("Workspace snapshot contains an invalid or oversized file.")
             path_bytes_total += len(encoded_path)
             source_bytes_total += len(encoded_value)
