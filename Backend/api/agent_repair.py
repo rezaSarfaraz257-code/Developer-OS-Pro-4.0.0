@@ -327,6 +327,8 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             raise RepairContractError("Repair proposal contains an invalid change record.")
         path = change.get("path")
         operation = change.get("operation")
+        if operation not in {"modify", "create", "delete"}:
+            raise RepairContractError("Repair proposal contains an unsupported file operation.")
         changed_paths.append(path)
         if operation == "modify":
             if path not in workspace_files or type(workspace_files[path]) is not str:
