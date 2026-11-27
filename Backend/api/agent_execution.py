@@ -526,12 +526,21 @@ def execute_agent_task_verification(job):
         normalized_status = "cancelled"
     elif runner_status == "timeout":
         normalized_status = "timed_out"
+    elif runner_status == "failed" and exit_code == 0:
+        # A terminal Runner failure with a zero process exit code is not a
+        # successful process result. Treat it as an infrastructure failure
+        # with no trustworthy process exit code instead of letting evidence
+        # normalization raise and discard the terminal outcome.
+        normalized_status = "infrastructure_failed"
     elif runner_status == "failed" or exit_code != 0:
         normalized_status = "failed"
     else:
         normalized_status = "succeeded"
     normalized_exit_code = (
-        None if normalized_status == "cancelled" and exit_code == 0
+        None if (
+            normalized_status in {"cancelled", "infrastructure_failed"}
+            and exit_code == 0
+        )
         else exit_code
     )
     runner_evidence_payload = {
@@ -636,7 +645,7 @@ def execute_agent_task_verification(job):
             "runner_job_id": runner_job_id,
             "iteration": queued_evidence.get("iteration", 1),
             "history": queued_evidence.get("history", []),
-            "runner_status": runner_status or "unknown", "exit_code": exit_code,
+            "runner_status": runner_status or "unknown", "exit_code": normalized_exit_code,
             "duration_ms": duration_ms, "verified_at": verified_at,
             **output_fingerprints,
             "output_persisted": False,
