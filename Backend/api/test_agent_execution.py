@@ -515,7 +515,10 @@ class AgentTaskVerificationAPITests(TestCase):
                 })
             return real_atomic(*args, **kwargs)
 
-        with patch("api.agent_execution.transaction.atomic", side_effect=cancel_between_reservation_and_final_preflight):
+        with patch(
+            "api.agent_execution.transaction.atomic",
+            side_effect=cancel_between_reservation_and_final_preflight,
+        ):
             result = execute_agent_task_verification(job)
 
         self.assertEqual(result["status"], "verification_canceled")
