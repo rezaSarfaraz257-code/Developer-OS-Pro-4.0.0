@@ -487,7 +487,7 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": ".config/gh/hosts.yml",
             "operation": "create",
             "reason": "Attempted credential-store creation must be rejected.",
-            "content": "github.com:\n  oauth_token: fake-token\n",
+            "content": "github.com:\\n  oauth_token: fake-token\\n",
         }]
 
         self.assertIsNone(_valid_repair_proposal(
@@ -610,8 +610,8 @@ class AgentTaskRepairProposalTests(TestCase):
         from .ai_engine import _agent_context_file_samples, _provider_safe_context_path
 
         files = {
-            "main.py": "print('safe')\n",
-            ".config/gh/hosts.yml": "github.com:\n  user: developer\n",
+            "main.py": "print('safe')\\n",
+            ".config/gh/hosts.yml": "github.com:\\n  user: developer\\n",
         }
         sampled = _agent_context_file_samples(files)
         provider_files = {
