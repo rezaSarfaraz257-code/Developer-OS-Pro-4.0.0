@@ -327,7 +327,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         return analyze_root_cause(evidence, **self.trusted_identity(), **kwargs)
 
     def compare(self, before, after, verification):
-        return self.compare(
+        return compare_repair_outcomes(
             before, after, verification,
             expected_workspace_id=7,
             expected_before_execution_id="exec-001",
