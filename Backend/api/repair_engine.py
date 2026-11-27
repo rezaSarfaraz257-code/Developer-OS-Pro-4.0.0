@@ -805,7 +805,13 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
 
 def validate_revision_bound_approval(approval, *, current_revision, patch_sha256, now=None):
     """Fail closed unless approval binds the exact revision and patch hash."""
-    if not _exact_string_keys(approval):
+    if (
+        not _exact_string_keys(approval)
+        or set(approval) != {
+            "approved", "workspace_revision", "patch_sha256",
+            "approved_at", "expires_at",
+        }
+    ):
         return False
     try:
         _revision(current_revision)
