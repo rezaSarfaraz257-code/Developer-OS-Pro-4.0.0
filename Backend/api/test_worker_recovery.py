@@ -35,6 +35,31 @@ class StaleWorkerJobRecoveryTests(TestCase):
                 self.assertEqual(job.locked_by, "")
 
 
+    def test_worker_preserves_canceled_and_superseded_agent_plan_outcomes(self):
+        for index, outcome in enumerate(("canceled", "superseded"), start=1):
+            with self.subTest(outcome=outcome):
+                job = BackgroundJob.objects.create(
+                    kind="ai_agent_plan",
+                    payload={"run_id": index},
+                    status="queued",
+                    available_at=timezone.now() - timedelta(seconds=1),
+                    attempts=0,
+                    max_attempts=3,
+                )
+                with patch(
+                    "api.management.commands.worker.execute",
+                    return_value={"run_id": index, "status": outcome},
+                ):
+                    Command().handle(once=True, sleep=0)
+
+                job.refresh_from_db()
+                self.assertEqual(job.status, "canceled")
+                self.assertEqual(job.result["status"], outcome)
+                self.assertIsNotNone(job.finished_at)
+                self.assertIsNone(job.locked_at)
+                self.assertEqual(job.locked_by, "")
+
+
     def test_reclaimed_job_fences_out_previous_worker_even_when_identity_is_reused(self):
         job = BackgroundJob.objects.create(
             kind="ai_agent_plan",
