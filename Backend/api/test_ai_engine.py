@@ -1107,6 +1107,32 @@ class AIAgentApprovalTests(TestCase):
         workspace.refresh_from_db()
         self.assertEqual(workspace.files['main.py'], 'current')
 
+    def test_agent_rollback_rejects_stale_snapshot_after_later_workspace_edit(self):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback stale', files={'main.py': 'before'})
+        snapshot = _create_rollback_snapshot(workspace, self.user, {'main.py': 'before'})
+        workspace.files = {'main.py': 'later-edit'}
+        workspace.save(update_fields={'files'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files['main.py'], 'later-edit')
+
+    def test_agent_rollback_rejects_snapshot_digest_tampering(self):
+        self.client.force_authenticate(self.user)
+        workspace = CodeWorkspace.objects.create(owner=self.user, name='Rollback digest', files={'main.py': 'current'})
+        snapshot = _create_rollback_snapshot(workspace, self.user, {'main.py': 'restored'})
+        snapshot.files = {'main.py': 'tampered'}
+        snapshot.save(update_fields={'files'})
+        response = self.client.post('/api/ai/agent/rollback/', {
+            'workspace': workspace.id, 'snapshot_id': snapshot.id, 'revision': workspace.revision,
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        workspace.refresh_from_db()
+        self.assertEqual(workspace.files['main.py'], 'current')
+
     def test_agent_apply_token_cannot_be_used_by_another_user(self):
         other = User.objects.create_user(username="agent-other", password="StrongPassword123!")
         self.client.force_authenticate(other)
