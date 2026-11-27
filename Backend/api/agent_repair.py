@@ -413,6 +413,25 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
                     f"@@ -0,0 +1,{len(added)} @@\n"
                 )
                 patch_parts.extend(added)
+        elif operation == "delete":
+            original = workspace_files.get(path)
+            if type(original) is not str:
+                raise RepairContractError("Deleted repair target is missing from the authoritative snapshot.")
+            diff_lines = list(difflib.unified_diff(
+                original.splitlines(keepends=True),
+                [],
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm="\\n",
+            ))
+            if not diff_lines:
+                raise RepairContractError("Deleting an empty file has no revision-verifiable source diff.")
+            git_header = f"diff --git a/{path} b/{path}\\n"
+            patch_parts.append(git_header)
+            patch_parts.extend(diff_lines)
+            revision_patch_parts.append(git_header)
+            revision_patch_parts.extend(diff_lines)
+            modified_paths.append(path)
 
     security_patch = "".join(patch_parts)
     findings = scan_patch_for_secrets(security_patch)
