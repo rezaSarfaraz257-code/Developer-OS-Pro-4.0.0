@@ -340,11 +340,11 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
                 updated.splitlines(keepends=True),
                 fromfile=f"a/{path}",
                 tofile=f"b/{path}",
-                lineterm="\\n",
+                lineterm="\n",
             ))
             if not diff_lines:
                 raise RepairContractError("Repair proposal contains a no-op file modification.")
-            git_header = f"diff --git a/{path} b/{path}\\n"
+            git_header = f"diff --git a/{path} b/{path}\n"
             patch_parts.append(git_header)
             patch_parts.extend(diff_lines)
             revision_patch_parts.append(git_header)
@@ -356,14 +356,14 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
                 raise RepairContractError("Created repair content must be text.")
             added = []
             for line in created.splitlines(keepends=True):
-                added.append("+" + (line if line.endswith("\\n") else line + "\\n"))
+                added.append("+" + (line if line.endswith("\n") else line + "\n"))
             if created and not added:
-                added = ["+" + created + "\\n"]
+                added = ["+" + created + "\n"]
             if added:
                 patch_parts.append(
-                    f"diff --git a/{path} b/{path}\\n"
-                    f"--- a/{path}\\n+++ b/{path}\\n"
-                    f"@@ -0,0 +1,{len(added)} @@\\n"
+                    f"diff --git a/{path} b/{path}\n"
+                    f"--- a/{path}\n+++ b/{path}\n"
+                    f"@@ -0,0 +1,{len(added)} @@\n"
                 )
                 patch_parts.extend(added)
 
