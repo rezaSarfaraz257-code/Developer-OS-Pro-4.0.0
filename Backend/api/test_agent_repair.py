@@ -787,6 +787,26 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertNotEqual(first_result["patch_sha256"], second_result["patch_sha256"])
         self.assertEqual(first_result["snapshot_sha256"], second_result["snapshot_sha256"])
 
+    def test_create_only_repair_rejects_malformed_authoritative_snapshot(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["README.md"]
+        proposal["changes"] = [{
+            "path": "README.md",
+            "operation": "create",
+            "reason": "Add a repair note.",
+            "content": "# Repair note\\n",
+        }]
+
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"existing.py": None},
+                self.workspace.revision,
+            )
+
     def test_repair_proposal_rejects_runner_evidence_identity_drift_before_provider_call(self):
         from copy import deepcopy
 
