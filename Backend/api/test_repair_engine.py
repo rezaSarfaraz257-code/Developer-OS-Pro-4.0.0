@@ -460,7 +460,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             "evidence_origin": "runner",
             "execution_id": "exec-002",
             "workspace_id": 7,
-            "job_id": 34,
+            "job_id": 33,
             "workspace_revision": 13,
             "execution_status": "succeeded",
             "exit_code": 0,
@@ -487,7 +487,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         verification["job_id"] = 999
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
-        verification["job_id"] = 34
+        verification["job_id"] = 33
         verification["workspace_id"] = 8
         result = compare_repair_outcomes(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
