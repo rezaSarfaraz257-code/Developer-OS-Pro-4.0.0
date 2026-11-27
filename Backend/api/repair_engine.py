@@ -513,7 +513,14 @@ def scan_patch_for_secrets(unified_diff):
         raise RepairContractError("Patch must be bounded text.")
     added_lines = []
     header_state = 0
-    for line_number, line in enumerate(unified_diff.splitlines(), 1):
+    # Git unified diffs are LF-delimited. str.splitlines() also treats Unicode
+    # separators (for example U+2028) as record boundaries, but those characters
+    # are valid source content here. Splitting only on LF keeps the scanner's
+    # added-line view aligned with validate_unified_patch().
+    for line_number, raw_line in enumerate(_split_lf_lines(unified_diff), 1):
+        line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+        if line.endswith("\r"):
+            line = line[:-1]
         if line.startswith("diff --git "):
             header_state = 1
             continue
