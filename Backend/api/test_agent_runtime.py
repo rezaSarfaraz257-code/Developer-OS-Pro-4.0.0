@@ -827,6 +827,12 @@ class AgentRunLifecycleTests(TestCase):
             BackgroundJob.objects.filter(pk=job.pk).update(
                 available_at=timezone.now() - timedelta(seconds=1)
             )
+            # claim_job is intentionally global; defer unrelated queued work
+            # so this regression deterministically reclaims the exact stale
+            # planner row created above instead of depending on suite order.
+            BackgroundJob.objects.filter(status="queued").exclude(pk=job.pk).update(
+                available_at=timezone.now() + timedelta(hours=1)
+            )
             replacement_claims.append(claim_job("replacement-planner"))
             self.assertIsNotNone(replacement_claims[0])
             return (
