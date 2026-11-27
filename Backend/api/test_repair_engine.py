@@ -391,7 +391,9 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         cases = (
             ("python_type_error", "type"),
             ("dependency_module_not_found", "dependency"),
+            ("node_module_resolution_error", "dependency"),
             ("build_compile_error", "build"),
+            ("node_lint_error", "build"),
             ("test_assertion_failure", "test"),
             ("runtime_exception", "runtime"),
             ("configuration_invalid", "configuration"),
