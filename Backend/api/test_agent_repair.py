@@ -753,3 +753,24 @@ class AgentTaskRepairProposalTests(TestCase):
                 self.workspace.revision,
             )
 
+    def test_repair_proposal_rejects_runner_evidence_identity_drift_before_provider_call(self):
+        from copy import deepcopy
+
+        tampered = deepcopy(self.evidence)
+        tampered["runner_evidence"]["execution_id"] = "forged-runner-execution"
+        self.task.execution_evidence = tampered
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+        self.verification_job.result = {
+            "status": "verification_failed",
+            "task_id": self.task.id,
+            "evidence": tampered,
+        }
+        self.verification_job.save(update_fields=["result"])
+
+        with patch("api.ai_engine._call_provider") as provider:
+            response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+        provider.assert_not_called()
+
