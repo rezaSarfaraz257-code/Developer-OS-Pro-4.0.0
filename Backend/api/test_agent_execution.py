@@ -474,11 +474,17 @@ class AgentTaskVerificationAPITests(TestCase):
         job.locked_at = timezone.now()
         job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
+        runner_request.return_value = ({"status": "cancelled"}, None)
+
         def snapshot_then_cancel(workspace):
-            # Model cancellation after the first reservation transaction has
-            # committed its Runner execution ID, but before the HTTP POST.
-            AgentRun.objects.filter(pk=self.run.pk).update(status="canceled")
-            AgentTask.objects.filter(pk=self.task.pk).update(status="canceled")
+            # Invoke the real control-plane cancellation endpoint after the
+            # durable Runner execution ID is reserved but before /exec. The
+            # endpoint must send the exact cancellation tombstone to Runner.
+            response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["runner_cancellation"], {
+                "requested": 1, "confirmed": 1, "unconfirmed": 0,
+            })
             return {
                 "workspace_id": workspace.id,
                 "revision": workspace.revision,
@@ -489,7 +495,11 @@ class AgentTaskVerificationAPITests(TestCase):
         result = execute_agent_task_verification(job)
 
         self.assertEqual(result["status"], "verification_canceled")
-        runner_request.assert_not_called()
+        runner_request.assert_called_once()
+        self.assertEqual(
+            runner_request.call_args.args[1],
+            f"/jobs/agent-{job.id}/cancel?workspace_id={self.workspace.id}",
+        )
         self.task.refresh_from_db()
         self.run.refresh_from_db()
         self.assertEqual(self.task.status, "canceled")
