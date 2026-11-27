@@ -579,7 +579,8 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
                         expected_workspace_revision=13,
                         expected_job_id=34,
                     )
-                    (before if side == "before" else after)[field] = forged_value
+                    target = before if side == "before" else after
+                    target[field] = forged_value
                     with self.assertRaises(RepairContractError):
                         self.compare(before, after, {})
 
