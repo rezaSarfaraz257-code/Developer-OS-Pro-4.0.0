@@ -780,3 +780,42 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
         provider.assert_not_called()
 
+    def test_live_repair_engine_validates_deletion_against_exact_snapshot(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+
+        proposal = self.proposal()
+        proposal["changes"] = [{
+            "path": "main.py",
+            "operation": "delete",
+            "reason": "Remove the source file identified as invalid by the repair plan.",
+        }]
+        result = _validate_repair_proposal_with_engine(
+            proposal,
+            dict(self.workspace.files),
+            self.workspace.revision,
+        )
+
+        self.assertTrue(result["validated"])
+        self.assertEqual(result["validation_mode"], "revision_bound_unified_diff")
+        self.assertEqual(result["changed_paths"], ["main.py"])
+        self.assertEqual(result["secret_scan"], "passed")
+        self.assertTrue(result["patch_sha256"])
+        self.assertTrue(result["snapshot_sha256"])
+
+    def test_live_repair_engine_rejects_deletion_without_verifiable_source_diff(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["changes"] = [{
+            "path": "empty.txt",
+            "operation": "delete",
+            "reason": "An empty file still needs an explicit verified deletion contract.",
+        }]
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"empty.txt": ""},
+                self.workspace.revision,
+            )
+
