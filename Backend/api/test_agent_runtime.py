@@ -812,7 +812,9 @@ class AgentRunLifecycleTests(TestCase):
             status="running",
             attempts=1,
             max_attempts=3,
-            locked_at=timezone.now(),
+            # Recovery must see an actually expired lease; a fresh
+            # timestamp is correctly protected by the worker heartbeat fence.
+            locked_at=timezone.now() - timedelta(minutes=11),
             locked_by="old-planner:lease",
             idempotency_key="stale-plan-job-0001",
         )
