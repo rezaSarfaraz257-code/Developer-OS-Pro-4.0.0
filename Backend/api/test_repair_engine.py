@@ -1476,6 +1476,8 @@ class RollbackEligibilityTests(SimpleTestCase):
     def kwargs(self):
         return {
             "workspace_id": 7,
+            "expected_execution_id": "exec-post-repair",
+            "expected_job_id": 35,
             "current_revision": "rev-13",
             "expected_post_revision": "rev-13",
             "pre_repair_revision": "rev-12",
@@ -1495,6 +1497,29 @@ class RollbackEligibilityTests(SimpleTestCase):
         result = evaluate_rollback_eligibility(self.evidence(), **self.kwargs())
         self.assertFalse(result["eligible"])
         self.assertEqual(result["reason"], "verification_passed")
+
+    def test_rollback_rejects_execution_and_job_identity_drift(self):
+        for field, forged_value in (
+            ("execution_id", "forged-execution"),
+            ("job_id", 36),
+        ):
+            with self.subTest(field=field):
+                evidence = self.evidence(failed_gate="security")
+                evidence[field] = forged_value
+                with self.assertRaises(RepairContractError):
+                    evaluate_rollback_eligibility(evidence, **self.kwargs())
+
+        for field, forged_value in (
+            ("expected_execution_id", "forged-execution"),
+            ("expected_job_id", 36),
+        ):
+            with self.subTest(expected_field=field):
+                kwargs = self.kwargs()
+                kwargs[field] = forged_value
+                with self.assertRaises(RepairContractError):
+                    evaluate_rollback_eligibility(
+                        self.evidence(failed_gate="security"), **kwargs
+                    )
 
     def test_rollback_rejects_unexpected_top_level_evidence_fields(self):
         evidence = self.evidence(
