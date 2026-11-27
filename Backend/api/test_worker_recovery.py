@@ -35,6 +35,51 @@ class StaleWorkerJobRecoveryTests(TestCase):
                 self.assertEqual(job.locked_by, "")
 
 
+    def test_expired_verification_job_is_never_requeued_when_max_attempts_is_greater_than_one(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            payload={"run_id": 999999, "task_id": 999999, "owner_id": 999999},
+            status="running",
+            attempts=1,
+            max_attempts=5,
+            locked_at=timezone.now() - STALE_AFTER - timedelta(seconds=1),
+            locked_by="interrupted-verifier:expired-token",
+        )
+
+        with patch("api.agent_execution.fail_agent_task_verification") as finalize:
+            recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIsNotNone(job.finished_at)
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIn("automatic retry suppressed", job.error)
+        finalize.assert_called_once()
+
+    @patch("api.management.commands.worker.execute", side_effect=RuntimeError("runner response lost"))
+    def test_verification_exception_is_dead_lettered_without_retry_even_with_retry_budget(self, mocked_execute):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            payload={"run_id": 999999, "task_id": 999999, "owner_id": 999999},
+            status="queued",
+            available_at=timezone.now() - timedelta(seconds=1),
+            attempts=0,
+            max_attempts=5,
+        )
+
+        with patch("api.agent_execution.fail_agent_task_verification") as finalize:
+            Command().handle(once=True, sleep=0)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(job.attempts, 1)
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("automatic retry suppressed", job.error)
+        mocked_execute.assert_called_once()
+        finalize.assert_called_once()
+
     def test_worker_preserves_canceled_and_superseded_agent_plan_outcomes(self):
         for index, outcome in enumerate(("canceled", "superseded"), start=1):
             with self.subTest(outcome=outcome):
