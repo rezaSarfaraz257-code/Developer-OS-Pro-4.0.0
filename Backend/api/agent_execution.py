@@ -426,6 +426,30 @@ def execute_agent_task_verification(job):
         task.execution_attempts = current_job.attempts
         task.save(update_fields=["execution_attempts", "updated_at"])
 
+    # Cancellation can win after the execution identifier is reserved but
+    # before this worker reaches the outbound request. Reacquire the durable
+    # locks and revalidate the lease plus task/run state immediately before
+    # crossing the Runner side-effect boundary.
+    with transaction.atomic():
+        current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
+        current_run = AgentRun.objects.select_for_update().filter(
+            pk=payload.get("run_id"), owner_id=actor.id,
+        ).first()
+        current_task = AgentTask.objects.select_for_update().filter(
+            pk=payload.get("task_id"), run=current_run,
+        ).first() if current_run else None
+        if not _job_lease_is_current(current_job, job) or not current_run or not current_task:
+            return {"status": "verification_superseded", "task_id": payload.get("task_id")}
+        if current_run.status == "canceled" or current_task.status == "canceled":
+            return {"status": "verification_canceled", "task_id": current_task.id}
+        current_payload = current_job.payload if isinstance(current_job.payload, dict) else {}
+        if (
+            current_task.status != "running"
+            or current_task.execution_job_id != current_job.id
+            or current_payload.get("runner_execution_id") != runner_execution_id
+        ):
+            return {"status": "verification_superseded", "task_id": current_task.id}
+
     # This POST is intentionally outside transaction.atomic(). Runner has its
     # own per-workspace lock and per-execution isolation. Never replay an
     # ambiguous POST: this BackgroundJob is configured for one attempt.
