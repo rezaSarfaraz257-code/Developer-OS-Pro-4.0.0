@@ -447,6 +447,33 @@ class CodeWorkspace(models.Model):
     class Meta:
         indexes = [models.Index(fields=["owner", "-updated_at"], name="api_codework_owner_updated")]
 
+
+class WorkspaceSnapshot(models.Model):
+    """Immutable, owner-scoped workspace state captured before an AI patch."""
+
+    workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="snapshots")
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workspace_snapshots")
+    source_revision = models.PositiveBigIntegerField()
+    applied_revision = models.PositiveBigIntegerField()
+    files = models.JSONField()
+    active_file = models.CharField(max_length=500, blank=True, default="")
+    sha256 = models.CharField(max_length=64)
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_revision = models.PositiveBigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["workspace", "-created_at"], name="api_ws_snapshot_created"),
+            models.Index(fields=["owner", "workspace"], name="api_ws_snapshot_owner"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "source_revision", "applied_revision"],
+                name="unique_workspace_revision_snapshot",
+            ),
+        ]
+
 class FrameworkInstallation(models.Model):
     STATUS_CHOICES = [("queued", "Queued"), ("running", "Running"), ("success", "Success"), ("failed", "Failed")]
     workspace = models.ForeignKey(CodeWorkspace, on_delete=models.CASCADE, related_name="installations")
