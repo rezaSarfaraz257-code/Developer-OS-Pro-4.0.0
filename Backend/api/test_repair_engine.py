@@ -447,6 +447,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             self.evidence(
                 execution_id="exec-002",
                 workspace_revision=13,
+                job_id=34,
                 execution_status="succeeded",
                 exit_code=0,
                 structured_errors=[],
