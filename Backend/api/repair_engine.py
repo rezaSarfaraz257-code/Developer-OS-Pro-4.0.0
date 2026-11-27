@@ -61,7 +61,7 @@ _SECRET_PATTERNS = (
     ),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?(?:ENCRYPTED )?PRIVATE KEY-----[\s\S]*\Z", re.I),
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
     re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\b(?:xox[baprs]|npm|pypi)-[A-Za-z0-9_-]{10,}\b"),
