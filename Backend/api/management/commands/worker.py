@@ -28,6 +28,7 @@ def recover_stale_jobs():
         Q(locked_at__lt=now - STALE_AFTER)
         | Q(locked_at__isnull=True)
         | Q(locked_at__gt=now)
+        | Q(locked_by="")
     )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
@@ -49,12 +50,11 @@ def recover_stale_jobs():
             # queryset is only a candidate scan; its timestamp may be stale by
             # the time this worker reaches and locks the row.
             recovery_now = timezone.now()
-            if (
-                locked.status != "running"
-                or (
-                    locked.locked_at
-                    and recovery_now - STALE_AFTER <= locked.locked_at <= recovery_now
-                )
+            # A timestamp alone does not establish ownership: a running job
+            # with an empty/malformed fencing token is not executable and
+            # would otherwise remain stuck until its timestamp expires.
+            if locked.status != "running" or is_current_job_lease(
+                locked, locked.locked_by, now=recovery_now,
             ):
                 continue
             if locked.kind == "email":
