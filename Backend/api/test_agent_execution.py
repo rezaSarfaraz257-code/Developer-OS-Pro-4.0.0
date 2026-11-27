@@ -655,6 +655,12 @@ class AgentTaskVerificationAPITests(TestCase):
         )
         self.assertEqual(self.task.execution_evidence["stdout_bytes"], len("private output".encode("utf-8")) )
         self.assertEqual(self.task.execution_evidence["stderr_bytes"], 0)
+        self.assertEqual(
+            self.task.execution_evidence["runner_evidence"]["execution_status"],
+            "succeeded",
+        )
+        self.assertIsNone(self.task.execution_evidence["failure_classification"]["category"])
+        self.assertIsNone(self.task.execution_evidence["root_cause_analysis"])
         self.assertFalse(self.task.execution_evidence["output_persisted"])
         self.assertNotIn("stdout", self.task.execution_evidence)
         runner_request.assert_called_once()
@@ -859,6 +865,15 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertFalse(evidence["output_persisted"])
         self.assertEqual(evidence["repair_analysis"]["diagnostic_code"], "python_import_error")
         self.assertEqual(evidence["repair_analysis"]["status"], "review_required")
+        self.assertEqual(evidence["runner_evidence"]["execution_id"], f"agent-{job.id}")
+        self.assertEqual(evidence["runner_evidence"]["execution_status"], "failed")
+        self.assertEqual(evidence["failure_classification"]["category"], "dependency")
+        self.assertEqual(
+            evidence["root_cause_analysis"]["conclusion"],
+            "candidate_causes_available",
+        )
+        self.assertNotIn("private_package", str(evidence["runner_evidence"]))
+        self.assertNotIn("DO_NOT_PERSIST_THIS_VALUE", str(evidence["runner_evidence"]))
         self.assertFalse(evidence["repair_analysis"]["workspace_mutated"])
         self.assertFalse(evidence["repair_analysis"]["patch_generated"])
         runner_request.assert_called_once()

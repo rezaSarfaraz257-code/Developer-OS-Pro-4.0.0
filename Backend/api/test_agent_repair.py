@@ -118,6 +118,61 @@ class AgentTaskRepairProposalTests(TestCase):
             idempotency_key="repair-verify-001",
         )
         self.evidence["verification_job_id"] = self.verification_job.id
+        self.evidence["runner_job_id"] = f"agent-{self.verification_job.id}"
+        from .repair_engine import (
+            analyze_root_cause,
+            classify_execution_failure,
+            normalize_runner_evidence,
+        )
+
+        timestamp = timezone.now().isoformat()
+        runner_payload = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": self.evidence["runner_job_id"],
+            "workspace_id": self.workspace.id,
+            "workspace_revision": self.workspace.revision,
+            "job_id": self.verification_job.id,
+            "execution_status": "failed",
+            "exit_code": 1,
+            "termination_signal": None,
+            "stdout_reference": None,
+            "stderr_reference": None,
+            "structured_errors": [{
+                "code": "python_import_error",
+                "message": "python_import_error",
+                "source_location": None,
+                "evidence_reference": None,
+            }],
+            "stack_trace": None,
+            "source_location": None,
+            "execution_environment": {},
+            "resource_usage": {"duration_ms": 125},
+            "timestamps": {"started_at": timestamp, "finished_at": timestamp},
+            "artifact_checksums": {},
+        }
+        self.evidence["runner_evidence"] = normalize_runner_evidence(
+            runner_payload,
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+        )
+        self.evidence["failure_classification"] = classify_execution_failure(
+            self.evidence["runner_evidence"],
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+        )
+        self.evidence["root_cause_analysis"] = analyze_root_cause(
+            self.evidence["runner_evidence"],
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+            changed_paths=[],
+        )
         self.verification_job.result = {
             "status": "verification_failed",
             "task_id": self.task.id,
@@ -170,8 +225,24 @@ class AgentTaskRepairProposalTests(TestCase):
         audit = AuditLog.objects.get(action="agent_task.repair_proposal_generated")
         self.assertEqual(audit.metadata["workspace_revision"], original_revision)
         self.assertTrue(audit.metadata["human_approval_required"])
+        self.assertEqual(
+            audit.metadata["repair_engine_validation"]["mode"],
+            "revision_bound_unified_diff",
+        )
+        self.assertEqual(
+            audit.metadata["repair_engine_validation"]["secret_scan"],
+            "passed",
+        )
+        self.assertTrue(audit.metadata["repair_engine_validation"]["patch_sha256"])
+        self.assertTrue(audit.metadata["repair_engine_validation"]["snapshot_sha256"])
         usage.assert_called_once()
         provider.assert_called_once()
+        provider_verification = provider.call_args.args[1]["agent_task_repair"]["verification"]
+        self.assertEqual(provider_verification["failure_classification"]["category"], "dependency")
+        self.assertEqual(
+            provider_verification["root_cause_analysis"]["conclusion"],
+            "candidate_causes_available",
+        )
 
     @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
     @patch("api.ai_engine._call_provider")
@@ -625,3 +696,126 @@ class AgentTaskRepairProposalTests(TestCase):
             self.workspace.files,
             sampled_paths=set(),
         ))
+
+    def test_live_repair_proposal_validation_uses_revision_bound_engine_for_mixed_changes(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["main.py", "README.md"]
+        proposal["changes"].append({
+            "path": "README.md",
+            "operation": "create",
+            "reason": "Document the approved repair behavior.",
+            "content": "# Repair notes\n",
+        })
+
+        result = _validate_repair_proposal_with_engine(
+            proposal,
+            dict(self.workspace.files),
+            self.workspace.revision,
+        )
+
+        self.assertTrue(result["validated"])
+        self.assertEqual(result["validation_mode"], "revision_bound_unified_diff")
+        self.assertEqual(result["changed_paths"], ["main.py", "README.md"])
+        self.assertEqual(result["secret_scan"], "passed")
+        self.assertTrue(result["patch_sha256"])
+        self.assertTrue(result["snapshot_sha256"])
+
+    def test_live_repair_engine_rejects_secret_material_in_modified_and_created_files(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        modified = self.proposal()
+        modified["changes"][0]["content"] = "API_KEY = 'sk_live_1234567890abcdef'\n"
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                modified,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
+        unsupported = self.proposal()
+        unsupported["changes"][0]["operation"] = "replace"
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                unsupported,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
+        created = self.proposal()
+        created["affected_files"] = ["README.md"]
+        created["changes"] = [{
+            "path": "README.md",
+            "operation": "create",
+            "reason": "The created file must be scanned too.",
+            "content": "API_KEY = 'sk_live_1234567890abcdef'\n",
+        }]
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                created,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
+    def test_repair_proposal_rejects_runner_evidence_identity_drift_before_provider_call(self):
+        from copy import deepcopy
+
+        tampered = deepcopy(self.evidence)
+        tampered["runner_evidence"]["execution_id"] = "forged-runner-execution"
+        self.task.execution_evidence = tampered
+        self.task.save(update_fields=["execution_evidence", "updated_at"])
+        self.verification_job.result = {
+            "status": "verification_failed",
+            "task_id": self.task.id,
+            "evidence": tampered,
+        }
+        self.verification_job.save(update_fields=["result"])
+
+        with patch("api.ai_engine._call_provider") as provider:
+            response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "repair_evidence_not_eligible")
+        provider.assert_not_called()
+
+    def test_live_repair_engine_validates_deletion_against_exact_snapshot(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+
+        proposal = self.proposal()
+        proposal["changes"] = [{
+            "path": "main.py",
+            "operation": "delete",
+            "reason": "Remove the source file identified as invalid by the repair plan.",
+        }]
+        result = _validate_repair_proposal_with_engine(
+            proposal,
+            dict(self.workspace.files),
+            self.workspace.revision,
+        )
+
+        self.assertTrue(result["validated"])
+        self.assertEqual(result["validation_mode"], "revision_bound_unified_diff")
+        self.assertEqual(result["changed_paths"], ["main.py"])
+        self.assertEqual(result["secret_scan"], "passed")
+        self.assertTrue(result["patch_sha256"])
+        self.assertTrue(result["snapshot_sha256"])
+
+    def test_live_repair_engine_rejects_deletion_without_verifiable_source_diff(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["changes"] = [{
+            "path": "empty.txt",
+            "operation": "delete",
+            "reason": "An empty file still needs an explicit verified deletion contract.",
+        }]
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"empty.txt": ""},
+                self.workspace.revision,
+            )
+
