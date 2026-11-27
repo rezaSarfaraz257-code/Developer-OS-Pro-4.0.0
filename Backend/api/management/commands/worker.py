@@ -493,11 +493,23 @@ class Command(BaseCommand):
                 # A verification handler can finish its reconciliation without
                 # completing the requested execution: cancellation and supersession
                 # are terminal non-success outcomes, not successful Job execution.
-                if (
-                    job.kind == "ai_agent_task_verify"
-                    and isinstance(result, dict)
-                    and result.get("status") in {"verification_canceled", "verification_superseded"}
-                ):
+                terminal_cancellation = (
+                    isinstance(result, dict)
+                    and (
+                        (
+                            job.kind == "ai_agent_task_verify"
+                            and result.get("status") in {"verification_canceled", "verification_superseded"}
+                        )
+                        or (
+                            job.kind == "ai_agent_plan"
+                            and result.get("status") in {"canceled", "superseded"}
+                        )
+                    )
+                )
+                if terminal_cancellation:
+                    # A handler may finish cleanly by observing cancellation or
+                    # a superseding lease. Preserve that terminal outcome in the
+                    # durable queue instead of reporting a completed execution.
                     job.status = "canceled"
                 else:
                     job.status = "succeeded"
