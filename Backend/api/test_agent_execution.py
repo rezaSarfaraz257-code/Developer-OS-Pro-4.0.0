@@ -3,7 +3,7 @@ from unittest.mock import patch
 import threading
 
 from django.contrib.auth.models import User
-from django.db import close_old_connections, connection, transaction
+from django.db import close_old_connections, connection, connections, transaction
 from django.test import TestCase, TransactionTestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -1865,7 +1865,9 @@ class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
                 thread_errors.append(exc)
                 lock_acquired.set()
             finally:
-                close_old_connections()
+                # Test-runner database teardown must not race a persistent
+                # connection owned by this auxiliary thread.
+                connections.close_all()
 
         lock_thread = threading.Thread(target=hold_first_job_lock, daemon=True)
         lock_thread.start()
