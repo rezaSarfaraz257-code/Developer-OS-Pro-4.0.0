@@ -487,7 +487,7 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": ".config/gh/hosts.yml",
             "operation": "create",
             "reason": "Attempted credential-store creation must be rejected.",
-            "content": "github.com:\\n  oauth_token: fake-token\\n",
+            "content": "github.com:\n  oauth_token: fake-token\n",
         }]
 
         self.assertIsNone(_valid_repair_proposal(
@@ -610,8 +610,8 @@ class AgentTaskRepairProposalTests(TestCase):
         from .ai_engine import _agent_context_file_samples, _provider_safe_context_path
 
         files = {
-            "main.py": "print('safe')\\n",
-            ".config/gh/hosts.yml": "github.com:\\n  user: developer\\n",
+            "main.py": "print('safe')\n",
+            ".config/gh/hosts.yml": "github.com:\n  user: developer\n",
         }
         sampled = _agent_context_file_samples(files)
         provider_files = {
@@ -645,7 +645,7 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": "README.md",
             "operation": "create",
             "reason": "Document the approved repair behavior.",
-            "content": "# Repair notes\\n",
+            "content": "# Repair notes\n",
         })
 
         result = _validate_repair_proposal_with_engine(
@@ -666,7 +666,7 @@ class AgentTaskRepairProposalTests(TestCase):
         from .repair_engine import RepairContractError
 
         modified = self.proposal()
-        modified["changes"][0]["content"] = "API_KEY = 'sk_live_1234567890abcdef'\\n"
+        modified["changes"][0]["content"] = "API_KEY = 'sk_live_1234567890abcdef'\n"
         with self.assertRaises(RepairContractError):
             _validate_repair_proposal_with_engine(
                 modified,
@@ -680,7 +680,7 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": "README.md",
             "operation": "create",
             "reason": "The created file must be scanned too.",
-            "content": "API_KEY = 'sk_live_1234567890abcdef'\\n",
+            "content": "API_KEY = 'sk_live_1234567890abcdef'\n",
         }]
         with self.assertRaises(RepairContractError):
             _validate_repair_proposal_with_engine(
