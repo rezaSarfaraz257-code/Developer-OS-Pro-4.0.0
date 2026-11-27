@@ -933,7 +933,12 @@ def evaluate_rollback_eligibility(
     except RepairContractError:
         raise RepairContractError("Rollback requires complete Runner verification evidence for the current revision.")
     if (
-        type(evidence.get("evidence_origin")) is not str
+        set(evidence) != {
+            "schema_version", "evidence_origin", "execution_id", "workspace_id",
+            "job_id", "workspace_revision", "patch_sha256", "execution_status",
+            "exit_code", "checks",
+        }
+        or type(evidence.get("evidence_origin")) is not str
         or evidence.get("evidence_origin") != "runner"
         or type(evidence.get("schema_version")) is not int
         or evidence.get("schema_version") != EVIDENCE_SCHEMA_VERSION
@@ -1054,6 +1059,10 @@ def verification_passed(result, *, expected_revision):
         return False
     if (
         not _exact_string_keys(result)
+        or set(result) != {
+            "schema_version", "evidence_origin", "execution_id", "workspace_id",
+            "job_id", "workspace_revision", "execution_status", "exit_code", "checks",
+        }
         or type(result.get("evidence_origin")) is not str
         or result.get("evidence_origin") != "runner"
         or type(result.get("schema_version")) is not int
