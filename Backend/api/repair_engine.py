@@ -1095,6 +1095,9 @@ def compare_repair_outcomes(
         and verification_passed(
             verification_evidence,
             expected_revision=after_evidence["workspace_revision"],
+            expected_execution_id=expected_after_execution_id,
+            expected_workspace_id=expected_workspace_id,
+            expected_job_id=expected_after_job_id,
         )
     )
     if after["category"] is None:
@@ -1115,10 +1118,16 @@ def compare_repair_outcomes(
     }
 
 
-def verification_passed(result, *, expected_revision):
+def verification_passed(
+    result, *, expected_revision, expected_execution_id,
+    expected_workspace_id, expected_job_id,
+):
     """Require independent, revision-bound Runner evidence for every verification gate."""
     try:
         _revision(expected_revision)
+        _opaque_identifier(expected_execution_id, "expected_execution_id")
+        _positive_id(expected_workspace_id, "expected_workspace_id")
+        _positive_id(expected_job_id, "expected_job_id")
     except RepairContractError:
         return False
     if (
@@ -1132,12 +1141,13 @@ def verification_passed(result, *, expected_revision):
         or type(result.get("schema_version")) is not int
         or result.get("schema_version") != EVIDENCE_SCHEMA_VERSION
         or type(result.get("execution_id")) is not str
+        or result.get("execution_id") != expected_execution_id
         or not result.get("execution_id")
         or len(result["execution_id"]) > 128
         or type(result.get("workspace_id")) is not int
-        or result.get("workspace_id") < 1
+        or result.get("workspace_id") != expected_workspace_id
         or type(result.get("job_id")) is not int
-        or result.get("job_id") < 1
+        or result.get("job_id") != expected_job_id
     ):
         return False
     try:
