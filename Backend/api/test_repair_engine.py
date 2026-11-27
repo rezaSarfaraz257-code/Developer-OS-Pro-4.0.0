@@ -326,6 +326,18 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
     def analyze(self, evidence, **kwargs):
         return analyze_root_cause(evidence, **self.trusted_identity(), **kwargs)
 
+    def compare(self, before, after, verification):
+        return self.compare(
+            before, after, verification,
+            expected_workspace_id=7,
+            expected_before_execution_id="exec-001",
+            expected_before_workspace_revision=12,
+            expected_before_job_id=33,
+            expected_after_execution_id="exec-002",
+            expected_after_workspace_revision=13,
+            expected_after_job_id=34,
+        )
+
     def test_classifies_failure_from_runner_evidence_not_agent_text(self):
         evidence = self.normalize()
         self.assertEqual(self.classify(evidence)["category"], "syntax")
@@ -507,22 +519,22 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
                 for name in ("targeted_tests", "regression_tests", "security")
             },
         }
-        result = compare_repair_outcomes(before, after, verification)
+        result = self.compare(before, after, verification)
         self.assertEqual(result["outcome"], "verified_repair")
         verification["checks"]["security"]["status"] = "failed"
-        result = compare_repair_outcomes(before, after, verification)
+        result = self.compare(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
         verification["checks"]["security"]["status"] = "passed"
         verification["execution_id"] = "different-execution"
-        result = compare_repair_outcomes(before, after, verification)
+        result = self.compare(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
         verification["execution_id"] = "exec-002"
         verification["job_id"] = 999
-        result = compare_repair_outcomes(before, after, verification)
+        result = self.compare(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
         verification["job_id"] = 34
         verification["workspace_id"] = 8
-        result = compare_repair_outcomes(before, after, verification)
+        result = self.compare(before, after, verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
 
         class SpoofedKey(str):
@@ -540,7 +552,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
                 "job_id": 34,
             }.items()
         }
-        result = compare_repair_outcomes(before, after, spoofed_verification)
+        result = self.compare(before, after, spoofed_verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
 
     def test_before_after_comparison_rejects_same_workspace_revision(self):
@@ -553,7 +565,7 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
             expected_execution_id="exec-002",
         )
         with self.assertRaises(RepairContractError):
-            compare_repair_outcomes(before, after, {})
+            self.compare(before, after, {})
 
 
 class PatchAndApprovalValidationTests(SimpleTestCase):
