@@ -1606,6 +1606,34 @@ class RollbackEligibilityTests(SimpleTestCase):
                         self.evidence(failed_gate="security", **overrides), **kwargs
                     )
 
+    def test_rollback_rejects_future_integer_snapshot_revision(self):
+        evidence = self.evidence(
+            failed_gate="security",
+            workspace_revision=12,
+            checks={
+                name: {
+                    "status": "failed" if name == "security" else "passed",
+                    "evidence_reference": "artifact://verification/" + name,
+                    "execution_id": "exec-post-repair",
+                    "workspace_revision": 12,
+                }
+                for name in ("targeted_tests", "regression_tests", "security")
+            },
+        )
+        kwargs = {
+            **self.kwargs(),
+            "current_revision": 12,
+            "expected_post_revision": 12,
+            "pre_repair_revision": 13,
+        }
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **kwargs)
+
+        kwargs["pre_repair_revision"] = 11
+        result = evaluate_rollback_eligibility(evidence, **kwargs)
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["target_revision"], 11)
+
     def test_rollback_rejects_equality_spoofed_runner_fields(self):
         class EqualTo:
             def __init__(self, expected):
