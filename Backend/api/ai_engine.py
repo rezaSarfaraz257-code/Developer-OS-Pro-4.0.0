@@ -1614,8 +1614,15 @@ def ai_agent_rollback_api(request):
             return Response({"error": "Rollback snapshot was not found."}, status=404)
         if snapshot.restored_at is not None:
             return Response({"error": "This rollback snapshot has already been consumed."}, status=409)
-        if snapshot.applied_revision > workspace.revision:
-            return Response({"error": "Snapshot does not belong to the current workspace history."}, status=409)
+        if (
+            snapshot.source_revision + 1 != snapshot.applied_revision
+            or snapshot.applied_revision != workspace.revision
+        ):
+            return Response({
+                "error": "Snapshot is stale; rollback is allowed only before any later workspace revision.",
+                "code": "stale_rollback_snapshot",
+                "revision": workspace.revision,
+            }, status=409)
         if not AuditLog.objects.filter(
             user=request.user, action="ai_agent.patch_applied",
             target_type="CodeWorkspace", target_id=str(workspace.id),
