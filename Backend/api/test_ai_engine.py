@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import requests
@@ -10,7 +11,32 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .ai_engine import MAX_CONTEXT_CHARS, _agent_parse_patch, _provider_config, _sanitize_provider_context, _build_input, _call_provider, _safe_provider_detail, _provider_error, _run
-from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace
+from .models import AIConversation, AIMessage, AuditLog, CodeWorkspace, WorkspaceSnapshot
+
+
+
+def _create_rollback_snapshot(workspace, owner, files=None):
+    snapshot_files = dict(workspace.files) if files is None else files
+    digest = hashlib.sha256(json.dumps(
+        snapshot_files, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    snapshot = WorkspaceSnapshot.objects.create(
+        workspace=workspace, owner=owner,
+        source_revision=max(0, workspace.revision - 1),
+        applied_revision=workspace.revision,
+        files=snapshot_files, active_file=workspace.active_file, sha256=digest,
+    )
+    AuditLog.objects.create(
+        user=owner, action="ai_agent.patch_applied",
+        target_type="CodeWorkspace", target_id=str(workspace.id),
+        metadata={
+            "previous_revision": snapshot.source_revision,
+            "revision": snapshot.applied_revision,
+            "rollback_snapshot_id": snapshot.id,
+            "rollback_snapshot_sha256": snapshot.sha256,
+        },
+    )
+    return snapshot
 
 
 class AIEngineUnitTests(TestCase):
