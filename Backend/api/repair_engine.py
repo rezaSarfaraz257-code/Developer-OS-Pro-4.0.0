@@ -939,6 +939,8 @@ def evaluate_rollback_eligibility(
     verification_evidence,
     *,
     workspace_id,
+    expected_execution_id,
+    expected_job_id,
     current_revision,
     expected_post_revision,
     pre_repair_revision,
@@ -952,6 +954,8 @@ def evaluate_rollback_eligibility(
     can authorize a caller to request rollback of the exact applied patch.
     """
     _positive_id(workspace_id, "workspace_id")
+    _opaque_identifier(expected_execution_id, "expected_execution_id")
+    _positive_id(expected_job_id, "expected_job_id")
     _revision(current_revision)
     _revision(expected_post_revision)
     _revision(pre_repair_revision)
@@ -985,8 +989,9 @@ def evaluate_rollback_eligibility(
         or type(evidence.get("workspace_id")) is not int
         or evidence.get("workspace_id") != workspace_id
         or type(evidence.get("job_id")) is not int
-        or evidence.get("job_id") < 1
+        or evidence.get("job_id") != expected_job_id
         or type(evidence.get("execution_id")) is not str
+        or evidence.get("execution_id") != expected_execution_id
         or not evidence.get("execution_id")
         or len(evidence["execution_id"]) > 128
         or type(evidence.get("workspace_revision")) is not type(expected_post_revision)
