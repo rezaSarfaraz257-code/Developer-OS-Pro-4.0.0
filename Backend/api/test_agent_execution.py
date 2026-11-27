@@ -901,6 +901,72 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.task.execution_evidence["iteration"], 1)
 
 
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({
+        "job_id": "runner-failed-zero-exit-001", "status": "failed",
+        "exit_code": 0, "duration_ms": 10, "stdout": "", "stderr": "",
+    }))
+    def test_runner_failure_with_zero_exit_code_is_recorded_as_infrastructure_failure(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "test-worker:lease-zero-exit"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_failed")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        evidence = self.task.execution_evidence
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.run.status, "failed")
+        self.assertEqual(evidence["state"], "failed")
+        self.assertEqual(evidence["runner_status"], "failed")
+        self.assertIsNone(evidence["exit_code"])
+        self.assertEqual(evidence["runner_evidence"]["execution_status"], "infrastructure_failed")
+        self.assertIsNone(evidence["runner_evidence"]["exit_code"])
+        self.assertEqual(evidence["failure_classification"]["category"], "infrastructure")
+        runner_request.assert_called_once()
+
+
+    @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({
+        "job_id": "runner-timeout-zero-exit-001", "status": "timeout",
+        "exit_code": 0, "duration_ms": 120000, "stdout": "", "stderr": "",
+    }))
+    def test_runner_timeout_with_zero_exit_code_keeps_timeout_evidence_without_false_exit_code(self, runner_request):
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        job = BackgroundJob.objects.get(pk=response.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "test-worker:lease-timeout-zero-exit"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_failed")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        evidence = self.task.execution_evidence
+        self.assertEqual(self.task.status, "failed")
+        self.assertEqual(self.run.status, "failed")
+        self.assertEqual(evidence["state"], "failed")
+        self.assertEqual(evidence["runner_status"], "timeout")
+        self.assertIsNone(evidence["exit_code"])
+        self.assertEqual(evidence["runner_evidence"]["execution_status"], "timed_out")
+        self.assertIsNone(evidence["runner_evidence"]["exit_code"])
+        self.assertEqual(evidence["failure_classification"]["category"], "resource_exhaustion")
+        runner_request.assert_called_once()
+
+
 class AgentTaskAcceptanceTests(AgentTaskVerificationAPITests):
     def _mark_task_passed_with_durable_job(self):
         job = BackgroundJob.objects.create(
