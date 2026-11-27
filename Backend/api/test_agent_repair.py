@@ -237,6 +237,12 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertTrue(audit.metadata["repair_engine_validation"]["snapshot_sha256"])
         usage.assert_called_once()
         provider.assert_called_once()
+        provider_verification = provider.call_args.args[1]["agent_task_repair"]["verification"]
+        self.assertEqual(provider_verification["failure_classification"]["category"], "dependency")
+        self.assertEqual(
+            provider_verification["root_cause_analysis"]["conclusion"],
+            "candidate_causes_available",
+        )
 
     @patch("api.views._consume_usage", return_value=(True, 1, 100, "pro"))
     @patch("api.ai_engine._call_provider")
