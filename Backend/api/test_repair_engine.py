@@ -1021,7 +1021,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "--- a/src/main.py\n"
             "+++ b/src/main.py\n"
             "@@ -0,0 +1 @@\n"
-            "+message = 'before\\u2028after " + token + "'\n"
+            "+message = 'before\u2028after " + token + "'\n"
         )
         findings = scan_patch_for_secrets(patch)
         self.assertEqual(findings, [{"line": 5, "rule": "possible_secret"}])
