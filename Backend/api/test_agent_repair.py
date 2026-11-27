@@ -803,7 +803,7 @@ class AgentTaskRepairProposalTests(TestCase):
         with self.assertRaises(RepairContractError):
             _validate_repair_proposal_with_engine(
                 proposal,
-                {"café.py": "VALUE = 0\\n"},
+                {"café.py": "VALUE = 0\n"},
                 self.workspace.revision,
             )
 
