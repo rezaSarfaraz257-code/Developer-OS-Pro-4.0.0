@@ -7,6 +7,7 @@ only way to change workspace files.
 """
 from __future__ import annotations
 
+import difflib
 import json
 from types import SimpleNamespace
 
@@ -306,6 +307,92 @@ def _repair_evidence_is_current(run, task, workspace):
     return evidence
 
 
+def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
+    """Bind generated repair changes to the exact workspace snapshot before approval."""
+    from .repair_engine import (
+        RepairContractError,
+        scan_patch_for_secrets,
+        validate_unified_patch,
+    )
+
+    if type(proposal) is not dict or type(workspace_files) is not dict:
+        raise RepairContractError("Repair proposal and workspace snapshot must be exact mappings.")
+
+    patch_parts = []
+    modified_paths = []
+    changed_paths = []
+    for change in proposal.get("changes", []):
+        if type(change) is not dict:
+            raise RepairContractError("Repair proposal contains an invalid change record.")
+        path = change.get("path")
+        operation = change.get("operation")
+        changed_paths.append(path)
+        if operation == "modify":
+            if path not in workspace_files or type(workspace_files[path]) is not str:
+                raise RepairContractError("Modified repair target is missing from the authoritative snapshot.")
+            original = workspace_files[path]
+            updated = change.get("content")
+            if type(updated) is not str:
+                raise RepairContractError("Modified repair content must be text.")
+            diff_lines = list(difflib.unified_diff(
+                original.splitlines(keepends=True),
+                updated.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm="\\n",
+            ))
+            if not diff_lines:
+                raise RepairContractError("Repair proposal contains a no-op file modification.")
+            patch_parts.append(f"diff --git a/{path} b/{path}\\n")
+            patch_parts.extend(diff_lines)
+            modified_paths.append(path)
+        elif operation == "create":
+            created = change.get("content")
+            if type(created) is not str:
+                raise RepairContractError("Created repair content must be text.")
+            added = []
+            for line in created.splitlines(keepends=True):
+                added.append("+" + (line if line.endswith("\\n") else line + "\\n"))
+            if created and not added:
+                added = ["+" + created + "\\n"]
+            if added:
+                patch_parts.append(
+                    f"diff --git a/{path} b/{path}\\n"
+                    f"--- a/{path}\\n+++ b/{path}\\n"
+                    f"@@ -0,0 +1,{len(added)} @@\\n"
+                )
+                patch_parts.extend(added)
+
+    security_patch = "".join(patch_parts)
+    findings = scan_patch_for_secrets(security_patch)
+    if findings:
+        raise RepairContractError("Repair proposal contains possible secret material.")
+
+    if modified_paths:
+        validation = validate_unified_patch(
+            security_patch,
+            target_revision=revision,
+            expected_revision=revision,
+            snapshot_revision=revision,
+            workspace_files=workspace_files,
+        )
+        mode = "revision_bound_unified_diff"
+    else:
+        validation = {
+            "validated": True,
+            "changed_paths": changed_paths,
+            "secret_scan": "passed",
+        }
+        mode = "path_contract_and_secret_scan_only"
+
+    return {
+        **validation,
+        "validation_mode": mode,
+        "changed_paths": changed_paths,
+        "secret_scan": "passed",
+    }
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def agent_task_repair_proposal_api(request, pk, task_pk):
@@ -443,6 +530,16 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
             "code": "repair_proposal_rejected",
         }, status=422)
 
+    try:
+        repair_validation = _validate_repair_proposal_with_engine(
+            proposal, workspace_files, revision,
+        )
+    except (ValueError, TypeError):
+        return Response({
+            "error": "The repair engine rejected the proposal against the exact workspace snapshot. No workspace changes were made.",
+            "code": "repair_proposal_rejected",
+        }, status=422)
+
     # Re-check task, revision, evidence and permissions after the provider call.
     # The signed token is still revision-bound, but this prevents issuing a
     # proposal for a task that changed state while the model was responding.
@@ -496,6 +593,12 @@ def agent_task_repair_proposal_api(request, pk, task_pk):
                 "confidence": proposal["confidence"],
                 "human_approval_required": True,
                 "workspace_mutated": False,
+                "repair_engine_validation": {
+                    "mode": repair_validation["validation_mode"],
+                    "secret_scan": repair_validation["secret_scan"],
+                    "patch_sha256": repair_validation.get("patch_sha256"),
+                    "snapshot_sha256": repair_validation.get("snapshot_sha256"),
+                },
             },
         )
 
