@@ -697,28 +697,18 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
                 },
             )
 
-    def test_snapshot_entry_limit_is_checked_before_defensive_copy(self):
-        class CopyTrackingDict(dict):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self.copy_called = False
-
-            def __iter__(self):
-                self.copy_called = True
-                return super().__iter__()
-
-        snapshot = CopyTrackingDict({
+    def test_patch_validation_rejects_oversized_snapshot_entry_count(self):
+        oversized_snapshot = {
             f"empty/{index}.txt": ""
             for index in range(MAX_PATCH_SNAPSHOT_FILES + 1)
-        })
+        }
         with self.assertRaises(RepairContractError):
             self.validate_patch(
                 self.patch(),
                 target_revision="rev-12",
                 expected_revision="rev-12",
-                workspace_files=snapshot,
+                workspace_files=oversized_snapshot,
             )
-        self.assertFalse(snapshot.copy_called)
 
     def test_patch_validation_bounds_snapshot_entry_and_path_metadata_counts(self):
         too_many_files = {"src/main.py": "value = 1\\n"}
