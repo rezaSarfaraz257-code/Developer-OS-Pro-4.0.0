@@ -373,13 +373,27 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
     revision_patch_parts = []
     modified_paths = []
     changed_paths = []
+    normalized_snapshot_paths = {
+        unicodedata.normalize("NFC", path).casefold()
+        for path in workspace_files
+        if type(path) is str
+    }
+    changed_path_keys = set()
     for change in proposal.get("changes", []):
         if type(change) is not dict:
             raise RepairContractError("Repair proposal contains an invalid change record.")
         path = change.get("path")
         operation = change.get("operation")
+        if type(path) is not str or not _safe_relative_path(path) or not _repair_path_is_allowed(path):
+            raise RepairContractError("Repair proposal contains an unsafe or protected path.")
+        normalized_path = unicodedata.normalize("NFC", path).casefold()
+        if normalized_path in changed_path_keys:
+            raise RepairContractError("Repair proposal contains duplicate or colliding paths.")
+        changed_path_keys.add(normalized_path)
         if operation not in {"modify", "create", "delete"}:
             raise RepairContractError("Repair proposal contains an unsupported file operation.")
+        if operation == "create" and normalized_path in normalized_snapshot_paths:
+            raise RepairContractError("Created repair target already exists or collides with a workspace path.")
         changed_paths.append(path)
         if operation == "modify":
             if path not in workspace_files or type(workspace_files[path]) is not str:
@@ -388,6 +402,12 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             updated = change.get("content")
             if type(updated) is not str:
                 raise RepairContractError("Modified repair content must be text.")
+            try:
+                updated_bytes = updated.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Modified repair content contains invalid Unicode.") from exc
+            if "\x00" in updated or len(updated_bytes) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Modified repair content is invalid or exceeds the file safety limit.")
             diff_lines = list(difflib.unified_diff(
                 original.splitlines(keepends=True),
                 updated.splitlines(keepends=True),
@@ -407,6 +427,12 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             created = change.get("content")
             if type(created) is not str:
                 raise RepairContractError("Created repair content must be text.")
+            try:
+                created_bytes = created.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Created repair content contains invalid Unicode.") from exc
+            if "\x00" in created or len(created_bytes) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Created repair content is invalid or exceeds the file safety limit.")
             added = []
             for line in created.splitlines(keepends=True):
                 added.append("+" + (line if line.endswith("\n") else line + "\n"))
