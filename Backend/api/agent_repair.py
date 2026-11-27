@@ -250,6 +250,51 @@ def _repair_evidence_is_current(run, task, workspace):
     ):
         return None
 
+    from .repair_engine import (
+        RepairContractError,
+        analyze_root_cause,
+        classify_execution_failure,
+        normalize_runner_evidence,
+    )
+
+    expected_execution_id = f"agent-{verification_job.id}"
+    try:
+        normalized_runner_evidence = normalize_runner_evidence(
+            evidence.get("runner_evidence"),
+            expected_execution_id=expected_execution_id,
+            expected_workspace_id=workspace.id,
+            expected_workspace_revision=workspace.revision,
+            expected_job_id=verification_job.id,
+        )
+        failure_classification = classify_execution_failure(
+            normalized_runner_evidence,
+            expected_execution_id=expected_execution_id,
+            expected_workspace_id=workspace.id,
+            expected_workspace_revision=workspace.revision,
+            expected_job_id=verification_job.id,
+        )
+        root_cause_analysis = analyze_root_cause(
+            normalized_runner_evidence,
+            expected_execution_id=expected_execution_id,
+            expected_workspace_id=workspace.id,
+            expected_workspace_revision=workspace.revision,
+            expected_job_id=verification_job.id,
+            changed_paths=[],
+        )
+    except (RepairContractError, TypeError, ValueError):
+        return None
+
+    if (
+        evidence.get("runner_job_id") != expected_execution_id
+        or normalized_runner_evidence.get("execution_status") != "failed"
+        or normalized_runner_evidence.get("exit_code") != evidence.get("exit_code")
+        or evidence.get("failure_classification") != failure_classification
+        or evidence.get("root_cause_analysis") != root_cause_analysis
+        or failure_classification.get("category") in {None, "unknown"}
+        or root_cause_analysis.get("conclusion") != "candidate_causes_available"
+    ):
+        return None
+
     sync_job_id = job_payload.get("sync_job_id")
     if type(sync_job_id) is not int or sync_job_id < 1:
         return None
