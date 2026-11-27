@@ -2531,7 +2531,7 @@ class BackgroundWorkerReadinessTests(APITestCase):
         self.assertFalse(response.data["checks"]["worker"])
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    def test_stale_worker_job_is_requeued_with_bounded_backoff(self):
+    def test_stale_smtp_email_job_is_dead_lettered_to_prevent_duplicate_delivery(self):
         from .models import BackgroundJob
         from .management.commands.worker import recover_stale_jobs
 
@@ -2549,9 +2549,9 @@ class BackgroundWorkerReadinessTests(APITestCase):
         recover_stale_jobs()
         job.refresh_from_db()
 
-        self.assertEqual(job.status, "queued")
-        self.assertGreater(job.available_at, timezone.now())
-        self.assertLessEqual(job.available_at, timezone.now() + timedelta(seconds=5))
+        self.assertEqual(job.status, "failed")
+        self.assertIsNotNone(job.dead_lettered_at)
+        self.assertIn("automatic retry suppressed", job.error)
         self.assertIn("Recovered stale worker lease.", job.error)
         self.assertIsNotNone(job.last_error_at)
 
