@@ -674,6 +674,15 @@ class AgentTaskRepairProposalTests(TestCase):
                 self.workspace.revision,
             )
 
+        unsupported = self.proposal()
+        unsupported["changes"][0]["operation"] = "replace"
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                unsupported,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
         created = self.proposal()
         created["affected_files"] = ["README.md"]
         created["changes"] = [{
