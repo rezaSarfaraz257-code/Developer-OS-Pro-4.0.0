@@ -1023,6 +1023,12 @@ class AIAgentApprovalTests(TestCase):
         self.assertEqual(response.data["status"], "applied_sync_pending")
         self.assertTrue(response.data["sync"]["queued"])
         self.assertEqual(response.data["sync"]["job_id"], response.data["verification"]["job_id"])
+        rollback_handle = response.data["rollback_snapshot"]
+        snapshot = WorkspaceSnapshot.objects.get(pk=rollback_handle["id"], workspace=workspace)
+        self.assertTrue(snapshot.sha256)
+        self.assertEqual(snapshot.source_revision, 1)
+        self.assertEqual(snapshot.applied_revision, workspace.revision)
+        self.assertEqual(snapshot.sha256, rollback_handle["sha256"])
         from .models import BackgroundJob
         sync_job = BackgroundJob.objects.get(
             kind="ai_agent_runner_sync",
