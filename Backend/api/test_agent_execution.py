@@ -202,7 +202,6 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
             locked_at=timezone.now(),
-
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": True, "task_id": self.task.id,
@@ -222,7 +221,6 @@ class AgentTaskVerificationAPITests(TestCase):
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
             locked_at=timezone.now(),
-
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": self.run.id, "task_id": self.task.id,
@@ -280,7 +278,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         # Simulate the approval being revoked while the durable job is queued.
         AuditLog.objects.filter(
@@ -317,7 +316,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         # Simulate a prerequisite becoming incomplete while the verification
         # job is waiting in the durable worker queue.
@@ -472,7 +472,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         runner_request.assert_called_once()
@@ -599,7 +600,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "output exceeded the control-plane limit"):
             execute_agent_task_verification(job)
@@ -698,7 +700,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution job reference"):
             execute_agent_task_verification(job)
@@ -716,7 +719,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution status"):
             execute_agent_task_verification(job)
@@ -734,7 +738,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "malformed execution output"):
             execute_agent_task_verification(job)
@@ -762,7 +767,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
@@ -792,7 +798,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
         self.task.refresh_from_db()
@@ -894,7 +901,8 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
         first_job.status = "running"
         first_job.attempts = 1
         first_job.locked_by = "test-worker:lease-1"
-        first_job.save(update_fields=["status", "attempts", "locked_by"])
+        first_job.locked_at = timezone.now()
+        first_job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         execute_agent_task_verification(first_job)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "failed")
@@ -952,7 +960,8 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
             job.status = "running"
             job.attempts = 1
             job.locked_by = "test-worker:lease-1"
-            job.save(update_fields=["status", "attempts", "locked_by"])
+            job.locked_at = timezone.now()
+            job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
             execute_agent_task_verification(job)
             self.task.refresh_from_db()
             self.assertEqual(self.task.status, "failed")
@@ -1028,7 +1037,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "worker-old:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         BackgroundJob.objects.filter(pk=job.pk).update(locked_by="worker-new:lease-2")
 
         with self.assertRaisesRegex(RuntimeError, "lease is no longer current"):
@@ -1052,7 +1062,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "worker-old:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         def reclaim_before_runner_returns(method, path, payload, timeout):
             BackgroundJob.objects.filter(pk=job.pk).update(
@@ -1158,7 +1169,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.task.refresh_from_db()
@@ -1186,7 +1198,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.task.refresh_from_db()
         self.workspace.refresh_from_db()
@@ -1248,7 +1261,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
 
@@ -1281,7 +1295,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
 
@@ -1339,7 +1354,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         fail_agent_task_verification(job)
 
@@ -1408,7 +1424,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         task.refresh_from_db()
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
