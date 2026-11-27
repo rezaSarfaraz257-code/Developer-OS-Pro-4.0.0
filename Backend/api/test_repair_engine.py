@@ -1348,6 +1348,50 @@ class VerificationEvidenceTests(SimpleTestCase):
                 self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
 
 
+    def test_verification_rejects_runner_identity_drift_from_trusted_records(self):
+        valid = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": "exec-verified-14",
+            "workspace_id": 7,
+            "job_id": 34,
+            "workspace_revision": 14,
+            "execution_status": "succeeded",
+            "exit_code": 0,
+            "checks": {
+                name: {
+                    "status": "passed",
+                    "evidence_reference": "artifact://verification/" + name,
+                    "execution_id": "exec-verified-14",
+                    "workspace_revision": 14,
+                }
+                for name in ("targeted_tests", "regression_tests", "security")
+            },
+        }
+        trusted = {
+            "expected_revision": 14,
+            "expected_execution_id": "exec-verified-14",
+            "expected_workspace_id": 7,
+            "expected_job_id": 34,
+        }
+        self.assertTrue(verification_passed(valid, **trusted))
+        for field, forged_value in (
+            ("execution_id", "forged-execution"),
+            ("workspace_id", 8),
+            ("job_id", 35),
+        ):
+            with self.subTest(evidence_field=field):
+                forged = {**valid, field: forged_value}
+                self.assertFalse(verification_passed(forged, **trusted))
+        for field, forged_value in (
+            ("expected_execution_id", "forged-execution"),
+            ("expected_workspace_id", 8),
+            ("expected_job_id", 35),
+        ):
+            with self.subTest(trusted_field=field):
+                forged_trust = {**trusted, field: forged_value}
+                self.assertFalse(verification_passed(valid, **forged_trust))
+
     def test_verification_rejects_spoofed_mapping_and_nested_values(self):
         valid = {
             "schema_version": 1,
@@ -1382,18 +1426,24 @@ class VerificationEvidenceTests(SimpleTestCase):
                 return valid["checks"]["security"].get(key, default)
 
         self.assertFalse(verification_passed(
-            SpoofedMapping(), expected_revision="rev-22"
+            SpoofedMapping(), expected_revision="rev-22",
+            expected_execution_id="exec-verified-22",
+            expected_workspace_id=7, expected_job_id=36,
         ))
         evidence = {**valid, "checks": SpoofedChecks()}
         self.assertFalse(verification_passed(
-            evidence, expected_revision="rev-22"
+            evidence, expected_revision="rev-22",
+            expected_execution_id="exec-verified-22",
+            expected_workspace_id=7, expected_job_id=36,
         ))
         evidence = {
             **valid,
             "checks": {**valid["checks"], "security": SpoofedGate()},
         }
         self.assertFalse(verification_passed(
-            evidence, expected_revision="rev-22"
+            evidence, expected_revision="rev-22",
+            expected_execution_id="exec-verified-22",
+            expected_workspace_id=7, expected_job_id=36,
         ))
 
         class SpoofedStatus(str):
@@ -1411,7 +1461,9 @@ class VerificationEvidenceTests(SimpleTestCase):
             },
         }
         self.assertFalse(verification_passed(
-            evidence, expected_revision="rev-22"
+            evidence, expected_revision="rev-22",
+            expected_execution_id="exec-verified-22",
+            expected_workspace_id=7, expected_job_id=36,
         ))
 
 
