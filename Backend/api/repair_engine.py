@@ -345,25 +345,37 @@ def _normalize_source_location(value):
     return result
 
 
-def _revalidate_runner_evidence(evidence):
-    """Re-normalize a Runner payload before any downstream consumer uses it."""
+def _revalidate_runner_evidence(
+    evidence, *, expected_execution_id, expected_workspace_id,
+    expected_workspace_revision, expected_job_id,
+):
+    """Revalidate evidence against caller-supplied trusted job/workspace identities."""
     if type(evidence) is not dict:
         raise RepairContractError("Failure analysis requires normalized Runner evidence.")
     try:
         return normalize_runner_evidence(
             evidence,
-            expected_execution_id=evidence.get("execution_id"),
-            expected_workspace_id=evidence.get("workspace_id"),
-            expected_workspace_revision=evidence.get("workspace_revision"),
-            expected_job_id=evidence.get("job_id"),
+            expected_execution_id=expected_execution_id,
+            expected_workspace_id=expected_workspace_id,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_job_id=expected_job_id,
         )
     except (AttributeError, TypeError) as exc:
         raise RepairContractError("Failure analysis requires normalized Runner evidence.") from exc
 
 
-def classify_execution_failure(evidence):
-    """Classify only fully normalized Runner evidence; no Agent claim is accepted."""
-    evidence = _revalidate_runner_evidence(evidence)
+def classify_execution_failure(
+    evidence, *, expected_execution_id, expected_workspace_id,
+    expected_workspace_revision, expected_job_id,
+):
+    """Classify Runner evidence only after binding it to trusted server identities."""
+    evidence = _revalidate_runner_evidence(
+        evidence,
+        expected_execution_id=expected_execution_id,
+        expected_workspace_id=expected_workspace_id,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_job_id=expected_job_id,
+    )
     status = evidence.get("execution_status")
     exit_code = evidence.get("exit_code")
     if (
@@ -408,10 +420,25 @@ def classify_execution_failure(evidence):
     }
 
 
-def analyze_root_cause(evidence, *, changed_paths=()):
-    """Return evidence-linked candidate causes; unknowns remain explicitly uncertain."""
-    evidence = _revalidate_runner_evidence(evidence)
-    classification = classify_execution_failure(evidence)
+def analyze_root_cause(
+    evidence, *, expected_execution_id, expected_workspace_id,
+    expected_workspace_revision, expected_job_id, changed_paths=(),
+):
+    """Return evidence-linked causes after trusted identity correlation."""
+    evidence = _revalidate_runner_evidence(
+        evidence,
+        expected_execution_id=expected_execution_id,
+        expected_workspace_id=expected_workspace_id,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_job_id=expected_job_id,
+    )
+    classification = classify_execution_failure(
+        evidence,
+        expected_execution_id=expected_execution_id,
+        expected_workspace_id=expected_workspace_id,
+        expected_workspace_revision=expected_workspace_revision,
+        expected_job_id=expected_job_id,
+    )
     if classification["category"] is None:
         raise RepairContractError("Successful executions do not have a repair root cause.")
     if (
