@@ -1275,37 +1275,37 @@ class VerificationEvidenceTests(SimpleTestCase):
                 "security": {"status": "passed", "evidence_reference": "artifact://security", "execution_id": "exec-verified-14", "workspace_revision": 14},
             },
         }
-        self.assertTrue(verification_passed(result, expected_revision=14))
+        self.assertTrue(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         unexpected_field = {**result, "agent_claim": "all_checks_passed"}
-        self.assertFalse(verification_passed(unexpected_field, expected_revision=14))
+        self.assertFalse(verification_passed(unexpected_field, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["execution_id"] = "x" * 129
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["execution_id"] = "exec" + chr(10) + "invalid"
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["execution_id"] = "exec-verified-14"
         result["checks"]["security"]["status"] = "failed"
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["checks"]["security"]["status"] = "passed"
         result["checks"]["security"]["workspace_revision"] = 13
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["checks"]["security"]["workspace_revision"] = 14
         result["checks"]["security"]["execution_id"] = "other-execution"
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["checks"]["security"]["execution_id"] = "exec-verified-14"
         result["workspace_revision"] = 13
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["workspace_revision"] = 14
         result["evidence_origin"] = "agent"
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["evidence_origin"] = "runner"
         result["exit_code"] = True
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["exit_code"] = 0
         result["workspace_revision"] = True
-        self.assertFalse(verification_passed(result, expected_revision=1))
-        self.assertFalse(verification_passed(result, expected_revision=True))
-        self.assertFalse(verification_passed(result, expected_revision=None))
-        self.assertFalse(verification_passed(result, expected_revision=-1))
+        self.assertFalse(verification_passed(result, expected_revision=1, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
+        self.assertFalse(verification_passed(result, expected_revision=True, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
+        self.assertFalse(verification_passed(result, expected_revision=None, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
+        self.assertFalse(verification_passed(result, expected_revision=-1, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["workspace_revision"] = 14
 
         class EqualToRunner:
@@ -1317,10 +1317,10 @@ class VerificationEvidenceTests(SimpleTestCase):
                 return other == "succeeded"
 
         result["evidence_origin"] = EqualToRunner()
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["evidence_origin"] = "runner"
         result["execution_status"] = EqualToSucceeded()
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["execution_status"] = "succeeded"
 
         class EqualToPassed:
@@ -1332,10 +1332,10 @@ class VerificationEvidenceTests(SimpleTestCase):
                 return other == "exec-verified-14"
 
         result["checks"]["security"]["status"] = EqualToPassed()
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["checks"]["security"]["status"] = "passed"
         result["checks"]["security"]["execution_id"] = EqualToExecutionId()
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
         result["checks"]["security"]["execution_id"] = "exec-verified-14"
         for unsafe_reference in (
             "artifact://../outside",
@@ -1345,7 +1345,7 @@ class VerificationEvidenceTests(SimpleTestCase):
         ):
             result["checks"]["security"]["evidence_reference"] = unsafe_reference
             with self.subTest(evidence_reference=unsafe_reference):
-                self.assertFalse(verification_passed(result, expected_revision=14))
+                self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
 
 
     def test_verification_rejects_spoofed_mapping_and_nested_values(self):
@@ -1439,12 +1439,12 @@ class VerificationEvidenceTests(SimpleTestCase):
             },
         }
         spoofed_top_level = {SpoofedKey(key): value for key, value in result.items()}
-        self.assertFalse(verification_passed(spoofed_top_level, expected_revision=14))
+        self.assertFalse(verification_passed(spoofed_top_level, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
 
         result["checks"]["security"] = {
             SpoofedKey(key): value for key, value in result["checks"]["security"].items()
         }
-        self.assertFalse(verification_passed(result, expected_revision=14))
+        self.assertFalse(verification_passed(result, expected_revision=14, expected_execution_id="exec-verified-14", expected_workspace_id=7, expected_job_id=34))
 
 
 class RollbackEligibilityTests(SimpleTestCase):
