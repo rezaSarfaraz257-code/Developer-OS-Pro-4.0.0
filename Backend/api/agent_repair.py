@@ -356,7 +356,12 @@ def _repair_evidence_is_current(run, task, workspace):
 def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
     """Bind generated repair changes to the exact workspace snapshot before approval."""
     from .repair_engine import (
+        MAX_PATCH_SNAPSHOT_FILES,
+        MAX_PATCH_SOURCE_BYTES,
+        MAX_PATCH_TOTAL_PATH_BYTES,
+        MAX_PATCH_TOTAL_SOURCE_BYTES,
         RepairContractError,
+        _safe_relative_path,
         scan_patch_for_secrets,
         validate_unified_patch,
     )
@@ -476,10 +481,26 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
     ).encode("utf-8")
     snapshot_sha256 = validation.get("snapshot_sha256")
     if not snapshot_sha256:
-        snapshot_manifest = [
-            [path, hashlib.sha256(value.encode("utf-8")).hexdigest()]
-            for path, value in sorted(workspace_files.items())
-        ]
+        if len(workspace_files) > MAX_PATCH_SNAPSHOT_FILES:
+            raise RepairContractError("Workspace snapshot contains too many file entries.")
+        snapshot_manifest = []
+        path_bytes_total = 0
+        source_bytes_total = 0
+        for snapshot_path, value in sorted(workspace_files.items(), key=lambda item: item[0] if type(item[0]) is str else ""):
+            if type(snapshot_path) is not str or type(value) is not str or not _safe_relative_path(snapshot_path):
+                raise RepairContractError("Workspace snapshot contains an unsafe path or non-text file.")
+            try:
+                encoded_path = snapshot_path.encode("utf-8", errors="strict")
+                encoded_value = value.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Workspace snapshot contains invalid Unicode.") from exc
+            if "\\x00" in value or len(encoded_value) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Workspace snapshot contains an invalid or oversized file.")
+            path_bytes_total += len(encoded_path)
+            source_bytes_total += len(encoded_value)
+            if path_bytes_total > MAX_PATCH_TOTAL_PATH_BYTES or source_bytes_total > MAX_PATCH_TOTAL_SOURCE_BYTES:
+                raise RepairContractError("Workspace snapshot exceeds aggregate safety limits.")
+            snapshot_manifest.append([snapshot_path, hashlib.sha256(encoded_value).hexdigest()])
         snapshot_sha256 = hashlib.sha256(json.dumps(
             snapshot_manifest, ensure_ascii=False, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
