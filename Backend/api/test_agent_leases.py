@@ -63,9 +63,11 @@ class CurrentJobLeaseTests(SimpleTestCase):
 
     def test_missing_job_and_naive_clock_fail_closed_without_comparison_errors(self):
         self.assertFalse(is_current_job_lease(None, self.token, now=self.now))
-        with self.assertRaises(ValueError):
+        self.assertFalse(
             is_current_job_lease(
                 self.job(),
                 self.token,
                 now=self.now.replace(tzinfo=None),
             )
+        )
+        self.assertFalse(is_current_job_lease(self.job(), self.token, now="not-a-datetime"))
