@@ -11,7 +11,7 @@ def is_current_job_lease(job, lease_token, *, now=None):
     """Require both the fencing token and an unexpired, well-formed lease."""
     if not job or getattr(job, "status", None) != "running":
         return False
-    if not isinstance(lease_token, str) or not lease_token:
+    if not isinstance(lease_token, str) or not lease_token.strip():
         return False
     if getattr(job, "locked_by", None) != lease_token:
         return False
