@@ -1043,16 +1043,35 @@ def evaluate_rollback_eligibility(
     }
 
 
-def compare_repair_outcomes(before_evidence, after_evidence, verification_evidence):
-    """Compare Runner behavior before/after a repair without trusting Agent claims.
+def compare_repair_outcomes(
+    before_evidence, after_evidence, verification_evidence, *,
+    expected_workspace_id,
+    expected_before_execution_id, expected_before_workspace_revision,
+    expected_before_job_id,
+    expected_after_execution_id, expected_after_workspace_revision,
+    expected_after_job_id,
+):
+    """Compare outcomes only after correlating both runs to trusted server records.
 
     A successful process exit is not a successful repair: all independent
     verification gates must also pass on the exact post-repair revision.
     """
-    before_evidence = _revalidate_runner_evidence(before_evidence)
-    after_evidence = _revalidate_runner_evidence(after_evidence)
-    before = classify_execution_failure(before_evidence)
-    after = classify_execution_failure(after_evidence)
+    before_identity = {
+        "expected_execution_id": expected_before_execution_id,
+        "expected_workspace_id": expected_workspace_id,
+        "expected_workspace_revision": expected_before_workspace_revision,
+        "expected_job_id": expected_before_job_id,
+    }
+    after_identity = {
+        "expected_execution_id": expected_after_execution_id,
+        "expected_workspace_id": expected_workspace_id,
+        "expected_workspace_revision": expected_after_workspace_revision,
+        "expected_job_id": expected_after_job_id,
+    }
+    before_evidence = _revalidate_runner_evidence(before_evidence, **before_identity)
+    after_evidence = _revalidate_runner_evidence(after_evidence, **after_identity)
+    before = classify_execution_failure(before_evidence, **before_identity)
+    after = classify_execution_failure(after_evidence, **after_identity)
     if before["category"] is None:
         raise RepairContractError("Baseline evidence must describe a failed execution.")
     if (
