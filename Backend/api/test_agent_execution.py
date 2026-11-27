@@ -201,6 +201,8 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_at=timezone.now(),
+
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": True, "task_id": self.task.id,
@@ -219,6 +221,8 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_at=timezone.now(),
+
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": self.run.id, "task_id": self.task.id,
