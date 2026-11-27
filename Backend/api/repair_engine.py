@@ -1018,8 +1018,8 @@ def evaluate_rollback_eligibility(
             or set(check) != {"status", "evidence_reference", "execution_id", "workspace_revision"}
             or type(check.get("status")) is not str
             or check.get("status") not in {"passed", "failed"}
-            or check.get("execution_id") != evidence["execution_id"]
             or type(check.get("execution_id")) is not str
+            or check["execution_id"] != evidence["execution_id"]
             or type(check.get("workspace_revision")) is not type(expected_post_revision)
             or check.get("workspace_revision") != expected_post_revision
         ):
