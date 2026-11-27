@@ -1187,6 +1187,8 @@ class VerificationEvidenceTests(SimpleTestCase):
             },
         }
         self.assertTrue(verification_passed(result, expected_revision=14))
+        unexpected_field = {**result, "agent_claim": "all_checks_passed"}
+        self.assertFalse(verification_passed(unexpected_field, expected_revision=14))
         result["execution_id"] = "x" * 129
         self.assertFalse(verification_passed(result, expected_revision=14))
         result["execution_id"] = "exec" + chr(10) + "invalid"
@@ -1404,6 +1406,14 @@ class RollbackEligibilityTests(SimpleTestCase):
         result = evaluate_rollback_eligibility(self.evidence(), **self.kwargs())
         self.assertFalse(result["eligible"])
         self.assertEqual(result["reason"], "verification_passed")
+
+    def test_rollback_rejects_unexpected_top_level_evidence_fields(self):
+        evidence = self.evidence(
+            failed_gate="security",
+            agent_claim="verification_failed",
+        )
+        with self.assertRaises(RepairContractError):
+            evaluate_rollback_eligibility(evidence, **self.kwargs())
 
     def test_rollback_rejects_stale_revision_workspace_and_unsafe_snapshot(self):
         for overrides, kwargs in (
