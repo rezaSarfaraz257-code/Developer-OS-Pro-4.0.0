@@ -148,10 +148,10 @@ class StaleWorkerJobRecoveryTests(TestCase):
         Command().handle(once=True, sleep=0)
 
         job.refresh_from_db()
-        self.assertEqual(len(executions), 2)
-        self.assertNotEqual(executions[0], executions[1])
-        self.assertEqual(job.status, "succeeded")
-        self.assertEqual(job.result, {"worker": "replacement", "persisted": True})
+        self.assertEqual(len(executions), 1)
+        self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.result)
+        self.assertGreater(job.available_at, timezone.now())
 
     @patch("api.management.commands.worker.execute")
     def test_old_worker_outcome_is_discarded_after_job_is_reclaimed(self, mocked_execute):
