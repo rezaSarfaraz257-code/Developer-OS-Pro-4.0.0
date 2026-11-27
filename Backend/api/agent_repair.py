@@ -512,9 +512,14 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
         snapshot_manifest = []
         path_bytes_total = 0
         source_bytes_total = 0
+        normalized_snapshot_keys = set()
         for snapshot_path, value in sorted(workspace_files.items(), key=lambda item: item[0] if type(item[0]) is str else ""):
             if type(snapshot_path) is not str or type(value) is not str or not _safe_relative_path(snapshot_path):
                 raise RepairContractError("Workspace snapshot contains an unsafe path or non-text file.")
+            normalized_snapshot_key = unicodedata.normalize("NFC", snapshot_path).casefold()
+            if normalized_snapshot_key in normalized_snapshot_keys:
+                raise RepairContractError("Workspace snapshot contains colliding normalized paths.")
+            normalized_snapshot_keys.add(normalized_snapshot_key)
             try:
                 encoded_path = snapshot_path.encode("utf-8", errors="strict")
                 encoded_value = value.encode("utf-8", errors="strict")
