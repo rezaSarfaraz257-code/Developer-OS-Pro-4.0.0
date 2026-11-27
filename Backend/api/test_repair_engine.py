@@ -1093,6 +1093,10 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             "expires_at": (now + timedelta(minutes=5)).isoformat(),
         }
         self.assertTrue(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="a" * 64, now=now))
+        self.assertFalse(validate_revision_bound_approval(
+            {**approval, "agent_claim": "approved"},
+            current_revision="rev-12", patch_sha256="a" * 64, now=now,
+        ))
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-13", patch_sha256="a" * 64, now=now))
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="b" * 64, now=now))
         self.assertFalse(validate_revision_bound_approval(approval, current_revision="rev-12", patch_sha256="a" * 64, now=now + timedelta(minutes=6)))
