@@ -787,6 +787,26 @@ class AgentTaskRepairProposalTests(TestCase):
         self.assertNotEqual(first_result["patch_sha256"], second_result["patch_sha256"])
         self.assertEqual(first_result["snapshot_sha256"], second_result["snapshot_sha256"])
 
+    def test_create_only_repair_rejects_unicode_normalized_path_collision(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["cafe\\u0301.py"]
+        proposal["changes"] = [{
+            "path": "cafe\\u0301.py",
+            "operation": "create",
+            "reason": "Add a new module.",
+            "content": "VALUE = 1\\n",
+        }]
+
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"café.py": "VALUE = 0\\n"},
+                self.workspace.revision,
+            )
+
     def test_create_only_repair_rejects_malformed_authoritative_snapshot(self):
         from .agent_repair import _validate_repair_proposal_with_engine
         from .repair_engine import RepairContractError
