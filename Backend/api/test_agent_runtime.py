@@ -16,7 +16,7 @@ from .agent_runtime import (
     build_agent_plan,
 )
 from .agent_tools import TOOL_REGISTRY
-from .management.commands.worker import claim_job, recover_stale_jobs
+from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
