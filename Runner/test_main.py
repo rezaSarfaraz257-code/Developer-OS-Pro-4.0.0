@@ -361,11 +361,7 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
                         command="python3 main.py",
                         execution_id=job_id,
                     )
-                    with tempfile.TemporaryDirectory() as tmp, \\
-                         patch("main.ROOT", Path(tmp)), \\
-                         patch("main.auth"), \\
-                         patch("main.replace_workspace_snapshot") as replace, \\
-                         patch("main.run_command") as run:
+                    with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)), patch("main.auth"), patch("main.replace_workspace_snapshot") as replace, patch("main.run_command") as run:
                         with self.assertRaises(HTTPException) as ctx:
                             main.execute(payload, authorization="Bearer internal")
 
