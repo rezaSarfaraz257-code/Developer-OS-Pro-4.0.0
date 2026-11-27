@@ -17,7 +17,7 @@ class AgentPlanWorkerDispatchTests(TestCase):
         )
         result = execute(job)
         self.assertEqual(result["run_id"], 41)
-        planner.assert_called_once_with(41)
+        planner.assert_called_once_with(41, job_id=job.id, lease_token="")
 
     def test_worker_rejects_unknown_job_kind(self):
         job = BackgroundJob.objects.create(

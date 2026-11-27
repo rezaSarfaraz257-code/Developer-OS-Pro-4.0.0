@@ -16,6 +16,7 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -156,6 +157,84 @@ def _workspace_access(workspace_id, user):
     return workspace
 
 
+def _is_aware_acceptance_timestamp(value):
+    """Accept only parseable ISO timestamps carrying an explicit timezone."""
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return False
+    try:
+        parsed = parse_datetime(value)
+    except (TypeError, ValueError):
+        return False
+    return parsed is not None and timezone.is_aware(parsed)
+
+
+def _run_execution_state(run, tasks):
+    """Derive a truthful summary from durable task states and the latest applied patch."""
+    statuses = [task.status for task in tasks]
+    if run.status == "canceled":
+        return "canceled"
+    # Run-level failure is authoritative over stale or partially committed task
+    # rows; never allow succeeded task statuses to mask a failed run.
+    if run.status == "failed":
+        return "run_failed"
+    # A terminal successful run must account for every persisted task. A
+    # missing or incomplete task graph is inconsistent durable state, not a
+    # plan-only or in-progress run, and must fail closed for human review.
+    if run.status == "succeeded" and (
+        not statuses or not all(status == "succeeded" for status in statuses)
+    ):
+        return "run_success_missing_task_acceptance_requires_review"
+    if any(status == "failed" for status in statuses):
+        return "execution_failed_requires_review"
+    if statuses and all(status == "succeeded" for status in statuses):
+        for task in tasks:
+            evidence = task.execution_evidence if isinstance(task.execution_evidence, dict) else {}
+            acceptance = evidence.get("human_acceptance", {})
+            if not isinstance(acceptance, dict):
+                return "task_success_missing_human_acceptance_requires_review"
+            accepted_criteria = acceptance.get("accepted_criteria")
+            criteria = task.acceptance_criteria
+            if (
+                type(acceptance.get("user_id")) is not int
+                or acceptance.get("user_id") != run.owner_id
+                or not isinstance(acceptance.get("accepted_at"), str)
+                or not acceptance.get("accepted_at")
+                or not _is_aware_acceptance_timestamp(acceptance.get("accepted_at"))
+                or acceptance.get("criteria_scope") != "agent_task"
+                or not isinstance(criteria, list)
+                or not criteria
+                or accepted_criteria != criteria
+            ):
+                return "task_success_missing_human_acceptance_requires_review"
+        if run.status == "succeeded":
+            return "verified_human_accepted"
+        return "run_finalization_incomplete_requires_review"
+    if run.status == "succeeded":
+        return "run_success_missing_task_acceptance_requires_review"
+    if any(status == "running" for status in statuses):
+        return "runner_verification_in_progress"
+    if any(status == "awaiting_approval" for status in statuses):
+        return "verification_passed_pending_human_acceptance"
+    if any(status == "succeeded" for status in statuses):
+        return "partially_verified_awaiting_next_task"
+
+    latest_patch = AuditLog.objects.filter(
+        user_id=run.owner_id,
+        action="ai_agent.patch_applied",
+        metadata__agent_run_id=run.id,
+    ).order_by("-created_at", "-id").values("metadata").first()
+    if latest_patch:
+        metadata = latest_patch.get("metadata") if isinstance(latest_patch.get("metadata"), dict) else {}
+        patch_revision = metadata.get("revision")
+        current_revision = run.workspace.revision
+        if type(patch_revision) is int and patch_revision == current_revision:
+            return "patch_applied_sync_or_verification_pending"
+        return "workspace_changed_after_patch_requires_reanalysis"
+    if run.status == "approved":
+        return "approved_awaiting_task_execution"
+    return "plan_only_no_workspace_mutations"
+
+
 def _run_payload(run):
     tasks = list(run.tasks.order_by("sequence", "id"))
     return {
@@ -166,7 +245,7 @@ def _run_payload(run):
         "workspace_revision": run.workspace_revision,
         "conversation": run.conversation_id,
         "plan": run.plan,
-        "execution_state": "plan_only_no_workspace_mutations",
+        "execution_state": _run_execution_state(run, tasks),
         "error": run.error,
         "approved_at": run.approved_at,
         "started_at": run.started_at,
@@ -321,11 +400,26 @@ def _validate_plan(raw):
         "tasks": normalized,
     }
 
-def build_agent_plan(run_id):
+def _agent_plan_job_lease_is_current(job, lease_token):
+    from .agent_leases import is_current_job_lease
+
+    return is_current_job_lease(job, lease_token)
+
+
+def build_agent_plan(run_id, *, job_id=None, lease_token=""):
     """Worker entry point: produce and persist a bounded DAG, never execute it."""
     from .ai_engine import _call_provider
 
     with transaction.atomic():
+        # Acquire locks in the same job -> run order used by stale recovery,
+        # worker finalization, and cancellation. This prevents an expired
+        # planner from entering or continuing the provider-to-database path.
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
         run = AgentRun.objects.select_for_update().select_related(
             "owner", "workspace"
         ).get(pk=run_id)
@@ -423,6 +517,22 @@ def build_agent_plan(run_id):
         "Do not request or expose secrets. No shell commands or deployment actions.\n\n"
         f"GOAL:\n{safe_goal}"
     )
+    # Cancellation can arrive after the initial planning transition but
+    # while workspace/history context is being assembled. Revalidate the
+    # lease and run immediately before crossing the external provider boundary.
+    with transaction.atomic():
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
+        current_run = AgentRun.objects.select_for_update().get(pk=run_id)
+        if current_run.status == "canceled":
+            return {"run_id": run_id, "status": "canceled"}
+        if current_run.status != "planning":
+            return {"run_id": run_id, "status": current_run.status}
+
     answer, provider_error = _call_provider(prompt, context, history, "autonomous engineering plan")
     if provider_error or not answer:
         raise RuntimeError("AI planning provider is unavailable; no plan was generated.")
@@ -441,6 +551,15 @@ def build_agent_plan(run_id):
         raise RuntimeError("AI planner returned an invalid task graph.") from None
 
     with transaction.atomic():
+        # Provider calls can outlive a worker lease. Recheck and lock the
+        # durable job before touching AgentRun/AgentTask so a reclaimed
+        # execution cannot persist stale planning results.
+        if job_id is not None:
+            claimed_job = BackgroundJob.objects.select_for_update().filter(
+                pk=job_id
+            ).first()
+            if not _agent_plan_job_lease_is_current(claimed_job, lease_token):
+                return {"run_id": run_id, "status": "superseded"}
         run = AgentRun.objects.select_for_update().select_related("owner").get(pk=run_id)
         if run.status == "canceled":
             return {"run_id": run.id, "status": "canceled"}
@@ -717,13 +836,19 @@ def agent_runner_sync_status_api(request, job_id):
         payload__owner_id=request.user.id,
     )
     result = job.result if isinstance(job.result, dict) else {}
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    # Before the worker finishes, result is empty. Return the immutable target
+    # recorded in the owner-scoped outbox so clients can bind polling to the
+    # intended workspace revision without treating a queued job as stale.
+    # Once available, the worker's actual result takes precedence (including
+    # coalesced revisions), and the raw payload/result remain private.
     response = {
         "job_id": job.id,
         "status": job.status,
         "attempts": job.attempts,
         "max_attempts": job.max_attempts,
-        "workspace_id": result.get("workspace_id"),
-        "revision": result.get("revision"),
+        "workspace_id": result.get("workspace_id", payload.get("workspace_id")),
+        "revision": result.get("revision", payload.get("requested_revision")),
         "coalesced": bool(result.get("coalesced", False)),
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
@@ -739,7 +864,26 @@ def agent_runner_sync_status_api(request, job_id):
 def agent_run_cancel_api(request, pk):
     runner_cancellations = []
     with transaction.atomic():
-        run = get_object_or_404(AgentRun.objects.select_for_update(), pk=pk, owner=request.user)
+        # Worker execution/recovery lock BackgroundJob before AgentRun.
+        # Authorize first, then take the same lock order so cancellation cannot
+        # deadlock with a planner finalizing under its durable lease.
+        authorized_run = get_object_or_404(
+            AgentRun.objects.only("pk"), pk=pk, owner=request.user
+        )
+        run_id = authorized_run.pk
+        list(
+            BackgroundJob.objects.select_for_update()
+            .filter(
+                kind__in=["ai_agent_plan", "ai_agent_task_verify"],
+                payload__run_id=run_id,
+                status__in=["queued", "running"],
+            )
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        run = get_object_or_404(
+            AgentRun.objects.select_for_update(), pk=run_id, owner=request.user
+        )
         active_task_exists = run.tasks.filter(status="running").exists()
         if run.status in {"succeeded", "canceled"} or (
             run.status == "failed" and not active_task_exists
@@ -757,8 +901,15 @@ def agent_run_cancel_api(request, pk):
             execution_id = payload.get("runner_execution_id")
             if (
                 isinstance(execution_id, str)
-                and execution_id.startswith("agent-")
-                and execution_id[6:].isdigit()
+                and execution_id == f"agent-{job.id}"
+                and type(payload.get("run_id")) is int
+                and payload.get("run_id") == run.id
+                and type(payload.get("task_id")) is int
+                and payload.get("task_id") == task.id
+                and type(payload.get("owner_id")) is int
+                and payload.get("owner_id") == request.user.id
+                and type(payload.get("workspace_id")) is int
+                and payload.get("workspace_id") == workspace_id
             ):
                 runner_cancellations.append(execution_id)
 

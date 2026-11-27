@@ -92,14 +92,28 @@ class EmailBackend(BaseEmailBackend):
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ).encode("utf-8")
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Developer-OS-Mailer/1.0",
+                }
+                # This private Django message attribute is translated into
+                # Resend's native request-level idempotency contract.
+                idempotency_key = str(
+                    getattr(message, "_developer_os_idempotency_key", "")
+                    or ""
+                ).strip()
+                if idempotency_key:
+                    if (
+                        len(idempotency_key) > 256
+                        or any(ord(char) < 33 or ord(char) > 126 for char in idempotency_key)
+                    ):
+                        raise ValueError("Invalid Resend email idempotency key.")
+                    headers["Idempotency-Key"] = idempotency_key
                 request = urllib.request.Request(
                     RESEND_API_URL,
                     data=body,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "Developer-OS-Mailer/1.0",
-                    },
+                    headers=headers,
                     method="POST",
                 )
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:

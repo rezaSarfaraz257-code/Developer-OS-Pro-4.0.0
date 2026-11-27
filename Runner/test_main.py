@@ -344,6 +344,34 @@ class RunnerJobTenantIsolationTests(unittest.TestCase):
         with main.JOB_LOCK:
             main.JOBS.pop(job_id, None)
 
+    def test_exec_rejects_replay_of_reserved_execution_id_without_workspace_write(self):
+        job_id = "agent-9010"
+        for state in ("queued", "running", "completed", "failed", "timeout"):
+            with self.subTest(state=state):
+                main._new_job("42", job_id)
+                try:
+                    if state != "queued":
+                        main._set_job(job_id, status="running")
+                    if state in {"completed", "failed", "timeout"}:
+                        main._set_job(job_id, status=state, finished_at=time.time())
+
+                    payload = main.ExecRequest(
+                        workspace_id="42",
+                        files={"main.py": "must-not-be-written"},
+                        command="python3 main.py",
+                        execution_id=job_id,
+                    )
+                    with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)), patch("main.auth"), patch("main.replace_workspace_snapshot") as replace, patch("main.run_command") as run:
+                        with self.assertRaises(HTTPException) as ctx:
+                            main.execute(payload, authorization="Bearer internal")
+
+                    self.assertEqual(ctx.exception.status_code, 409)
+                    replace.assert_not_called()
+                    run.assert_not_called()
+                finally:
+                    with main.JOB_LOCK:
+                        main.JOBS.pop(job_id, None)
+
     def test_exec_rejects_invalid_external_execution_id_before_snapshot_write(self):
         with tempfile.TemporaryDirectory() as tmp, patch("main.ROOT", Path(tmp)):
             payload = main.ExecRequest(

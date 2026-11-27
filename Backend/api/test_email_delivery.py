@@ -15,6 +15,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
     def email_job(self):
         return SimpleNamespace(
             kind="email",
+            pk=42,
             payload={
                 "subject": "Verify your Developer OS email",
                 "text": "Verification message",
@@ -108,6 +109,10 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             result = execute(self.email_job())
 
         self.assertTrue(result["sent"])
+        self.assertEqual(
+            mail.return_value._developer_os_idempotency_key,
+            "developer-os-email-job-42",
+        )
         mail.return_value.send.assert_called_once_with(fail_silently=False)
 
     @override_settings(
@@ -136,6 +141,10 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             mail.return_value.send.return_value = 1
             result = execute(self.email_job())
         self.assertEqual(result, {"sent": True, "to": "member@example.test"})
+        self.assertEqual(
+            mail.return_value._developer_os_idempotency_key,
+            "developer-os-email-job-42",
+        )
         mail.return_value.send.assert_called_once_with(fail_silently=False)
 
     @override_settings(
@@ -162,6 +171,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
             ["member@example.test"],
         )
         message.attach_alternative("<p>HTML body</p>", "text/html")
+        message._developer_os_idempotency_key = "developer-os-email-job-42"
         response = SimpleNamespace(status=200, read=lambda: b'{"id":"email_test"}')
 
         with patch(
@@ -174,6 +184,7 @@ class EmailWorkerDeliverySafetyTests(SimpleTestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://api.resend.com/emails")
         self.assertEqual(request.get_header("Authorization"), "Bearer re_test_key")
+        self.assertEqual(request.get_header("Idempotency-key"), "developer-os-email-job-42")
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["to"], ["member@example.test"])
         self.assertEqual(payload["text"], "Plain text body")

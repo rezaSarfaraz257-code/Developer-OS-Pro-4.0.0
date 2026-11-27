@@ -1,8 +1,10 @@
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .agent_runtime import (
@@ -14,6 +16,7 @@ from .agent_runtime import (
     build_agent_plan,
 )
 from .agent_tools import TOOL_REGISTRY
+from .management.commands.worker import recover_stale_jobs
 from .models import AgentRun, AgentTask, AIConversation, AIMessage, AuditLog, BackgroundJob, CodeWorkspace
 
 
@@ -23,11 +26,18 @@ class AgentExecutionLeaseFenceTests(TestCase):
         from .agent_execution import _job_lease_is_current
 
         claimed = SimpleNamespace(locked_by="worker-old")
-        current = SimpleNamespace(status="running", locked_by="worker-old")
+        current = SimpleNamespace(
+            status="running", locked_by="worker-old", locked_at=timezone.now(),
+        )
         self.assertTrue(_job_lease_is_current(current, claimed))
 
         # A reclaimed job is still "running", but belongs to another worker.
         current.locked_by = "worker-new"
+        self.assertFalse(_job_lease_is_current(current, claimed))
+
+        # A matching fencing token is insufficient after the durable TTL.
+        current.locked_by = "worker-old"
+        current.locked_at = timezone.now() - timedelta(minutes=11)
         self.assertFalse(_job_lease_is_current(current, claimed))
 
     def test_verification_rejects_missing_or_terminal_leases(self):
@@ -40,9 +50,23 @@ class AgentExecutionLeaseFenceTests(TestCase):
         ))
         claimed.locked_by = "worker-current"
         self.assertFalse(_job_lease_is_current(
-            SimpleNamespace(status="queued", locked_by="worker-current"), claimed
+            SimpleNamespace(status="queued", locked_by="worker-current", locked_at=timezone.now()), claimed
+        ))
+        self.assertFalse(_job_lease_is_current(
+            SimpleNamespace(status="running", locked_by="worker-current", locked_at=None), claimed
         ))
         self.assertFalse(_job_lease_is_current(None, claimed))
+
+    def test_planner_rejects_expired_lease_even_when_fencing_token_matches(self):
+        from types import SimpleNamespace
+        from .agent_runtime import _agent_plan_job_lease_is_current
+
+        current = SimpleNamespace(
+            status="running",
+            locked_by="planner:lease-token",
+            locked_at=timezone.now() - timedelta(minutes=11),
+        )
+        self.assertFalse(_agent_plan_job_lease_is_current(current, "planner:lease-token"))
 
 
 class AgentContextRedactionTests(TestCase):
@@ -358,7 +382,7 @@ class AgentRunLifecycleTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_approval_marks_plan_only_and_does_not_mutate_workspace(self):
+    def test_approval_waits_for_task_execution_without_mutating_workspace(self):
         run = AgentRun.objects.create(
             owner=self.user,
             workspace=self.workspace,
@@ -371,7 +395,7 @@ class AgentRunLifecycleTests(TestCase):
         response = self.client.post(f"/api/ai/agent/runs/{run.id}/approve/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "approved")
-        self.assertEqual(response.data["execution_state"], "plan_only_no_workspace_mutations")
+        self.assertEqual(response.data["execution_state"], "approved_awaiting_task_execution")
         self.workspace.refresh_from_db()
         self.assertEqual(self.workspace.files, original_files)
 
@@ -598,6 +622,51 @@ class AgentRunLifecycleTests(TestCase):
         self.assertNotIn("locked_by", response.data)
         self.assertNotIn("result", response.data)
 
+    def test_queued_runner_sync_status_uses_owner_scoped_outbox_target_until_worker_result_exists(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={
+                "workspace_id": self.workspace.id,
+                "owner_id": self.user.id,
+                "requested_revision": 7,
+            },
+            status="queued",
+            idempotency_key="agent-runner-status-queued-target-0001",
+        )
+
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["workspace_id"], self.workspace.id)
+        self.assertEqual(response.data["revision"], 7)
+        self.assertNotIn("payload", response.data)
+        self.assertNotIn("result", response.data)
+
+    def test_runner_sync_status_prefers_actual_worker_revision_over_requested_revision(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_runner_sync",
+            payload={
+                "workspace_id": self.workspace.id,
+                "owner_id": self.user.id,
+                "requested_revision": 7,
+            },
+            status="succeeded",
+            result={
+                "workspace_id": self.workspace.id,
+                "revision": 8,
+                "coalesced": True,
+            },
+            idempotency_key="agent-runner-status-coalesced-0001",
+        )
+
+        response = self.client.get(f"/api/ai/agent/sync-jobs/{job.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["workspace_id"], self.workspace.id)
+        self.assertEqual(response.data["revision"], 8)
+        self.assertTrue(response.data["coalesced"])
+
     def test_other_user_cannot_read_runner_sync_status(self):
         job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync",
@@ -650,6 +719,205 @@ class AgentRunLifecycleTests(TestCase):
         with self.assertRaisesRegex(RuntimeError, "AI planner returned an invalid task graph") as caught:
             build_agent_plan(run.id)
         self.assertNotIn("malformed-provider-response", str(caught.exception))
+
+    @patch("api.agent_runtime._agent_context_file_samples", return_value={})
+    @patch("api.ai_engine._call_provider")
+    def test_planner_rechecks_cancellation_before_provider_call(self, provider, _samples):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Cancel before provider invocation",
+            status="queued",
+            idempotency_key="cancel-before-provider-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="active-planner:lease",
+            idempotency_key="cancel-before-provider-job-0001",
+        )
+
+        def cancel_during_context_build(*_args, **_kwargs):
+            response = self.client.post(f"/api/ai/agent/runs/{run.id}/cancel/")
+            self.assertEqual(response.status_code, 200)
+            return {}
+
+        _samples.side_effect = cancel_during_context_build
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="active-planner:lease",
+        )
+
+        run.refresh_from_db()
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(run.status, "canceled")
+        self.assertEqual(run.tasks.count(), 0)
+        provider.assert_not_called()
+
+    @patch("api.ai_engine._call_provider")
+    def test_running_planner_does_not_persist_after_run_cancellation(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Cancel planning safely",
+            status="planning",
+            idempotency_key="cancel-running-plan-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="active-planner:lease",
+            idempotency_key="cancel-running-plan-job-0001",
+        )
+
+        response = self.client.post(f"/api/ai/agent/runs/{run.id}/cancel/")
+        self.assertEqual(response.status_code, 200)
+
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="active-planner:lease",
+        )
+
+        run.refresh_from_db()
+        self.assertEqual(result["status"], "canceled")
+        self.assertEqual(run.status, "canceled")
+        self.assertEqual(run.tasks.count(), 0)
+        provider.assert_not_called()
+
+    @patch("api.ai_engine._call_provider")
+    def test_stale_planner_result_is_discarded_after_job_lease_is_reclaimed(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not persist a stale plan",
+            status="queued",
+            idempotency_key="stale-plan-fence-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            # The original planner must pass its preflight lease check. The
+            # provider callback expires this lease while the external call is
+            # in flight, then recovery reclaims it before stale output returns.
+            locked_at=timezone.now(),
+            locked_by="old-planner:lease",
+            idempotency_key="stale-plan-job-0001",
+        )
+        replacement_claims = []
+
+        def recover_and_reclaim(*_args, **_kwargs):
+            BackgroundJob.objects.filter(
+                pk=job.pk,
+                status="running",
+                locked_by="old-planner:lease",
+            ).update(locked_at=timezone.now() - timedelta(minutes=11))
+            recover_stale_jobs()
+            job.refresh_from_db()
+            self.assertEqual(job.status, "queued")
+            BackgroundJob.objects.filter(pk=job.pk).update(
+                available_at=timezone.now() - timedelta(seconds=1)
+            )
+            # claim_job is intentionally global; defer unrelated queued work
+            # so this regression deterministically reclaims the exact stale
+            # planner row created above instead of depending on suite order.
+            BackgroundJob.objects.filter(status="queued").exclude(pk=job.pk).update(
+                available_at=timezone.now() + timedelta(hours=1)
+            )
+            # TestCase wraps the whole test in an outer transaction, so
+            # PostgreSQL SKIP LOCKED correctly skips rows locked by this test
+            # transaction. Model the replacement worker's committed lease
+            # transition directly; claim_job concurrency is covered by the
+            # dedicated TransactionTestCase regression suite.
+            updated = BackgroundJob.objects.filter(
+                pk=job.pk, status="queued",
+            ).update(
+                status="running",
+                locked_at=timezone.now(),
+                locked_by="replacement-planner:replacement-lease",
+                attempts=2,
+            )
+            self.assertEqual(updated, 1)
+            replacement_claims.append(BackgroundJob.objects.get(pk=job.pk))
+            return (
+                json.dumps({
+                    "summary": "Stale plan must not persist",
+                    "risks": [],
+                    "acceptance_criteria": ["No stale tasks are stored"],
+                    "tasks": [{
+                        "id": "inspect",
+                        "title": "Inspect workspace",
+                        "description": "Review the source",
+                        "agent_role": "architect",
+                        "depends_on": [],
+                        "acceptance_criteria": ["The inspection evidence is recorded."],
+                    }],
+                }),
+                None,
+            )
+
+        provider.side_effect = recover_and_reclaim
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="old-planner:lease",
+        )
+
+        run.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(result["status"], "superseded")
+        self.assertEqual(run.status, "queued")
+        self.assertEqual(run.tasks.count(), 0)
+        self.assertEqual(job.status, "running")
+        self.assertEqual(job.locked_by, replacement_claims[0].locked_by)
+        provider.assert_called_once()
+
+    @patch("api.ai_engine._call_provider")
+    def test_planner_rejects_a_superseded_lease_before_provider_call(self, provider):
+        run = AgentRun.objects.create(
+            owner=self.user,
+            workspace=self.workspace,
+            goal="Do not start stale planning",
+            status="queued",
+            idempotency_key="preflight-plan-fence-0001",
+            workspace_revision=self.workspace.revision,
+        )
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            payload={"run_id": run.id},
+            status="queued",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="old-planner:lease",
+            idempotency_key="preflight-plan-job-0001",
+        )
+
+        result = build_agent_plan(
+            run.id,
+            job_id=job.id,
+            lease_token="old-planner:lease",
+        )
+
+        self.assertEqual(result["status"], "superseded")
+        provider.assert_not_called()
+        run.refresh_from_db()
+        self.assertEqual(run.status, "queued")
 
     @patch("api.ai_engine._call_provider")
     def test_worker_persists_plan_and_dependency_graph_without_mutating_workspace(self, provider):

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from django.utils import timezone
+
 from django.test import SimpleTestCase
 
 from .agent_execution import _job_lease_is_current, _safe_diagnostic_signals
@@ -34,7 +36,7 @@ class SafeAgentDiagnosticBoundaryTests(SimpleTestCase):
 class AgentWorkerLeaseFencingTests(SimpleTestCase):
     def test_only_exact_current_worker_lease_is_accepted(self):
         claimed = SimpleNamespace(locked_by="worker-a:token-123")
-        current = SimpleNamespace(status="running", locked_by="worker-a:token-123")
+        current = SimpleNamespace(status="running", locked_by="worker-a:token-123", locked_at=timezone.now())
         self.assertTrue(_job_lease_is_current(current, claimed))
 
     def test_reclaimed_job_rejects_previous_worker_token(self):

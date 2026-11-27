@@ -3,8 +3,9 @@ from unittest.mock import patch
 import threading
 
 from django.contrib.auth.models import User
-from django.db import close_old_connections, connection, transaction
+from django.db import close_old_connections, connection, connections, transaction
 from django.test import TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -200,6 +201,7 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_at=timezone.now(),
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": True, "task_id": self.task.id,
@@ -218,6 +220,7 @@ class AgentTaskVerificationAPITests(TestCase):
         audit = AuditLog.objects.get(action="ai_agent.patch_applied")
         job = BackgroundJob.objects.create(
             kind="ai_agent_task_verify", status="running", attempts=1, max_attempts=1,
+            locked_at=timezone.now(),
             locked_by="test-worker:lease-1",
             payload={
                 "run_id": self.run.id, "task_id": self.task.id,
@@ -275,7 +278,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         # Simulate the approval being revoked while the durable job is queued.
         AuditLog.objects.filter(
@@ -312,7 +316,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         # Simulate a prerequisite becoming incomplete while the verification
         # job is waiting in the durable worker queue.
@@ -417,6 +422,117 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(second.data["job_id"], job.id)
         self.assertEqual(BackgroundJob.objects.filter(kind="ai_agent_task_verify").count(), 1)
 
+    @patch("api.views._runner_request")
+    def test_stale_worker_response_cannot_overwrite_replacement_lease(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id, "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-original:lease-1"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        def replace_lease_during_runner_request(method, path, payload, timeout):
+            BackgroundJob.objects.filter(pk=job.pk, locked_by="worker-original:lease-1").update(
+                locked_by="worker-replacement:lease-2", locked_at=timezone.now(),
+            )
+            return ({
+                "job_id": payload["execution_id"], "status": "completed",
+                "exit_code": 0, "duration_ms": 25, "stdout": "late result", "stderr": "",
+            }, None)
+
+        runner_request.side_effect = replace_lease_during_runner_request
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_superseded")
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        current_job = BackgroundJob.objects.get(pk=job.pk)
+        self.assertEqual(current_job.locked_by, "worker-replacement:lease-2")
+        self.assertEqual(self.task.status, "running")
+        self.assertEqual(self.task.execution_evidence["state"], "queued")
+        self.assertEqual(self.run.status, "running")
+        runner_request.assert_called_once()
+
+    @patch("api.views._workspace_payload")
+    @patch("api.views._runner_request")
+    def test_cancellation_after_execution_reservation_prevents_runner_post(self, runner_request, workspace_payload):
+        # This base test class is inherited by several focused suites; execute
+        # this race regression once rather than duplicating the same API setup.
+        if type(self) is not AgentTaskVerificationAPITests:
+            self.skipTest("Covered once by the base verification API suite.")
+
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "test-worker:cancel-before-post"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        runner_request.return_value = ({"status": "cancelled"}, None)
+
+        def snapshot_before_reservation(workspace):
+            # Snapshot assembly happens before the durable Runner ID is saved.
+            # Keep this callback side-effect-free; cancellation is injected at
+            # the final lease preflight below, after the ID is persisted.
+            return {
+                "workspace_id": workspace.id,
+                "revision": workspace.revision,
+                "files": workspace.files,
+            }
+
+        workspace_payload.side_effect = snapshot_before_reservation
+
+        cancellation_responses = []
+
+        from django.db import transaction as django_transaction
+        real_atomic = django_transaction.atomic
+        atomic_entries = {"count": 0}
+
+        def cancel_between_reservation_and_final_preflight(*args, **kwargs):
+            atomic_entries["count"] += 1
+            if atomic_entries["count"] == 2:
+                # The first atomic block durably reserves the Runner ID. Inject
+                # cancellation only after that transaction commits and before
+                # the final preflight reads the run/task rows, matching the
+                # real lock boundary rather than nesting cancellation inside
+                # the worker's row locks.
+                response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
+                cancellation_responses.append(response)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["runner_cancellation"], {
+                    "requested": 1, "confirmed": 1, "unconfirmed": 0,
+                })
+            return real_atomic(*args, **kwargs)
+
+        with patch(
+            "api.agent_execution.transaction.atomic",
+            side_effect=cancel_between_reservation_and_final_preflight,
+        ):
+            result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        self.assertEqual(len(cancellation_responses), 1)
+        runner_request.assert_called_once()
+        self.assertEqual(
+            runner_request.call_args.args[1],
+            f"/jobs/agent-{job.id}/cancel?workspace_id={self.workspace.id}",
+        )
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "canceled")
+        self.assertEqual(self.run.status, "canceled")
+
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
@@ -431,7 +547,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         runner_request.assert_called_once()
@@ -558,7 +675,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "output exceeded the control-plane limit"):
             execute_agent_task_verification(job)
@@ -657,7 +775,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution job reference"):
             execute_agent_task_verification(job)
@@ -675,7 +794,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "invalid execution status"):
             execute_agent_task_verification(job)
@@ -693,7 +813,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         with self.assertRaisesRegex(RuntimeError, "malformed execution output"):
             execute_agent_task_verification(job)
@@ -721,7 +842,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
@@ -751,7 +873,8 @@ class AgentTaskVerificationAPITests(TestCase):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_failed")
         self.task.refresh_from_db()
@@ -853,7 +976,8 @@ class AgentTaskRetryTests(AgentTaskVerificationAPITests):
         first_job.status = "running"
         first_job.attempts = 1
         first_job.locked_by = "test-worker:lease-1"
-        first_job.save(update_fields=["status", "attempts", "locked_by"])
+        first_job.locked_at = timezone.now()
+        first_job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         execute_agent_task_verification(first_job)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "failed")
@@ -911,7 +1035,8 @@ class AgentTaskRetryLimitTests(AgentTaskVerificationAPITests):
             job.status = "running"
             job.attempts = 1
             job.locked_by = "test-worker:lease-1"
-            job.save(update_fields=["status", "attempts", "locked_by"])
+            job.locked_at = timezone.now()
+            job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
             execute_agent_task_verification(job)
             self.task.refresh_from_db()
             self.assertEqual(self.task.status, "failed")
@@ -987,7 +1112,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "worker-old:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         BackgroundJob.objects.filter(pk=job.pk).update(locked_by="worker-new:lease-2")
 
         with self.assertRaisesRegex(RuntimeError, "lease is no longer current"):
@@ -1011,7 +1137,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "worker-old:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         def reclaim_before_runner_returns(method, path, payload, timeout):
             BackgroundJob.objects.filter(pk=job.pk).update(
@@ -1039,6 +1166,64 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
 
 
     @patch("api.views._runner_request")
+    def test_cancellation_during_runner_post_cannot_be_overwritten_by_late_success(self, runner_request):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "worker-cancel-race:lease-1"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        def cancel_while_runner_is_executing(method, path, payload, timeout):
+            if path == "/exec":
+                # Simulate a user canceling after the execution ID is durably
+                # reserved but before the Runner POST returns its late success.
+                cancel_response = self.client.post(
+                    f"/api/ai/agent/runs/{self.run.id}/cancel/"
+                )
+                self.assertEqual(cancel_response.status_code, 200)
+                self.assertEqual(
+                    cancel_response.data["runner_cancellation"],
+                    {"requested": 1, "confirmed": 1, "unconfirmed": 0},
+                )
+                return ({
+                    "job_id": payload["execution_id"],
+                    "status": "completed",
+                    "exit_code": 0,
+                    "duration_ms": 20,
+                    "stdout": "late success after cancellation",
+                    "stderr": "",
+                }, None)
+            if path.startswith("/jobs/") and path.endswith("/cancel?workspace_id=%s" % self.workspace.id):
+                return ({"status": "cancelled"}, None)
+            self.fail("Unexpected Runner request during cancellation race: %s %s" % (method, path))
+
+        runner_request.side_effect = cancel_while_runner_is_executing
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        self.assertNotEqual(self.task.execution_evidence.get("state"), "passed")
+        self.assertEqual(job.status, "running")
+        self.assertTrue(BackgroundJob.objects.filter(
+            kind="ai_agent_runner_sync",
+            payload__workspace_id=self.workspace.id,
+            payload__owner_id=self.user.id,
+            status="queued",
+        ).exists())
+        self.assertEqual(runner_request.call_count, 2)
+
+    @patch("api.views._runner_request")
     def test_runner_call_occurs_outside_database_transaction(self, runner_request):
         baseline_atomic_depth = len(connection.atomic_blocks)
 
@@ -1059,7 +1244,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
         self.task.refresh_from_db()
@@ -1087,7 +1273,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         self.task.refresh_from_db()
         self.workspace.refresh_from_db()
@@ -1149,7 +1336,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
 
@@ -1182,7 +1370,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         result = execute_agent_task_verification(job)
 
@@ -1240,7 +1429,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         fail_agent_task_verification(job)
 
@@ -1309,7 +1499,8 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         job.status = "running"
         job.attempts = 1
         job.locked_by = "test-worker:lease-1"
-        job.save(update_fields=["status", "attempts", "locked_by"])
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
         result = execute_agent_task_verification(job)
         task.refresh_from_db()
         self.assertEqual(result["status"], "verification_passed_pending_acceptance")
@@ -1344,6 +1535,107 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         self.assertEqual(response.status_code, 200)
         queued_job.refresh_from_db()
         self.assertEqual(queued_job.status, "canceled")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_run_cancel_ignores_runner_id_not_bound_to_verification_job(self, runner_request):
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id,
+                "runner_execution_id": "agent-999999",
+            },
+            idempotency_key="agent-cancel-mismatched-runner-id-001",
+            max_attempts=1,
+        )
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("runner_cancellation", response.data)
+        self.run.refresh_from_db()
+        self.task.refresh_from_db()
+        self.assertEqual(self.run.status, "canceled")
+        self.assertEqual(self.task.status, "canceled")
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_run_cancel_rejects_runner_job_bound_to_another_workspace(self, runner_request):
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={
+                "run_id": self.run.id,
+                "task_id": self.task.id,
+                "owner_id": self.user.id,
+                "workspace_id": self.workspace.id + 100,
+                "runner_execution_id": "agent-placeholder",
+            },
+            idempotency_key="agent-cancel-cross-workspace-001",
+            max_attempts=1,
+        )
+        verification_job.payload["runner_execution_id"] = f"agent-{verification_job.id}"
+        verification_job.save(update_fields=["payload"])
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("runner_cancellation", response.data)
+        runner_request.assert_not_called()
+
+    @patch("api.views._runner_request")
+    def test_run_cancel_rejects_boolean_json_identifiers(self, runner_request):
+        expected_ids = {
+            "run_id": self.run.id,
+            "task_id": self.task.id,
+            "owner_id": self.user.id,
+            "workspace_id": self.workspace.id,
+        }
+        boolean_ids = {
+            key: (True if value == 1 else value)
+            for key, value in expected_ids.items()
+        }
+        if not any(type(boolean_ids[key]) is bool for key in expected_ids):
+            self.skipTest("The isolated test database did not allocate identifier 1.")
+        verification_job = BackgroundJob.objects.create(
+            kind="ai_agent_task_verify",
+            status="running",
+            payload={**boolean_ids, "runner_execution_id": "pending"},
+            idempotency_key="agent-cancel-boolean-identifiers-001",
+            max_attempts=1,
+        )
+        verification_job.payload["runner_execution_id"] = f"agent-{verification_job.id}"
+        verification_job.save(update_fields=["payload"])
+        self.task.status = "running"
+        self.task.execution_job = verification_job
+        self.task.save(update_fields=["status", "execution_job", "updated_at"])
+        self.run.status = "running"
+        self.run.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/ai/agent/runs/{self.run.id}/cancel/", {}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("runner_cancellation", response.data)
         runner_request.assert_not_called()
 
     @patch("api.views._runner_request", return_value=({"status": "cancelled"}, None))
@@ -1406,6 +1698,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1434,6 +1727,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1461,6 +1755,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1486,6 +1781,7 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
         )
         sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync", status="running",
+            locked_at=timezone.now(), locked_by="test-worker:runner-sync",
             payload={
                 "workspace_id": workspace.id, "owner_id": self.user.id,
                 "requested_revision": workspace.revision,
@@ -1506,6 +1802,57 @@ class AgentTaskExecutionHardeningTests(AgentTaskVerificationAPITests):
             runner_request.call_args.args[2]["files"],
             {"main.py": "print('expected')"},
         )
+
+
+
+    def test_verification_start_keeps_shared_sync_job_lock_after_run_and_task(self):
+        # The Runner verification worker holds its execution job, then Run,
+        # Task, Workspace, and finally the shared sync job. Keep the API's
+        # lock sequence aligned; select_related must not lock Workspace early.
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.post(self.url, {
+                "sync_job_id": self.sync_job.id,
+                "revision": self.workspace.revision,
+                "profile": "python_pytest",
+            }, format="json")
+
+        self.assertEqual(response.status_code, 202)
+        statements = [query["sql"].upper() for query in captured.captured_queries]
+        run_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_AGENTRUN"' in sql
+        )
+        task_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_AGENTTASK"' in sql
+        )
+        workspace_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_CODEWORKSPACE"' in sql
+        )
+        sync_lock_index = next(
+            index for index, sql in enumerate(statements)
+            if sql.lstrip().startswith("SELECT") and '"API_BACKGROUNDJOB"' in sql
+        )
+        self.assertLess(run_lock_index, task_lock_index)
+        self.assertLess(task_lock_index, workspace_lock_index)
+        self.assertLess(workspace_lock_index, sync_lock_index)
+
+    def test_verification_start_rejects_sync_job_for_another_workspace(self):
+        self.sync_job.payload = {
+            **self.sync_job.payload,
+            "workspace_id": self.workspace.id + 100,
+        }
+        self.sync_job.save(update_fields=["payload"])
+
+        response = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(BackgroundJob.objects.filter(kind="ai_agent_task_verify").exists())
 
 
 class BackgroundWorkerLeaseRegressionTests(TestCase):
@@ -1558,6 +1905,27 @@ class BackgroundWorkerLeaseRegressionTests(TestCase):
         self.assertTrue(refreshed_by_current_owner)
         self.assertGreater(job.locked_at, original_time)
 
+    def test_worker_cannot_refresh_malformed_or_future_lease(self):
+        now = timezone.now()
+        cases = (
+            {"locked_at": None, "locked_by": "worker:missing-time"},
+            {"locked_at": now + timedelta(seconds=1), "locked_by": "worker:future-time"},
+            {"locked_at": now, "locked_by": "   "},
+        )
+        for index, values in enumerate(cases, start=1):
+            with self.subTest(case=index):
+                job = BackgroundJob.objects.create(
+                    kind="worker_lease_validation_test",
+                    status="running",
+                    payload={},
+                    **values,
+                )
+                original_time = job.locked_at
+                self.assertFalse(refresh_job_lease(job.pk, values["locked_by"]))
+                job.refresh_from_db()
+                self.assertEqual(job.locked_at, original_time)
+
+
 
 class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
     reset_sequences = True
@@ -1593,7 +1961,9 @@ class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
                 thread_errors.append(exc)
                 lock_acquired.set()
             finally:
-                close_old_connections()
+                # Test-runner database teardown must not race a persistent
+                # connection owned by this auxiliary thread.
+                connections.close_all()
 
         lock_thread = threading.Thread(target=hold_first_job_lock, daemon=True)
         lock_thread.start()

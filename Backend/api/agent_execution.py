@@ -12,6 +12,7 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -39,14 +40,12 @@ def _matches_positive_id(value, expected):
 
 
 def _job_lease_is_current(current_job, claimed_job):
-    """Fence an execution to the exact worker identity that claimed its job."""
+    """Fence execution to the exact worker identity and its unexpired lease."""
+    from .agent_leases import is_current_job_lease
+
     return bool(
-        current_job
-        and claimed_job
-        and current_job.status == "running"
-        and isinstance(claimed_job.locked_by, str)
-        and claimed_job.locked_by
-        and current_job.locked_by == claimed_job.locked_by
+        claimed_job
+        and is_current_job_lease(current_job, getattr(claimed_job, "locked_by", None))
     )
 
 
@@ -180,7 +179,7 @@ def agent_task_verification_start_api(request, pk, task_pk):
 
     with transaction.atomic():
         run = get_object_or_404(
-            AgentRun.objects.select_for_update().select_related("workspace"),
+            AgentRun.objects.select_for_update(),
             pk=pk, owner=request.user,
         )
         task = get_object_or_404(AgentTask.objects.select_for_update(), pk=task_pk, run=run)
@@ -231,9 +230,13 @@ def agent_task_verification_start_api(request, pk, task_pk):
 
         sync_job = get_object_or_404(
             BackgroundJob.objects.select_for_update(),
-            pk=sync_job_id, kind="ai_agent_runner_sync",
-            payload__workspace_id=workspace.id, payload__owner_id=request.user.id,
+            pk=sync_job_id,
+            kind="ai_agent_runner_sync",
+            payload__owner_id=request.user.id,
         )
+        sync_payload = sync_job.payload if isinstance(sync_job.payload, dict) else {}
+        if sync_payload.get("workspace_id") != workspace.id:
+            return Response({"error": "The exact workspace revision must finish Runner synchronization first."}, status=409)
         sync_result = sync_job.result if isinstance(sync_job.result, dict) else {}
         if (
             sync_job.status != "succeeded"
@@ -422,6 +425,30 @@ def execute_agent_task_verification(job):
         current_job.save(update_fields=["payload"])
         task.execution_attempts = current_job.attempts
         task.save(update_fields=["execution_attempts", "updated_at"])
+
+    # Cancellation can win after the execution identifier is reserved but
+    # before this worker reaches the outbound request. Reacquire the durable
+    # locks and revalidate the lease plus task/run state immediately before
+    # crossing the Runner side-effect boundary.
+    with transaction.atomic():
+        current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
+        current_run = AgentRun.objects.select_for_update().filter(
+            pk=payload.get("run_id"), owner_id=actor.id,
+        ).first()
+        current_task = AgentTask.objects.select_for_update().filter(
+            pk=payload.get("task_id"), run=current_run,
+        ).first() if current_run else None
+        if not _job_lease_is_current(current_job, job) or not current_run or not current_task:
+            return {"status": "verification_superseded", "task_id": payload.get("task_id")}
+        if current_run.status == "canceled" or current_task.status == "canceled":
+            return {"status": "verification_canceled", "task_id": current_task.id}
+        current_payload = current_job.payload if isinstance(current_job.payload, dict) else {}
+        if (
+            current_task.status != "running"
+            or current_task.execution_job_id != current_job.id
+            or current_payload.get("runner_execution_id") != runner_execution_id
+        ):
+            return {"status": "verification_superseded", "task_id": current_task.id}
 
     # This POST is intentionally outside transaction.atomic(). Runner has its
     # own per-workspace lock and per-execution isolation. Never replay an
@@ -732,7 +759,21 @@ def agent_task_accept_api(request, pk, task_pk):
             acceptance = stored_evidence.get("human_acceptance", {})
             if not isinstance(acceptance, dict):
                 acceptance = {}
-            if _matches_positive_id(acceptance.get("user_id"), request.user.id):
+            criteria = _task_acceptance_criteria(task)
+            accepted_at = acceptance.get("accepted_at")
+            try:
+                accepted_timestamp = parse_datetime(accepted_at) if isinstance(accepted_at, str) else None
+            except (TypeError, ValueError):
+                accepted_timestamp = None
+            acceptance_is_valid = bool(
+                _matches_positive_id(acceptance.get("user_id"), request.user.id)
+                and acceptance.get("criteria_scope") == "agent_task"
+                and criteria
+                and acceptance.get("accepted_criteria") == criteria
+                and accepted_timestamp is not None
+                and timezone.is_aware(accepted_timestamp)
+            )
+            if acceptance_is_valid:
                 return Response(_task_status_payload(task, task.execution_job), status=200)
             return Response({"error": "This task has already been accepted."}, status=409)
         if task.status != "awaiting_approval":
