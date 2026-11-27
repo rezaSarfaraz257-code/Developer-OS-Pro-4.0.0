@@ -461,6 +461,11 @@ class AgentTaskVerificationAPITests(TestCase):
     @patch("api.views._workspace_payload")
     @patch("api.views._runner_request")
     def test_cancellation_after_execution_reservation_prevents_runner_post(self, runner_request, workspace_payload):
+        # This base test class is inherited by several focused suites; execute
+        # this race regression once rather than duplicating the same API setup.
+        if type(self) is not AgentTaskVerificationAPITests:
+            self.skipTest("Covered once by the base verification API suite.")
+
         queued = self.client.post(self.url, {
             "sync_job_id": self.sync_job.id,
             "revision": self.workspace.revision,
@@ -476,25 +481,39 @@ class AgentTaskVerificationAPITests(TestCase):
 
         runner_request.return_value = ({"status": "cancelled"}, None)
 
-        def snapshot_then_cancel(workspace):
-            # Invoke the real control-plane cancellation endpoint after the
-            # durable Runner execution ID is reserved but before /exec. The
-            # endpoint must send the exact cancellation tombstone to Runner.
-            response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.data["runner_cancellation"], {
-                "requested": 1, "confirmed": 1, "unconfirmed": 0,
-            })
+        def snapshot_before_reservation(workspace):
+            # Snapshot assembly happens before the durable Runner ID is saved.
+            # Keep this callback side-effect-free; cancellation is injected at
+            # the final lease preflight below, after the ID is persisted.
             return {
                 "workspace_id": workspace.id,
                 "revision": workspace.revision,
                 "files": workspace.files,
             }
 
-        workspace_payload.side_effect = snapshot_then_cancel
-        result = execute_agent_task_verification(job)
+        workspace_payload.side_effect = snapshot_before_reservation
+
+        from .agent_execution import _job_lease_is_current as real_lease_check
+        cancellation_responses = []
+
+        def cancel_after_reservation(current_job, claimed_job):
+            current_payload = (
+                current_job.payload if current_job and isinstance(current_job.payload, dict) else {}
+            )
+            if current_payload.get("runner_execution_id") and not cancellation_responses:
+                response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
+                cancellation_responses.append(response)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["runner_cancellation"], {
+                    "requested": 1, "confirmed": 1, "unconfirmed": 0,
+                })
+            return real_lease_check(current_job, claimed_job)
+
+        with patch("api.agent_execution._job_lease_is_current", side_effect=cancel_after_reservation):
+            result = execute_agent_task_verification(job)
 
         self.assertEqual(result["status"], "verification_canceled")
+        self.assertEqual(len(cancellation_responses), 1)
         runner_request.assert_called_once()
         self.assertEqual(
             runner_request.call_args.args[1],
