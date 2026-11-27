@@ -812,15 +812,21 @@ class AgentRunLifecycleTests(TestCase):
             status="running",
             attempts=1,
             max_attempts=3,
-            # Recovery must see an actually expired lease; a fresh
-            # timestamp is correctly protected by the worker heartbeat fence.
-            locked_at=timezone.now() - timedelta(minutes=11),
+            # The original planner must pass its preflight lease check. The
+            # provider callback expires this lease while the external call is
+            # in flight, then recovery reclaims it before stale output returns.
+            locked_at=timezone.now(),
             locked_by="old-planner:lease",
             idempotency_key="stale-plan-job-0001",
         )
         replacement_claims = []
 
         def recover_and_reclaim(*_args, **_kwargs):
+            BackgroundJob.objects.filter(
+                pk=job.pk,
+                status="running",
+                locked_by="old-planner:lease",
+            ).update(locked_at=timezone.now() - timedelta(minutes=11))
             recover_stale_jobs()
             job.refresh_from_db()
             self.assertEqual(job.status, "queued")
