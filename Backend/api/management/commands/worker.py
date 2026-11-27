@@ -85,7 +85,7 @@ def recover_stale_jobs():
                     )
                 else:
                     # SMTP and expired Resend keys cannot prove that a send was
-                    # accepted before the worker stopped. Never replay an
+                    # not been accepted before the worker stopped. Never replay an
                     # ambiguous delivery without provider-side deduplication.
                     locked.status = "failed"
                     locked.dead_lettered_at = recovery_now
