@@ -28,7 +28,7 @@ def recover_stale_jobs():
         Q(locked_at__lt=now - STALE_AFTER)
         | Q(locked_at__isnull=True)
         | Q(locked_at__gt=now)
-        | Q(locked_by="")
+        | Q(locked_by__regex=r"^\s*$")
     )
     for job in stale.iterator(chunk_size=100):
         with transaction.atomic():
