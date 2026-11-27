@@ -458,6 +458,43 @@ class AgentTaskVerificationAPITests(TestCase):
         self.assertEqual(self.run.status, "running")
         runner_request.assert_called_once()
 
+    @patch("api.views._workspace_payload")
+    @patch("api.views._runner_request")
+    def test_cancellation_after_execution_reservation_prevents_runner_post(self, runner_request, workspace_payload):
+        queued = self.client.post(self.url, {
+            "sync_job_id": self.sync_job.id,
+            "revision": self.workspace.revision,
+            "profile": "python_pytest",
+        }, format="json")
+        self.assertEqual(queued.status_code, 202)
+        job = BackgroundJob.objects.get(pk=queued.data["job_id"])
+        job.status = "running"
+        job.attempts = 1
+        job.locked_by = "test-worker:cancel-before-post"
+        job.locked_at = timezone.now()
+        job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
+
+        def snapshot_then_cancel(workspace):
+            # Model cancellation after the first reservation transaction has
+            # committed its Runner execution ID, but before the HTTP POST.
+            AgentRun.objects.filter(pk=self.run.pk).update(status="canceled")
+            AgentTask.objects.filter(pk=self.task.pk).update(status="canceled")
+            return {
+                "workspace_id": workspace.id,
+                "revision": workspace.revision,
+                "files": workspace.files,
+            }
+
+        workspace_payload.side_effect = snapshot_then_cancel
+        result = execute_agent_task_verification(job)
+
+        self.assertEqual(result["status"], "verification_canceled")
+        runner_request.assert_not_called()
+        self.task.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.task.status, "canceled")
+        self.assertEqual(self.run.status, "canceled")
+
     @patch("api.views._runner_request", side_effect=_runner_response_with_execution_id({"job_id": "runner-test-001", "status": "completed", "exit_code": 0, "duration_ms": 31, "stdout": "private output", "stderr": ""}))
     def test_runner_success_waits_for_human_acceptance_before_unblocking(self, runner_request):
         dependent = AgentTask.objects.create(
