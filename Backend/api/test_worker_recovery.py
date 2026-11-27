@@ -243,6 +243,23 @@ class StaleWorkerJobRecoveryTests(TestCase):
         self.assertEqual(job.locked_by, "")
         self.assertIn("Recovered stale worker lease.", job.error)
 
+    def test_running_job_with_whitespace_only_token_is_recovered(self):
+        job = BackgroundJob.objects.create(
+            kind="ai_agent_plan",
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            locked_at=timezone.now(),
+            locked_by="   ",
+        )
+
+        recover_stale_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "queued")
+        self.assertIsNone(job.locked_at)
+        self.assertEqual(job.locked_by, "")
+        self.assertIn("Recovered stale worker lease.", job.error)
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
     def test_stale_email_job_is_dead_lettered_to_avoid_duplicate_delivery(self):
         job = BackgroundJob.objects.create(
