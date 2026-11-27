@@ -319,6 +319,7 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
         raise RepairContractError("Repair proposal and workspace snapshot must be exact mappings.")
 
     patch_parts = []
+    revision_patch_parts = []
     modified_paths = []
     changed_paths = []
     for change in proposal.get("changes", []):
@@ -343,8 +344,11 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             ))
             if not diff_lines:
                 raise RepairContractError("Repair proposal contains a no-op file modification.")
-            patch_parts.append(f"diff --git a/{path} b/{path}\\n")
+            git_header = f"diff --git a/{path} b/{path}\\n"
+            patch_parts.append(git_header)
             patch_parts.extend(diff_lines)
+            revision_patch_parts.append(git_header)
+            revision_patch_parts.extend(diff_lines)
             modified_paths.append(path)
         elif operation == "create":
             created = change.get("content")
@@ -370,7 +374,7 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
 
     if modified_paths:
         validation = validate_unified_patch(
-            security_patch,
+            "".join(revision_patch_parts),
             target_revision=revision,
             expected_revision=revision,
             snapshot_revision=revision,
