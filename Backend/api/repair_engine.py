@@ -608,11 +608,13 @@ def validate_unified_patch(unified_diff, *, target_revision, expected_revision, 
         raise RepairContractError("Workspace snapshot revision does not match the patch target revision.")
     if not _exact_string_keys(workspace_files):
         raise RepairContractError("An authoritative workspace snapshot must be an exact dictionary with exact string keys.")
+    # Check the O(1) entry bound before copying: an oversized caller-provided
+    # snapshot must not force an unbounded second mapping allocation.
+    if len(workspace_files) > MAX_PATCH_SNAPSHOT_FILES:
+        raise RepairContractError("Workspace snapshot contains too many file entries.")
     # Copy the exact built-in dict before validation so later caller mutations
     # cannot change the set of files or contents being checked.
     snapshot_files = dict(workspace_files)
-    if len(snapshot_files) > MAX_PATCH_SNAPSHOT_FILES:
-        raise RepairContractError("Workspace snapshot contains too many file entries.")
     snapshot_total_bytes = 0
     snapshot_path_bytes = 0
     normalized_snapshot_paths = set()
