@@ -333,6 +333,11 @@ def execute_agent_task_verification(job):
         _runner_request, _workspace_for_user, _workspace_payload,
         _workspace_write_allowed,
     )
+    from .repair_engine import (
+        analyze_root_cause,
+        classify_execution_failure,
+        normalize_runner_evidence,
+    )
 
     payload = job.payload if isinstance(job.payload, dict) else {}
     required_ids = (
@@ -426,6 +431,7 @@ def execute_agent_task_verification(job):
     # This POST is intentionally outside transaction.atomic(). Runner has its
     # own per-workspace lock and per-execution isolation. Never replay an
     # ambiguous POST: this BackgroundJob is configured for one attempt.
+    runner_started_at = timezone.now()
     result, error = _runner_request(
         "POST", "/exec", {
             **workspace_snapshot, "command": command, "include_files": False,
@@ -483,7 +489,77 @@ def execute_agent_task_verification(job):
     if not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or not 0 <= duration_ms <= 120_000:
         duration_ms = None
     passed = runner_status == "completed" and exit_code == 0
-    verified_at = timezone.now().isoformat()
+    runner_finished_at = timezone.now()
+    verified_at = runner_finished_at.isoformat()
+    diagnostic_signals = _safe_diagnostic_signals(
+        profile, stdout, stderr, exit_code,
+    ) if not passed else []
+
+    if runner_status == "cancelled":
+        normalized_status = "cancelled"
+    elif runner_status == "timeout":
+        normalized_status = "timed_out"
+    elif runner_status == "failed" or exit_code != 0:
+        normalized_status = "failed"
+    else:
+        normalized_status = "succeeded"
+    normalized_exit_code = (
+        None if normalized_status == "cancelled" and exit_code == 0
+        else exit_code
+    )
+    runner_evidence_payload = {
+        "schema_version": 1,
+        "evidence_origin": "runner",
+        "execution_id": runner_execution_id,
+        "workspace_id": workspace.id,
+        "workspace_revision": revision,
+        "job_id": job.id,
+        "execution_status": normalized_status,
+        "exit_code": normalized_exit_code,
+        "termination_signal": None,
+        "stdout_reference": None,
+        "stderr_reference": None,
+        "structured_errors": [
+            {
+                "code": signal["code"],
+                "message": signal["code"],
+                "source_location": None,
+                "evidence_reference": None,
+            }
+            for signal in diagnostic_signals
+        ],
+        "stack_trace": None,
+        "source_location": None,
+        "execution_environment": {},
+        "resource_usage": {"duration_ms": duration_ms} if duration_ms is not None else {},
+        "timestamps": {
+            "started_at": runner_started_at.isoformat(),
+            "finished_at": runner_finished_at.isoformat(),
+        },
+        "artifact_checksums": {},
+    }
+    normalized_runner_evidence = normalize_runner_evidence(
+        runner_evidence_payload,
+        expected_execution_id=runner_execution_id,
+        expected_workspace_id=workspace.id,
+        expected_workspace_revision=revision,
+        expected_job_id=job.id,
+    )
+    failure_classification = classify_execution_failure(
+        normalized_runner_evidence,
+        expected_execution_id=runner_execution_id,
+        expected_workspace_id=workspace.id,
+        expected_workspace_revision=revision,
+        expected_job_id=job.id,
+    )
+    root_cause_analysis = None if passed else analyze_root_cause(
+        normalized_runner_evidence,
+        expected_execution_id=runner_execution_id,
+        expected_workspace_id=workspace.id,
+        expected_workspace_revision=revision,
+        expected_job_id=job.id,
+        changed_paths=[],
+    )
 
     with transaction.atomic():
         current_job = BackgroundJob.objects.select_for_update().filter(pk=job.pk).first()
@@ -537,9 +613,10 @@ def execute_agent_task_verification(job):
             "duration_ms": duration_ms, "verified_at": verified_at,
             **output_fingerprints,
             "output_persisted": False,
-            "diagnostic_signals": _safe_diagnostic_signals(
-                profile, stdout, stderr, exit_code,
-            ) if not passed else [],
+            "diagnostic_signals": diagnostic_signals,
+            "runner_evidence": normalized_runner_evidence,
+            "failure_classification": failure_classification,
+            "root_cause_analysis": root_cause_analysis,
         }
 
         # If the workspace moved while Runner was executing the immutable
