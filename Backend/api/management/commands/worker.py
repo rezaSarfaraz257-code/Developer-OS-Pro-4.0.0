@@ -516,7 +516,7 @@ class Command(BaseCommand):
                 job.error = (
                     f"{type(exc).__name__}: email delivery failed"
                     if job.kind == "email"
-                    else str(exc)[:10000]
+                    else f"{type(exc).__name__}: {str(exc)}"[:10000]
                 )
                 job.last_error_at = now
                 # Resend supports provider-side idempotency and receives a
