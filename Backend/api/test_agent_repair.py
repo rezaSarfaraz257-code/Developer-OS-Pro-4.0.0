@@ -769,10 +769,10 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": "README.md",
             "operation": "create",
             "reason": "Add a short repair note.",
-            "content": "# Repair A\\n",
+            "content": "# Repair A\n",
         }]
         second = deepcopy(first)
-        second["changes"][0]["content"] = "# Repair B\\n"
+        second["changes"][0]["content"] = "# Repair B\n"
 
         first_result = _validate_repair_proposal_with_engine(
             first, dict(self.workspace.files), self.workspace.revision,
@@ -797,7 +797,7 @@ class AgentTaskRepairProposalTests(TestCase):
             "path": "README.md",
             "operation": "create",
             "reason": "Add a repair note.",
-            "content": "# Repair note\\n",
+            "content": "# Repair note\n",
         }]
 
         with self.assertRaises(RepairContractError):
