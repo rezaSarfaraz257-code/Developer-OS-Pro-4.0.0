@@ -493,21 +493,7 @@ class AgentTaskVerificationAPITests(TestCase):
 
         workspace_payload.side_effect = snapshot_before_reservation
 
-        from .agent_execution import _job_lease_is_current as real_lease_check
         cancellation_responses = []
-
-        def cancel_after_reservation(current_job, claimed_job):
-            current_payload = (
-                current_job.payload if current_job and isinstance(current_job.payload, dict) else {}
-            )
-            if current_payload.get("runner_execution_id") and not cancellation_responses:
-                response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
-                cancellation_responses.append(response)
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data["runner_cancellation"], {
-                    "requested": 1, "confirmed": 1, "unconfirmed": 0,
-                })
-            return real_lease_check(current_job, claimed_job)
 
         from django.db import transaction as django_transaction
         real_atomic = django_transaction.atomic
