@@ -422,11 +422,11 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
                 [],
                 fromfile=f"a/{path}",
                 tofile=f"b/{path}",
-                lineterm="\\n",
+                lineterm="\n",
             ))
             if not diff_lines:
                 raise RepairContractError("Deleting an empty file has no revision-verifiable source diff.")
-            git_header = f"diff --git a/{path} b/{path}\\n"
+            git_header = f"diff --git a/{path} b/{path}\n"
             patch_parts.append(git_header)
             patch_parts.extend(diff_lines)
             revision_patch_parts.append(git_header)
