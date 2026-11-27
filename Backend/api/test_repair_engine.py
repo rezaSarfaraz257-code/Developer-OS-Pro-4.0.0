@@ -55,18 +55,24 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         value.update(overrides)
         return value
 
-    def normalize(self, payload=None):
+    def normalize(
+        self,
+        payload=None,
+        *,
+        expected_execution_id="exec-001",
+        expected_workspace_id=7,
+        expected_workspace_revision=12,
+        expected_job_id=33,
+    ):
         payload = self.evidence() if payload is None else payload
-        # Tests may intentionally vary identity fields. Missing fields retain
-        # valid server-side expectations so malformed payloads fail closed with
-        # RepairContractError rather than leaking KeyError from the test helper.
-        expected = payload if type(payload) is dict else {}
+        # Expected identities model trusted server-side job/workspace records;
+        # never derive them from the untrusted Runner payload under test.
         return normalize_runner_evidence(
             payload,
-            expected_execution_id=expected.get("execution_id", "exec-001"),
-            expected_workspace_id=expected.get("workspace_id", 7),
-            expected_workspace_revision=expected.get("workspace_revision", 12),
-            expected_job_id=expected.get("job_id", 33),
+            expected_execution_id=expected_execution_id,
+            expected_workspace_id=expected_workspace_id,
+            expected_workspace_revision=expected_workspace_revision,
+            expected_job_id=expected_job_id,
         )
 
     def test_normalizes_complete_runner_evidence_and_correlates_exact_identity(self):
@@ -437,14 +443,18 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
 
     def test_before_after_comparison_requires_verified_post_repair_gates(self):
         before = self.normalize()
-        after = self.normalize(self.evidence(
-            execution_id="exec-002",
-            workspace_revision=13,
-            execution_status="succeeded",
-            exit_code=0,
-            structured_errors=[],
-            source_location=None,
-        ))
+        after = self.normalize(
+            self.evidence(
+                execution_id="exec-002",
+                workspace_revision=13,
+                execution_status="succeeded",
+                exit_code=0,
+                structured_errors=[],
+                source_location=None,
+            ),
+            expected_execution_id="exec-002",
+            expected_workspace_revision=13,
+        )
         verification = {
             "schema_version": 1,
             "evidence_origin": "runner",
@@ -502,10 +512,13 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
 
     def test_before_after_comparison_rejects_same_workspace_revision(self):
         before = self.normalize()
-        after = self.normalize(self.evidence(
-            execution_id="exec-002",
-            execution_status="failed",
-        ))
+        after = self.normalize(
+            self.evidence(
+                execution_id="exec-002",
+                execution_status="failed",
+            ),
+            expected_execution_id="exec-002",
+        )
         with self.assertRaises(RepairContractError):
             compare_repair_outcomes(before, after, {})
 
