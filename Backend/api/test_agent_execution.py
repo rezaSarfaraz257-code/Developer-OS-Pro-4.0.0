@@ -509,7 +509,27 @@ class AgentTaskVerificationAPITests(TestCase):
                 })
             return real_lease_check(current_job, claimed_job)
 
-        with patch("api.agent_execution._job_lease_is_current", side_effect=cancel_after_reservation):
+        from django.db import transaction as django_transaction
+        real_atomic = django_transaction.atomic
+        atomic_entries = {"count": 0}
+
+        def cancel_between_reservation_and_final_preflight(*args, **kwargs):
+            atomic_entries["count"] += 1
+            if atomic_entries["count"] == 2:
+                # The first atomic block durably reserves the Runner ID. Inject
+                # cancellation only after that transaction commits and before
+                # the final preflight reads the run/task rows, matching the
+                # real lock boundary rather than nesting cancellation inside
+                # the worker's row locks.
+                response = self.client.post(f"/api/ai/agent/runs/{self.run.id}/cancel/")
+                cancellation_responses.append(response)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["runner_cancellation"], {
+                    "requested": 1, "confirmed": 1, "unconfirmed": 0,
+                })
+            return real_atomic(*args, **kwargs)
+
+        with patch("api.agent_execution.transaction.atomic", side_effect=cancel_between_reservation_and_final_preflight):
             result = execute_agent_task_verification(job)
 
         self.assertEqual(result["status"], "verification_canceled")
