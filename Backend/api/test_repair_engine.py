@@ -555,6 +555,33 @@ class FailureIntelligenceTests(RunnerEvidenceContractTests):
         result = self.compare(before, after, spoofed_verification)
         self.assertEqual(result["outcome"], "verification_incomplete")
 
+    def test_before_after_comparison_rejects_identity_drift_against_trusted_records(self):
+        for field, forged_value in (
+            ("execution_id", "forged-execution"),
+            ("workspace_id", 8),
+            ("workspace_revision", 14),
+            ("job_id", 35),
+        ):
+            with self.subTest(field=field):
+                before = self.normalize()
+                after = self.normalize(
+                    self.evidence(
+                        execution_id="exec-002",
+                        workspace_revision=13,
+                        job_id=34,
+                        execution_status="succeeded",
+                        exit_code=0,
+                        structured_errors=[],
+                        source_location=None,
+                    ),
+                    expected_execution_id="exec-002",
+                    expected_workspace_revision=13,
+                    expected_job_id=34,
+                )
+                after[field] = forged_value
+                with self.assertRaises(RepairContractError):
+                    self.compare(before, after, {})
+
     def test_before_after_comparison_rejects_same_workspace_revision(self):
         before = self.normalize()
         after = self.normalize(
