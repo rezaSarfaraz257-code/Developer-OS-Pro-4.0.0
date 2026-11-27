@@ -792,12 +792,12 @@ class AgentTaskRepairProposalTests(TestCase):
         from .repair_engine import RepairContractError
 
         proposal = self.proposal()
-        proposal["affected_files"] = ["cafe\\u0301.py"]
+        proposal["affected_files"] = ["cafe\u0301.py"]
         proposal["changes"] = [{
-            "path": "cafe\\u0301.py",
+            "path": "cafe\u0301.py",
             "operation": "create",
             "reason": "Add a new module.",
-            "content": "VALUE = 1\\n",
+            "content": "VALUE = 1\n",
         }]
 
         with self.assertRaises(RepairContractError):
