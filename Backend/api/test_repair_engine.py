@@ -57,15 +57,16 @@ class RunnerEvidenceContractTests(SimpleTestCase):
 
     def normalize(self, payload=None):
         payload = self.evidence() if payload is None else payload
-        # Downstream contract tests intentionally vary execution/revision IDs;
-        # the explicit correlation tests below exercise mismatched server IDs.
-        expected = payload if type(payload) is dict else self.evidence()
+        # Tests may intentionally vary identity fields. Missing fields retain
+        # valid server-side expectations so malformed payloads fail closed with
+        # RepairContractError rather than leaking KeyError from the test helper.
+        expected = payload if type(payload) is dict else {}
         return normalize_runner_evidence(
             payload,
-            expected_execution_id=expected["execution_id"],
-            expected_workspace_id=expected["workspace_id"],
-            expected_workspace_revision=expected["workspace_revision"],
-            expected_job_id=expected["job_id"],
+            expected_execution_id=expected.get("execution_id", "exec-001"),
+            expected_workspace_id=expected.get("workspace_id", 7),
+            expected_workspace_revision=expected.get("workspace_revision", 12),
+            expected_job_id=expected.get("job_id", 33),
         )
 
     def test_normalizes_complete_runner_evidence_and_correlates_exact_identity(self):
