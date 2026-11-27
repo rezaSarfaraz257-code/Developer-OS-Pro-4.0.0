@@ -405,8 +405,8 @@ def classify_execution_failure(
         mapping = (
             (("syntax", "syntax_error", "parse_error"), "syntax"),
             (("type", "type_error", "typecheck"), "type"),
-            (("dependency", "module_not_found", "import_error"), "dependency"),
-            (("build", "compile_error"), "build"),
+            (("dependency", "module_not_found", "import_error", "module_resolution"), "dependency"),
+            (("build", "compile_error", "lint"), "build"),
             (("test", "assertion"), "test"),
             (("permission", "access_denied"), "permission"),
             (("config", "configuration"), "configuration"),
