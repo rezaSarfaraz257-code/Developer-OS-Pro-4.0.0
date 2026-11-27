@@ -1829,6 +1829,26 @@ class BackgroundWorkerLeaseRegressionTests(TestCase):
         job.refresh_from_db()
         self.assertTrue(refreshed_by_current_owner)
         self.assertGreater(job.locked_at, original_time)
+    def test_worker_cannot_refresh_malformed_or_future_lease(self):
+        now = timezone.now()
+        cases = (
+            {"locked_at": None, "locked_by": "worker:missing-time"},
+            {"locked_at": now + timedelta(seconds=1), "locked_by": "worker:future-time"},
+            {"locked_at": now, "locked_by": "   "},
+        )
+        for index, values in enumerate(cases, start=1):
+            with self.subTest(case=index):
+                job = BackgroundJob.objects.create(
+                    kind="worker_lease_validation_test",
+                    status="running",
+                    payload={},
+                    **values,
+                )
+                original_time = job.locked_at
+                self.assertFalse(refresh_job_lease(job.pk, values["locked_by"]))
+                job.refresh_from_db()
+                self.assertEqual(job.locked_at, original_time)
+
 
 
 class PostgreSQLWorkerClaimConcurrencyTests(TransactionTestCase):
