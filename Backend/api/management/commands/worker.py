@@ -150,6 +150,7 @@ def refresh_job_lease(job_id, worker):
         pk=job_id,
         status="running",
         locked_by=worker,
+        locked_by__regex=r"\\S",
         locked_at__gte=now - STALE_AFTER,
         locked_at__lte=now,
     ).update(locked_at=now) == 1
