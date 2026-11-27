@@ -1014,6 +1014,19 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
         self.assertNotIn("C" * 30, str(unquoted))
 
 
+    def test_secret_scanner_preserves_unicode_separators_inside_added_source_lines(self):
+        token = "ghp_" + "U" * 30
+        patch = (
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -0,0 +1 @@\n"
+            "+message = 'before\\u2028after " + token + "'\n"
+        )
+        findings = scan_patch_for_secrets(patch)
+        self.assertEqual(findings, [{"line": 5, "rule": "possible_secret"}])
+        self.assertNotIn(token, str(findings))
+
     def test_scanner_checks_added_lines_starting_with_multiple_plus_signs(self):
         secret = "ghp_" + "D" * 30
         source_line = "+++ b/token = '" + secret + "'"
