@@ -27,6 +27,8 @@ class CurrentJobLeaseTests(SimpleTestCase):
         self.assertFalse(is_current_job_lease(self.job(status="succeeded"), self.token, now=self.now))
         self.assertFalse(is_current_job_lease(self.job(), "another-worker:token", now=self.now))
         self.assertFalse(is_current_job_lease(self.job(), "", now=self.now))
+        self.assertFalse(is_current_job_lease(self.job(locked_by="   "), "   ", now=self.now))
+        self.assertFalse(is_current_job_lease(self.job(), "   ", now=self.now))
         self.assertFalse(is_current_job_lease(self.job(), None, now=self.now))
 
     def test_lease_expiry_boundary_is_inclusive_but_older_leases_are_rejected(self):
