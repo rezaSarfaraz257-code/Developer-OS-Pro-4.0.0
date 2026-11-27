@@ -10,6 +10,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import unicodedata
 from types import SimpleNamespace
 
 from django.db import transaction
