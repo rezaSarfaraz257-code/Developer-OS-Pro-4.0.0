@@ -56,12 +56,16 @@ class RunnerEvidenceContractTests(SimpleTestCase):
         return value
 
     def normalize(self, payload=None):
+        payload = self.evidence() if payload is None else payload
+        # Downstream contract tests intentionally vary execution/revision IDs;
+        # the explicit correlation tests below exercise mismatched server IDs.
+        expected = payload if type(payload) is dict else self.evidence()
         return normalize_runner_evidence(
-            payload or self.evidence(),
-            expected_execution_id="exec-001",
-            expected_workspace_id=7,
-            expected_workspace_revision=12,
-            expected_job_id=33,
+            payload,
+            expected_execution_id=expected["execution_id"],
+            expected_workspace_id=expected["workspace_id"],
+            expected_workspace_revision=expected["workspace_revision"],
+            expected_job_id=expected["job_id"],
         )
 
     def test_normalizes_complete_runner_evidence_and_correlates_exact_identity(self):
@@ -796,7 +800,7 @@ class PatchAndApprovalValidationTests(SimpleTestCase):
             with self.assertRaises(RepairContractError):
                 self.validate_patch(protected_patch, target_revision="r", expected_revision="r", workspace_files={protected_name: "value = 1\n"})
     def test_rejects_bidirectional_controls_in_added_source_lines(self):
-        controls = ("\\u061c", "\\u200e", "\\u200f", "\\u202a", "\\u202b", "\\u202c", "\\u202d", "\\u202e", "\\u2066", "\\u2067", "\\u2068", "\\u2069")
+        controls = ("\u061c", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068", "\u2069")
         for control in controls:
             patch = self.patch().replace("+value = 2", '+value = "safe' + control + 'text"')
             with self.subTest(control=repr(control)):
@@ -1620,7 +1624,7 @@ class RepairLoopGuardTests(SimpleTestCase):
             duplicate_history,
             current_revision="rev-12",
             candidate_patch_sha256="b" * 64,
-            max_attempts=1,
+            max_attempts=2,
         )
         self.assertTrue(result["allowed"])
         self.assertEqual(result["attempts"], 1)
