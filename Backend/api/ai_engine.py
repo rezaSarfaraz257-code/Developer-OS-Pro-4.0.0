@@ -19,6 +19,7 @@ from typing import Any
 import requests
 from django.db import DatabaseError
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -1576,6 +1577,7 @@ def ai_agent_apply_api(request):
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
+        "rollback_snapshot": {"id": snapshot.id, "source_revision": snapshot.source_revision, "applied_revision": snapshot.applied_revision, "sha256": snapshot.sha256},
         "repair_loop": _agent_repair_plan({"runner": verification, "diagnostics": diagnostics}, 1),
     })
 
