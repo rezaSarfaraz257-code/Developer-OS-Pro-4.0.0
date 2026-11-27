@@ -170,6 +170,16 @@ class AgentTaskRepairProposalTests(TestCase):
         audit = AuditLog.objects.get(action="agent_task.repair_proposal_generated")
         self.assertEqual(audit.metadata["workspace_revision"], original_revision)
         self.assertTrue(audit.metadata["human_approval_required"])
+        self.assertEqual(
+            audit.metadata["repair_engine_validation"]["mode"],
+            "revision_bound_unified_diff",
+        )
+        self.assertEqual(
+            audit.metadata["repair_engine_validation"]["secret_scan"],
+            "passed",
+        )
+        self.assertTrue(audit.metadata["repair_engine_validation"]["patch_sha256"])
+        self.assertTrue(audit.metadata["repair_engine_validation"]["snapshot_sha256"])
         usage.assert_called_once()
         provider.assert_called_once()
 
@@ -625,3 +635,57 @@ class AgentTaskRepairProposalTests(TestCase):
             self.workspace.files,
             sampled_paths=set(),
         ))
+
+    def test_live_repair_proposal_validation_uses_revision_bound_engine_for_mixed_changes(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["main.py", "README.md"]
+        proposal["changes"].append({
+            "path": "README.md",
+            "operation": "create",
+            "reason": "Document the approved repair behavior.",
+            "content": "# Repair notes\\n",
+        })
+
+        result = _validate_repair_proposal_with_engine(
+            proposal,
+            dict(self.workspace.files),
+            self.workspace.revision,
+        )
+
+        self.assertTrue(result["validated"])
+        self.assertEqual(result["validation_mode"], "revision_bound_unified_diff")
+        self.assertEqual(result["changed_paths"], ["main.py", "README.md"])
+        self.assertEqual(result["secret_scan"], "passed")
+        self.assertTrue(result["patch_sha256"])
+        self.assertTrue(result["snapshot_sha256"])
+
+    def test_live_repair_engine_rejects_secret_material_in_modified_and_created_files(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        modified = self.proposal()
+        modified["changes"][0]["content"] = "API_KEY = 'sk_live_1234567890abcdef'\\n"
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                modified,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
+        created = self.proposal()
+        created["affected_files"] = ["README.md"]
+        created["changes"] = [{
+            "path": "README.md",
+            "operation": "create",
+            "reason": "The created file must be scanned too.",
+            "content": "API_KEY = 'sk_live_1234567890abcdef'\\n",
+        }]
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                created,
+                dict(self.workspace.files),
+                self.workspace.revision,
+            )
+
