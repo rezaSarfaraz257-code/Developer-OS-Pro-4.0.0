@@ -118,6 +118,61 @@ class AgentTaskRepairProposalTests(TestCase):
             idempotency_key="repair-verify-001",
         )
         self.evidence["verification_job_id"] = self.verification_job.id
+        self.evidence["runner_job_id"] = f"agent-{self.verification_job.id}"
+        from .repair_engine import (
+            analyze_root_cause,
+            classify_execution_failure,
+            normalize_runner_evidence,
+        )
+
+        timestamp = timezone.now().isoformat()
+        runner_payload = {
+            "schema_version": 1,
+            "evidence_origin": "runner",
+            "execution_id": self.evidence["runner_job_id"],
+            "workspace_id": self.workspace.id,
+            "workspace_revision": self.workspace.revision,
+            "job_id": self.verification_job.id,
+            "execution_status": "failed",
+            "exit_code": 1,
+            "termination_signal": None,
+            "stdout_reference": None,
+            "stderr_reference": None,
+            "structured_errors": [{
+                "code": "python_import_error",
+                "message": "python_import_error",
+                "source_location": None,
+                "evidence_reference": None,
+            }],
+            "stack_trace": None,
+            "source_location": None,
+            "execution_environment": {},
+            "resource_usage": {"duration_ms": 125},
+            "timestamps": {"started_at": timestamp, "finished_at": timestamp},
+            "artifact_checksums": {},
+        }
+        self.evidence["runner_evidence"] = normalize_runner_evidence(
+            runner_payload,
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+        )
+        self.evidence["failure_classification"] = classify_execution_failure(
+            self.evidence["runner_evidence"],
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+        )
+        self.evidence["root_cause_analysis"] = analyze_root_cause(
+            self.evidence["runner_evidence"],
+            expected_execution_id=self.evidence["runner_job_id"],
+            expected_workspace_id=self.workspace.id,
+            expected_workspace_revision=self.workspace.revision,
+            expected_job_id=self.verification_job.id,
+            changed_paths=[],
+        )
         self.verification_job.result = {
             "status": "verification_failed",
             "task_id": self.task.id,
