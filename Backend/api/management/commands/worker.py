@@ -57,7 +57,19 @@ def recover_stale_jobs():
                 locked, locked.locked_by, now=recovery_now,
             ):
                 continue
-            if locked.kind == "email":
+            if locked.kind == "ai_agent_task_verify":
+                # Runner verification is a side-effecting POST. The process
+                # may have completed even if this worker died before receiving
+                # or persisting its response. Never replay it, regardless of a
+                # corrupted or legacy max_attempts value.
+                locked.status = "failed"
+                locked.dead_lettered_at = recovery_now
+                locked.finished_at = recovery_now
+                locked.error = (
+                    "Runner execution outcome may be unknown after worker interruption; "
+                    "automatic retry suppressed to prevent duplicate execution."
+                )
+            elif locked.kind == "email":
                 # Resend deduplicates requests for 24 hours. Use a conservative
                 # 23-hour enqueue-age bound so a recovered request keeps that
                 # provider guarantee even when its first send time is unknown.
@@ -73,7 +85,7 @@ def recover_stale_jobs():
                     )
                 else:
                     # SMTP and expired Resend keys cannot prove that a send was
-                    # not accepted before the worker stopped. Never replay an
+                    # accepted before the worker stopped. Never replay an
                     # ambiguous delivery without provider-side deduplication.
                     locked.status = "failed"
                     locked.dead_lettered_at = recovery_now
@@ -541,17 +553,23 @@ class Command(BaseCommand):
                     and job.created_at
                     and job.created_at >= now - timedelta(hours=23)
                 )
-                email_retry_is_safe = (
-                    job.kind != "email" or resend_idempotency_window_open
+                automatic_retry_is_safe = (
+                    job.kind != "ai_agent_task_verify"
+                    and (job.kind != "email" or resend_idempotency_window_open)
                 )
-                if job.attempts < job.max_attempts and email_retry_is_safe:
+                if job.kind == "ai_agent_task_verify":
+                    job.error = (
+                        f"{type(exc).__name__}: Runner execution outcome may be unknown; "
+                        "automatic retry suppressed to prevent duplicate execution."
+                    )
+                if job.attempts < job.max_attempts and automatic_retry_is_safe:
                     job.status = "queued"
                     job.available_at = now + timedelta(seconds=min(300, 2 ** max(1, job.attempts)))
                 else:
                     job.status = "failed"
                     job.dead_lettered_at = now
                     job.finished_at = now
-                    if job.kind == "email" and not email_retry_is_safe:
+                    if job.kind == "email" and not automatic_retry_is_safe:
                         job.error = (
                             f"{type(exc).__name__}: email delivery outcome may be unknown; "
                             "automatic retry suppressed because the configured transport "
