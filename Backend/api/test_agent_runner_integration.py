@@ -155,6 +155,8 @@ class AgentRunnerIntegrationTests(TestCase):
         self.sync_job = BackgroundJob.objects.create(
             kind="ai_agent_runner_sync",
             status="running",
+            locked_at=timezone.now(),
+            locked_by="runner-integration-worker:sync-lease",
             payload={
                 "workspace_id": self.workspace.id,
                 "owner_id": self.user.id,
@@ -203,7 +205,8 @@ class AgentRunnerIntegrationTests(TestCase):
         # The worker's fencing token is part of the execution contract. A
         # direct integration invocation must model a real successful claim.
         verification_job.locked_by = "runner-integration-worker:lease-1"
-        verification_job.save(update_fields=["status", "attempts", "locked_by"])
+        verification_job.locked_at = timezone.now()
+        verification_job.save(update_fields=["status", "attempts", "locked_by", "locked_at"])
 
         # This call reaches the actual Runner /exec endpoint. The Runner uses
         # strict Bubblewrap isolation and returns its real execution job ID.
