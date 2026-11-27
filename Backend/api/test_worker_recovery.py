@@ -150,7 +150,9 @@ class StaleWorkerJobRecoveryTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(len(executions), 1)
         self.assertEqual(job.status, "queued")
-        self.assertIsNone(job.result)
+        # JSONField uses an empty-object default; the stale worker's
+        # returned payload must not replace that durable default.
+        self.assertEqual(job.result, {})
         self.assertGreater(job.available_at, timezone.now())
 
     @patch("api.management.commands.worker.execute")
