@@ -759,6 +759,74 @@ class AgentTaskRepairProposalTests(TestCase):
                 self.workspace.revision,
             )
 
+    def test_create_only_repair_manifest_hash_covers_created_content(self):
+        from copy import deepcopy
+        from .agent_repair import _validate_repair_proposal_with_engine
+
+        first = self.proposal()
+        first["affected_files"] = ["README.md"]
+        first["changes"] = [{
+            "path": "README.md",
+            "operation": "create",
+            "reason": "Add a short repair note.",
+            "content": "# Repair A\n",
+        }]
+        second = deepcopy(first)
+        second["changes"][0]["content"] = "# Repair B\n"
+
+        first_result = _validate_repair_proposal_with_engine(
+            first, dict(self.workspace.files), self.workspace.revision,
+        )
+        second_result = _validate_repair_proposal_with_engine(
+            second, dict(self.workspace.files), self.workspace.revision,
+        )
+
+        self.assertTrue(first_result["validated"])
+        self.assertEqual(first_result["validation_mode"], "path_contract_and_secret_scan_only")
+        self.assertTrue(first_result["snapshot_sha256"])
+        self.assertNotEqual(first_result["patch_sha256"], second_result["patch_sha256"])
+        self.assertEqual(first_result["snapshot_sha256"], second_result["snapshot_sha256"])
+
+    def test_create_only_repair_rejects_unicode_normalized_path_collision(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["cafe\u0301.py"]
+        proposal["changes"] = [{
+            "path": "cafe\u0301.py",
+            "operation": "create",
+            "reason": "Add a new module.",
+            "content": "VALUE = 1\n",
+        }]
+
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"café.py": "VALUE = 0\n"},
+                self.workspace.revision,
+            )
+
+    def test_create_only_repair_rejects_malformed_authoritative_snapshot(self):
+        from .agent_repair import _validate_repair_proposal_with_engine
+        from .repair_engine import RepairContractError
+
+        proposal = self.proposal()
+        proposal["affected_files"] = ["README.md"]
+        proposal["changes"] = [{
+            "path": "README.md",
+            "operation": "create",
+            "reason": "Add a repair note.",
+            "content": "# Repair note\n",
+        }]
+
+        with self.assertRaises(RepairContractError):
+            _validate_repair_proposal_with_engine(
+                proposal,
+                {"existing.py": None},
+                self.workspace.revision,
+            )
+
     def test_repair_proposal_rejects_runner_evidence_identity_drift_before_provider_call(self):
         from copy import deepcopy
 

@@ -7,6 +7,7 @@ the model to mutate a workspace directly.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -18,12 +19,13 @@ from typing import Any
 import requests
 from django.db import DatabaseError
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .models import AIConversation, AIMessage, AuditLog, BackgroundJob, Project
+from .models import AIConversation, AIMessage, AuditLog, BackgroundJob, Project, WorkspaceSnapshot
 from .serializers import AIConversationSerializer, AIMessageSerializer
 
 logger = logging.getLogger("developer_os.ai")
@@ -1510,6 +1512,15 @@ def ai_agent_apply_api(request):
 
             workspace.files = updated
             workspace.save(update_fields={"files"})
+            # Capture immutable pre-apply state in the same transaction as the patch.
+            snapshot_digest = hashlib.sha256(json.dumps(
+                current, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+            snapshot = WorkspaceSnapshot.objects.create(
+                workspace=workspace, owner=request.user,
+                source_revision=previous_revision, applied_revision=workspace.revision,
+                files=current, active_file=workspace.active_file, sha256=snapshot_digest,
+            )
             # Durable outbox: the workspace mutation and its Runner sync job
             # commit together. A worker outage cannot lose the synchronization intent.
             sync_job, _ = BackgroundJob.objects.get_or_create(
@@ -1532,6 +1543,8 @@ def ai_agent_apply_api(request):
                     for item in diffs
                 ],
                 "approval": "signed_single_use_revision_bound",
+                "rollback_snapshot_id": snapshot.id,
+                "rollback_snapshot_sha256": snapshot.sha256,
             }
             if agent_run and agent_task:
                 audit_metadata.update({
@@ -1564,6 +1577,7 @@ def ai_agent_apply_api(request):
         "verification": verification,
         "diagnostics": diagnostics,
         "reanalysis_required": True,
+        "rollback_snapshot": {"id": snapshot.id, "source_revision": snapshot.source_revision, "applied_revision": snapshot.applied_revision, "sha256": snapshot.sha256},
         "repair_loop": _agent_repair_plan({"runner": verification, "diagnostics": diagnostics}, 1),
     })
 
@@ -1571,38 +1585,16 @@ def ai_agent_apply_api(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agent_rollback_api(request):
-    """Restore a workspace snapshot only for an authorized writer at the expected revision."""
+    """Restore an immutable pre-apply snapshot with ownership and revision fencing."""
     from .views import _workspace_for_user, _workspace_write_allowed
+
     workspace_id = request.data.get("workspace")
+    snapshot_id = request.data.get("snapshot_id")
     expected_revision = request.data.get("revision")
-    files = request.data.get("files")
-    if not workspace_id or not isinstance(files, dict):
-        return Response({"error": "workspace and files are required."}, status=400)
-    try:
-        expected_revision = int(expected_revision)
-    except (TypeError, ValueError):
-        return Response({"error": "Invalid workspace revision."}, status=400)
-
-    safe_files = {}
-    seen_paths = set()
-    total_bytes = 0
-    for path, value in files.items():
-        if not _agent_safe_patch_path(path):
-            return Response({"error": f"Unsafe workspace path: {path}"}, status=400)
-        normalized_path = path.casefold()
-        if normalized_path in seen_paths:
-            return Response({"error": f"Duplicate workspace path: {path}"}, status=400)
-        seen_paths.add(normalized_path)
-        if not isinstance(value, str):
-            return Response({"error": f"Invalid file content: {path}"}, status=400)
-        content_bytes = len(value.encode("utf-8"))
-        if content_bytes > 2_000_000:
-            return Response({"error": f"File is too large: {path}"}, status=400)
-        total_bytes += content_bytes
-        safe_files[path] = value
-
-    if len(safe_files) > 2000 or total_bytes > 25_000_000:
-        return Response({"error": "Workspace limits would be exceeded."}, status=400)
+    if type(snapshot_id) is not int or snapshot_id < 1:
+        return Response({"error": "A valid rollback snapshot_id is required."}, status=400)
+    if type(expected_revision) is not int or expected_revision < 1:
+        return Response({"error": "A valid workspace revision is required."}, status=400)
 
     with transaction.atomic():
         workspace = _workspace_for_user(workspace_id, request.user, for_update=True)
@@ -1610,37 +1602,108 @@ def ai_agent_rollback_api(request):
             return Response({"error": "You do not have permission to restore this workspace."}, status=403)
         if workspace.revision != expected_revision:
             return Response({
-                "error": "Workspace changed after the AI apply. Reload before undoing.",
+                "error": "Workspace changed after the patch. Reload before undoing.",
                 "code": "stale_workspace",
                 "revision": workspace.revision,
             }, status=409)
 
-        active_file = workspace.active_file if workspace.active_file in safe_files else next(iter(safe_files), "")
+        snapshot = WorkspaceSnapshot.objects.select_for_update().filter(
+            pk=snapshot_id, workspace=workspace, owner=request.user,
+        ).first()
+        if snapshot is None:
+            return Response({"error": "Rollback snapshot was not found."}, status=404)
+        if snapshot.restored_at is not None:
+            return Response({"error": "This rollback snapshot has already been consumed."}, status=409)
+        if (
+            snapshot.source_revision + 1 != snapshot.applied_revision
+            or snapshot.applied_revision != workspace.revision
+        ):
+            return Response({
+                "error": "Snapshot is stale; rollback is allowed only before any later workspace revision.",
+                "code": "stale_rollback_snapshot",
+                "revision": workspace.revision,
+            }, status=409)
+        if not AuditLog.objects.filter(
+            user=request.user, action="ai_agent.patch_applied",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
+            metadata__rollback_snapshot_id=snapshot.id,
+            metadata__previous_revision=snapshot.source_revision,
+            metadata__revision=snapshot.applied_revision,
+            metadata__rollback_snapshot_sha256=snapshot.sha256,
+        ).exists():
+            return Response({"error": "Snapshot is not bound to a recorded AI patch."}, status=409)
+
+        safe_files = snapshot.files
+        if type(safe_files) is not dict or len(safe_files) > 2000:
+            return Response({"error": "Stored rollback snapshot is invalid."}, status=409)
+        normalized_paths = set()
+        total_bytes = 0
+        for path, value in safe_files.items():
+            if type(path) is not str or not _agent_safe_patch_path(path) or type(value) is not str:
+                return Response({"error": "Stored rollback snapshot failed path or content validation."}, status=409)
+            normalized = unicodedata.normalize("NFC", path).casefold()
+            if normalized in normalized_paths or "\x00" in value:
+                return Response({"error": "Stored rollback snapshot contains conflicting or invalid content."}, status=409)
+            normalized_paths.add(normalized)
+            try:
+                encoded_path = path.encode("utf-8", errors="strict")
+                encoded_value = value.encode("utf-8", errors="strict")
+            except UnicodeEncodeError:
+                return Response({"error": "Stored rollback snapshot contains invalid Unicode."}, status=409)
+            if len(encoded_value) > 2_000_000:
+                return Response({"error": "Stored rollback snapshot contains an oversized file."}, status=409)
+            total_bytes += len(encoded_value)
+            if total_bytes > 25_000_000:
+                return Response({"error": "Stored rollback snapshot exceeds workspace limits."}, status=409)
+
+        digest = hashlib.sha256(json.dumps(
+            safe_files, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        if digest != snapshot.sha256:
+            return Response({"error": "Rollback snapshot integrity verification failed."}, status=409)
+
         previous_revision = workspace.revision
         workspace.files = safe_files
-        workspace.active_file = active_file
+        workspace.active_file = snapshot.active_file if snapshot.active_file in safe_files else next(iter(safe_files), "")
         workspace.save(update_fields={"files", "active_file"})
+        sync_job, _ = BackgroundJob.objects.get_or_create(
+            kind="ai_agent_runner_sync",
+            idempotency_key=f"agent-runner-sync:{workspace.id}:{workspace.revision}",
+            defaults={
+                "payload": {
+                    "workspace_id": workspace.id,
+                    "owner_id": request.user.id,
+                    "requested_revision": workspace.revision,
+                },
+                "max_attempts": 8,
+            },
+        )
+        snapshot.restored_at = timezone.now()
+        snapshot.restored_revision = workspace.revision
+        snapshot.save(update_fields={"restored_at", "restored_revision"})
         AuditLog.objects.create(
-            user=request.user,
-            action="ai_agent.workspace_rolled_back",
-            target_type="CodeWorkspace",
-            target_id=str(workspace.id),
+            user=request.user, action="ai_agent.workspace_rolled_back",
+            target_type="CodeWorkspace", target_id=str(workspace.id),
             metadata={
                 "previous_revision": previous_revision,
                 "revision": workspace.revision,
                 "restored_file_count": len(safe_files),
-                "restore_method": "owner_authorized_revision_guarded",
+                "snapshot_id": snapshot.id,
+                "snapshot_sha256": snapshot.sha256,
+                "sync_job_id": sync_job.id,
+                "restore_method": "immutable_pre_apply_snapshot_revision_fenced",
             },
         )
 
     return Response({
-        "status": "rolled_back",
+        "status": "rolled_back_sync_pending",
         "workspace": {
             "id": workspace.id,
             "revision": workspace.revision,
             "files": workspace.files,
             "active_file": workspace.active_file,
         },
+        "sync": {"queued": True, "job_id": sync_job.id, "status": sync_job.status},
     })
 
 

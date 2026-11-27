@@ -8,7 +8,9 @@ only way to change workspace files.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
+import unicodedata
 from types import SimpleNamespace
 
 from django.db import transaction
@@ -355,7 +357,12 @@ def _repair_evidence_is_current(run, task, workspace):
 def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
     """Bind generated repair changes to the exact workspace snapshot before approval."""
     from .repair_engine import (
+        MAX_PATCH_SNAPSHOT_FILES,
+        MAX_PATCH_SOURCE_BYTES,
+        MAX_PATCH_TOTAL_PATH_BYTES,
+        MAX_PATCH_TOTAL_SOURCE_BYTES,
         RepairContractError,
+        _safe_relative_path,
         scan_patch_for_secrets,
         validate_unified_patch,
     )
@@ -367,13 +374,27 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
     revision_patch_parts = []
     modified_paths = []
     changed_paths = []
+    normalized_snapshot_paths = {
+        unicodedata.normalize("NFC", path).casefold()
+        for path in workspace_files
+        if type(path) is str
+    }
+    changed_path_keys = set()
     for change in proposal.get("changes", []):
         if type(change) is not dict:
             raise RepairContractError("Repair proposal contains an invalid change record.")
         path = change.get("path")
         operation = change.get("operation")
+        if type(path) is not str or not _safe_relative_path(path) or not _repair_path_is_allowed(path):
+            raise RepairContractError("Repair proposal contains an unsafe or protected path.")
+        normalized_path = unicodedata.normalize("NFC", path).casefold()
+        if normalized_path in changed_path_keys:
+            raise RepairContractError("Repair proposal contains duplicate or colliding paths.")
+        changed_path_keys.add(normalized_path)
         if operation not in {"modify", "create", "delete"}:
             raise RepairContractError("Repair proposal contains an unsupported file operation.")
+        if operation == "create" and normalized_path in normalized_snapshot_paths:
+            raise RepairContractError("Created repair target already exists or collides with a workspace path.")
         changed_paths.append(path)
         if operation == "modify":
             if path not in workspace_files or type(workspace_files[path]) is not str:
@@ -382,6 +403,12 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             updated = change.get("content")
             if type(updated) is not str:
                 raise RepairContractError("Modified repair content must be text.")
+            try:
+                updated_bytes = updated.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Modified repair content contains invalid Unicode.") from exc
+            if "\x00" in updated or len(updated_bytes) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Modified repair content is invalid or exceeds the file safety limit.")
             diff_lines = list(difflib.unified_diff(
                 original.splitlines(keepends=True),
                 updated.splitlines(keepends=True),
@@ -401,6 +428,12 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
             created = change.get("content")
             if type(created) is not str:
                 raise RepairContractError("Created repair content must be text.")
+            try:
+                created_bytes = created.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Created repair content contains invalid Unicode.") from exc
+            if "\x00" in created or len(created_bytes) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Created repair content is invalid or exceeds the file safety limit.")
             added = []
             for line in created.splitlines(keepends=True):
                 added.append("+" + (line if line.endswith("\n") else line + "\n"))
@@ -455,11 +488,62 @@ def _validate_repair_proposal_with_engine(proposal, workspace_files, revision):
         }
         mode = "path_contract_and_secret_scan_only"
 
+    # Hash the complete operation manifest, not only the unified-diff subset.
+    # The diff validator deliberately excludes file creation, so using its hash
+    # alone would leave created-file contents out of the recorded patch identity.
+    operation_manifest = []
+    for change in proposal["changes"]:
+        path = change["path"]
+        operation = change["operation"]
+        before = workspace_files.get(path)
+        after = change.get("content") if operation in {"modify", "create"} else None
+        operation_manifest.append({
+            "path": path,
+            "operation": operation,
+            "before_sha256": hashlib.sha256(before.encode("utf-8")).hexdigest() if isinstance(before, str) else None,
+            "after_sha256": hashlib.sha256(after.encode("utf-8")).hexdigest() if isinstance(after, str) else None,
+        })
+    canonical_manifest = json.dumps(
+        operation_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    snapshot_sha256 = validation.get("snapshot_sha256")
+    if not snapshot_sha256:
+        if len(workspace_files) > MAX_PATCH_SNAPSHOT_FILES:
+            raise RepairContractError("Workspace snapshot contains too many file entries.")
+        snapshot_manifest = []
+        path_bytes_total = 0
+        source_bytes_total = 0
+        normalized_snapshot_keys = set()
+        for snapshot_path, value in sorted(workspace_files.items(), key=lambda item: item[0] if type(item[0]) is str else ""):
+            if type(snapshot_path) is not str or type(value) is not str or not _safe_relative_path(snapshot_path):
+                raise RepairContractError("Workspace snapshot contains an unsafe path or non-text file.")
+            normalized_snapshot_key = unicodedata.normalize("NFC", snapshot_path).casefold()
+            if normalized_snapshot_key in normalized_snapshot_keys:
+                raise RepairContractError("Workspace snapshot contains colliding normalized paths.")
+            normalized_snapshot_keys.add(normalized_snapshot_key)
+            try:
+                encoded_path = snapshot_path.encode("utf-8", errors="strict")
+                encoded_value = value.encode("utf-8", errors="strict")
+            except UnicodeEncodeError as exc:
+                raise RepairContractError("Workspace snapshot contains invalid Unicode.") from exc
+            if "\x00" in value or len(encoded_value) > MAX_PATCH_SOURCE_BYTES:
+                raise RepairContractError("Workspace snapshot contains an invalid or oversized file.")
+            path_bytes_total += len(encoded_path)
+            source_bytes_total += len(encoded_value)
+            if path_bytes_total > MAX_PATCH_TOTAL_PATH_BYTES or source_bytes_total > MAX_PATCH_TOTAL_SOURCE_BYTES:
+                raise RepairContractError("Workspace snapshot exceeds aggregate safety limits.")
+            snapshot_manifest.append([snapshot_path, hashlib.sha256(encoded_value).hexdigest()])
+        snapshot_sha256 = hashlib.sha256(json.dumps(
+            snapshot_manifest, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+
     return {
         **validation,
         "validation_mode": mode,
         "changed_paths": changed_paths,
         "secret_scan": "passed",
+        "patch_sha256": hashlib.sha256(canonical_manifest).hexdigest(),
+        "snapshot_sha256": snapshot_sha256,
     }
 
 
